@@ -27,7 +27,7 @@ def get_dir(system_path=None, virtual_path=None):
         return os.path.join(*(['/'] + system_path))
 
 
-setup(name='avocado-i2n',
+setup(name='avocado-plugins-i2n',
       version=VERSION,
       description='Avocado Intra2net Plugins',
       author='Intra2net AG',
