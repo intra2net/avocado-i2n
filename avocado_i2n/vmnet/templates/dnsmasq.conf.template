@@ -1,7 +1,7 @@
-## AUTOTEST TEMPLATE FOR SMALL SCALE DHCP/DNS SERVICES USING DNSMASQ ##
+## TEMPLATE FOR SMALL SCALE DHCP/DNS SERVICES USING DNSMASQ ##
 
-pid-file=/var/run/autotest-dnsmasq.pid
-addn-hosts=/etc/dnsmasq.d/autotest-hosts.conf
+pid-file=/var/run/avocado-dnsmasq.pid
+addn-hosts=/etc/dnsmasq.d/avocado-hosts.conf
 expand-hosts
 
 # only attach to the required interfaces, not to *:53

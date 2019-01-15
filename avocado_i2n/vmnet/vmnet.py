@@ -560,18 +560,18 @@ class VMNetwork(object):
             process.run("service named stop", ignore_status=True)
         if dns_dhcp_set_config:
             logging.debug("Writing new DHCP/DNS config file:\n%s", dns_dhcp_string)
-            dns_dhcp_config = "/etc/dnsmasq.d/autotest.conf"
+            dns_dhcp_config = "/etc/dnsmasq.d/avocado.conf"
             with open(dns_dhcp_config, "w") as f:
                 f.write(dns_dhcp_string)
-            with open("/etc/dnsmasq.d/autotest-hosts.conf", "w") as f:
+            with open("/etc/dnsmasq.d/avocado-hosts.conf", "w") as f:
                 f.write(dns_declarations["hosts"])
             logging.debug("Resetting DHCP/DNS service")
-            process.run("kill $(cat /var/run/autotest-dnsmasq.pid)",
+            process.run("kill $(cat /var/run/avocado-dnsmasq.pid)",
                         shell=True, ignore_status=True)
             time.sleep(1)
             process.run("dnsmasq --conf-file=%s" % dns_dhcp_config)
         else:
-            process.run("kill $(cat /var/run/autotest-dnsmasq.pid)",
+            process.run("kill $(cat /var/run/avocado-dnsmasq.pid)",
                         shell=True, ignore_status=True)
 
     def _add_new_bridge(self, interface):
@@ -584,14 +584,14 @@ class VMNetwork(object):
             logging.debug('ifconfig output for %s:\n%s' % (netdst, output))
 
         logging.info("Adding bridge %s", netdst)
-        # TODO: no original Autotest method could do this for us
+        # TODO: no original avocado-vt method could do this for us
         process.run("brctl addbr %s" % netdst)
         if interface.params.get("host", "") != "":
             logging.debug("Adding this host with ip %s to %s and bringing it up",
                           host_ip, netdst)
             # TODO: this timeout is temporary
             time.sleep(2)
-            # TODO: no original Autotest method in utils_net like set_ip() and
+            # TODO: no original avocado-vt method in utils_net like set_ip() and
             # set_netmask() could do this for us at least from the research at the time
             process.run("ifconfig %s %s netmask %s up" % (netdst, host_ip, netmask))
             # DEBUG only: See if setting the IP address worked
@@ -609,7 +609,7 @@ class VMNetwork(object):
         if netdst in bridges.keys():
             interfaces = bridges[netdst]["iface"]
             for ifname in interfaces:
-                # BUG: a bug in Autotest forces us to use a direct method from the bridge manager instead
+                # BUG: a bug in avocado-vt forces us to use a direct method from the bridge manager instead
                 # of the more elegant "utils_net.del_from_bridge(ifname, netdst)" which also fits better
                 # our other calls - at least we managed to isolate the buggy and unimplemented interface calls
                 bridge_manager.del_port(netdst, ifname)
