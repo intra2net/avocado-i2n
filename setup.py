@@ -3,7 +3,7 @@ import sys
 
 from setuptools import setup
 
-VERSION = '0.1.0'
+VERSION = open('VERSION', 'r').read().strip()
 
 VIRTUAL_ENV = hasattr(sys, 'real_prefix')
 

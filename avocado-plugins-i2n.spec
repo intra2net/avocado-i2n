@@ -7,14 +7,14 @@
  # extension is accepted upstream, we will also extend this spec file
  # to release mode (in addition to this snapshot mode) and only track
  # our own tags as is supposed to be.
- %define commit 37c480127b0c8c02813bd16e7ff9cd054bda072c
+ %define commit 4a1c333e4306188099000561a2ee95f248033ebe
 %endif
 %global shortcommit %(c=%{commit}; echo ${c:0:8})
 
 Summary: Avocado I2N Plugin
 Name: python3-avocado-plugins-i2n
-Version: 65.0
-Release: 1%{?dist}
+Version: 66.0
+Release: 0%{?dist}
 License: GPLv2
 URL: https://github.com/intra2net/avocado-i2n/
 Source0: https://github.com/intra2net/%{modulename}/archive/%{commit}/%{modulename}-%{version}-%{shortcommit}.tar.gz
@@ -47,5 +47,8 @@ graph structure.
 %{python3_sitelib}/avocado_plugins_i2n*
 
 %changelog
-* Tue Oct  2 2018 Cleber Rosa <cleber@redhat.com> - 65.0-0
-- New release
+* Wed Feb  6 2019 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 66.0-0
+- Release increment and changelog standardization
+
+* Fri Dec 28 2018 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 65.0-1
+- First release of the plugin with all migrated utilities
