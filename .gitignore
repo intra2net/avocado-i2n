@@ -63,6 +63,10 @@ doc/api/_build/
 # PyBuilder
 target/
 
+# PyDev
+.project
+.pydevproject
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
