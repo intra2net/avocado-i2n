@@ -3,8 +3,7 @@ Plugins for avocado extending avocado-vt with automated vm state setup,
 inheritance, and traversal
 
 This file provides a brief overview of the core concepts behind the current
-plugin and hopefully a compact explanation of how tests are being run. In terms
-of installation, you may proceed analogically to other avocado plugins.
+plugin and hopefully a compact explanation of how tests are being run.
 
 
 Guiding principles
@@ -143,3 +142,34 @@ however reusable within an offline state transition and as many branches of
 online states transitions can span multiple tests without touching the offline
 state. This is important in the test management as ephemeral tests provide
 states that can only be reused with protective scheduling.
+
+
+How to run
+----------
+In order to list a test set from the sample test suite, do
+
+```
+avocado list --paginator off --loaders cartesian_graph [-- "only=A no=B ..."]
+```
+
+In order to run a test set from the sample test suite, do
+
+```
+avocado run --auto --loaders cartesian_graph [-- "only=A no=B ..."]
+```
+
+In order to run a manual step in the sample test suite, do
+
+```
+avocado manu [setup=A vms=vm1 ...]
+```
+
+where any further overwriting parameters can be provided on the command line.
+
+Currently, the plugin will only run with out own avocado(-vt) mods
+(*master* branches of avocado and avocado-vt forks here).
+
+
+How to install
+--------------
+In terms of installation, you may proceed analogically to other avocado plugins.
