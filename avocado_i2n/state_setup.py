@@ -65,8 +65,10 @@ def set_root(run_params):
         lv_utils.lv_create(vm_params["vg_name"],
                            vm_params["lv_name"],
                            vm_params["lv_size"],
-                           vm_params["pool_name"],
-                           vm_params["pool_size"])
+                           # NOTE: call by key to keep good argument order which wasn't
+                           # accepted upstream for backward API compatibility
+                           pool_name=vm_params["pool_name"],
+                           pool_size=vm_params["pool_size"])
         lv_utils.lv_take_snapshot(vm_params["vg_name"],
                                   vm_params["lv_name"],
                                   vm_params["lv_pointer_name"])
