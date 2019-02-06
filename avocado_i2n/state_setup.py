@@ -40,8 +40,11 @@ def set_root(run_params):
                 logging.info("Removing the previously created %s", vm_name)
                 if vm_params.get("image_raw_device", "yes") == "no":
                     mount_loc = os.path.dirname(vm_params["image_name"])
-                    lv_utils.lv_umount(vm_params["vg_name"],
-                                       vm_params["lv_pointer_name"])
+                    try:
+                        lv_utils.lv_umount(vm_params["vg_name"],
+                                           vm_params["lv_pointer_name"])
+                    except lv_utils.LVException:
+                        pass
                 logging.debug("Removing previous volume group of %s", vm_name)
                 lv_utils.vg_ramdisk_cleanup(vm_params["ramdisk_sparse_filename"],
                                             os.path.join(vm_params["ramdisk_basedir"],
@@ -91,8 +94,11 @@ def unset_root(run_params):
             if vm_params.get("image_raw_device", "yes") == "no":
                 mount_loc = os.path.dirname(vm_params["image_name"])
                 if lv_utils.vg_check(vm_params["vg_name"]):
-                    lv_utils.lv_umount(vm_params["vg_name"],
-                                       vm_params["lv_pointer_name"])
+                    try:
+                        lv_utils.lv_umount(vm_params["vg_name"],
+                                           vm_params["lv_pointer_name"])
+                    except lv_utils.LVException:
+                        pass
                 if os.path.exists(mount_loc):
                     try:
                         os.rmdir(mount_loc)
@@ -547,8 +553,11 @@ def _get_state(vm, vm_params):
         vm_params["lv_snapshot_name"] = vm_params["get_state"]
         if vm_params.get("image_raw_device", "yes") == "no":
             mount_loc = os.path.dirname(vm_params["image_name"])
-            lv_utils.lv_umount(vm_params["vg_name"],
-                               vm_params["lv_pointer_name"])
+            try:
+                lv_utils.lv_umount(vm_params["vg_name"],
+                                   vm_params["lv_pointer_name"])
+            except lv_utils.LVException:
+                pass
         try:
             logging.info("Restoring %s to state %s", vm_name, vm_params["get_state"])
             lv_utils.lv_remove(vm_params["vg_name"], vm_params["lv_pointer_name"])
