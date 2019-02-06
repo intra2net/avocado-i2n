@@ -43,7 +43,8 @@ class EmptyCartesianProduct(Exception):
 ###################################################################
 
 
-custom_configs_dir = settings.get_value('i2n.common', 'suite_path', default=".")
+default_tp_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tp_folder"))
+custom_configs_dir = settings.get_value('i2n.common', 'suite_path', default=default_tp_folder)
 custom_configs_dir = os.path.join(custom_configs_dir, "configs")
 tests_ovrwrt_file = "avocado_overwrite_tests.cfg"
 vms_ovrwrt_file = "avocado_overwrite_vms.cfg"
