@@ -116,6 +116,9 @@ class TestNode(object):
         self.visited_setup_nodes = []
         self.visited_cleanup_nodes = []
 
+    def __repr__(self):
+        return self.params["shortname"]
+
     def get_test_factory(self, job=None):
         """
         Get test factory from which the test loader will get a runnable test instance.

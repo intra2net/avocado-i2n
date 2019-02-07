@@ -449,7 +449,7 @@ def develop(args, run_params, tag=""):
     setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
     setup_str = param.re_str("develop.%s" % mode) + param.dict_to_str(setup_dict) + args.param_str
     tests = graph.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
-    assert len(tests) == 1, "There must be exactly one develop test variant"
+    assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
     with job_augmented_graph(graph):
         logging.info("Developing on virtual machines %s", vms)
         graph.run_test_node(TestNode(tag, tests[0].parser, []))
@@ -618,7 +618,7 @@ def boot(args, run_params, tag=""):
     setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
     setup_str = param.re_str("manage_vms.start") + param.dict_to_str(setup_dict) + args.param_str
     tests = graph.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
-    assert len(tests) == 1, "There must be exactly one boot test variant"
+    assert len(tests) == 1, "There must be exactly one boot test variant from %s" % tests
     with job_augmented_graph(graph):
         logging.info("Booting virtual machines %s", vms)
         graph.run_test_node(TestNode(tag, tests[0].parser, []))
@@ -644,7 +644,7 @@ def download(args, run_params, tag=""):
     setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
     setup_str = param.re_str("manage_vms.download") + param.dict_to_str(setup_dict) + args.param_str
     tests = graph.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
-    assert len(tests) == 1, "There must be exactly one download test variant"
+    assert len(tests) == 1, "There must be exactly one download test variant from %s" % tests
     with job_augmented_graph(graph):
         logging.info("Downloading from virtual machines %s", vms)
         graph.run_test_node(TestNode(tag, tests[0].parser, []))
@@ -670,7 +670,7 @@ def upload(args, run_params, tag=""):
     setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
     setup_str = param.re_str("manage_vms.upload") + param.dict_to_str(setup_dict) + args.param_str
     tests = graph.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
-    assert len(tests) == 1, "There must be exactly one upload test variant"
+    assert len(tests) == 1, "There must be exactly one upload test variant from %s" % tests
     with job_augmented_graph(graph):
         logging.info("Uploading to virtual machines %s", vms)
         graph.run_test_node(TestNode(tag, tests[0].parser, []))
@@ -694,7 +694,7 @@ def shutdown(args, run_params, tag=""):
     setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
     setup_str = param.re_str("manage_vms.stop") + param.dict_to_str(setup_dict) + args.param_str
     tests = graph.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
-    assert len(tests) == 1, "There must be exactly one shutdown test variant"
+    assert len(tests) == 1, "There must be exactly one shutdown test variant from %s" % tests
     with job_augmented_graph(graph):
         logging.info("Shutting down virtual machines %s", vms)
         graph.run_test_node(TestNode(tag, tests[0].parser, []))

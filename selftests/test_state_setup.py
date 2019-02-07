@@ -873,7 +873,7 @@ class StateSetupTest(unittest.TestCase):
         state_setup.set_root(self.run_params)
         mock_lv_utils.vg_check.assert_called_once_with("ramdisk_vm2")
         mock_lv_utils.vg_ramdisk.assert_called_once_with(None, 'ramdisk_vm2', '40000', '/tmp', 'virtual_hdd_vm2', True)
-        mock_lv_utils.lv_create.assert_called_once_with('ramdisk_vm2', 'LogVol', '30G', 'thin_pool', '30G')
+        mock_lv_utils.lv_create.assert_called_once_with('ramdisk_vm2', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm2', 'LogVol', 'current_state')
 
         mock_lv_utils.reset_mock()
@@ -890,7 +890,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.vg_check.assert_called_once_with("ramdisk_vm2")
         mock_lv_utils.vg_ramdisk_cleanup.assert_called_once_with('virtual_hdd_vm2', '/tmp/ramdisk_vm2', 'ramdisk_vm2', None, True)
         mock_lv_utils.vg_ramdisk.assert_called_once_with(None, 'ramdisk_vm2', '40000', '/tmp', 'virtual_hdd_vm2', True)
-        mock_lv_utils.lv_create.assert_called_once_with('ramdisk_vm2', 'LogVol', '30G', 'thin_pool', '30G')
+        mock_lv_utils.lv_create.assert_called_once_with('ramdisk_vm2', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm2', 'LogVol', 'current_state')
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
@@ -1109,7 +1109,7 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm4"].destroy.assert_called_once_with(gracefully=True)
         mock_lv_utils.vg_check.assert_called_once_with('ramdisk_vm3')
         mock_lv_utils.vg_ramdisk.assert_called_once_with(None, 'ramdisk_vm3', '40000', '/tmp', 'virtual_hdd_vm3', True)
-        mock_lv_utils.lv_create.assert_called_once_with('ramdisk_vm3', 'LogVol', '30G', 'thin_pool', '30G')
+        mock_lv_utils.lv_create.assert_called_once_with('ramdisk_vm3', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm3', 'LogVol', 'current_state')
 
     @mock.patch('avocado_i2n.state_setup.process')
