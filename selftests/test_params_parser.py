@@ -2,7 +2,8 @@
 
 import unittest
 
-from . import params_parser as param
+import unittest_importer
+import avocado_i2n.params_parser as param
 
 
 class ParamsParserTest(unittest.TestCase):

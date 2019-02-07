@@ -7,7 +7,8 @@ import re
 
 from avocado.core import exceptions
 
-from .cartesian_graph import CartesianGraph
+import unittest_importer
+from avocado_i2n.cartesian_graph import CartesianGraph
 
 
 class DummyTestRunning(object):
@@ -59,7 +60,7 @@ def mock_check_state(params, env, print_pos=True, print_neg=True):
     return DummyStateCheck(params, env, print_pos=True, print_neg=True).result
 
 
-@mock.patch('cartesian_graph.state_setup.check_state', mock_check_state)
+@mock.patch('avocado_i2n.cartesian_graph.state_setup.check_state', mock_check_state)
 @mock.patch.object(CartesianGraph, 'run_test_node', mock_run_test_node)
 class CartesianTreesTest(unittest.TestCase):
 

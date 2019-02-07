@@ -7,8 +7,9 @@ import re
 from avocado.core import exceptions
 from virttest import utils_params
 
-from . import intertest_setup
-from .cartesian_graph import CartesianGraph, TestNode
+import unittest_importer
+from avocado_i2n import intertest_setup
+from avocado_i2n.cartesian_graph import CartesianGraph, TestNode
 
 
 class DummyTestRunning(object):
@@ -42,7 +43,7 @@ def mock_run_test_node(_self, node):
     return DummyTestRunning(node)
 
 
-@mock.patch('intertest_setup._job_from_parser', _job_from_parser)
+@mock.patch('avocado_i2n.intertest_setup._job_from_parser', _job_from_parser)
 @mock.patch.object(CartesianGraph, 'run_test_node', mock_run_test_node)
 class IntertestSetupTest(unittest.TestCase):
 
