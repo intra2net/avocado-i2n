@@ -1,35 +1,74 @@
-# Basic RPM packaging for avocado-i2n with Python 3.
+%global srcname avocado-i2n
 
-%global modulename avocado-i2n
-%if ! 0%{?commit:1}
- # TODO: we will use a commit hash to match avocado-vt exactly since
- # it does not support release RPMs yet. Once our proposed release
- # extension is accepted upstream, we will also extend this spec file
- # to release mode (in addition to this snapshot mode) and only track
- # our own tags as is supposed to be.
- %define commit 8b85d88132209ff138200ec69ad01e48ffbf37fd
+# Conditional for release vs. snapshot builds. Set to 1 for release build.
+%if ! 0%{?rel_build:1}
+    %global rel_build 1
 %endif
-%global shortcommit %(c=%{commit}; echo ${c:0:8})
+
+# Settings used for build from snapshots.
+%if 0%{?rel_build}
+    %global gittar          %{srcname}-%{version}.tar.gz
+%else
+    %if ! 0%{?commit:1}
+        %global commit      8b85d88132209ff138200ec69ad01e48ffbf37fd
+    %endif
+    %if ! 0%{?commit_date:1}
+        %global commit_date 20181212
+    %endif
+    %global shortcommit     %(c=%{commit};echo ${c:0:8})
+    %global gitrel          .%{commit_date}git%{shortcommit}
+    %global gittar          %{srcname}-%{shortcommit}.tar.gz
+%endif
+
+%if 0%{?rhel}
+    %global with_python3 0
+%else
+    %global with_python3 1
+%endif
+
+# The Python dependencies are already tracked by the python2
+# or python3 "Requires".  This filters out the python binaries
+# from the RPM automatic requires/provides scanner.
+%global __requires_exclude ^/usr/bin/python[23]$
 
 Summary: Avocado I2N Plugin
-Name: python3-avocado-plugins-i2n
+Name: avocado-plugins-i2n
 Version: 67.0
-Release: 0%{?dist}
+Release: 0%{?gitrel}%{?dist}
 License: GPLv2
+Group: Development/Tools
 URL: https://github.com/intra2net/avocado-i2n/
-Source0: https://github.com/intra2net/%{modulename}/archive/%{commit}/%{modulename}-%{version}-%{shortcommit}.tar.gz
+%if 0%{?rel_build}
+Source0: https://github.com/intra2net/%{srcname}/archive/%{version}.tar.gz#/%{gittar}
+%else
+Source0: https://github.com/intra2net/%{srcname}/archive/%{commit}.tar.gz#/%{gittar}
+# old way of retrieving snapshot sources
+#Source0: https://github.com/intra2net/%{srcname}/archive/%{commit}/%{srcname}-%{version}-%{shortcommit}.tar.gz
+%endif
 BuildRequires: python3-devel, python3-setuptools
 BuildArch: noarch
-Requires: python3-avocado >= 51.0
-Requires: python3-aexpect, python3-avocado-plugins-vt
 
 %description
 Avocado I2N is a plugin that extends the virt-tests functionality with
 automated vm state setup, inheritance, and traversal using a Cartesian
 graph structure.
 
+%package -n python3-%{name}
+Summary: %{summary}
+Requires: python3-avocado >= 51.0
+Requires: python3-aexpect, python3-avocado-plugins-vt
+%{?python_provide:%python_provide python3-%{srcname}}
+%description -n python3-%{name}
+Avocado I2N is a plugin that extends the virt-tests functionality with
+automated vm state setup, inheritance, and traversal using a Cartesian
+graph structure.
+
 %prep
-%setup -q -n %{modulename}-%{commit}
+%if 0%{?rel_build}
+%setup -q -n %{srcname}-%{version}
+%else
+%setup -q -n %{srcname}-%{commit}
+%endif
 
 %build
 %{__python3} setup.py build
@@ -37,7 +76,7 @@ graph structure.
 %install
 %{__python3} setup.py install --root %{buildroot} --skip-build
 
-%files
+%files -n python3-%{name}
 %defattr(-,root,root,-)
 %dir /etc/avocado
 %dir /etc/avocado/conf.d
