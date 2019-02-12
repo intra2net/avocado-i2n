@@ -159,7 +159,7 @@ def prepare_parser(base_dict=None, base_str="", base_file=None,
         parser.get_dicts().__next__()
     except StopIteration:
         raise EmptyCartesianProduct(print_restriction(base_file=base_file, base_str=base_str,
-                                                      ovrwrt_file=ovrwrt_file, ovrwrt_str=ovrwrt_str))
+                                                      ovrwrt_file=ovrwrt_file, ovrwrt_str=ovrwrt_str)) from None
 
     return parser
 
@@ -212,7 +212,7 @@ def update_parser(parser, ovrwrt_dict=None, ovrwrt_str="",
         parser.get_dicts().__next__()
     except StopIteration:
         raise EmptyCartesianProduct(print_restriction(base_file=ovrwrt_base_file,
-                                                      ovrwrt_file=ovrwrt_file, ovrwrt_str=ovrwrt_str))
+                                                      ovrwrt_file=ovrwrt_file, ovrwrt_str=ovrwrt_str)) from None
 
     return parser
 
