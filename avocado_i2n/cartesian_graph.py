@@ -1264,17 +1264,13 @@ class CartesianGraph(VirtTestLoader, TestRunner):
 
             # the primary setup nodes need special treatment
             elif test_node.params.get("set_state") in ["install", "root"]:
-                try:
-                    setup_str = param_str
-                    if test_node.params["set_state"] == "root":
-                        setup_str += param.dict_to_str({"set_state": "root", "set_type": "offline"})
-                        self.run_create_test(test_node.params.get("vms", ""), setup_str, tag="root")
-                    elif test_node.params["set_state"] == "install":
-                        setup_tag = re.sub("(%s)" % "|".join([t.name for t in self._testobjects]), "", test_node.name)
-                        self.run_install_test(test_node.params.get("vms", ""), setup_str, tag=setup_tag)
-
-                except Exception as ex:
-                    logging.error("Detected exception during initial setup:\n%s", ex)
+                setup_str = param_str
+                if test_node.params["set_state"] == "root":
+                    setup_str += param.dict_to_str({"set_state": "root", "set_type": "offline"})
+                    self.run_create_test(test_node.params.get("vms", ""), setup_str, tag="root")
+                elif test_node.params["set_state"] == "install":
+                    setup_tag = re.sub("(%s)" % "|".join([t.name for t in self._testobjects]), "", test_node.name)
+                    self.run_install_test(test_node.params.get("vms", ""), setup_str, tag=setup_tag)
 
             else:
                 # finally, good old running of an actual test
