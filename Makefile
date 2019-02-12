@@ -1,4 +1,4 @@
-PYTHON=$(shell which python 2>/dev/null || which python3 2>/dev/null)
+PYTHON=$(shell which python3 2>/dev/null)
 PYTHON_DEVELOP_ARGS=$(shell if ($(PYTHON) setup.py develop --help 2>/dev/null | grep -q '\-\-user'); then echo "--user"; else echo ""; fi)
 DESTDIR=/
 PROJECT=avocado
@@ -7,12 +7,15 @@ AVOCADO_DIRNAME?=avocado
 all:
 	@echo
 	@echo "List of available targets:"
-    @echo "install:  Install on local system"
+	@echo "check:  Runs tree static check, unittests and functional tests"
+	@echo "install:  Install on local system"
 	@echo "clean:  Get rid of scratch and byte files"
 	@echo "link:  Enables egg links and links needed resources"
 	@echo "unlink:  Disables egg links and unlinks needed resources"
 	@echo
 
+check:
+	$(PYTHON) -m unittest discover -v selftests
 
 install:
 	$(PYTHON) setup.py install --root $(DESTDIR)
