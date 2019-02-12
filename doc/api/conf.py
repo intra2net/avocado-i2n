@@ -16,11 +16,20 @@
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
-#
-# import os
-# import sys
-# sys.path.insert(0, os.path.abspath('.'))
+# -> uncommented and currently used (../.. instead of .):
+import os
+import sys
+sys.path.insert(0, os.path.abspath('../..'))
 
+# Add mock modules to integrate better with platforms like ReadTheDocs. Any
+# modules that include C code will not be automatically imported in this online
+# platform which is understandable for security reasons. So we have to replace
+# them with mock modules in order for the build to succeed (we don't expect
+# these to be used for the documentation build in normal circumstances anyway).
+import mock
+MOCK_MODULES = []
+for mod_name in MOCK_MODULES:
+    sys.modules[mod_name] = mock.Mock()
 
 # -- General configuration ------------------------------------------------
 
@@ -31,9 +40,13 @@
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-extensions = ['sphinx.ext.autodoc',
+extensions = [
+    'sphinx.ext.autodoc',
+    'sphinx.ext.intersphinx',
     'sphinx.ext.todo',
-    'sphinx.ext.coverage']
+    'sphinx.ext.coverage',
+    'sphinx.ext.viewcode',
+]
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -45,7 +58,7 @@ templates_path = ['_templates']
 source_suffix = '.rst'
 
 # The master toctree document.
-master_doc = 'index'
+master_doc = 'source/modules'
 
 # General information about the project.
 project = 'avocado-i2n'
@@ -85,7 +98,7 @@ todo_include_todos = True
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+html_theme = 'default'  # was 'alabaster'
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -97,18 +110,6 @@ html_theme = 'alabaster'
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
-
-# Custom sidebar templates, must be a dictionary that maps document names
-# to template names.
-#
-# This is required for the alabaster theme
-# refs: http://alabaster.readthedocs.io/en/latest/installation.html#sidebars
-html_sidebars = {
-    '**': [
-        'relations.html',  # needs 'show_related': True theme option to display
-        'searchbox.html',
-    ]
-}
 
 
 # -- Options for HTMLHelp output ------------------------------------------
@@ -168,4 +169,35 @@ texinfo_documents = [
 ]
 
 
+# -- Customization on methods to display ----------------------------------
 
+# Show doc of class AND of constructor
+autoclass_content = 'class'  # 'both' not needed if special-members is used
+                             # as default flag
+autodoc_default_flags = ['members', 'special-members', 'undoc-members',
+                         'show-inheritance']
+
+# Sort by source (instead of alphabetically)
+autodoc_member_order = 'bysource'
+
+# want to keep __init__ members but exclude other special members
+def skip_class_members(app, what, name, obj, skip, options):
+    if skip:
+        # do skip
+        return True
+    if what not in ('class', 'exception'):
+        # following rules only apply to class members
+        return False
+    if name in ('__weakref__', '__dict__', '__module__', '__doc__'):
+        # always skip these since they are usually not present in source code
+        return True
+    # skip getters and setters for the sake of properties
+    if name.startswith("get_") or name.startswith("set_"):
+        return True
+    return False
+
+def setup(app):
+    # custom setup to include constructors to be documented
+    app.connect('autodoc-skip-member', skip_class_members)
+    # import main package here to be able to import all sphinx-apidoc imported modules
+    import avocado_i2n
