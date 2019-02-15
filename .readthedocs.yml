@@ -1,0 +1,16 @@
+version: 2
+
+python:
+  version: 3.7
+  install:
+     - requirements: requirements_pip.txt
+     # TODO: pip-crippled vt dependency and no RTD scripts supported
+     #- method: pip
+     #  path: .
+
+formats: all
+
+sphinx:
+  builder: html
+  configuration: doc/api/conf.py
+  fail_on_warning: false

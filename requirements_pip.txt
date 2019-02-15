@@ -1,0 +1,9 @@
+aexpect==1.5.1
+simplejson==3.8.0
+netaddr>=0.7.18
+netifaces>=0.10.5
+
+# TODO: Only old version is available on PyPI
+# Install original VT plugin either to import it in the documentation or to
+# make all its dependencies (this plugin's dependencies) available as well.
+# avocado-framework-plugin-vt
