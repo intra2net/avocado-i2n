@@ -16,6 +16,7 @@ INTERFACE
 import os
 import re
 import logging
+import signal
 from multiprocessing import SimpleQueue
 
 from avocado.core import test
@@ -913,6 +914,8 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         for node1, node2 in zip(test_suite, self._testnodes):
             assert node1 == node2.get_test_factory()
         summary = set()
+        if self.job.sysinfo is not None:
+            self.job.sysinfo.start_job_hook()
         param_str = self.args.param_str
 
         # HACK: pass the constructed graph to the test using static attribute hack
@@ -930,8 +933,18 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         self.run_test_node(TestNode("scan", nodes[0].parser, []))
         self.load_setup_list()
 
-        self.visualize(self.job.logdir)
-        self.run_tests(param_str)
+        try:
+            self.visualize(self.job.logdir)
+            self.run_tests(param_str)
+        except KeyboardInterrupt:
+            TEST_LOG.error('Job interrupted by ctrl+c.')
+            summary.add('INTERRUPTED')
+
+        if self.job.sysinfo is not None:
+            self.job.sysinfo.end_job_hook()
+        self.result.end_tests()
+        self.job.funcatexit.run()
+        signal.signal(signal.SIGTSTP, signal.SIG_IGN)
         return summary
 
     """run/clean switching functionality"""
