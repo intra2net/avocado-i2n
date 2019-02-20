@@ -788,11 +788,11 @@ class CartesianGraph(VirtTestLoader, TestRunner):
 
     def run_test_node(self, node):
         """
-        A wapper around the inherited :py:method:`run_test`.
+        A wrapper around the inherited :py:meth:`run_test`.
 
         :param node: test node to run
         :type node: :py:class:`TestNode`
-        :return: run status of :py:method:`run_test`
+        :return: run status of :py:meth:`run_test`
         :rtype: bool
 
         This is a simple wrapper to provide some default arguments
@@ -903,8 +903,8 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         :param str execution_order: Mode in which we should iterate through tests
                                     and variants (if None will default to
                                     :py:attr:`DEFAULT_EXECUTION_ORDER`
-        :return: a set with types of test failures
-        :rtype :py:class:`set`
+        :returns: a set with types of test failures
+        :rtype: :py:class:`set`
         """
         assert len(test_suite) == len(self._testnodes)
         for node1, node2 in zip(test_suite, self._testnodes):
