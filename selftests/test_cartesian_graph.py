@@ -110,12 +110,12 @@ class CartesianTreesTest(unittest.TestCase):
         self.args.tests_str += "only tutorial1\n"
         self.trees.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^root.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
-            {"shortname": "^1a1a1a1.internal.stateless.configure_install.vm1", "vms": "^vm1$"},
-            {"shortname": "^1a1a1a1.original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
-            {"shortname": "^1a1a1.internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
-            {"shortname": "^1a1.internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
-            {"shortname": "^1.all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.configure_install.vm1", "vms": "^vm1$"},
+            {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
+            {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 6
         self.trees.run_tests(self.args.param_str)
@@ -128,9 +128,9 @@ class CartesianTreesTest(unittest.TestCase):
         self.trees.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
             # cleanup is expected only if at least one of the states is reusable (here root+install)
-            {"shortname": "^1a1a1.internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
-            {"shortname": "^1a1.internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
-            {"shortname": "^1.all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
+            {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 3
         self.trees.run_tests(self.args.param_str)
@@ -142,9 +142,9 @@ class CartesianTreesTest(unittest.TestCase):
         DummyStateCheck.present_states = ["install", "customize_vm"]
         self.trees.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^root.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
-            {"shortname": "^1a1.internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
-            {"shortname": "^1.all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
+            {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
+            {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 3
         self.trees.run_tests(self.args.param_str)
@@ -154,19 +154,19 @@ class CartesianTreesTest(unittest.TestCase):
         self.args.tests_str += "only tutorial3\n"
         self.trees.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^root.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
-            {"shortname": "^1a1a1a1a1.internal.stateless.configure_install.vm1", "vms": "^vm1$"},
-            {"shortname": "^1a1a1a1a1.original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
-            {"shortname": "^1a1a1a1.internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
-            {"shortname": "^1a1a1.internal.permanent.set_provider.vm1", "vms": "^vm1$"},
-            {"shortname": "^1a1.internal.ephemeral.online_with_provider.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.configure_install.vm1", "vms": "^vm1$"},
+            {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.set_provider.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.online_with_provider.vm1", "vms": "^vm1$"},
 
-            {"shortname": "^root.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
-            {"shortname": "^1a1a1a1.internal.stateless.configure_install.vm2", "vms": "^vm2$"},
-            {"shortname": "^1a1a1a1.original.unattended_install.cdrom.in_cdrom_ks.default_install.aio_threads.vm2", "vms": "^vm2$"},
-            {"shortname": "^1a1a1.internal.permanent.customize_vm.vm2", "vms": "^vm2$"},
-            {"shortname": "^1a1.internal.ephemeral.online_deploy.vm2", "vms": "^vm2$"},
-            {"shortname": "^1.all.tutorial3", "vms": "^vm1 vm2$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.configure_install.vm2", "vms": "^vm2$"},
+            {"shortname": "^original.unattended_install.cdrom.in_cdrom_ks.default_install.aio_threads.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.ephemeral.online_deploy.vm2", "vms": "^vm2$"},
+            {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * 12
         self.trees.run_tests(self.args.param_str)
@@ -178,10 +178,10 @@ class CartesianTreesTest(unittest.TestCase):
         DummyStateCheck.present_states = ["root", "install", "customize_vm"]
         self.trees.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^1a1a1.internal.permanent.set_provider.vm1", "vms": "^vm1$"},
-            {"shortname": "^1a1.internal.ephemeral.online_with_provider.vm1", "vms": "^vm1$"},
-            {"shortname": "^1a1.internal.ephemeral.online_deploy.vm2", "vms": "^vm2$"},
-            {"shortname": "^1.all.tutorial3", "vms": "^vm1 vm2$"},
+            {"shortname": "^internal.permanent.set_provider.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.online_with_provider.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.online_deploy.vm2", "vms": "^vm2$"},
+            {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * 4
         self.trees.run_tests(self.args.param_str)
@@ -194,8 +194,8 @@ class CartesianTreesTest(unittest.TestCase):
         DummyStateCheck.present_states = ["root", "install"]
         self.trees.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^1a1a1.internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
-            {"shortname": "^1a1.internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 2
         DummyTestRunning.fail_switch[1] = True
@@ -224,8 +224,8 @@ class CartesianTreesTest(unittest.TestCase):
 
         self.trees.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^1a1.internal.permanent.customize_vm.vm2", "vms": "^vm2$"},
-            {"shortname": "^1.internal.permanent.set_provider.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.permanent.set_provider.vm2", "vms": "^vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * 2
         self.trees.run_tests(self.args.param_str)

@@ -403,7 +403,7 @@ def windows(args, run_params, tag=""):
             logging.info("Booting %s for the first permanent online state", vm.name)
             parser = param.update_parser(vm.parser,
                                          ovrwrt_dict={"set_state": "windows_online"},
-                                         ovrwrt_str=param.re_str("manage_vms.start", args.param_str, tag, True),
+                                         ovrwrt_str=param.re_str("manage_vms.start", args.param_str, objectless=True),
                                          ovrwrt_base_file="sets.cfg",
                                          ovrwrt_file=param.tests_ovrwrt_file)
             graph.run_test_node(TestNode(tag, parser, []))
@@ -411,7 +411,7 @@ def windows(args, run_params, tag=""):
             logging.info("Installing local virtuser at %s", vm.name)
             parser = param.update_parser(vm.parser,
                                          ovrwrt_dict={"skip_image_processing": "yes", "kill_vm": "no"},
-                                         ovrwrt_str=param.re_str("windows_virtuser", args.param_str, tag, True),
+                                         ovrwrt_str=param.re_str("windows_virtuser", args.param_str, objectless=True),
                                          ovrwrt_base_file="sets.cfg",
                                          ovrwrt_file=param.tests_ovrwrt_file)
             graph.run_test_node(TestNode(tag, parser, []))
@@ -421,7 +421,7 @@ def windows(args, run_params, tag=""):
                 year = run_params["with_outlook"]
                 parser = param.update_parser(vm.parser,
                                              ovrwrt_dict={"skip_image_processing": "yes", "kill_vm": "no"},
-                                             ovrwrt_str=param.re_str("outlook_prep..ol%s" % year, args.param_str, tag, True),
+                                             ovrwrt_str=param.re_str("outlook_prep..ol%s" % year, args.param_str, objectless=True),
                                              ovrwrt_base_file="sets.cfg",
                                              ovrwrt_file=param.tests_ovrwrt_file)
                 graph.run_test_node(TestNode(tag, parser, []))
@@ -473,10 +473,11 @@ def install(args, run_params, tag=""):
     """
     graph = CartesianGraph(args, {})
     graph.parse_object_nodes(param.re_str("install"), args.vm_strs,
-                             object_names=run_params.get("vms", ""), objectless=True)
+                             prefix=tag, object_names=run_params.get("vms", ""),
+                             objectless=True)
     for vm_name in sorted(graph.test_objects.keys()):
         with job_augmented_graph(graph):
-            graph.run_install_test(vm_name, args.param_str, tag)
+            graph.run_install_test(vm_name, args.param_str)
 
 
 def deploy(args, run_params, tag=""):
@@ -514,13 +515,13 @@ def deploy(args, run_params, tag=""):
                     ovrwrt_dict["get_state"] = ""
                     ovrwrt_dict["set_state"] = ""
                 setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
-                ovrwrt_str = param.re_str("customize_vm", setup_str, setup_tag, True)
+                ovrwrt_str = param.re_str("customize_vm", setup_str, objectless=True)
                 parser = param.update_parser(vm.parser,
                                              ovrwrt_dict=ovrwrt_dict,
                                              ovrwrt_str=ovrwrt_str,
                                              ovrwrt_base_file="sets.cfg",
                                              ovrwrt_file=param.tests_ovrwrt_file)
-                graph.run_test_node(TestNode(tag, parser, []))
+                graph.run_test_node(TestNode(setup_tag, parser, []))
 
 
 def internal(args, run_params, tag=""):
@@ -544,7 +545,7 @@ def internal(args, run_params, tag=""):
             else:
                 ovrwrt_dict = {}
             forced_setup = vm.params["node"]
-            ovrwrt_str = param.re_str(forced_setup, args.param_str, tag, True)
+            ovrwrt_str = param.re_str(forced_setup, args.param_str, objectless=True)
             parser = param.update_parser(vm.parser,
                                          ovrwrt_dict=ovrwrt_dict,
                                          ovrwrt_str=ovrwrt_str,
@@ -586,13 +587,13 @@ def sysupdate(args, run_params, tag=""):
                 else:
                     ovrwrt_dict = {}
                 setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
-                ovrwrt_str = param.re_str("system_update", setup_str, setup_tag, True)
+                ovrwrt_str = param.re_str("system_update", setup_str, objectless=True)
                 parser = param.update_parser(vm.parser,
                                              ovrwrt_dict=ovrwrt_dict,
                                              ovrwrt_str=ovrwrt_str,
                                              ovrwrt_base_file="sets.cfg",
                                              ovrwrt_file=param.tests_ovrwrt_file)
-                graph.run_test_node(TestNode(tag, parser, []))
+                graph.run_test_node(TestNode(setup_tag, parser, []))
 
 
 ############################################################
@@ -794,7 +795,7 @@ def get(args, run_params, tag=""):
                                      ovrwrt_dict={"vm_action": "get",
                                                   "skip_image_processing": "yes"},
                                      ovrwrt_str=param.re_str("manage_vms.unchanged",
-                                                             args.param_str, tag, True),
+                                                             args.param_str, objectless=True),
                                      ovrwrt_base_file="sets.cfg",
                                      ovrwrt_file=param.tests_ovrwrt_file)
         with job_augmented_graph(graph):
@@ -820,7 +821,7 @@ def set(args, run_params, tag=""):
                                      ovrwrt_dict={"vm_action": "set",
                                                   "skip_image_processing": "yes"},
                                      ovrwrt_str=param.re_str("manage_vms.unchanged",
-                                                             args.param_str, tag, True),
+                                                             args.param_str, objectless=True),
                                      ovrwrt_base_file="sets.cfg",
                                      ovrwrt_file=param.tests_ovrwrt_file)
         with job_augmented_graph(graph):
@@ -852,7 +853,7 @@ def unset(args, run_params, tag=""):
                                      ovrwrt_dict={"vm_action": "unset",
                                                   "skip_image_processing": "yes"},
                                      ovrwrt_str=param.re_str("manage_vms.unchanged",
-                                                             setup_str, tag, True),
+                                                             setup_str, objectless=True),
                                      ovrwrt_base_file="sets.cfg",
                                      ovrwrt_file=param.tests_ovrwrt_file)
         with job_augmented_graph(graph):

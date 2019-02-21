@@ -62,18 +62,18 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1 vm2"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^5mm.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^root$"},
-            {"shortname": "^5mm.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "unset_state": "^root$"},
-            {"shortname": "^5m.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
-            {"shortname": "^5m.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
-            {"shortname": "^5.internal.stateless.configure_install.vm1", "vms": "^vm1$"},
-            {"shortname": "^5.original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-7.*\.iso$"},
-            {"shortname": "^5.internal.stateless.configure_install.vm2", "vms": "^vm2$"},
-            {"shortname": "^5.original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
-            {"shortname": "^5.internal.permanent.customize_vm.vm1", "vms": "^vm1$", "redeploy_only": "^no$"},
-            {"shortname": "^5.internal.permanent.customize_vm.vm2", "vms": "^vm2$", "redeploy_only": "^no$"},
-            {"shortname": "^5.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^customize_vm$"},
-            {"shortname": "^5.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^customize_vm$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^root$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "unset_state": "^root$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.configure_install.vm1", "vms": "^vm1$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-7.*\.iso$"},
+            {"shortname": "^internal.stateless.configure_install.vm2", "vms": "^vm2$"},
+            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$", "redeploy_only": "^no$"},
+            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$", "redeploy_only": "^no$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^customize_vm$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^customize_vm$"},
         ]
         intertest_setup.full(self.args, self.run_params, tag="5")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -85,12 +85,12 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["dry_run"] = "yes"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^2m.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "get_state": "^install$"},
-            {"shortname": "^2m.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "get_state": "^install$"},
-            {"shortname": "^2.internal.permanent.customize_vm.vm1", "vms": "vm1", "redeploy_only": "^no$"},
-            {"shortname": "^2.internal.permanent.customize_vm.vm2", "vms": "vm2", "redeploy_only": "^no$"},
-            {"shortname": "^2.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^customize_vm$"},
-            {"shortname": "^2.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^customize_vm$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "get_state": "^install$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "get_state": "^install$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "vm1", "redeploy_only": "^no$"},
+            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "vm2", "redeploy_only": "^no$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^customize_vm$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^customize_vm$"},
         ]
         intertest_setup.update(self.args, self.run_params, tag="2")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -99,16 +99,16 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1 vm2"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^1rmm.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^root$"},
-            {"shortname": "^1rmm.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "unset_state": "^root$"},
-            {"shortname": "^root.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
-            {"shortname": "^1r1a1.internal.stateless.configure_install.vm1", "vms": "^vm1$"},
-            {"shortname": "^1r1a1.original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-7.*\.iso$"},
-            {"shortname": "^1r1.internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
-            {"shortname": "^root.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
-            {"shortname": "^1r1a1.internal.stateless.configure_install.vm2", "vms": "^vm2$"},
-            {"shortname": "^1r1a1.original.unattended_install", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
-            {"shortname": "^1r1.internal.permanent.customize_vm.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^root$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "unset_state": "^root$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.configure_install.vm1", "vms": "^vm1$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-7.*\.iso$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.configure_install.vm2", "vms": "^vm2$"},
+            {"shortname": "^original.unattended_install", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
+            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$"},
         ]
         intertest_setup.graphfull(self.args, self.run_params, tag="1r")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -119,17 +119,17 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["state_vm2"] = "set_provider"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^1rmm.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^root$"},
-            {"shortname": "^1rmm.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "unset_state": "^root$"},
-            {"shortname": "^root.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
-            {"shortname": "^1r1a1.internal.stateless.configure_install.vm1", "vms": "^vm1$"},
-            {"shortname": "^1r1a1.original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-7.*\.iso$"},
-            {"shortname": "^1r1.internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
-            {"shortname": "^root.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
-            {"shortname": "^1r1a1a1.internal.stateless.configure_install.vm2", "vms": "^vm2$"},
-            {"shortname": "^1r1a1a1.original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
-            {"shortname": "^1r1a1.internal.permanent.customize_vm.vm2", "vms": "^vm2$"},
-            {"shortname": "^1r1.internal.permanent.set_provider.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^root$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "unset_state": "^root$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.configure_install.vm1", "vms": "^vm1$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-7.*\.iso$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.configure_install.vm2", "vms": "^vm2$"},
+            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
+            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.permanent.set_provider.vm2", "vms": "^vm2$"},
         ]
         intertest_setup.graphfull(self.args, self.run_params, tag="1r")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -140,13 +140,13 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["state_vm2"] = "root"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^1rmm.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^root$"},
-            {"shortname": "^1rmm.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "unset_state": "^root$"},
-            {"shortname": "^root.internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
-            {"shortname": "^1r1a1.internal.stateless.configure_install.vm1", "vms": "^vm1$"},
-            {"shortname": "^1r1a1.original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-7.*\.iso$"},
-            {"shortname": "^1r1.internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
-            {"shortname": "^1r.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^root$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "unset_state": "^root$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.configure_install.vm1", "vms": "^vm1$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-7.*\.iso$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
         ]
         intertest_setup.graphfull(self.args, self.run_params, tag="1r")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -155,12 +155,12 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1 vm2"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": ".+internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^online_deploy$"},
-            {"shortname": ".+internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^online_with_provider$"},
-            {"shortname": ".+internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^set_provider$"},
-            {"shortname": "^01.internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
-            {"shortname": ".+internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "unset_state": "^online_deploy$"},
-            {"shortname": "^01.internal.permanent.customize_vm.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^online_deploy$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^online_with_provider$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "unset_state": "^set_provider$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$", "unset_state": "^online_deploy$"},
+            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$"},
         ]
         intertest_setup.graphupdate(self.args, self.run_params, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -171,10 +171,10 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["to_state"] = "online_deploy"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": ".+internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^install$"},
-            {"shortname": "01.internal.ephemeral.online_deploy.vm1", "vms": "^vm1$", "get_state": "^customize_vm$"},
-            {"shortname": ".+internal.permanent.customize_vm.vm2", "vms": "^vm2$", "get_state": "^install$"},
-            {"shortname": "01.internal.ephemeral.online_deploy.vm2", "vms": "^vm2$", "get_state": "^customize_vm$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^install$"},
+            {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$", "get_state": "^customize_vm$"},
+            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$", "get_state": "^install$"},
+            {"shortname": "^internal.ephemeral.online_deploy.vm2", "vms": "^vm2$", "get_state": "^customize_vm$"},
         ]
         intertest_setup.graphupdate(self.args, self.run_params, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -186,8 +186,8 @@ class IntertestSetupTest(unittest.TestCase):
         self.args.vm_strs = {"vm2": "only Win10\n"}
 
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^ut.internal.stateless.manage_vms.start.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "set_state": "^windows_online$"},
-            {"shortname": "^ut.internal.permanent.windows_virtuser.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "get_state": "^customize_vm$", "set_state": "^windows_virtuser$"},
+            {"shortname": "^internal.stateless.manage_vms.start.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "set_state": "^windows_online$"},
+            {"shortname": "^internal.permanent.windows_virtuser.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "get_state": "^customize_vm$", "set_state": "^windows_virtuser$"},
         ]
         intertest_setup.windows(self.args, self.run_params, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -195,9 +195,9 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["with_outlook"] = "2013"
 
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^ut.internal.stateless.manage_vms.start.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "set_state": "^windows_online$"},
-            {"shortname": "^ut.internal.permanent.windows_virtuser.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "get_state": "^customize_vm$", "set_state": "^windows_virtuser$"},
-            {"shortname": "^ut.internal.manual.outlook_prep.ol2013.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "get_state": "^windows_online$", "set_state": "^outlook_prep$"},
+            {"shortname": "^internal.stateless.manage_vms.start.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "set_state": "^windows_online$"},
+            {"shortname": "^internal.permanent.windows_virtuser.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "get_state": "^customize_vm$", "set_state": "^windows_virtuser$"},
+            {"shortname": "^internal.manual.outlook_prep.ol2013.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "get_state": "^windows_online$", "set_state": "^outlook_prep$"},
         ]
         intertest_setup.windows(self.args, self.run_params, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -207,7 +207,7 @@ class IntertestSetupTest(unittest.TestCase):
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
 
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^01.internal.manual.develop.generator.vm1", "vms": "^vm1 vm2$"},
+            {"shortname": "^internal.manual.develop.generator.vm1", "vms": "^vm1 vm2$"},
         ]
         intertest_setup.develop(self.args, self.run_params, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -216,10 +216,10 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1 vm2"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^ut.internal.stateless.configure_install.vm1", "vms": "^vm1$"},
-            {"shortname": "^ut.original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-7.*\.iso$"},
-            {"shortname": "^ut.internal.stateless.configure_install.vm2", "vms": "^vm2$"},
-            {"shortname": "^ut.original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
+            {"shortname": "^internal.stateless.configure_install.vm1", "vms": "^vm1$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-7.*\.iso$"},
+            {"shortname": "^internal.stateless.configure_install.vm2", "vms": "^vm2$"},
+            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
         ]
         intertest_setup.install(self.args, self.run_params, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -228,8 +228,8 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1 vm2"
         self.args.vm_strs = {"vm1": "only CentOS\nstateless=yes\n", "vm2": "only Win10\nstateless=yes\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^ut.internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^$", "set_state": "^$"},
-            {"shortname": "^ut.internal.permanent.customize_vm.vm2", "vms": "^vm2$", "get_state": "^$", "set_state": "^$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^$", "set_state": "^$"},
+            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$", "get_state": "^$", "set_state": "^$"},
         ]
         intertest_setup.deploy(self.args, self.run_params, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -238,8 +238,8 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1 vm2"
         self.args.vm_strs = {"vm1": "only CentOS\nstateless=no\n", "vm2": "only Win10\nstateless=no\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^ut.internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^install$", "set_state": "^customize_vm$"},
-            {"shortname": "^ut.internal.permanent.customize_vm.vm2", "vms": "^vm2$", "get_state": "^install$", "set_state": "^customize_vm$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^install$", "set_state": "^customize_vm$"},
+            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$", "get_state": "^install$", "set_state": "^customize_vm$"},
         ]
         intertest_setup.deploy(self.args, self.run_params, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -248,8 +248,8 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1"
         self.args.vm_strs = {"vm1": "only CentOS\nstates=state1 state2\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^ut.internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^state1$", "set_state": "^state1$"},
-            {"shortname": "^ut2.internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^state2$", "set_state": "^state2$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^state1$", "set_state": "^state1$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^state2$", "set_state": "^state2$"},
         ]
         intertest_setup.deploy(self.args, self.run_params, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -258,11 +258,11 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1 vm2"
         self.args.vm_strs = {"vm1": "only CentOS\nstates=state1 state2 state3\n", "vm2": "only Win10\nstates=state1 state3\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^ut.internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^state1$", "set_state": "^state1$"},
-            {"shortname": "^ut2.internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^state2$", "set_state": "^state2$"},
-            {"shortname": "^ut3.internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^state3$", "set_state": "^state3$"},
-            {"shortname": "^ut.internal.permanent.customize_vm.vm2", "vms": "^vm2$", "get_state": "^state1$", "set_state": "^state1$"},
-            {"shortname": "^ut2.internal.permanent.customize_vm.vm2", "vms": "^vm2$", "get_state": "^state3$", "set_state": "^state3$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^state1$", "set_state": "^state1$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^state2$", "set_state": "^state2$"},
+            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$", "get_state": "^state3$", "set_state": "^state3$"},
+            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$", "get_state": "^state1$", "set_state": "^state1$"},
+            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$", "get_state": "^state3$", "set_state": "^state3$"},
         ]
         intertest_setup.deploy(self.args, self.run_params, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -271,7 +271,7 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm2"
         self.args.vm_strs = {"vm2": "only Win10\nnode=set_provider\nstateless=yes\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^ut.internal.permanent.set_provider.vm2", "vms": "^vm2$", "get_state": "^$", "set_state": "^$"},
+            {"shortname": "^internal.permanent.set_provider.vm2", "vms": "^vm2$", "get_state": "^$", "set_state": "^$"},
         ]
         intertest_setup.internal(self.args, self.run_params, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -280,7 +280,7 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm2"
         self.args.vm_strs = {"vm2": "only Win10\nnode=set_provider\nstateless=no\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "ut.internal.permanent.set_provider.vm2", "vms": "^vm2$", "get_state": "^customize_vm$", "set_state": "^set_provider$"},
+            {"shortname": "internal.permanent.set_provider.vm2", "vms": "^vm2$", "get_state": "^customize_vm$", "set_state": "^set_provider$"},
         ]
         intertest_setup.internal(self.args, self.run_params, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -289,8 +289,8 @@ class IntertestSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1 vm2"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^ut.internal.permanent.system_update.vm1", "vms": "^vm1$"},
-            {"shortname": "^ut.internal.permanent.system_update.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.permanent.system_update.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.system_update.vm2", "vms": "^vm2$"},
         ]
         intertest_setup.sysupdate(self.args, self.run_params, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -300,7 +300,7 @@ class IntertestSetupTest(unittest.TestCase):
         self.args.param_str += "vms=vm1 vm2\n"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^01.internal.stateless.manage_vms.start", "start_vm": "^yes$", "vms": "^vm1 vm2$"},
+            {"shortname": "^internal.stateless.manage_vms.start", "start_vm": "^yes$", "vms": "^vm1 vm2$"},
         ]
         intertest_setup.boot(self.args, self.run_params, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -310,7 +310,7 @@ class IntertestSetupTest(unittest.TestCase):
         self.args.param_str += "vms=vm1 vm2\n"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^01.internal.stateless.manage_vms.download", "vms": "^vm1 vm2$"},
+            {"shortname": "^internal.stateless.manage_vms.download", "vms": "^vm1 vm2$"},
         ]
         intertest_setup.download(self.args, self.run_params, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -320,7 +320,7 @@ class IntertestSetupTest(unittest.TestCase):
         self.args.param_str += "vms=vm1 vm2\n"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^01.internal.stateless.manage_vms.upload", "vms": "^vm1 vm2$"},
+            {"shortname": "^internal.stateless.manage_vms.upload", "vms": "^vm1 vm2$"},
         ]
         intertest_setup.upload(self.args, self.run_params, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -330,7 +330,7 @@ class IntertestSetupTest(unittest.TestCase):
         self.args.param_str += "vms=vm1 vm2\n"
         self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^01.internal.stateless.manage_vms.stop", "vms": "^vm1 vm2$"},
+            {"shortname": "^internal.stateless.manage_vms.stop", "vms": "^vm1 vm2$"},
         ]
         intertest_setup.shutdown(self.args, self.run_params, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -340,7 +340,7 @@ class IntertestSetupTest(unittest.TestCase):
         self.args.vm_strs = {"vm2": "only Win10\n"}
         for state_action in ["check", "pop", "push", "get", "set", "unset"]:
             DummyTestRunning.asserted_tests = [
-                {"shortname": ".*internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$",
+                {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$",
                  "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
             ]
             setup_func = getattr(intertest_setup, state_action)
@@ -348,7 +348,7 @@ class IntertestSetupTest(unittest.TestCase):
 
         for state_action in ["create", "clean"]:
             DummyTestRunning.asserted_tests = [
-                {"shortname": "^5m.internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$",
+                {"shortname": "^internal.stateless.manage_vms.unchanged.vm2", "vms": "^vm2$",
                  "skip_image_processing": "^yes$", "vm_action": "^set$" if state_action == "create" else "^unset$",
                  "set_state": "^root$", "unset_state": "^root$"},
             ]

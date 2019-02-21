@@ -48,6 +48,10 @@ class TestObject(object):
         return param.peek(self.parser)
     params = property(fget=params)
 
+    def id(self):
+        return self.name
+    id = property(fget=id)
+
     def __init__(self, name, parser):
         """
         Construct a test object (vm) for any test nodes (tests).
@@ -86,9 +90,13 @@ class TestNode(object):
         return self._params_cache
     params = property(fget=params)
 
+    def id(self):
+        return self.name + "-" + self.params["vms"].replace(" ", "")
+    id = property(fget=id)
+
     def count(self):
         """Node count property."""
-        return self.params["shortname"].split(".")[0]
+        return self.name
     count = property(fget=count)
 
     def __init__(self, name, parser, objects):
@@ -129,20 +137,20 @@ class TestNode(object):
         :return: test class and constructor parameters
         :rtype: (type, {str, obj})
         """
-        test_constructor_params = {'name': test.TestID(self.name, self.params["shortname"]),
+        test_constructor_params = {'name': test.TestID(self.id, self.params["shortname"]),
                                    'vt_params': self.params}
         if job is not None:
             test_constructor_params['job'] = job
             test_constructor_params['base_logdir'] = job.logdir
         return (VirtTest, test_constructor_params)
 
-    def is_root(self):
+    def is_shared_root(self):
         """Check if the test node is the root of all test nodes for all test objects."""
-        return self.name == "root"
+        return self.name == "root" and len(self.objects) == 0
 
     def is_object_root(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.name == self.params["vms"]
+        return self.name == "root" and self.id == self.params["vms"]
 
     def is_ephemeral(self):
         """
@@ -311,7 +319,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         """Test objects dictionary property."""
         objects = {}
         for test_object in self._testobjects:
-            objects[test_object.name] = test_object.params["shortname"]
+            objects[test_object.id] = test_object.params["shortname"]
         return objects
     test_objects = property(fget=test_objects)
 
@@ -319,7 +327,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         """Test nodes dictionary property."""
         nodes = {}
         for test_node in self._testnodes:
-            nodes[test_node.name] = test_node.params["shortname"]
+            nodes[test_node.id] = test_node.params["shortname"]
         return nodes
     test_nodes = property(fget=test_nodes)
 
@@ -370,9 +378,9 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         """
         with open(os.path.join(self.job.logdir, filename), "r") as f:
             str_list = f.read()
-        setup_list = re.findall("(\w+) (\d) (\d)", str_list)
+        setup_list = re.findall("(\w+-\w+) (\d) (\d)", str_list)
         for i in range(len(setup_list)):
-            assert self._testnodes[i].name == setup_list[i][0], "Corrupted setup list file"
+            assert self._testnodes[i].id == setup_list[i][0], "Corrupted setup list file"
             self._testnodes[i].should_run = bool(int(setup_list[i][1]))
             self._testnodes[i].should_clean = bool(int(setup_list[i][2]))
 
@@ -386,7 +394,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         for test in self._testnodes:
             should_run = 1 if test.should_run else 0
             should_clean = 1 if test.should_clean else 0
-            str_list += "%s %i %i\n" % (test.name, should_run, should_clean)
+            str_list += "%s %i %i\n" % (test.id, should_run, should_clean)
         with open(os.path.join(self.job.logdir, filename), "w") as f:
             f.write(str_list)
 
@@ -422,13 +430,13 @@ class CartesianGraph(VirtTestLoader, TestRunner):
 
         graph = Digraph('cartesian_graph', format='svg')
         for tnode in self._testnodes:
-            graph.node(tnode.name)
+            graph.node(tnode.id)
             for snode in tnode.setup_nodes:
-                graph.node(snode.name)
-                graph.edge(tnode.name, snode.name)
+                graph.node(snode.id)
+                graph.edge(tnode.id, snode.id)
             for cnode in tnode.cleanup_nodes:
-                graph.node(cnode.name)
-                graph.edge(tnode.name, cnode.name)
+                graph.node(cnode.id)
+                graph.edge(tnode.id, cnode.id)
         graph.render("%s/cg_%s_%s" % (dump_dir, id(self), n))
 
     """parsing functionality"""
@@ -540,7 +548,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
             setup_dict = {}
             if len(objects) > 1:
                 setup_dict = utils_params.merge_object_params(objnames, objdicts, "vms", base_object.name)
-            setup_str = param.re_str(d["name"], nodes_str, tag=name)
+            setup_str = param.re_str(d["name"], nodes_str)
             try:
                 # combine object configurations
                 parser = param.update_parser(base_object.parser, ovrwrt_dict=setup_dict)
@@ -549,7 +557,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                                              ovrwrt_file=param.tests_ovrwrt_file,
                                              ovrwrt_base_file="sets.cfg",
                                              show_dictionaries=verbose)
-                test_nodes.append(TestNode(name + d["vms"].replace(" ", ""), parser, objects))
+                test_nodes.append(TestNode(name, parser, objects))
                 logging.debug("Parsed a test '%s' with base configuration of %s",
                               d["shortname"], base_object.name)
             except param.EmptyCartesianProduct:
@@ -639,7 +647,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                                          objectless=objectless, verbose=verbose)
         self._testnodes.extend(leaves)
         # NOTE: reversing here turns the leaves into a simple stack
-        unresolved = sorted(list(leaves), key=lambda x: int(re.match("^(\d+)", x.name).group(1)), reverse=True)
+        unresolved = sorted(list(leaves), key=lambda x: int(re.match("^(\d+)", x.id).group(1)), reverse=True)
 
         if logging.getLogger('graph').level <= logging.DEBUG:
             parse_dir = os.path.join(self.job.logdir, "graph_parse")
@@ -721,15 +729,18 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                                                              param_str, tag, True),
                                      ovrwrt_base_file="sets.cfg",
                                      ovrwrt_file=param.tests_ovrwrt_file)
-        self.run_test_node(TestNode(object_name + ".create", parser, [test_object]))
+        self.run_test_node(TestNode("create", parser, [test_object]))
 
-    def run_remove_test(self, object_name, param_str, tag=""):
+    def run_remove_test(self, object_name, param_str, tag="", antitag=""):
         """
         Run the set of tests necessary for removing a given test object.
 
         :param str object_name: name of the test object to be removed
         :param str param_str: block of command line parameters
         :param str tag: extra name identifier for the test to be run
+        :param str antitag: remove tag to be derived from the test node this node reverses
+
+        .. note:: Remove tests are not equivalent to create tests which are run only once.
         """
         objects = self._get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
@@ -747,7 +758,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                                                              setup_str, tag, True),
                                      ovrwrt_base_file="sets.cfg",
                                      ovrwrt_file=param.tests_ovrwrt_file)
-        self.run_test_node(TestNode(object_name + ".remove", parser, [test_object]))
+        self.run_test_node(TestNode("c" + antitag, parser, [test_object]))
 
     def run_install_test(self, object_name, param_str, tag=""):
         """
@@ -769,7 +780,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                                      ovrwrt_file=param.tests_ovrwrt_file)
         # some parameters from the install configuration have to be used for decision about install tests
         install_params = param.peek(param.copy_parser(parser))
-        status = self.run_test_node(TestNode(object_name + ".configure_install", parser, [test_object]))
+        status = self.run_test_node(TestNode("preinstall", parser, [test_object]))
 
         if status:
             logging.info("Installing virtual machine %s", test_object.name)
@@ -789,7 +800,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                                          ovrwrt_str=ovrwrt_str,
                                          ovrwrt_base_file="sets.cfg",
                                          ovrwrt_file=param.tests_ovrwrt_file)
-            self.run_test_node(TestNode(object_name + ".install", parser, [test_object]))
+            self.run_test_node(TestNode("install", parser, [test_object]))
 
     def run_test_node(self, node):
         """
@@ -1131,7 +1142,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         for i, d in enumerate(root_parser.get_dicts()):
             logging.debug("Reached %s root %s", object_name, d["shortname"])
             assert i < 1, "There can only be one root for %s" % object_name
-        return [TestNode(test_object.name, root_parser, [test_object])]
+        return [TestNode("root", root_parser, [test_object])]
 
     def _get_and_parse_parent(self, test_node, test_object, param_str, setup_restr):
         """
@@ -1148,8 +1159,8 @@ class CartesianGraph(VirtTestLoader, TestRunner):
             if setup_restr == "root":
                 parse_parents = self._parse_object_root(test_object.name, param_str)
             else:
-                setup_str = param.re_str(setup_restr, param_str, "", objectless=True)
-                name = re.sub("(%s)" % "|".join([t.name for t in self._testobjects]), "", test_node.name) + "a"
+                setup_str = param.re_str(setup_restr, param_str, objectless=True)
+                name = test_node.name + "a"
                 parse_parents = self.parse_nodes(setup_str, prefix=name, object_name=test_object.name)
             parents = parse_parents
         else:
@@ -1184,14 +1195,14 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         if setup_restr == "root":
             new_parents = self._parse_object_root(test_object.name, param_str)
         else:
-            setup_str = param.re_str(setup_restr, param_str, "", objectless=True)
-            name = re.sub("(%s)" % "|".join([t.name for t in self._testobjects]), "", test_node.name) + "a"
+            setup_str = param.re_str(setup_restr, param_str, objectless=True)
+            name = test_node.name + "a"
             new_parents = self.parse_nodes(setup_str, prefix=name, object_name=test_object.name)
         for new_parent in new_parents:
             # BUG: a good way to get a variant valid test name was to use
             # re.sub("^(.+\.)*(all|none|minimal)\.", "", NAME)
             # but this regex performs extremely slow (much slower than string replacement)
-            parent_name = ".".join(new_parent.params["name"].split(".")[2:])
+            parent_name = ".".join(new_parent.params["name"].split(".")[1:])
             old_parents = self._get_nodes_by("name", "(\.|^)%s(\.|$)" % parent_name,
                                              subset=self._get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
             assert len(old_parents) <= 1, "Full name parsing must give a unique '%s' test" % parent_name
@@ -1220,12 +1231,9 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                 logging.debug("Duplicating test node %s for another parent %s",
                               child.params["shortname"], parents[i].params["shortname"])
 
-                clone_variant = ".".join(child.params["name"].split(".")[1:])
-                clone_name = re.sub("vm\d+", "", child.name) + "b"
-                clone_name += str(i+1) + child.params["vms"].replace(" ", "")
-                clone_str = param.re_str(clone_variant, tag=clone_name)
-                # TODO: I am still not completely satisfied with the tagging system -
-                # here it leaves a small residue which is the previous test tag
+                clone_variant = child.params["name"]
+                clone_name = child.name + "b" + str(i+1)
+                clone_str = param.re_str(clone_variant)
                 parser = param.update_parser(child.parser,
                                              ovrwrt_str=clone_str)
 
@@ -1260,7 +1268,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                     break
 
         if test_node.should_run:
-            if test_node.is_root():
+            if test_node.is_shared_root():
                 logging.debug("Test run started from the shared root")
 
             # the primary setup nodes need special treatment
@@ -1268,10 +1276,9 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                 setup_str = param_str
                 if test_node.params["set_state"] == "root":
                     setup_str += param.dict_to_str({"set_state": "root", "set_type": "offline"})
-                    self.run_create_test(test_node.params.get("vms", ""), setup_str, tag="root")
+                    self.run_create_test(test_node.params.get("vms", ""), setup_str)
                 elif test_node.params["set_state"] == "install":
-                    setup_tag = re.sub("(%s)" % "|".join([t.name for t in self._testobjects]), "", test_node.name)
-                    self.run_install_test(test_node.params.get("vms", ""), setup_str, tag=setup_tag)
+                    self.run_install_test(test_node.params.get("vms", ""), setup_str)
 
             else:
                 # finally, good old running of an actual test
@@ -1292,7 +1299,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         by default but the states can be removed with "unset_mode=f.").
         """
         if test_node.should_clean:
-            if test_node.is_root():
+            if test_node.is_shared_root():
                 logging.debug("Test run ended at the shared root")
             else:
                 for vm_name in test_node.params.objects("vms"):
@@ -1305,6 +1312,6 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                         setup_str = param_str + param.dict_to_str({"unset_state": vm_params["set_state"],
                                                                    "unset_type": vm_params.get("set_type", "offline"),
                                                                    "unset_mode": vm_params.get("unset_mode", "ri")})
-                        self.run_remove_test(vm_name, setup_str, tag="c" + vm_name + test_node.name)
+                        self.run_remove_test(vm_name, setup_str, antitag=test_node.name)
         else:
             logging.debug("The test %s doesn't leave any states to be cleaned up", test_node.params["shortname"])
