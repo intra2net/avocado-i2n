@@ -60,7 +60,8 @@ def mock_check_state(params, env, print_pos=True, print_neg=True):
 
 @mock.patch('avocado_i2n.cartesian_graph.state_setup.check_state', mock_check_state)
 @mock.patch.object(CartesianGraph, 'run_test_node', mock_run_test_node)
-class CartesianTreesTest(unittest.TestCase):
+@mock.patch.object(CartesianGraph, 'load_setup_list', mock.MagicMock())
+class CartesianGraphTest(unittest.TestCase):
 
     def setUp(self):
         DummyTestRunning.asserted_tests = []
@@ -75,8 +76,11 @@ class CartesianTreesTest(unittest.TestCase):
         self.prefix = ""
         self.main_vm = ""
 
-        self.trees = CartesianGraph(self.args, {})
-        self.job = None
+        self.trees = CartesianGraph(args=self.args, extra_params={})
+        self.job = mock.MagicMock()
+        self.job.logdir = "."
+        self.result = mock.MagicMock()
+        self.trees = CartesianGraph(job=self.job, result=self.result)
 
     def tearDown(self):
         shutil.rmtree("./graph_parse", ignore_errors=True)
@@ -110,6 +114,7 @@ class CartesianTreesTest(unittest.TestCase):
         self.args.tests_str += "only tutorial1\n"
         self.trees.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
         DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.scan_dependencies.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
             {"shortname": "^internal.stateless.configure_install.vm1", "vms": "^vm1$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
@@ -117,7 +122,7 @@ class CartesianTreesTest(unittest.TestCase):
             {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 6
+        DummyTestRunning.fail_switch = [False] * 7
         self.trees.run_tests(self.args.param_str)
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -127,12 +132,13 @@ class CartesianTreesTest(unittest.TestCase):
         DummyStateCheck.present_states = ["root", "install"]
         self.trees.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.scan_dependencies.vm1", "vms": "^vm1$"},
             # cleanup is expected only if at least one of the states is reusable (here root+install)
             {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 3
+        DummyTestRunning.fail_switch = [False] * 4
         self.trees.run_tests(self.args.param_str)
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -142,18 +148,23 @@ class CartesianTreesTest(unittest.TestCase):
         DummyStateCheck.present_states = ["install", "customize_vm"]
         self.trees.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.scan_dependencies.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
             {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 3
+        DummyTestRunning.fail_switch = [False] * 4
         self.trees.run_tests(self.args.param_str)
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_two_objects_without_setup(self):
         self.args.tests_str += "only tutorial3\n"
         self.trees.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
+        DummyStateCheck.present_states = []
+        self.trees.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.scan_dependencies.vm1", "vms": "^vm1 vm2$"},
+
             {"shortname": "^internal.stateless.manage_vms.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
             {"shortname": "^internal.stateless.configure_install.vm1", "vms": "^vm1$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
@@ -168,7 +179,7 @@ class CartesianTreesTest(unittest.TestCase):
             {"shortname": "^internal.ephemeral.online_deploy.vm2", "vms": "^vm2$"},
             {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 12
+        DummyTestRunning.fail_switch = [False] * 13
         self.trees.run_tests(self.args.param_str)
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -178,12 +189,13 @@ class CartesianTreesTest(unittest.TestCase):
         DummyStateCheck.present_states = ["root", "install", "customize_vm"]
         self.trees.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.scan_dependencies.vm1", "vms": "^vm1 vm2$"},
             {"shortname": "^internal.permanent.set_provider.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.ephemeral.online_with_provider.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.ephemeral.online_deploy.vm2", "vms": "^vm2$"},
             {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 4
+        DummyTestRunning.fail_switch = [False] * 5
         self.trees.run_tests(self.args.param_str)
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -194,11 +206,12 @@ class CartesianTreesTest(unittest.TestCase):
         DummyStateCheck.present_states = ["root", "install"]
         self.trees.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.scan_dependencies.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 2
-        DummyTestRunning.fail_switch[1] = True
+        DummyTestRunning.fail_switch = [False] * 3
+        DummyTestRunning.fail_switch[2] = True
         with self.assertRaises(exceptions.TestSkipError):
             self.trees.run_tests(self.args.param_str)
 

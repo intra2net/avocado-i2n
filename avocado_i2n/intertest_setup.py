@@ -255,7 +255,8 @@ def graphfull(args, run_params, tag=""):
             create_graph.parse_object_trees(args.param_str, param.re_str(vm_params.get("state", "customize_vm")),
                                             {vm_name: args.vm_strs[vm_name]},
                                             prefix=tag, object_names=vm_name, objectless=True)
-            create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=True)
+            create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=False)
+            create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=True, skip_shared_root=True)
 
             # NOTE: this makes sure that any present states are overwritten and no created
             # states are removed, skipping any state restoring for better performance
@@ -297,9 +298,8 @@ def graphupdate(args, run_params, tag=""):
             remove_graph.parse_object_trees(args.param_str + param.dict_to_str({"unset_mode": "fi"}),
                                             param.re_str(vm_params.get("remove_set", "all")), args.vm_strs,
                                             prefix=tag, object_names=vm_name, objectless=False, verbose=False)
-            for object_name in remove_graph.test_objects.keys():
-                remove_graph.flag_children("root", object_name, flag_type="run", flag=False)
-                remove_graph.flag_children("root", object_name, flag_type="clean", flag=False)
+            remove_graph.flag_children(flag_type="run", flag=False)
+            remove_graph.flag_children(flag_type="clean", flag=False)
             remove_graph.flag_children(vm_params.get("to_state", "customize_vm"), vm_name,
                                        flag_type="clean", flag=True, skip_roots=True)
             remove_graph.run_tests(args.param_str)
@@ -312,7 +312,8 @@ def graphupdate(args, run_params, tag=""):
                                             {vm_name: args.vm_strs[vm_name]}, prefix=tag,
                                             object_names=vm_name, objectless=True)
             update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=False)
-            update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=True, skip_roots=True)
+            update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=True,
+                                                  skip_object_roots=True, skip_shared_root=True)
 
             logging.info("Preserving all states before '%s'", vm_params.get("from_state", "customize_vm"))
             if vm_params.get("from_state", "install") != "root":

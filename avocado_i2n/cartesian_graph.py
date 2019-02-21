@@ -682,15 +682,23 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                     step += 1
                     self.visualize(parse_dir, step)
 
+        # finally build the shared root node from used test objects (roots)
+        root_parser = param.prepare_parser(base_dict={"set_state": ""},
+                                           base_file='guest-base.cfg')
+        root = TestNode("root", root_parser, [])
         used_objects = []
         for test_object in self._testobjects:
             object_nodes = self._get_nodes_by("vms", "^"+test_object.name+"$")
             object_roots = self._get_nodes_by("name", "(\.|^)root(\.|$)", subset=object_nodes)
             if len(object_roots) > 0:
                 used_objects.append(test_object)
+                root_for_object = object_roots[0]
+                root_for_object.setup_nodes.append(root)
+                root.cleanup_nodes.append(root_for_object)
         self._testobjects[:] = used_objects
         if verbose:
             logging.info("%s final vm variant(s)", len(self._testobjects))
+        self._testnodes.append(root)
 
     def discover(self, references, _which_tests=None):
         """
@@ -711,6 +719,31 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         return [n.get_test_factory() for n in self._testnodes]
 
     """test running functionality"""
+    def run_root_test(self, param_str, tag=""):
+        """
+        Run the set of tests necessary for starting test traversal.
+
+        :param str param_str: block of command line parameters
+        :param str tag: extra name identifier for the test to be run
+        """
+        # HACK: pass the constructed graph to the test using static attribute hack
+        # since there is absolutely no sane way to pass through the cloud of imports
+        # before executing a VT test (could be improved later on)
+        CartesianGraph.REFERENCE = self
+
+        objects = sorted(self.test_objects.keys())
+        setup_dict = {"abort_on_error": "yes", "set_state_on_error": "",
+                      "vms": " ".join(objects),
+                      "main_vm": objects[0]}
+        setup_str = param.dict_to_str(setup_dict)
+        nodes = self.parse_nodes(param.re_str("scan_dependencies", setup_str, objectless=True),
+                                 prefix="0m0s")
+        self.run_test_node(TestNode("scan", nodes[0].parser, []))
+
+        self.load_setup_list()
+        for node in self._testnodes:
+            self.result.cancelled += 1 if not node.should_run else 0
+
     def run_create_test(self, object_name, param_str, tag=""):
         """
         Run the set of tests necessary for creating a given test object.
@@ -833,14 +866,9 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         Of course all possible children are restricted by the user-defined "only" and
         the number of internal test nodes is minimized for achieving this goal.
         """
-        root_parser = param.prepare_parser(base_dict={"set_state": ""}, base_file='guest-base.cfg')
-        root = TestNode("root", root_parser, [])
-        for test_object in self._testobjects:
-            object_nodes = self._get_nodes_by("vms", "^"+test_object.name+"$")
-            object_roots = self._get_nodes_by("name", "(\.|^)root(\.|$)", subset=object_nodes)
-            root_for_object = object_roots[0]
-            root_for_object.setup_nodes.append(root)
-            root.cleanup_nodes.append(root_for_object)
+        shared_roots = self._get_nodes_by("name", "^$")
+        assert len(shared_roots) == 1, "There can be only exactly one root node"
+        root = shared_roots[0]
 
         if logging.getLogger('graph').level <= logging.DEBUG:
             traverse_dir = os.path.join(self.job.logdir, "graph_traverse")
@@ -930,23 +958,6 @@ class CartesianGraph(VirtTestLoader, TestRunner):
             self.job.sysinfo.start_job_hook()
         param_str = self.args.param_str
 
-        # HACK: pass the constructed graph to the test using static attribute hack
-        # since there is absolutely no sane way to pass through the cloud of imports
-        # and circular references that autotest is doing before executing a test!
-        CartesianGraph.REFERENCE = self
-
-        objects = sorted(self.test_objects.keys())
-        setup_dict = {"abort_on_error": "yes", "set_state_on_error": "",
-                      "vms": " ".join(objects),
-                      "main_vm": objects[0]}
-        setup_str = param.dict_to_str(setup_dict)
-        nodes = self.parse_nodes(param.re_str("scan_dependencies", setup_str, objectless=True),
-                                 prefix="0m0s")
-        self.run_test_node(TestNode("scan", nodes[0].parser, []))
-        self.load_setup_list()
-        for node in self._testnodes:
-            self.result.cancelled += 1 if not node.should_run else 0
-
         try:
             self.visualize(self.job.logdir)
             self.run_tests(param_str)
@@ -1024,13 +1035,16 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                 if is_state_detected:
                     test_node.should_run = False
 
-    def flag_children(self, state_name, object_name, flag_type="run", flag=True, skip_roots=False):
+    def flag_children(self, state_name=None, object_name=None, flag_type="run", flag=True,
+                      skip_roots=False):
         """
         Set the run/clean flag for all children of a node, whose `set_state`
         parameter is specified by the `state_name` argument.
 
-        :param str state_name: state which is set by the parent node
-        :param str object_name: test object whose state is set
+        :param state_name: state which is set by the parent node or root if None
+        :type state_name: str or None
+        :param object_name: test object whose state is set or shared root if None
+        :type object_name: str or None
         :param str flag_type: 'run' or 'clean' categorization of the children
         :param bool flag: whether the run/clean action should be executed or not
         :param bool skip_roots: whether the roots should not be flagged as well
@@ -1038,10 +1052,14 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         """
         activity = ("" if flag else "not ") + ("running" if flag_type == "run" else "cleanup")
         logging.debug("Selecting test nodes for %s", activity)
-        root_tests = self._get_nodes_by(param_key="set_state", param_val="^"+state_name+"$")
-        root_tests = self._get_nodes_by(param_key="vms",
-                                        param_val="(^|\s)%s($|\s)" % object_name,
-                                        subset=root_tests)
+        if object_name is not None:
+            state_name = "root" if state_name is None else state_name
+            root_tests = self._get_nodes_by(param_key="set_state", param_val="^"+state_name+"$")
+            root_tests = self._get_nodes_by(param_key="vms",
+                                            param_val="(^|\s)%s($|\s)" % object_name,
+                                            subset=root_tests)
+        else:
+            root_tests = self._get_nodes_by("name", "^$")
         if len(root_tests) < 1:
             raise AssertionError("Could not retrieve state %s and flag all its children tests" % state_name)
         elif len(root_tests) > 1:
@@ -1062,7 +1080,8 @@ class CartesianGraph(VirtTestLoader, TestRunner):
             else:
                 test_node.should_clean = flag
 
-    def flag_parent_intersection(self, graph, flag_type="run", flag=True, skip_roots=False):
+    def flag_parent_intersection(self, graph, flag_type="run", flag=True,
+                                 skip_object_roots=False, skip_shared_root=False):
         """
         Intersect the test nodes with the test nodes from another graph and
         set a run/clean flag for each one in the intersection.
@@ -1071,7 +1090,8 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         :type graph: CartesianGraph object
         :param str flag_type: 'run' or 'clean' categorization of the children
         :param bool flag: whether the run/clean action should be executed or not
-        :param bool skip_roots: whether the roots should not be flagged as well
+        :param bool skip_object_roots: whether the object roots should not be flagged as well
+        :param bool skip_shared_root: whether the shared root should not be flagged as well
 
         .. note:: This method only works with reusable tests, due to current lack
             of proper test identification. It is generally meant for identifying
@@ -1080,9 +1100,13 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         activity = ("" if flag else "not ") + ("running" if flag_type == "run" else "cleanup")
         logging.debug("Selecting test nodes for %s", activity)
         for test_node in self._testnodes:
-            if len(graph._get_nodes_by(param_key="set_state",
-                                       param_val="^"+test_node.params["set_state"]+"$")) == 1:
-                if test_node.params["set_state"] == "root" and skip_roots:
+            if test_node.is_shared_root() or len(graph._get_nodes_by(param_key="set_state",
+                    param_val="^"+test_node.params["set_state"]+"$")) == 1:
+                if test_node.is_shared_root() and skip_shared_root:
+                    logging.info("Skip flag for shared root")
+                    continue
+                if test_node.is_object_root() and skip_object_roots:
+                    logging.info("Skip flag for object root")
                     continue
                 logging.debug("The test %s is set for %s.", test_node.params["shortname"], activity)
                 if flag_type == "run":
@@ -1272,6 +1296,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         if test_node.should_run:
             if test_node.is_shared_root():
                 logging.debug("Test run started from the shared root")
+                self.run_root_test(param_str)
 
             # the primary setup nodes need special treatment
             elif test_node.params.get("set_state") in ["install", "root"]:
