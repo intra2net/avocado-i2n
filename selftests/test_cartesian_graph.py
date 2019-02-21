@@ -123,7 +123,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 7
-        self.trees.run_tests(self.args.param_str)
+        self.trees.run_traversal(self.args.param_str)
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_one_leaf_with_path_setup(self):
@@ -139,7 +139,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 4
-        self.trees.run_tests(self.args.param_str)
+        self.trees.run_traversal(self.args.param_str)
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_one_leaf_with_step_setup(self):
@@ -154,7 +154,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 4
-        self.trees.run_tests(self.args.param_str)
+        self.trees.run_traversal(self.args.param_str)
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_two_objects_without_setup(self):
@@ -180,7 +180,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * 13
-        self.trees.run_tests(self.args.param_str)
+        self.trees.run_traversal(self.args.param_str)
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_two_objects_with_setup(self):
@@ -196,7 +196,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * 5
-        self.trees.run_tests(self.args.param_str)
+        self.trees.run_traversal(self.args.param_str)
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_abort_run(self):
@@ -213,7 +213,7 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.fail_switch = [False] * 3
         DummyTestRunning.fail_switch[2] = True
         with self.assertRaises(exceptions.TestSkipError):
-            self.trees.run_tests(self.args.param_str)
+            self.trees.run_traversal(self.args.param_str)
 
     def test_trees_difference_zero(self):
         self.args.tests_str = "only none\n"
@@ -221,7 +221,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.main_vm = "vm1"
         self.trees.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm, objectless=True)
         self.trees.flag_parent_intersection(self.trees, flag_type="run", flag=False)
-        self.trees.run_tests(self.args.param_str)
+        self.trees.run_traversal(self.args.param_str)
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_trees_difference(self):
@@ -241,7 +241,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.permanent.set_provider.vm2", "vms": "^vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * 2
-        self.trees.run_tests(self.args.param_str)
+        self.trees.run_traversal(self.args.param_str)
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
 

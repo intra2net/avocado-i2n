@@ -262,7 +262,7 @@ def graphfull(args, run_params, tag=""):
             # states are removed, skipping any state restoring for better performance
             setup_str = args.param_str + param.dict_to_str({"force_create": "yes", "get_mode": "ia",
                                                             "set_mode": "ff", "unset_mode": "ra"})
-            create_graph.run_tests(setup_str)
+            create_graph.run_traversal(setup_str)
 
 
 def graphupdate(args, run_params, tag=""):
@@ -302,7 +302,7 @@ def graphupdate(args, run_params, tag=""):
             remove_graph.flag_children(flag_type="clean", flag=False)
             remove_graph.flag_children(vm_params.get("to_state", "customize_vm"), vm_name,
                                        flag_type="clean", flag=True, skip_roots=True)
-            remove_graph.run_tests(args.param_str)
+            remove_graph.run_traversal(args.param_str)
 
         update_graph = CartesianGraph(args, {})
         with job_augmented_graph(update_graph):
@@ -326,7 +326,7 @@ def graphupdate(args, run_params, tag=""):
             # NOTE: this makes sure that no new states are created and the updated
             # states are not removed, aborting in any other case
             setup_str = args.param_str + param.dict_to_str({"get_mode": "ra", "set_mode": "fa", "unset_mode": "ra"})
-            update_graph.run_tests(setup_str)
+            update_graph.run_traversal(setup_str)
 
 
 def run(args, run_params, tag=""):
@@ -478,7 +478,7 @@ def install(args, run_params, tag=""):
                              objectless=True)
     for vm_name in sorted(graph.test_objects.keys()):
         with job_augmented_graph(graph):
-            graph.run_install_test(vm_name, args.param_str)
+            graph.run_install_node(vm_name, args.param_str)
 
 
 def deploy(args, run_params, tag=""):

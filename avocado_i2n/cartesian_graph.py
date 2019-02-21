@@ -719,7 +719,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         return [n.get_test_factory() for n in self._testnodes]
 
     """test running functionality"""
-    def run_root_test(self, param_str, tag=""):
+    def run_root_node(self, param_str, tag=""):
         """
         Run the set of tests necessary for starting test traversal.
 
@@ -744,7 +744,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         for node in self._testnodes:
             self.result.cancelled += 1 if not node.should_run else 0
 
-    def run_create_test(self, object_name, param_str, tag=""):
+    def run_create_node(self, object_name, param_str, tag=""):
         """
         Run the set of tests necessary for creating a given test object.
 
@@ -764,16 +764,14 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                                      ovrwrt_file=param.tests_ovrwrt_file)
         self.run_test_node(TestNode("create", parser, [test_object]))
 
-    def run_remove_test(self, object_name, param_str, tag="", antitag=""):
+    def run_reverse_node(self, object_name, param_str, tag="", antitag=""):
         """
-        Run the set of tests necessary for removing a given test object.
+        Run the set of tests necessary for removing a given state (reversing a test node).
 
         :param str object_name: name of the test object to be removed
         :param str param_str: block of command line parameters
         :param str tag: extra name identifier for the test to be run
         :param str antitag: remove tag to be derived from the test node this node reverses
-
-        .. note:: Remove tests are not equivalent to create tests which are run only once.
         """
         objects = self._get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
@@ -793,7 +791,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                                      ovrwrt_file=param.tests_ovrwrt_file)
         self.run_test_node(TestNode("c" + antitag, parser, [test_object]))
 
-    def run_install_test(self, object_name, param_str, tag=""):
+    def run_install_node(self, object_name, param_str, tag=""):
         """
         Run the set of tests necessary for installing a given test object.
 
@@ -849,7 +847,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         """
         return self.run_test(node.get_test_factory(self.job), SimpleQueue(), set())
 
-    def run_tests(self, param_str):
+    def run_traversal(self, param_str):
         """
         Run all user and system defined tests optimizing the setup reuse and
         minimizing the repetition of demanded tests.
@@ -960,7 +958,7 @@ class CartesianGraph(VirtTestLoader, TestRunner):
 
         try:
             self.visualize(self.job.logdir)
-            self.run_tests(param_str)
+            self.run_traversal(param_str)
         except KeyboardInterrupt:
             TEST_LOG.error('Job interrupted by ctrl+c.')
             summary.add('INTERRUPTED')
@@ -1296,16 +1294,16 @@ class CartesianGraph(VirtTestLoader, TestRunner):
         if test_node.should_run:
             if test_node.is_shared_root():
                 logging.debug("Test run started from the shared root")
-                self.run_root_test(param_str)
+                self.run_root_node(param_str)
 
             # the primary setup nodes need special treatment
             elif test_node.params.get("set_state") in ["install", "root"]:
                 setup_str = param_str
                 if test_node.params["set_state"] == "root":
                     setup_str += param.dict_to_str({"set_state": "root", "set_type": "offline"})
-                    self.run_create_test(test_node.params.get("vms", ""), setup_str)
+                    self.run_create_node(test_node.params.get("vms", ""), setup_str)
                 elif test_node.params["set_state"] == "install":
-                    self.run_install_test(test_node.params.get("vms", ""), setup_str)
+                    self.run_install_node(test_node.params.get("vms", ""), setup_str)
 
             else:
                 # finally, good old running of an actual test
@@ -1339,6 +1337,6 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                         setup_str = param_str + param.dict_to_str({"unset_state": vm_params["set_state"],
                                                                    "unset_type": vm_params.get("set_type", "offline"),
                                                                    "unset_mode": vm_params.get("unset_mode", "ri")})
-                        self.run_remove_test(vm_name, setup_str, antitag=test_node.name)
+                        self.run_reverse_node(vm_name, setup_str, antitag=test_node.name)
         else:
             logging.debug("The test %s doesn't leave any states to be cleaned up", test_node.params["shortname"])
