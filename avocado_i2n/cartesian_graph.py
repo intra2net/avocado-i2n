@@ -944,6 +944,8 @@ class CartesianGraph(VirtTestLoader, TestRunner):
                                  prefix="0m0s")
         self.run_test_node(TestNode("scan", nodes[0].parser, []))
         self.load_setup_list()
+        for node in self._testnodes:
+            self.result.cancelled += 1 if not node.should_run else 0
 
         try:
             self.visualize(self.job.logdir)
