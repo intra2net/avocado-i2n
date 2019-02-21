@@ -10,7 +10,7 @@ from virttest import utils_params
 
 import unittest_importer
 from avocado_i2n import intertest_setup
-from avocado_i2n.cartesian_graph import CartesianGraph, TestNode
+from avocado_i2n.runner import CartesianRunner
 
 
 class DummyTestRunning(object):
@@ -36,17 +36,17 @@ class DummyTestRunning(object):
 
 
 @contextlib.contextmanager
-def job_augmented_graph(graph):
+def new_job(args):
     # jobless run delegation - simply pass to another mock function
-    yield graph
+    yield mock.MagicMock()
 
 
 def mock_run_test_node(_self, node):
     return DummyTestRunning(node)
 
 
-@mock.patch('avocado_i2n.intertest_setup.job_augmented_graph', job_augmented_graph)
-@mock.patch.object(CartesianGraph, 'run_test_node', mock_run_test_node)
+@mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
+@mock.patch.object(CartesianRunner, 'run_test_node', mock_run_test_node)
 class IntertestSetupTest(unittest.TestCase):
 
     def setUp(self):

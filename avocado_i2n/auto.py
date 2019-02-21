@@ -7,7 +7,8 @@ from avocado.core.output import LOG_JOB as log
 from avocado.core.plugin_interfaces import CLI
 
 from . import cmd_parser
-from .cartesian_graph import CartesianGraph
+from .loader import CartesianLoader
+from .runner import CartesianRunner
 
 
 class Auto(CLI):
@@ -44,6 +45,6 @@ class Auto(CLI):
             args.params = []
         cmd_parser.params_from_cmd(args)
 
-        loader.register_plugin(CartesianGraph)
+        loader.register_plugin(CartesianLoader)
         if getattr(args, "auto", None) and args.auto:
-            args.test_runner = CartesianGraph
+            args.test_runner = CartesianRunner

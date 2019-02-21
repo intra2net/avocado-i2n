@@ -36,7 +36,7 @@ from virttest import error_context
 
 # custom imports
 from avocado_i2n import state_setup
-from avocado_i2n.cartesian_graph import CartesianGraph
+from avocado_i2n.cartesian_graph import TestGraph
 
 
 ###############################################################################
@@ -55,8 +55,8 @@ def run(test, params, env):
     error_context.context("Dependency check")
     logging.info("Scanning for already available setup that we can reuse")
 
-    trees = CartesianGraph.REFERENCE
+    trees = TestGraph.REFERENCE
     trees.scan_object_states(env)
-    trees.save_setup_list()
+    trees.save_setup_list(test.job.logdir)
 
     logging.info("Scan completed successfully")
