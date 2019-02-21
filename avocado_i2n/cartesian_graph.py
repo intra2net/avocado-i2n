@@ -129,7 +129,8 @@ class TestNode(object):
         :return: test class and constructor parameters
         :rtype: (type, {str, obj})
         """
-        test_constructor_params = {'name': test.TestID("?", self.params["shortname"]), 'vt_params': self.params}
+        test_constructor_params = {'name': test.TestID(self.name, self.params["shortname"]),
+                                   'vt_params': self.params}
         if job is not None:
             test_constructor_params['job'] = job
             test_constructor_params['base_logdir'] = job.logdir
