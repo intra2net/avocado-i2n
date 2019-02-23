@@ -22,6 +22,12 @@ from avocado.utils import process
 from avocado.utils import lv_utils
 
 
+#: keywords reserved for offline root states
+OFFLINE_ROOTS = ['root', '0root']
+#: keywords reserved for online root states
+ONLINE_ROOTS = ['boot', '0boot']
+
+
 def set_root(run_params):
     """
     Create a ramdisk, virtual group, thin pool and logical volume
@@ -323,7 +329,7 @@ def set_state(run_params, env):
             logging.info("Keeping the already existing snapshot untouched")
         elif state_exists and "f" == action_if_exists:
             logging.info("Overwriting the already existing snapshot")
-            if vm_params["set_state"] == "root" and vm_params["set_type"] == "offline":
+            if vm_params["set_state"] in OFFLINE_ROOTS and vm_params["set_type"] == "offline":
                 unset_root(vm_params)
             elif vm_params["set_type"] == "offline":
                 vm_params["lv_snapshot_name"] = vm_params["set_state"]
@@ -406,7 +412,7 @@ def push_state(run_params, env):
         vm_params = run_params.object_params(vm_name)
         vm_params["vms"] = vm_name
 
-        if vm_params["push_state"] in ["root", "boot"]:
+        if vm_params["push_state"] in OFFLINE_ROOTS + ONLINE_ROOTS:
             # cannot be done with root states
             continue
 
@@ -430,7 +436,7 @@ def pop_state(run_params, env):
         vm_params = run_params.object_params(vm_name)
         vm_params["vms"] = vm_name
 
-        if vm_params["pop_state"] in ["root", "boot"]:
+        if vm_params["pop_state"] in OFFLINE_ROOTS + ONLINE_ROOTS:
             # cannot be done with root states
             continue
 
@@ -453,7 +459,7 @@ def _check_state(vm, vm_params, print_pos=False, print_neg=False):
     vm_name = vm_params["vms"]
     if vm_params["check_type"] == "offline":
         vm_params["lv_snapshot_name"] = vm_params["check_state"]
-        if vm_params.get("check_state", "root") == "root":
+        if vm_params.get("check_state", "root") in OFFLINE_ROOTS:
             logging.debug("Checking whether %s exists (root offline state requested)", vm_name)
             if vm_params.get("image_format", "qcow2") != "raw":
                 logging.debug("Checking using %s image", vm_params.get("image_format", "qcow2"))
@@ -485,7 +491,7 @@ def _check_state(vm, vm_params, print_pos=False, print_neg=False):
                                  vm_params["check_state"], vm_name)
                 return True
     else:
-        if vm_params.get("check_state", "boot") == "boot":
+        if vm_params.get("check_state", "boot") in ONLINE_ROOTS:
             logging.debug("Checking whether %s is online (root online state requested)", vm_name)
             try:
                 state_exists = vm.is_alive()
@@ -547,7 +553,7 @@ def _get_state(vm, vm_params):
     We use LVM for offline snapshots and QCOW2 for online snapshots.
     """
     vm_name = vm_params["vms"]
-    if vm_params["get_state"] in ["root", "boot"]:
+    if vm_params["get_state"] in OFFLINE_ROOTS + ONLINE_ROOTS:
         # reusing root states (offline root and online boot) is analogical to not doing anything
         return
 
@@ -594,7 +600,7 @@ def _set_state(vm, vm_params):
     We use LVM for offline snapshots and QCOW2 for online snapshots.
     """
     vm_name = vm_params["vms"]
-    if vm_params["set_state"] == "root":
+    if vm_params["set_state"] in OFFLINE_ROOTS:
         # vm_params["vms"] = vm_name
         vm_params["main_vm"] = vm_name
         set_root(vm_params)
@@ -604,7 +610,7 @@ def _set_state(vm, vm_params):
         lv_utils.lv_take_snapshot(vm_params["vg_name"],
                                   vm_params["lv_pointer_name"],
                                   vm_params["lv_snapshot_name"])
-    elif vm_params["set_state"] == "boot":
+    elif vm_params["set_state"] in ONLINE_ROOTS:
         # set boot state
         if vm is None or not vm.is_alive():
             vm.create()
@@ -634,7 +640,7 @@ def _unset_state(vm, vm_params):
     We use LVM for offline snapshots and QCOW2 for online snapshots.
     """
     vm_name = vm_params["vms"]
-    if vm_params["unset_state"] == "root":
+    if vm_params["unset_state"] in OFFLINE_ROOTS:
         # offline switch to protect from online leftover state
         if vm is not None and vm.is_alive():
             vm.destroy(gracefully=False)
@@ -648,7 +654,7 @@ def _unset_state(vm, vm_params):
         vm_params["lv_snapshot_name"] = vm_params["unset_state"]
         logging.info("Removing snapshot %s of %s", vm_params["lv_snapshot_name"], vm_name)
         lv_utils.lv_remove(vm_params["vg_name"], vm_params["lv_snapshot_name"])
-    elif vm_params["unset_state"] == "boot":
+    elif vm_params["unset_state"] in ONLINE_ROOTS:
         if vm is not None and vm.is_alive():
             vm.destroy(gracefully=False)
     else:

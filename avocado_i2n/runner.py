@@ -20,133 +20,13 @@ from multiprocessing import SimpleQueue
 from avocado.core.runner import TestRunner
 
 from . import params_parser as param
-from .cartesian_graph import TestGraph, TestNode, TestObject
+from .cartesian_graph import TestGraph, TestNode
 
 
 class CartesianRunner(TestRunner):
     """Test runner for Cartesian graph traversal."""
 
-    """test running functionality"""
-    def run_root_node(self, graph, param_str, tag=""):
-        """
-        Run the set of tests necessary for starting test traversal.
-
-        :param graph: test graph to run root node from
-        :type graph: :py:class:`TestGraph`
-        :param str param_str: block of command line parameters
-        :param str tag: extra name identifier for the test to be run
-        """
-        # HACK: pass the constructed graph to the test using static attribute hack
-        # since there is absolutely no sane way to pass through the cloud of imports
-        # before executing a VT test (could be improved later on)
-        TestGraph.REFERENCE = graph
-
-        nodes = graph.get_nodes_by(param_key="name", param_val="scan_dependencies")
-        assert len(nodes) == 1, "There can be only exactly one shared root node"
-        test_node = nodes[0]
-        # TODO: refactor all parsing of new nodes which is loader job done in the runner
-        test_node.name = "scan"
-        self.run_test_node(test_node)
-
-        graph.load_setup_list(self.job.logdir)
-        for node in graph.nodes:
-            self.result.cancelled += 1 if not node.should_run else 0
-
-    def run_create_node(self, graph, object_name, param_str, tag=""):
-        """
-        Run the set of tests necessary for creating a given test object.
-
-        :param graph: test graph to run create node from
-        :type graph: :py:class:`TestGraph`
-        :param str object_name: name of the test object to be created
-        :param str param_str: block of command line parameters
-        :param str tag: extra name identifier for the test to be run
-        """
-        objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
-        assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
-        test_object = objects[0]
-        parser = param.update_parser(test_object.parser,
-                                     ovrwrt_dict={"vm_action": "set",
-                                                  "skip_image_processing": "yes"},
-                                     ovrwrt_str=param.re_str("manage_vms.unchanged",
-                                                             param_str, tag, True),
-                                     ovrwrt_base_file="sets.cfg",
-                                     ovrwrt_file=param.tests_ovrwrt_file)
-        self.run_test_node(TestNode("create", parser, [test_object]))
-
-    def run_reverse_node(self, graph, object_name, param_str, tag="", antitag=""):
-        """
-        Run the set of tests necessary for removing a given state (reversing a test node).
-
-        :param graph: test graph to run reverse node from
-        :type graph: :py:class:`TestGraph`
-        :param str object_name: name of the test object to be removed
-        :param str param_str: block of command line parameters
-        :param str tag: extra name identifier for the test to be run
-        :param str antitag: remove tag to be derived from the test node this node reverses
-        """
-        objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
-        assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
-        test_object = objects[0]
-        # since the default unset_mode is passive (ri) we need a better
-        # default value for that case but still modifiable by the user
-        if "unset_mode" not in param_str:
-            setup_str = param_str + param.dict_to_str({"unset_mode": "fi"})
-        else:
-            setup_str = param_str
-        parser = param.update_parser(test_object.parser,
-                                     ovrwrt_dict={"vm_action": "unset",
-                                                  "skip_image_processing": "yes"},
-                                     ovrwrt_str=param.re_str("manage_vms.unchanged",
-                                                             setup_str, tag, True),
-                                     ovrwrt_base_file="sets.cfg",
-                                     ovrwrt_file=param.tests_ovrwrt_file)
-        self.run_test_node(TestNode("c" + antitag, parser, [test_object]))
-
-    def run_install_node(self, graph, object_name, param_str, tag=""):
-        """
-        Run the set of tests necessary for installing a given test object.
-
-        :param graph: test graph to run install node from
-        :type graph: :py:class:`TestGraph`
-        :param str object_name: name of the test object to be installed
-        :param str param_str: block of command line parameters
-        :param str tag: extra name identifier for the test to be run
-        :raises: :py:class:`NotImplementedError` if using incompatible installation variant
-        """
-        objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
-        assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
-        test_object = objects[0]
-
-        logging.info("Configuring installation for %s", test_object.name)
-        parser = param.update_parser(test_object.parser,
-                                     ovrwrt_str=param.re_str("configure_install", param_str, tag, True),
-                                     ovrwrt_base_file="sets.cfg",
-                                     ovrwrt_file=param.tests_ovrwrt_file)
-        # some parameters from the install configuration have to be used for decision about install tests
-        install_params = param.peek(param.copy_parser(parser))
-        status = self.run_test_node(TestNode("preinstall", parser, [test_object]))
-
-        if status:
-            logging.info("Installing virtual machine %s", test_object.name)
-            if install_params.get("configure_install", "stepmaker") == "unattended_install":
-                if ".Fedora." in test_object.params["name"] or ".CentOS." in test_object.params["name"]:
-                    ovrwrt_str = param.re_str("unattended_install.cdrom.extra_cdrom_ks", param_str, tag, True)
-                elif ".Windows." in test_object.params["name"]:
-                    ovrwrt_str = param.re_str("unattended_install.cdrom", param_str, tag, True)
-                else:
-                    raise NotImplementedError("Unattended install tests are only supported on Windows and Fedora/CentOS")
-                ovrwrt_dict = {}
-            else:
-                ovrwrt_dict = {"type": install_params.get("configure_install", "stepmaker")}
-                ovrwrt_str = param.re_str("install", param_str, tag, True)
-            parser = param.update_parser(test_object.parser,
-                                         ovrwrt_dict=ovrwrt_dict,
-                                         ovrwrt_str=ovrwrt_str,
-                                         ovrwrt_base_file="sets.cfg",
-                                         ovrwrt_file=param.tests_ovrwrt_file)
-            self.run_test_node(TestNode("install", parser, [test_object]))
-
+    """running functionality"""
     def run_test_node(self, node):
         """
         A wrapper around the inherited :py:meth:`run_test`.
@@ -180,7 +60,7 @@ class CartesianRunner(TestRunner):
         Of course all possible children are restricted by the user-defined "only" and
         the number of internal test nodes is minimized for achieving this goal.
         """
-        shared_roots = graph.get_nodes_by("name", "scan_dependencies")
+        shared_roots = graph.get_nodes_by("name", "(\.|^)0scan(\.|^)")
         assert len(shared_roots) == 1, "There can be only exactly one root node"
         root = shared_roots[0]
 
@@ -215,7 +95,7 @@ class CartesianRunner(TestRunner):
             if previous in next.cleanup_nodes or previous in next.visited_cleanup_nodes:
 
                 if next.is_setup_ready():
-                    self._run_test_node(graph, next, param_str)
+                    self._traverse_test_node(graph, next, param_str)
                     previous.visit_node(next)
                     traverse_path.pop()
                 else:
@@ -228,10 +108,10 @@ class CartesianRunner(TestRunner):
                     traverse_path.append(next.pick_next_parent())
                     continue
                 else:
-                    self._run_test_node(graph, next, param_str)
+                    self._traverse_test_node(graph, next, param_str)
 
                 if next.is_cleanup_ready():
-                    self._clean_test_node(graph, next, param_str)
+                    self._reverse_test_node(graph, next, param_str)
                     for setup in next.visited_setup_nodes:
                         setup.visit_node(next)
                     traverse_path.pop()
@@ -284,8 +164,107 @@ class CartesianRunner(TestRunner):
         signal.signal(signal.SIGTSTP, signal.SIG_IGN)
         return summary
 
+    """custom nodes"""
+    def run_scan_node(self, graph, param_str, tag=""):
+        """
+        Run the set of tests necessary for starting test traversal.
+
+        :param graph: test graph to run scan node from
+        :type graph: :py:class:`TestGraph`
+        :param str param_str: block of command line parameters
+        :param str tag: extra name identifier for the test to be run
+        """
+        # HACK: pass the constructed graph to the test using static attribute hack
+        # since there is absolutely no sane way to pass through the cloud of imports
+        # before executing a VT test (could be improved later on)
+        TestGraph.REFERENCE = graph
+
+        nodes = graph.get_nodes_by(param_key="name", param_val="(\.|^)0scan(\.|^)")
+        assert len(nodes) == 1, "There can only be one shared root"
+        test_node = nodes[0]
+        self.run_test_node(test_node)
+
+        graph.load_setup_list(self.job.logdir)
+        for node in graph.nodes:
+            self.result.cancelled += 1 if not node.should_run else 0
+
+    def run_create_node(self, graph, object_name, param_str, tag=""):
+        """
+        Run the set of tests necessary for creating a given test object.
+
+        :param graph: test graph to run create node from
+        :type graph: :py:class:`TestGraph`
+        :param str object_name: name of the test object to be created
+        :param str param_str: block of command line parameters
+        :param str tag: extra name identifier for the test to be run
+        """
+        objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
+        assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
+        test_object = objects[0]
+        nodes = graph.get_nodes_by("name", "(\.|^)0root(\.|$)",
+                                   subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
+        assert len(nodes) == 1, "There can only be one root for %s" % object_name
+        test_node = nodes[0]
+        # implementation of object creation needs a separate parser
+        create_parser = param.update_parser(test_object.parser,
+                                            ovrwrt_dict={"vm_action": "set",
+                                                         "skip_image_processing": "yes"},
+                                            ovrwrt_str=param.re_str("manage.unchanged",
+                                                                    param_str, tag, True),
+                                            ovrwrt_base_file="sets.cfg",
+                                            ovrwrt_file=param.tests_ovrwrt_file)
+        self.run_test_node(TestNode(test_node.name, create_parser, test_node.objects))
+
+    def run_install_node(self, graph, object_name, param_str, tag=""):
+        """
+        Run the set of tests necessary for installing a given test object.
+
+        :param graph: test graph to run install node from
+        :type graph: :py:class:`TestGraph`
+        :param str object_name: name of the test object to be installed
+        :param str param_str: block of command line parameters
+        :param str tag: extra name identifier for the test to be run
+        :raises: :py:class:`NotImplementedError` if using incompatible installation variant
+        """
+        objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
+        assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
+        test_object = objects[0]
+        nodes = graph.get_nodes_by("name", "(\.|^)(install|unattended_install)(\.|$)",
+                                   subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
+        assert len(nodes) == 1, "There can only be one root for %s" % object_name
+        test_node = nodes[0]
+
+        logging.info("Configuring installation for %s", test_object.name)
+        install_parser = param.update_parser(test_object.parser,
+                                             ovrwrt_str=param.re_str("0preinstall", param_str, tag, True),
+                                             ovrwrt_base_file="sets.cfg",
+                                             ovrwrt_file=param.tests_ovrwrt_file)
+        # some parameters from the install configuration have to be used for decision about install tests
+        install_params = param.peek(param.copy_parser(install_parser))
+        status = self.run_test_node(TestNode("0p", install_parser, test_node.objects))
+
+        if status:
+            logging.info("Installing virtual machine %s", test_object.name)
+            if install_params.get("configure_install", "stepmaker") == "unattended_install":
+                if ".Fedora." in test_object.params["name"] or ".CentOS." in test_object.params["name"]:
+                    ovrwrt_str = param.re_str("unattended_install.cdrom.extra_cdrom_ks", param_str, tag, True)
+                elif ".Windows." in test_object.params["name"]:
+                    ovrwrt_str = param.re_str("unattended_install.cdrom", param_str, tag, True)
+                else:
+                    raise NotImplementedError("Unattended install tests are only supported on Windows and Fedora/CentOS")
+                ovrwrt_dict = {}
+            else:
+                ovrwrt_dict = {"type": install_params.get("configure_install", "stepmaker")}
+                ovrwrt_str = param.re_str("install", param_str, tag, True)
+            install_parser = param.update_parser(test_object.parser,
+                                                 ovrwrt_dict=ovrwrt_dict,
+                                                 ovrwrt_str=ovrwrt_str,
+                                                 ovrwrt_base_file="sets.cfg",
+                                                 ovrwrt_file=param.tests_ovrwrt_file)
+            self.run_test_node(TestNode("0q", install_parser, test_node.objects))
+
     """internals"""
-    def _run_test_node(self, graph, test_node, param_str):
+    def _traverse_test_node(self, graph, test_node, param_str):
         """Run a single test according to user defined policy and state availability."""
         # ephemeral setup can get lost and if so must be repeated
         if not test_node.should_run and test_node.is_ephemeral() and not test_node.is_cleanup_ready():
@@ -300,17 +279,17 @@ class CartesianRunner(TestRunner):
                     break
 
         if test_node.should_run:
-            if test_node.is_shared_root():
+            if test_node.is_scan_node():
                 logging.debug("Test run started from the shared root")
-                self.run_root_node(graph, param_str)
+                self.run_scan_node(graph, param_str)
 
             # the primary setup nodes need special treatment
-            elif test_node.params.get("set_state") in ["install", "root"]:
+            elif test_node.is_install_node() or test_node.is_create_node():
                 setup_str = param_str
-                if test_node.params["set_state"] == "root":
+                if test_node.is_create_node():
                     setup_str += param.dict_to_str({"set_state": "root", "set_type": "offline"})
                     self.run_create_node(graph, test_node.params.get("vms", ""), setup_str)
-                elif test_node.params["set_state"] == "install":
+                elif test_node.is_install_node():
                     self.run_install_node(graph, test_node.params.get("vms", ""), setup_str)
 
             else:
@@ -326,9 +305,9 @@ class CartesianRunner(TestRunner):
         else:
             logging.debug("Skipping test %s", test_node.params["shortname"])
 
-    def _clean_test_node(self, graph, test_node, param_str):
+    def _reverse_test_node(self, graph, test_node, param_str):
         """
-        Cleanup any states that could be created by this node (will be skipped
+        Clean up any states that could be created by this node (will be skipped
         by default but the states can be removed with "unset_mode=f.").
         """
         if test_node.should_clean:
@@ -342,10 +321,22 @@ class CartesianRunner(TestRunner):
                         # NOTE: we are forcing the unset_mode to be the one defined for the test node because
                         # the unset manual step behaves differently now (all this extra complexity starts from
                         # the fact that it has different default value which is noninvasive
-                        setup_str = param_str + param.dict_to_str({"unset_state": vm_params["set_state"],
-                                                                   "unset_type": vm_params.get("set_type", "offline"),
-                                                                   "unset_mode": vm_params.get("unset_mode", "ri")})
-                        self.run_reverse_node(graph, vm_name, setup_str, antitag=test_node.name)
+                        setup_str = param.dict_to_str({"unset_state": vm_params["set_state"],
+                                                       "unset_type": vm_params.get("set_type", "offline"),
+                                                       "unset_mode": vm_params.get("unset_mode", "ri")}) + param_str
+
+                        objects = graph.get_objects_by(param_key="main_vm", param_val="^"+vm_name+"$")
+                        assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (vm_name, objects)
+                        test_object = objects[0]
+                        forward_parser = param.update_parser(test_object.parser,
+                                                             ovrwrt_dict={"vm_action": "unset",
+                                                                         "skip_image_processing": "yes"},
+                                                             ovrwrt_str=param.re_str("manage.unchanged",
+                                                                                     setup_str, "", True),
+                                                             ovrwrt_base_file="sets.cfg",
+                                                             ovrwrt_file=param.tests_ovrwrt_file)
+                        self.run_test_node(TestNode("c" + test_node.name, forward_parser, [test_object]))
+
         else:
             logging.debug("The test %s doesn't leave any states to be cleaned up", test_node.params["shortname"])
 

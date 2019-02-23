@@ -139,13 +139,25 @@ class TestNode(object):
             test_constructor_params['base_logdir'] = job.logdir
         return (VirtTest, test_constructor_params)
 
+    def is_scan_node(self):
+        """Check if the test node is the root of all test nodes for all test objects."""
+        return self.name == "0s" and len(self.objects) == 0
+
+    def is_create_node(self):
+        """Check if the test node is the root of all test nodes for some test object."""
+        return self.name == "0r" and len(self.objects) == 1
+
+    def is_install_node(self):
+        """Check if the test node is the root of all test nodes for some test object."""
+        return len(self.objects) == 1 and self.params.get("set_state") == "install"
+
     def is_shared_root(self):
         """Check if the test node is the root of all test nodes for all test objects."""
-        return self.name == "root" and len(self.objects) == 0
+        return self.is_scan_node()
 
     def is_object_root(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.name == "root" and self.id == self.params["vms"]
+        return self.is_create_node()
 
     def is_ephemeral(self):
         """
@@ -512,7 +524,7 @@ class TestGraph(object):
                                            param_val="(^|\s)%s($|\s)" % object_name,
                                            subset=root_tests)
         else:
-            root_tests = self.get_nodes_by("name", "scan_dependencies")
+            root_tests = self.get_nodes_by(param_key="name", param_val="(\.|^)0scan(\.|^)")
         if len(root_tests) < 1:
             raise AssertionError("Could not retrieve state %s and flag all its children tests" % state_name)
         elif len(root_tests) > 1:

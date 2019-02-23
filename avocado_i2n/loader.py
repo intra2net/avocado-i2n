@@ -295,12 +295,12 @@ class CartesianLoader(VirtTestLoader):
         used_objects, used_roots = [], []
         for test_object in graph.objects:
             object_nodes = graph.get_nodes_by("vms", "^"+test_object.name+"$")
-            object_roots = graph.get_nodes_by("name", "(\.|^)root(\.|$)", subset=object_nodes)
+            object_roots = graph.get_nodes_by("name", "(\.|^)0root(\.|$)", subset=object_nodes)
             if len(object_roots) > 0:
                 used_objects.append(test_object)
                 used_roots.append(object_roots[0])
         graph.objects[:] = used_objects
-        root_for_all = self._parse_shared_root(graph, param_str)
+        root_for_all = self.parse_scan_node(graph, param_str)
         for root_for_object in used_roots:
             root_for_object.setup_nodes.append(root_for_all)
             root_for_all.cleanup_nodes.append(root_for_object)
@@ -336,29 +336,36 @@ class CartesianLoader(VirtTestLoader):
 
         return test_suite
 
-    """internals - get/parse, duplicates"""
-    def _parse_shared_root(self, graph, param_str):
+    """custom nodes"""
+    def parse_scan_node(self, graph, param_str):
         """
         Get the first test node for all objects.
 
-        This assumes that there is only one root test node which is the one
-        with the 'root' start state.
+        :param graph: test graph to parse root node from
+        :type graph: :py:class:`TestGraph`
+        :param str param_str: block of command line parameters
+
+        This assumes that there is only one shared root test node.
         """
         objects = sorted(graph.test_objects.keys())
         setup_dict = {"abort_on_error": "yes", "set_state_on_error": "",
                       "vms": " ".join(objects),
                       "base_vm": objects[0]}
         setup_str = param.dict_to_str(setup_dict) + param_str
-        nodes = self.parse_nodes(param.re_str("scan_dependencies", setup_str, objectless=True),
-                                 graph, prefix="0m0s")
+        nodes = self.parse_nodes(param.re_str("0scan", setup_str, objectless=True), graph)
         for i, d in enumerate(nodes[0].parser.get_dicts()):
             logging.debug("Reached shared root %s", d["shortname"])
             assert i < 1, "There can only be one shared root"
-        return TestNode("root", nodes[0].parser, [])
+        return TestNode("0s", nodes[0].parser, [])
 
-    def _parse_object_root(self, graph, object_name, param_str):
+    def parse_create_node(self, graph, object_name, param_str):
         """
         Get the first test node for the given object.
+
+        :param graph: test graph to parse root node from
+        :type graph: :py:class:`TestGraph`
+        :param str object_name: name of the test object whose configuration is reused if node if objectless
+        :param str param_str: block of command line parameters
 
         This assumes that there is only one root test node which is the one
         with the 'root' start state.
@@ -367,17 +374,18 @@ class CartesianLoader(VirtTestLoader):
         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
         test_object = objects[0]
         setup_dict = {"set_state": "root", "set_type": "offline"}
-        setup_str = param.re_str("root", param_str, objectless=True)
-        root_parser = param.update_parser(test_object.parser,
-                                          ovrwrt_dict=setup_dict,
-                                          ovrwrt_str=setup_str,
-                                          ovrwrt_file=param.tests_ovrwrt_file,
-                                          ovrwrt_base_file="sets.cfg")
-        for i, d in enumerate(root_parser.get_dicts()):
+        setup_str = param.re_str("0root", param_str, objectless=True)
+        parser = param.update_parser(test_object.parser,
+                                     ovrwrt_dict=setup_dict,
+                                     ovrwrt_str=setup_str,
+                                     ovrwrt_file=param.tests_ovrwrt_file,
+                                     ovrwrt_base_file="sets.cfg")
+        for i, d in enumerate(parser.get_dicts()):
             logging.debug("Reached %s root %s", object_name, d["shortname"])
             assert i < 1, "There can only be one root for %s" % object_name
-        return [TestNode("root", root_parser, [test_object])]
+        return [TestNode("0r", parser, [test_object])]
 
+    """internals - get/parse, duplicates"""
     def _get_and_parse_parent(self, graph, test_node, test_object, param_str, setup_restr):
         """
         Perform a fast and simple check for a single parent node and
@@ -390,8 +398,8 @@ class CartesianLoader(VirtTestLoader):
                                          subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
         parents = get_parents
         if len(get_parents) == 0:
-            if setup_restr == "root":
-                parse_parents = self._parse_object_root(graph, test_object.name, param_str)
+            if setup_restr == "0root":
+                parse_parents = self.parse_create_node(graph, test_object.name, param_str)
             else:
                 setup_str = param.re_str(setup_restr, param_str, objectless=True)
                 name = test_node.name + "a"
@@ -414,7 +422,7 @@ class CartesianLoader(VirtTestLoader):
         get_parents, parse_parents = [], []
         object_params = test_node.params.object_params(test_object.name)
         # use get directive -> if not use get_state -> if not use root
-        setup_restr = object_params.get("get", object_params.get("get_state", "root"))
+        setup_restr = object_params.get("get", object_params.get("get_state", "0root"))
         logging.debug("Parsing Cartesian setup of %s through restriction %s",
                       test_node.params["shortname"], setup_restr)
 
@@ -426,8 +434,8 @@ class CartesianLoader(VirtTestLoader):
         elif object_params.get("get_parse", "advanced") != "advanced":
             raise ValueError("The setup parsing mode must be one of: 'simple', 'advanced'")
 
-        if setup_restr == "root":
-            new_parents = self._parse_object_root(graph, test_object.name, param_str)
+        if setup_restr == "0root":
+            new_parents = self.parse_create_node(graph, test_object.name, param_str)
         else:
             setup_str = param.re_str(setup_restr, param_str, objectless=True)
             name = test_node.name + "a"

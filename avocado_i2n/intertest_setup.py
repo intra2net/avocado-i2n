@@ -630,7 +630,7 @@ def boot(args, run_params, tag=""):
     """
     vms = run_params["vms"]
     setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("manage_vms.start") + param.dict_to_str(setup_dict) + args.param_str
+    setup_str = param.re_str("manage.start") + param.dict_to_str(setup_dict) + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one boot test variant from %s" % tests
     logging.info("Booting virtual machines %s", vms)
@@ -655,7 +655,7 @@ def download(args, run_params, tag=""):
     """
     vms = run_params["vms"]
     setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("manage_vms.download") + param.dict_to_str(setup_dict) + args.param_str
+    setup_str = param.re_str("manage.download") + param.dict_to_str(setup_dict) + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one download test variant from %s" % tests
     logging.info("Downloading from virtual machines %s", vms)
@@ -680,7 +680,7 @@ def upload(args, run_params, tag=""):
     """
     vms = run_params["vms"]
     setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("manage_vms.upload") + param.dict_to_str(setup_dict) + args.param_str
+    setup_str = param.re_str("manage.upload") + param.dict_to_str(setup_dict) + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one upload test variant from %s" % tests
     logging.info("Uploading to virtual machines %s", vms)
@@ -703,7 +703,7 @@ def shutdown(args, run_params, tag=""):
     """
     vms = run_params["vms"]
     setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("manage_vms.stop") + param.dict_to_str(setup_dict) + args.param_str
+    setup_str = param.re_str("manage.stop") + param.dict_to_str(setup_dict) + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one shutdown test variant from %s" % tests
     logging.info("Shutting down virtual machines %s", vms)
@@ -727,7 +727,7 @@ def check(args, run_params, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = args.param_str
-    setup_str += param.re_str("manage_vms.unchanged")
+    setup_str += param.re_str("manage.unchanged")
     setup_str += param.dict_to_str({"vm_action": "check",
                                     "skip_image_processing": "yes"})
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs,
@@ -750,7 +750,7 @@ def pop(args, run_params, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = args.param_str
-    setup_str += param.re_str("manage_vms.unchanged")
+    setup_str += param.re_str("manage.unchanged")
     setup_str += param.dict_to_str({"vm_action": "pop",
                                     "skip_image_processing": "yes"})
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs,
@@ -772,7 +772,7 @@ def push(args, run_params, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = args.param_str
-    setup_str += param.re_str("manage_vms.unchanged")
+    setup_str += param.re_str("manage.unchanged")
     setup_str += param.dict_to_str({"vm_action": "push",
                                    "skip_image_processing": "yes"})
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs,
@@ -800,7 +800,7 @@ def get(args, run_params, tag=""):
         parser = param.update_parser(args.graph.l.parse_objects(args.vm_strs, vm_name)[0].parser,
                                      ovrwrt_dict={"vm_action": "get",
                                                   "skip_image_processing": "yes"},
-                                     ovrwrt_str=param.re_str("manage_vms.unchanged",
+                                     ovrwrt_str=param.re_str("manage.unchanged",
                                                              args.param_str, objectless=True),
                                      ovrwrt_base_file="sets.cfg",
                                      ovrwrt_file=param.tests_ovrwrt_file)
@@ -825,7 +825,7 @@ def set(args, run_params, tag=""):
         parser = param.update_parser(args.graph.l.parse_objects(args.vm_strs, vm_name)[0].parser,
                                      ovrwrt_dict={"vm_action": "set",
                                                   "skip_image_processing": "yes"},
-                                     ovrwrt_str=param.re_str("manage_vms.unchanged",
+                                     ovrwrt_str=param.re_str("manage.unchanged",
                                                              args.param_str, objectless=True),
                                      ovrwrt_base_file="sets.cfg",
                                      ovrwrt_file=param.tests_ovrwrt_file)
@@ -856,7 +856,7 @@ def unset(args, run_params, tag=""):
         parser = param.update_parser(args.graph.l.parse_objects(args.vm_strs, vm_name)[0].parser,
                                      ovrwrt_dict={"vm_action": "unset",
                                                   "skip_image_processing": "yes"},
-                                     ovrwrt_str=param.re_str("manage_vms.unchanged",
+                                     ovrwrt_str=param.re_str("manage.unchanged",
                                                              setup_str, objectless=True),
                                      ovrwrt_base_file="sets.cfg",
                                      ovrwrt_file=param.tests_ovrwrt_file)
