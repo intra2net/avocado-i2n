@@ -1,5 +1,5 @@
-avocado\_i2n.auto module
-========================
+avocado\_i2n\.auto module
+=========================
 
 .. automodule:: avocado_i2n.auto
     :members:
