@@ -33,7 +33,7 @@
 
 Summary: Avocado I2N Plugin
 Name: avocado-plugins-i2n
-Version: 68.0
+Version: 69.0
 Release: 0%{?gitrel}%{?dist}
 License: GPLv2
 Group: Development/Tools
@@ -86,6 +86,10 @@ graph structure.
 %{python3_sitelib}/avocado_plugins_i2n*
 
 %changelog
+* Sun Feb 24 2019 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 69.0-0
+- Improved integration with human output and HTML plugins
+- Refactoring into test structures, loaders, and runners
+
 * Fri Feb 15 2019 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 68.0-0
 - Sample test provider (test suite) for documentation and unit tests
 - Setup for ReadTheDocs and Travis CI triggers
