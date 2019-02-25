@@ -121,3 +121,6 @@ def params_from_cmd(args):
 
     # prefix for all tests of the current run making it possible to perform multiple runs in one command
     args.prefix = ""
+
+    # log into files for each major level the way it was done for autotest
+    args.store_logging_stream = [":10", ":20", ":30", ":40"]
