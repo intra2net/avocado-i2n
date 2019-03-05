@@ -107,6 +107,19 @@ def with_cartesian_graph(fn):
 ############################################################
 
 
+def noop(args, run_params, tag=""):
+    """
+    Empty setup step to invoke plugin without performing anything.
+
+    :param args: command line arguments
+    :type args: :py:class:`argparse.Namespace`
+    :param run_params: parameters with minimal vm configuration
+    :type run_params: {str, str}
+    :param str tag: extra name identifier for the test to be run
+    """
+    pass
+
+
 def unittest(args, run_params, tag=""):
     """
     Perform self testing for sanity and test result validation.

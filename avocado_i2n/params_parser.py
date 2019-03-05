@@ -312,7 +312,7 @@ def re_str(variant, ovrwrt_str="", tag="", objectless=False):
     else:
         subtest_variant = "only %s\n" % variant
     if objectless:
-        setup_variant = "only none\n"
+        setup_variant = "only nonleaves\n"
     else:
         setup_variant = ""
     ovrwrt_str = subtest_variant + ovrwrt_str + setup_variant

@@ -218,7 +218,7 @@ class CartesianGraphTest(unittest.TestCase):
             self.runner.run_traversal(graph, self.args.param_str)
 
     def test_trees_difference_zero(self):
-        self.args.tests_str = "only none\n"
+        self.args.tests_str = "only nonleaves\n"
         self.args.tests_str += "only set_provider\n"
         self.main_vm = "vm1"
         graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm, objectless=True)
@@ -227,7 +227,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_trees_difference(self):
-        self.args.tests_str = "only none\n"
+        self.args.tests_str = "only nonleaves\n"
         tests_str1 = self.args.tests_str
         tests_str1 += "only set_provider\n"
         tests_str2 = self.args.tests_str
