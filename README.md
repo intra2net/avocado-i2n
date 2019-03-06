@@ -1,6 +1,6 @@
 # avocado-i2n
-Plugins for avocado extending avocado-vt with automated vm state setup,
-inheritance, and traversal
+*Plugins for avocado extending avocado-vt with automated vm state setup,
+inheritance, and traversal* &nbsp; ![CI status](https://travis-ci.org/intra2net/avocado-i2n.svg?branch=master) [![Documentation Status](https://readthedocs.org/projects/avocado-i2n/badge/?version=latest)](http://guibot.readthedocs.io/en/latest/?badge=latest)
 
 This file provides a brief overview of the core concepts behind the current
 plugin and hopefully a compact explanation of how tests are being run.
