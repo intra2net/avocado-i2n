@@ -6,9 +6,9 @@ This file provides a brief overview of the core concepts behind the current
 plugin and hopefully a compact explanation of how tests are being run.
 
 
-Guiding principles
-------------------
-The two milestones, that determine the entire test management process are:
+Motivation and background
+-------------------------
+The two milestones and guiding principles for a test running process are:
 
 1) *test thoroughness* - how to test a maximum number of features with a
    minimal set of configuration parameters and code
@@ -19,29 +19,33 @@ The two milestones, that determine the entire test management process are:
 The first is the code/configuration reuse, while the second is the
 run/execution reuse. Combining optimally extensive testing of automatically
 generated variety of scenarios with minimum setup overhead (minimal duration)
-is the guiding principle for this plugin.
+is the guiding principle for large scale testing. The first of these is well
+handled by Cartesian configuration - producing a large number of scenarios and
+configurations from a minimal, compact, and easy to read set of definitions,
+also allowing to reuse test code for multiple variants and thus use cases. The
+second guiding principle is the reason for the development of this plugin.
 
-
-Background
-----------
 In classical test suites using the avocado-framework and the avocado-vt plugin,
 most of the setup is performed at the beginning or within tests regardless of
 what tests are to be performed. This has serious disadvantages since enormous
 time is spent preparing for all possibilities if only a small and simple test
 is desired. In order to save setup penalty, a lot of smaller actual tests
-are put into larger ones. In this way the setup's benefits are artificially
-extended but the tests could be simpler and better isolated. Increasing
+are put into larger ones (e.g. test for feature B while testing for feature A
+because the setup of feature A is available and/or very similar to that of B).
+In this way the setup's benefits are available but are also artificially
+extended as the tests could be simpler and better isolated. Increasing
 isolation always has the cost of redundant setup. In this case, the setup that
 is automatically performed before a test is minimized only to the setup (and
 respectively cleanup) specific to the demands of each selected test. To
 achieve the better isolation, setup is now shared among tests so that it needs
 to be performed only once and then shared by all tests. The trick to do this
-while keeping the tests isolated and clean is the usage of states. The
-granularity of states is defined by test objects which in our case represent
+while keeping the tests isolated and clean is the usage of states.
+
+The granularity of states follows test objects which in our case represent
 virtual machines. All tests use one or more test objects and are able to
 retrieve or store states of these objects. Recalling the same previously saved
 state from multiple tests is then a way of saving time from all of them,
-essentially running only once another test to bring the object to this state
+essentially running another test only once to bring the object to this state
 and save it. This offers both better isolation and more reusable steps. The
 test creating the state is also a test since it tests the "more basic" steps
 of reaching this state. Tests using the same state are then dependent on the
@@ -72,9 +76,9 @@ Cartesian configuration.
 The testing performed in a test suite is much more extensive because of the
 Cartesian multiplication of the test variants. Defining just a few
 alternatives for two parameters leads to a large set of possible combinations
-of these alternatives and therefore tests. Therefore, for a very extensive
+of these alternatives and therefore tests. As a result, for a very extensive
 scenario where every step is combined in such a way, it would take far too
-long to perform a setup such as installing a virtual machine every time for
+long to perform setup such as installing a virtual machine every time for
 every different detail. This is the reason for defining the used objects and
 their state transitions as parameters directly in the Cartesian configuration.
 All tests as well as the objects they use and the states they require or
@@ -130,10 +134,9 @@ come back to it for another test that requires it. The QCOW2 format allows
 QEMU to take live snapshots of both the virtual machine and its image without
 a danger of saving image and ramdisk snapshots that are out of sync which is
 the case with another implementation of online states (still available as the
-"ramfile" state type). The test management and each automated vm state setup
-checks for state availability once in a special "scan_dependencies" test and
-uses this information for further decisions on test scheduling, order, and
-skipping.
+"ramfile" state type). During a run with an automated vm state setup, a special
+dependency scan test checks for state availability once and uses this
+information for further decisions on test scheduling, order, and skipping.
 
 Each online state is based on an offline state. The tests that produce online
 from offline states are thus ephemeral as changing the offline state would
