@@ -362,7 +362,7 @@ def run(args, run_params, tag=""):
     """
     # NOTE: each host control file expects already incremented count in the beginning
     # this prefix is preferential to setup chains with a single "run" step since this is usually the case
-    args.prefix = tag + "r" if len(re.findall("run", run_params["setup"])) > 1 else ""
+    args.prefix = tag + "n" if len(re.findall("run", run_params["setup"])) > 1 else ""
     # essentially we imitate the auto plugin to make the tool plugin a superset
     # loader = args.graph.l
     job = args.graph.r.job
