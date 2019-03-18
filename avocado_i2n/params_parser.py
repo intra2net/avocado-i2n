@@ -151,7 +151,7 @@ def prepare_parser(base_dict=None, base_str="", base_file=None,
         logging.debug(print_restriction(base_file=base_file, base_str=base_str,
                                         ovrwrt_file=ovrwrt_file, ovrwrt_str=ovrwrt_str))
     if show_dictionaries:
-        options = collections.namedtuple("options", ['repr_mode', 'fullname', 'contents'], verbose=False)
+        options = collections.namedtuple("options", ['repr_mode', 'fullname', 'contents'])
         cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents), parser.get_dicts())
 
     # detect empty Cartesian product
@@ -204,7 +204,7 @@ def update_parser(parser, ovrwrt_dict=None, ovrwrt_str="",
         logging.debug(print_restriction(base_file=ovrwrt_base_file,
                                         ovrwrt_file=ovrwrt_file, ovrwrt_str=ovrwrt_str))
     if show_dictionaries:
-        options = collections.namedtuple("options", ['repr_mode', 'fullname', 'contents'], verbose=False)
+        options = collections.namedtuple("options", ['repr_mode', 'fullname', 'contents'])
         cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents), parser.get_dicts())
 
     # detect empty Cartesian product
