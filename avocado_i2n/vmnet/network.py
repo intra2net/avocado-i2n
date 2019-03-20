@@ -183,7 +183,7 @@ class VMNetwork(object):
 
         # NOTE: fix the keys order to a particular order
         role_keys = roles.keys()
-        role_tuple = collections.namedtuple("role_tuple", role_keys, verbose=False)
+        role_tuple = collections.namedtuple("role_tuple", role_keys)
         role_platforms = [self.nodes[roles[key]].platform for key in role_keys]
         return role_tuple(*role_platforms)
 
