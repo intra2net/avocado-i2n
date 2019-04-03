@@ -603,7 +603,7 @@ def _get_state(vm, vm_params):
             state_file = os.path.join(state_dir, vm_params["get_state"])
             state_file = "%s.state" % state_file
             vm.restore_from_file(state_file)
-        vm.resume()
+        vm.resume(timeout=3)
 
 
 def _set_state(vm, vm_params):
@@ -643,7 +643,7 @@ def _set_state(vm, vm_params):
             # which leads to unclean file systems in some cases it is
             # better to restore from the saved state
             vm.restore_from_file(state_file)
-        vm.resume()
+        vm.resume(timeout=3)
 
 
 def _unset_state(vm, vm_params):
@@ -687,4 +687,4 @@ def _unset_state(vm, vm_params):
             state_file = os.path.join(state_dir, vm_params["set_state"])
             state_file = "%s.state" % state_file
             os.unlink(state_file)
-        vm.resume()
+        vm.resume(timeout=3)
