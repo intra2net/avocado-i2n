@@ -178,7 +178,7 @@ class TestNode(object):
 
             # definition 1 (with non-root offline starting state)
             if (object_params.get("get_type", "online") == "offline" and
-                    object_params.get("get_state", "root") != "root" and
+                    object_params.get("get_state", "0root") != "0root" and
                     object_params.get("set_type", "online") == "online"):
                 return True
 
