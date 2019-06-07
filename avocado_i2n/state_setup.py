@@ -256,8 +256,12 @@ def get_state(run_params, env):
         vm_params["get_type"] = vm_params["found_type_%s" % vm_name]
         if state_exists:
             # online/offline switch
+            if vm_params["get_type"] in run_params.get("skip_types", []):
+                logging.debug("Skip getting states of types %s" % ", ".join(run_params.objects("skip_types")))
+                continue
             if vm is None:
-                raise exceptions.TestAbortError("The %s is unavailable from the environment" % vm_name)
+                vm = env.create_vm(vm_params.get('vm_type'), vm_params.get('target'),
+                                   vm_name, vm_params, None)
             # TODO: study better the environment pre/postprocessing details necessary for flawless
             # vm destruction and creation to improve the online/offline switch
             if vm_params["get_type"] == "offline":

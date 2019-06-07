@@ -4,8 +4,10 @@ import re
 
 from avocado.core.output import LOG_JOB as log
 from avocado.core.settings import settings
+from virttest import env_process
 
 from . import params_parser as param
+from . import state_setup
 
 
 def params_from_cmd(args):
@@ -124,3 +126,28 @@ def params_from_cmd(args):
 
     # log into files for each major level the way it was done for autotest
     args.store_logging_stream = [":10", ":20", ":30", ":40"]
+
+    # attach environment processing hooks
+    env_process_hooks()
+
+
+def env_process_hooks():
+    """
+    Add env processing hooks to handle online/offline state get/set operations.
+    """
+    def online_state(fn):
+        def wrapper(test, params, env):
+            params["skip_types"] = "offline"
+            fn(params, env)
+            del params["skip_types"]
+        return wrapper
+    def offline_state(fn):
+        def wrapper(test, params, env):
+            params["skip_types"] = "online ramdisk"
+            fn(params, env)
+            del params["skip_types"]
+        return wrapper
+    env_process.preprocess_vm_off_hook = offline_state(state_setup.get_state)
+    env_process.preprocess_vm_on_hook = online_state(state_setup.get_state)
+    env_process.postprocess_vm_on_hook = online_state(state_setup.set_state)
+    env_process.postprocess_vm_off_hook = offline_state(state_setup.set_state)
