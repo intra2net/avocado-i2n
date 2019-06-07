@@ -533,10 +533,10 @@ def deploy(args, run_params, tag=""):
             stateless = False
 
         for i, state in enumerate(states):
-            setup_str = ""
+            setup_str = args.param_str
             if state != "current_state":
-                setup_str = args.param_str + param.dict_to_str({"get_state": state, "set_state": state,
-                                                                "get_type": "any", "set_type": "any"})
+                setup_str += param.dict_to_str({"get_state": state, "set_state": state,
+                                                "get_type": "any", "set_type": "any"})
             ovrwrt_dict = {"skip_image_processing": "yes", "kill_vm": "no",
                            "redeploy_only": run_params.get("redeploy_only", "yes")}
             if stateless:
