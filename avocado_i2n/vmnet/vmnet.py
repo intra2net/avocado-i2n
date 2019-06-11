@@ -542,9 +542,9 @@ class VMNetwork(object):
             with open(dhcp_config, "w") as f:
                 f.write(dhcp_string)
             logging.debug("Resetting DHCP service")
-            process.run("service dhcpd restart")  # , ignore_status = True)
+            process.run("systemctl restart dhcpd.service")  # , ignore_status = True)
         else:
-            process.run("service dhcpd stop", ignore_status=True)
+            process.run("systemctl stop dhcpd.service", ignore_status=True)
         if dns_set_config:
             logging.debug("Writing new DNS config file:\n%s", dns_string)
             dns_config = "/etc/named.conf"
@@ -555,9 +555,9 @@ class VMNetwork(object):
             with open("/var/named/all.fwd", "w") as f:
                 f.write(dns_declarations["all"])
             logging.debug("Resetting DNS service")
-            process.run("service named restart")
+            process.run("systemctl restart named.service")
         else:
-            process.run("service named stop", ignore_status=True)
+            process.run("systemctl stop named.service", ignore_status=True)
         if dns_dhcp_set_config:
             logging.debug("Writing new DHCP/DNS config file:\n%s", dns_dhcp_string)
             dns_dhcp_config = "/etc/dnsmasq.d/avocado.conf"
@@ -577,11 +577,11 @@ class VMNetwork(object):
     def _add_new_bridge(self, interface):
         netdst = interface.netconfig.netdst
         host_ip = interface.netconfig.host_ip
-        netmask = interface.netconfig.netmask
+        mask_bit = interface.netconfig.mask_bit
 
         def _debug_bridge_ip(netdst):
-            output = process.run('ifconfig %s | head -n 3' % netdst, shell=True)
-            logging.debug('ifconfig output for %s:\n%s' % (netdst, output))
+            output = process.run('ip addr show %s' % netdst, shell=True)
+            logging.debug('ip addr output for %s:\n%s' % (netdst, output))
 
         logging.info("Adding bridge %s", netdst)
         # TODO: no original avocado-vt method could do this for us
@@ -593,7 +593,8 @@ class VMNetwork(object):
             time.sleep(2)
             # TODO: no original avocado-vt method in utils_net like set_ip() and
             # set_netmask() could do this for us at least from the research at the time
-            process.run("ifconfig %s %s netmask %s up" % (netdst, host_ip, netmask))
+            process.run("ip addr add %s/%s dev %s" % (host_ip, mask_bit, netdst))
+            process.run("ip link set %s up" % netdst)
             # DEBUG only: See if setting the IP address worked
             _debug_bridge_ip(netdst)
         else:
