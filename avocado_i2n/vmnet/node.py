@@ -18,9 +18,10 @@ INTERFACE
 
 """
 
-
 import logging
 import sys
+
+import aexpect
 
 
 class VMNode(object):
@@ -121,7 +122,7 @@ class VMNode(object):
             self.last_session = self.platform.wait_for_serial_login(timeout=timeout)
         else:
             self.last_session = self.platform.wait_for_login(timeout=timeout)
-        # TODO: possibly try to use the original vm session list
+        # TODO: possibly use the original vm session list or remove this wrapper entirely
         self.platform.session = self.last_session
         return self.last_session
 
@@ -144,11 +145,7 @@ class VMNode(object):
         try:
             self.last_session.cmd("tail -f /var/log/messages", timeout)
 
-        # TODO: the error we catch is ShellProcessTerminatedError but not from the original aexpect module
-        # - for some reason the exception from the original module is not the one that is raised
-        # - for more details (i.e. that they are different), uncomment the following line:
-        # print(sys.modules["virttest.aexpect"].ShellProcessTerminatedError is aexpect.ShellProcessTerminatedError)
-        except sys.modules["aexpect"].ShellProcessTerminatedError as ex:
+        except aexpect.ShellProcessTerminatedError as ex:
             last_words = ex.output
         self.get_session()
         return last_words

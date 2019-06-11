@@ -43,9 +43,8 @@ class TestObject(object):
         self.config = config
         self._params_cache = None
 
-        self.current_state = "unknown"
-
         # TODO: integrate these features better
+        self.current_state = "unknown"
         self.object_str = None
 
     def is_permanent(self):

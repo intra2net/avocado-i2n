@@ -16,13 +16,13 @@ needs, etc.). It can be used to test Proxy, Port forwarding,
 VPN, NAT, etc.
 
 Each vm is a network node and can have one of few currently supported
-operating systems. For some functionality it is also required to have
-at least three nics, respectivaly named "lnic" for local isolated
+operating systems. For VPN/GRE functionality it is also required to have
+at least three nics, respectively named "lnic" for local isolated
 connection to the host, "inic" for (internet) connection to the other
 nodes, and "onic" for other connection to own LAN.
 
 Ephemeral clients are based on RIP Linux and are temporary clients
-created just for the duration of a test. An arbirary number of those
+created just for the duration of a test. An arbitrary number of those
 can be spawned depending on test requirements and available resources.
 
 INTERFACE
@@ -191,10 +191,10 @@ class VMNetwork(object):
     def integrate_node(self, node):
         """
         Add all interfaces and netconfigs resulting from a new vm node
-        into the vm net, thus integrating the configuration into
+        into the vm network, thus integrating the configuration into
         the available one.
 
-        :param node: vm node to be integrated into the vmnet
+        :param node: vm node to be integrated into the network
         :type node: :py:class:`VMNode`
         """
         logging.debug("Generating all interfaces for %s", node.name)
@@ -206,11 +206,12 @@ class VMNetwork(object):
             :returns: interfaces of the vm node
             :rtype: {str, :py:class:`VMInterface`}
             """
+            interfaces = {}
             for nic_name in node.platform.params.objects("nics"):
                 nic_params = node.platform.params.object_params(nic_name)
-                node.interfaces[nic_name] = self.new_interface(nic_params)
-            return node.interfaces
-        get_interfaces(node)
+                interfaces[nic_name] = self.new_interface(nic_params)
+            return interfaces
+        node.interfaces = get_interfaces(node)
         for nic_name in node.interfaces.keys():
             ikey = "%s.%s" % (node.name, nic_name)
             self.interfaces[ikey] = node.interfaces[nic_name]
@@ -278,8 +279,8 @@ class VMNetwork(object):
         interface.ip = netconfig.get_allocatable_address()
         netconfig.add_interface(interface)
         if proxy_interface is not None:
-            # TODO: this invalidates the network config of the ref_interface -
-            # if used in more than one test it has to be improved
+            # TODO: this invalidates the network config of the ref_interface
+            # and if used often enough it has to be improved
             del netconfig.interfaces[interface.ip]
             ref_interface.ip = proxy_interface.ip
             interface.ip = proxy_interface.netconfig.get_allocatable_address()
@@ -584,13 +585,14 @@ class VMNetwork(object):
             logging.debug('ip addr output for %s:\n%s' % (netdst, output))
 
         logging.info("Adding bridge %s", netdst)
-        # TODO: no original avocado-vt method could do this for us
+        # TODO: no original avocado-vt method could in utils_net like the ones from
+        # the bridge manager could do this for us at least from the research at the time
         process.run("brctl addbr %s" % netdst)
         if interface.params.get("host", "") != "":
             logging.debug("Adding this host with ip %s to %s and bringing it up",
                           host_ip, netdst)
-            # TODO: this timeout is temporary
-            time.sleep(2)
+            # give a little more time for the new bridge before adding an interface for it
+            time.sleep(1)
             # TODO: no original avocado-vt method in utils_net like set_ip() and
             # set_netmask() could do this for us at least from the research at the time
             process.run("ip addr add %s/%s dev %s" % (host_ip, mask_bit, netdst))
@@ -1161,7 +1163,7 @@ class VMNetwork(object):
                 return dst_iface.ip
 
         # TODO: we could also do some general routing and gateway search but this is
-        # rather unnecessary with the current tests' requirements
+        # rather unnecessary with the current user requirements
 
         # do a VPN search as the last resort (of what we have implemented so far)
         logging.debug("No accessible IP found in local networks, falling back to VPN search")
@@ -1289,13 +1291,13 @@ class VMNetwork(object):
                 exceptions.TestError("Mutual ping of all LAN members unsuccessful.")
             else:
                 logging.info("Mutual ping of all LAN members successful!")
-                return
 
-        if ping_dst is None:
-            ping_dst = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic, netconfig_num=netconfig_num)
-        logging.info("Pinging %s from %s", ping_dst, src_vm.name)
-        result = src_vm.session.cmd("ping %s -c 3" % ping_dst)
-        logging.info(result.split("\n")[-3])
+        else:
+            if ping_dst is None:
+                ping_dst = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic, netconfig_num=netconfig_num)
+            logging.info("Pinging %s from %s", ping_dst, src_vm.name)
+            result = src_vm.session.cmd("ping %s -c 3" % ping_dst)
+            logging.info(result.split("\n")[-3])
 
     def _ssh_client_hostname(self, src_vm, dst_vm, ssh_ip, timeout=10):
         logging.info("Retrieving host name of client %s from %s through ip %s",

@@ -204,10 +204,9 @@ class TestGraph(object):
                         # TODO: If the states are online but not on a permanent test object,
                         # we rely on the ephemeral tests. However, be warned that there is
                         # no guarantee the ephemeral test concept (i.e. offline to online
-                        # state transition) will guard all possible topologies of the Cartesian
-                        # graph. This works well for simple enough cases like most of our cases,
-                        # more specifically cases with no online states descending from other
-                        # online states unless we have a permanent object.
+                        # state transition) will guard all possible topologies of the Cartesian graph.
+                        # This works well for simple enough cases with no online states descending from
+                        # other online states unless we have a permanent object.
                         logging.warning("The state %s of %s is ephemeral but will be forcibly reused",
                                         object_state, object_name)
                     else:
