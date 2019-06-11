@@ -18,6 +18,7 @@ import signal
 from multiprocessing import SimpleQueue
 
 from avocado.core.runner import TestRunner
+from virttest import utils_misc
 
 from . import params_parser as param
 from .cartesian_graph import TestGraph, TestNode
@@ -291,6 +292,14 @@ class CartesianRunner(TestRunner):
                     self.run_create_node(graph, test_node.params.get("vms", ""), setup_str)
                 elif test_node.is_install_node():
                     self.run_install_node(graph, test_node.params.get("vms", ""), setup_str)
+
+            # re-runnable tests need unique variant names
+            elif test_node.is_ephemeral():
+                original_shortname = test_node.params["shortname"]
+                extra_variant = utils_misc.generate_random_string(6)
+                test_node.params["shortname"] += "." + extra_variant
+                self.run_test_node(test_node)
+                test_node.params["shortname"] = original_shortname
 
             else:
                 # finally, good old running of an actual test
