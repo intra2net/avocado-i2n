@@ -17,7 +17,6 @@ import re
 import logging
 
 from avocado_vt.loader import VirtTestLoader
-from virttest import utils_params
 
 from . import params_parser as param
 from .cartesian_graph import TestGraph, TestNode, TestObject
@@ -76,8 +75,8 @@ class CartesianLoader(VirtTestLoader):
                 assert i < 1, "There must be exactly one configuration for %s - please restrict better" % vm_name
 
                 # parameter postprocessing - some expansion and simplification
-                vm_params = utils_params.multiply_params_per_object(d, [vm_name])
-                vm_params = utils_params.object_params(vm_params, vm_name, param.all_vms())
+                vm_params = param.multiply_params_per_object(d, [vm_name])
+                vm_params = param.object_params(vm_params, vm_name, param.all_vms())
                 # NOTE: this is still not perfect - it also overwrites parameters under conditional blocks with
                 # their defaults outside of the conditional blocks (newly defined parameters are preserved though)
                 vm_params.pop("cdrom_cd1", None)
@@ -150,7 +149,7 @@ class CartesianLoader(VirtTestLoader):
             logging.debug("Multiplying the vm variants by the test variants using %s", base_object.name)
             setup_dict = {}
             if len(objects) > 1:
-                setup_dict = utils_params.merge_object_params(objnames, objdicts, "vms", base_object.name)
+                setup_dict = param.merge_object_params(objnames, objdicts, "vms", base_object.name)
             setup_str = param.re_str(d["name"], nodes_str)
             try:
                 # combine object configurations
