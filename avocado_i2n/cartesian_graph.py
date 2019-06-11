@@ -60,6 +60,10 @@ class TestObject(object):
 
         self.current_state = "unknown"
 
+        # TODO: integrate these features better
+        self.object_string = None
+        self.unique_params = None
+
     def is_permanent(self):
         """
         If the test object is permanent, it can only be created manually
