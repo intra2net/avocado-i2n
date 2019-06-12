@@ -164,7 +164,7 @@ def full(args, run_params, tag=""):
     run_params["redeploy_only"] = "no"
     deploy(args, run_params, tag=tag)
     setup_str = args.param_str
-    args.param_str += param.dict_to_str({"set_state": "customize_vm", "set_type": "offline"})
+    args.param_str += param.ParsedDict({"set_state": "customize_vm", "set_type": "offline"}).parsable_form()
     set(args, run_params, tag=tag)
     args.param_str = setup_str
 
@@ -251,11 +251,11 @@ def update(args, run_params, tag=""):
 
     # now redeploy data
     setup_str = args.param_str
-    args.param_str = setup_str + param.dict_to_str({"get_state": "install", "get_type": "offline"})
+    args.param_str = setup_str + param.ParsedDict({"get_state": "install", "get_type": "offline"}).parsable_form()
     get(args, run_params, tag=tag + "m")
     run_params["redeploy_only"] = "no"
     deploy(args, run_params, tag=tag)
-    args.param_str = setup_str + param.dict_to_str({"set_state": "customize_vm", "set_type": "offline"})
+    args.param_str = setup_str + param.ParsedDict({"set_state": "customize_vm", "set_type": "offline"}).parsable_form()
     set(args, run_params, tag=tag)
     args.param_str = setup_str
 
@@ -295,8 +295,8 @@ def graphfull(args, run_params, tag=""):
 
         # NOTE: this makes sure that any present states are overwritten and no created
         # states are removed, skipping any state restoring for better performance
-        setup_str = args.param_str + param.dict_to_str({"force_create": "yes", "get_mode": "ia",
-                                                        "set_mode": "ff", "unset_mode": "ra"})
+        setup_str = args.param_str + param.ParsedDict({"force_create": "yes", "get_mode": "ia",
+                                                       "set_mode": "ff", "unset_mode": "ra"}).parsable_form()
         r.run_traversal(create_graph, setup_str)
 
 
@@ -330,7 +330,7 @@ def graphupdate(args, run_params, tag=""):
         logging.info("Tracing and removing all old states depending on the updated '%s'...",
                      vm_params.get("to_state", "customize_vm"))
         # remove all test nodes depending on the updated node if present (unset mode is "ignore otherwise")
-        remove_graph = l.parse_object_trees(args.param_str + param.dict_to_str({"unset_mode": "fi"}),
+        remove_graph = l.parse_object_trees(args.param_str + param.ParsedDict({"unset_mode": "fi"}).parsable_form(),
                                             param.re_str(vm_params.get("remove_set", "all")), args.vm_strs,
                                             prefix=tag, object_names=vm_name, objectless=False, verbose=False)
         remove_graph.flag_children(flag_type="run", flag=False)
@@ -356,7 +356,7 @@ def graphupdate(args, run_params, tag=""):
 
         # NOTE: this makes sure that no new states are created and the updated
         # states are not removed, aborting in any other case
-        setup_str = args.param_str + param.dict_to_str({"get_mode": "ra", "set_mode": "fa", "unset_mode": "ra"})
+        setup_str = args.param_str + param.ParsedDict({"get_mode": "ra", "set_mode": "fa", "unset_mode": "ra"}).parsable_form()
         r.run_traversal(update_graph, setup_str)
 
 
@@ -431,30 +431,30 @@ def windows(args, run_params, tag=""):
         # permanent objects (i.e. instead of transition from customize_vm to online
         # root, it is a transition from supposedly "permanentized" vm to the root)
         logging.info("Booting %s for the first permanent online state", vm.name)
-        parser = param.update_parser(vm.parser,
-                                     ovrwrt_dict={"set_state": "windows_online"},
-                                     ovrwrt_str=param.re_str("manage.start", args.param_str, objectless=True),
-                                     ovrwrt_base_file="sets.cfg",
-                                     ovrwrt_file=param.tests_ovrwrt_file)
-        args.graph.r.run_test_node(TestNode(tag, parser, []))
+        config = vm.config.get_copy()
+        config.parse_next_batch(base_file="sets.cfg",
+                                ovrwrt_file=param.tests_ovrwrt_file,
+                                ovrwrt_str=param.re_str("manage.start", args.param_str, objectless=True),
+                                ovrwrt_dict={"set_state": "windows_online"})
+        args.graph.r.run_test_node(TestNode(tag, config, []))
 
         logging.info("Installing local virtuser at %s", vm.name)
-        parser = param.update_parser(vm.parser,
-                                     ovrwrt_dict={"skip_image_processing": "yes", "kill_vm": "no"},
-                                     ovrwrt_str=param.re_str("windows_virtuser", args.param_str, objectless=True),
-                                     ovrwrt_base_file="sets.cfg",
-                                     ovrwrt_file=param.tests_ovrwrt_file)
-        args.graph.r.run_test_node(TestNode(tag, parser, []))
+        config = vm.config.get_copy()
+        config.parse_next_batch(base_file="sets.cfg",
+                                ovrwrt_file=param.tests_ovrwrt_file,
+                                ovrwrt_str=param.re_str("windows_virtuser", args.param_str, objectless=True),
+                                ovrwrt_dict={"skip_image_processing": "yes", "kill_vm": "no"})
+        args.graph.r.run_test_node(TestNode(tag, config, []))
 
         if run_params.get("with_outlook", "no") != "no":
             logging.info("Installing Outlook at %s", vm.name)
             year = run_params["with_outlook"]
-            parser = param.update_parser(vm.parser,
-                                         ovrwrt_dict={"skip_image_processing": "yes", "kill_vm": "no"},
-                                         ovrwrt_str=param.re_str("outlook_prep..ol%s" % year, args.param_str, objectless=True),
-                                         ovrwrt_base_file="sets.cfg",
-                                         ovrwrt_file=param.tests_ovrwrt_file)
-            args.graph.r.run_test_node(TestNode(tag, parser, []))
+            config = vm.config.get_copy()
+            config.parse_next_batch(base_file="sets.cfg",
+                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_str=param.re_str("outlook_prep..ol%s" % year, args.param_str, objectless=True),
+                                    ovrwrt_dict={"skip_image_processing": "yes", "kill_vm": "no"})
+            args.graph.r.run_test_node(TestNode(tag, config, []))
 
 
 @with_cartesian_graph
@@ -477,11 +477,11 @@ def develop(args, run_params, tag=""):
     vms = run_params["vms"]
     mode = run_params.get("devmode", "generator")
     setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("develop.%s" % mode) + param.dict_to_str(setup_dict) + args.param_str
+    setup_str = param.re_str("develop.%s" % mode) + param.ParsedDict(setup_dict).parsable_form() + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
     logging.info("Developing on virtual machines %s", vms)
-    args.graph.r.run_test_node(TestNode(tag, tests[0].parser, []))
+    args.graph.r.run_test_node(TestNode(tag, tests[0].config, []))
 
 
 ############################################################
@@ -535,8 +535,8 @@ def deploy(args, run_params, tag=""):
         for i, state in enumerate(states):
             setup_str = args.param_str
             if state != "current_state":
-                setup_str += param.dict_to_str({"get_state": state, "set_state": state,
-                                                "get_type": "any", "set_type": "any"})
+                setup_str += param.ParsedDict({"get_state": state, "set_state": state,
+                                               "get_type": "any", "set_type": "any"}).parsable_form()
             ovrwrt_dict = {"skip_image_processing": "yes", "kill_vm": "no",
                            "redeploy_only": run_params.get("redeploy_only", "yes")}
             if stateless:
@@ -544,12 +544,12 @@ def deploy(args, run_params, tag=""):
                 ovrwrt_dict["set_state"] = ""
             setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
             ovrwrt_str = param.re_str("customize_vm", setup_str, objectless=True)
-            parser = param.update_parser(vm.parser,
-                                         ovrwrt_dict=ovrwrt_dict,
-                                         ovrwrt_str=ovrwrt_str,
-                                         ovrwrt_base_file="sets.cfg",
-                                         ovrwrt_file=param.tests_ovrwrt_file)
-            args.graph.r.run_test_node(TestNode(setup_tag, parser, []))
+            config = vm.config.get_copy()
+            config.parse_next_batch(base_file="sets.cfg",
+                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_str=ovrwrt_str,
+                                    ovrwrt_dict=ovrwrt_dict)
+            args.graph.r.run_test_node(TestNode(setup_tag, config, []))
 
 
 @with_cartesian_graph
@@ -573,12 +573,12 @@ def internal(args, run_params, tag=""):
             ovrwrt_dict = {}
         forced_setup = vm.params["node"]
         ovrwrt_str = param.re_str(forced_setup, args.param_str, objectless=True)
-        parser = param.update_parser(vm.parser,
-                                     ovrwrt_dict=ovrwrt_dict,
-                                     ovrwrt_str=ovrwrt_str,
-                                     ovrwrt_base_file="sets.cfg",
-                                     ovrwrt_file=param.tests_ovrwrt_file)
-        args.graph.r.run_test_node(TestNode(tag, parser, []))
+        config = vm.config.get_copy()
+        config.parse_next_batch(base_file="sets.cfg",
+                                ovrwrt_file=param.tests_ovrwrt_file,
+                                ovrwrt_str=ovrwrt_str,
+                                ovrwrt_dict=ovrwrt_dict)
+        args.graph.r.run_test_node(TestNode(tag, config, []))
 
 
 @with_cartesian_graph
@@ -605,7 +605,7 @@ def sysupdate(args, run_params, tag=""):
         for i, state in enumerate(states):
             setup_str = ""
             if state != "current_state":
-                setup_str = args.param_str + param.dict_to_str({"get_state": state, "set_state": state})
+                setup_str = args.param_str + param.ParsedDict({"get_state": state, "set_state": state}).parsable_form()
 
             if stateless:
                 ovrwrt_dict = {"get_state": "", "set_state": "",
@@ -614,12 +614,12 @@ def sysupdate(args, run_params, tag=""):
                 ovrwrt_dict = {}
             setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
             ovrwrt_str = param.re_str("system_update", setup_str, objectless=True)
-            parser = param.update_parser(vm.parser,
-                                         ovrwrt_dict=ovrwrt_dict,
-                                         ovrwrt_str=ovrwrt_str,
-                                         ovrwrt_base_file="sets.cfg",
-                                         ovrwrt_file=param.tests_ovrwrt_file)
-            args.graph.r.run_test_node(TestNode(setup_tag, parser, []))
+            config = vm.config.get_copy()
+            config.parse_next_batch(base_file="sets.cfg",
+                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_str=ovrwrt_str,
+                                    ovrwrt_dict=ovrwrt_dict)
+            args.graph.r.run_test_node(TestNode(setup_tag, config, []))
 
 
 ############################################################
@@ -643,11 +643,11 @@ def boot(args, run_params, tag=""):
     """
     vms = run_params["vms"]
     setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("manage.start") + param.dict_to_str(setup_dict) + args.param_str
+    setup_str = param.re_str("manage.start") + param.ParsedDict(setup_dict).parsable_form() + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one boot test variant from %s" % tests
     logging.info("Booting virtual machines %s", vms)
-    args.graph.r.run_test_node(TestNode(tag, tests[0].parser, []))
+    args.graph.r.run_test_node(TestNode(tag, tests[0].config, []))
 
 
 @with_cartesian_graph
@@ -668,11 +668,11 @@ def download(args, run_params, tag=""):
     """
     vms = run_params["vms"]
     setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("manage.download") + param.dict_to_str(setup_dict) + args.param_str
+    setup_str = param.re_str("manage.download") + param.ParsedDict(setup_dict).parsable_form() + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one download test variant from %s" % tests
     logging.info("Downloading from virtual machines %s", vms)
-    args.graph.r.run_test_node(TestNode(tag, tests[0].parser, []))
+    args.graph.r.run_test_node(TestNode(tag, tests[0].config, []))
 
 
 @with_cartesian_graph
@@ -693,11 +693,11 @@ def upload(args, run_params, tag=""):
     """
     vms = run_params["vms"]
     setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("manage.upload") + param.dict_to_str(setup_dict) + args.param_str
+    setup_str = param.re_str("manage.upload") + param.ParsedDict(setup_dict).parsable_form() + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one upload test variant from %s" % tests
     logging.info("Uploading to virtual machines %s", vms)
-    args.graph.r.run_test_node(TestNode(tag, tests[0].parser, []))
+    args.graph.r.run_test_node(TestNode(tag, tests[0].config, []))
 
 
 @with_cartesian_graph
@@ -716,11 +716,11 @@ def shutdown(args, run_params, tag=""):
     """
     vms = run_params["vms"]
     setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("manage.stop") + param.dict_to_str(setup_dict) + args.param_str
+    setup_str = param.re_str("manage.stop") + param.ParsedDict(setup_dict).parsable_form() + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one shutdown test variant from %s" % tests
     logging.info("Shutting down virtual machines %s", vms)
-    args.graph.r.run_test_node(TestNode(tag, tests[0].parser, []))
+    args.graph.r.run_test_node(TestNode(tag, tests[0].config, []))
 
 
 ############################################################
@@ -741,13 +741,13 @@ def check(args, run_params, tag=""):
     """
     setup_str = args.param_str
     setup_str += param.re_str("manage.unchanged")
-    setup_str += param.dict_to_str({"vm_action": "check",
-                                    "skip_image_processing": "yes"})
+    setup_str += param.ParsedDict({"vm_action": "check",
+                                   "skip_image_processing": "yes"}).parsable_form()
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs,
                                                object_names=run_params["vms"],
                                                objectless=True, prefix=tag)
     for test in tests:
-        args.graph.r.run_test_node(TestNode(tag, test.parser, []))
+        args.graph.r.run_test_node(TestNode(tag, test.config, []))
 
 
 @with_cartesian_graph
@@ -764,13 +764,13 @@ def pop(args, run_params, tag=""):
     """
     setup_str = args.param_str
     setup_str += param.re_str("manage.unchanged")
-    setup_str += param.dict_to_str({"vm_action": "pop",
-                                    "skip_image_processing": "yes"})
+    setup_str += param.ParsedDict({"vm_action": "pop",
+                                   "skip_image_processing": "yes"}).parsable_form()
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs,
                                                object_names=run_params["vms"],
                                                objectless=True, prefix=tag)
     for test in tests:
-        args.graph.r.run_test_node(TestNode(tag, test.parser, []))
+        args.graph.r.run_test_node(TestNode(tag, test.config, []))
 
 
 @with_cartesian_graph
@@ -786,13 +786,13 @@ def push(args, run_params, tag=""):
     """
     setup_str = args.param_str
     setup_str += param.re_str("manage.unchanged")
-    setup_str += param.dict_to_str({"vm_action": "push",
-                                   "skip_image_processing": "yes"})
+    setup_str += param.ParsedDict({"vm_action": "push",
+                                   "skip_image_processing": "yes"}).parsable_form()
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs,
                                                      object_names=run_params["vms"],
                                                      objectless=True, prefix=tag)
     for test in tests:
-        args.graph.r.run_test_node(TestNode(tag, test.parser, []))
+        args.graph.r.run_test_node(TestNode(tag, test.config, []))
 
 
 @with_cartesian_graph
@@ -810,14 +810,15 @@ def get(args, run_params, tag=""):
     methods but we use different approach for illustration.
     """
     for vm_name in run_params.objects("vms"):
-        parser = param.update_parser(args.graph.l.parse_objects(args.vm_strs, vm_name)[0].parser,
-                                     ovrwrt_dict={"vm_action": "get",
-                                                  "skip_image_processing": "yes"},
-                                     ovrwrt_str=param.re_str("manage.unchanged",
-                                                             args.param_str, objectless=True),
-                                     ovrwrt_base_file="sets.cfg",
-                                     ovrwrt_file=param.tests_ovrwrt_file)
-        args.graph.r.run_test_node(TestNode(tag, parser, []))
+        test_object = args.graph.l.parse_objects(args.vm_strs, vm_name)
+        config = test_object[0].config.get_copy()
+        config.parse_next_batch(base_file="sets.cfg",
+                                ovrwrt_file=param.tests_ovrwrt_file,
+                                ovrwrt_str=param.re_str("manage.unchanged",
+                                                        args.param_str, objectless=True),
+                                ovrwrt_dict={"vm_action": "get",
+                                             "skip_image_processing": "yes"})
+        args.graph.r.run_test_node(TestNode(tag, config, []))
 
 
 @with_cartesian_graph
@@ -835,14 +836,15 @@ def set(args, run_params, tag=""):
     methods but we use different approach for illustration.
     """
     for vm_name in run_params.objects("vms"):
-        parser = param.update_parser(args.graph.l.parse_objects(args.vm_strs, vm_name)[0].parser,
-                                     ovrwrt_dict={"vm_action": "set",
-                                                  "skip_image_processing": "yes"},
-                                     ovrwrt_str=param.re_str("manage.unchanged",
-                                                             args.param_str, objectless=True),
-                                     ovrwrt_base_file="sets.cfg",
-                                     ovrwrt_file=param.tests_ovrwrt_file)
-        args.graph.r.run_test_node(TestNode(tag, parser, []))
+        test_object = args.graph.l.parse_objects(args.vm_strs, vm_name)
+        config = test_object[0].config.get_copy()
+        config.parse_next_batch(base_file="sets.cfg",
+                                ovrwrt_file=param.tests_ovrwrt_file,
+                                ovrwrt_str=param.re_str("manage.unchanged",
+                                                        args.param_str, objectless=True),
+                                ovrwrt_dict={"vm_action": "set",
+                                             "skip_image_processing": "yes"})
+        args.graph.r.run_test_node(TestNode(tag, config, []))
 
 
 @with_cartesian_graph
@@ -862,18 +864,19 @@ def unset(args, run_params, tag=""):
     # since the default unset_mode is passive (ri) we need a better
     # default value for that case but still modifiable by the user
     if "unset_mode" not in args.param_str:
-        setup_str = args.param_str + param.dict_to_str({"unset_mode": "fi"})
+        setup_str = args.param_str + param.ParsedDict({"unset_mode": "fi"}).parsable_form()
     else:
         setup_str = args.param_str
     for vm_name in run_params.objects("vms"):
-        parser = param.update_parser(args.graph.l.parse_objects(args.vm_strs, vm_name)[0].parser,
-                                     ovrwrt_dict={"vm_action": "unset",
-                                                  "skip_image_processing": "yes"},
-                                     ovrwrt_str=param.re_str("manage.unchanged",
-                                                             setup_str, objectless=True),
-                                     ovrwrt_base_file="sets.cfg",
-                                     ovrwrt_file=param.tests_ovrwrt_file)
-        args.graph.r.run_test_node(TestNode(tag, parser, []))
+        test_object = args.graph.l.parse_objects(args.vm_strs, vm_name)
+        config = test_object[0].config.get_copy()
+        config.parse_next_batch(base_file="sets.cfg",
+                                ovrwrt_file=param.tests_ovrwrt_file,
+                                ovrwrt_str=param.re_str("manage.unchanged",
+                                                        args.param_str, objectless=True),
+                                ovrwrt_dict={"vm_action": "unset",
+                                             "skip_image_processing": "yes"})
+        args.graph.r.run_test_node(TestNode(tag, config, []))
 
 
 def create(args, run_params, tag=""):
@@ -887,7 +890,7 @@ def create(args, run_params, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = args.param_str
-    args.param_str += param.dict_to_str({"set_state": "root", "set_mode": "af", "set_type": "offline"})
+    args.param_str += param.ParsedDict({"set_state": "root", "set_mode": "af", "set_type": "offline"}).parsable_form()
     set(args, run_params, tag=tag)
     args.param_str = setup_str
 
@@ -903,6 +906,6 @@ def clean(args, run_params, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = args.param_str
-    args.param_str += param.dict_to_str({"unset_state": "root", "unset_mode": "fi", "unset_type": "offline"})
+    args.param_str += param.ParsedDict({"unset_state": "root", "unset_mode": "fi", "unset_type": "offline"}).parsable_form()
     unset(args, run_params, tag=tag)
     args.param_str = setup_str

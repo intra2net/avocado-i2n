@@ -79,9 +79,11 @@ def params_from_cmd(args):
     log.debug("Parsed param string '%s'", param_str)
 
     # get minimal configurations and parse defaults if no command line arguments
-    tests_params = param.prepare_params(base_file="groups-base.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file,
-                                        ovrwrt_str=param_str)
+    tests_config = param.Reparsable()
+    tests_config.parse_next_batch(base_file="groups-base.cfg",
+                                  ovrwrt_file=param.tests_ovrwrt_file,
+                                  ovrwrt_str=param_str)
+    tests_params = tests_config.get_params()
     tests_str += param_str
     if use_tests_default:
         default = tests_params.get("default_only", "all")
@@ -92,10 +94,12 @@ def params_from_cmd(args):
     args.tests_str = tests_str
     log.debug("Parsed tests string '%s'", tests_str)
 
-    vms_params = param.prepare_params(base_file="guest-base.cfg",
-                                      ovrwrt_dict={"vms": " ".join(selected_vms)},
-                                      ovrwrt_file=param.vms_ovrwrt_file,
-                                      ovrwrt_str=param_str)
+    vms_config = param.Reparsable()
+    vms_config.parse_next_batch(base_file="guest-base.cfg",
+                                ovrwrt_file=param.vms_ovrwrt_file,
+                                ovrwrt_str=param_str,
+                                ovrwrt_dict={"vms": " ".join(selected_vms)})
+    vms_params = vms_config.get_params()
     for vm_name in available_vms:
         # some selected vms might not be restricted on the command line so check again
         if vm_name not in vm_strs:
@@ -110,9 +114,11 @@ def params_from_cmd(args):
     log.debug("Parsed vm strings '%s'", vm_strs)
 
     # control against invoking internal tests
-    control_parser = param.prepare_parser(base_file="sets.cfg",
-                                          ovrwrt_file=param.tests_ovrwrt_file,
-                                          ovrwrt_str=tests_str)
+    control_config = param.Reparsable()
+    control_config.parse_next_batch(base_file="sets.cfg",
+                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_str=tests_str)
+    control_parser = control_config.get_parser()
     if with_nontrivial_restrictions:
         for d in control_parser.get_dicts():
             if ".internal." in d["name"] or ".original." in d["name"]:

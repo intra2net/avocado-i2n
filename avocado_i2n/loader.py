@@ -66,16 +66,15 @@ class CartesianLoader(VirtTestLoader):
             if vm_name not in object_strs:
                 object_strs[vm_name] = ""
             # all possible hardware-software combinations for a given vm
-            vm_parser = param.prepare_parser(base_file="objects.cfg",
-                                             base_str=param.vm_str(vm_name, object_strs),
-                                             base_dict={"main_vm": vm_name},
-                                             ovrwrt_file=param.vms_ovrwrt_file,
-                                             show_dictionaries=verbose)
-            for i, d in enumerate(vm_parser.get_dicts()):
+            config = param.Reparsable()
+            config.parse_next_batch(base_file="objects.cfg",
+                                    base_str=param.vm_str(vm_name, object_strs),
+                                    base_dict={"main_vm": vm_name},
+                                    ovrwrt_file=param.vms_ovrwrt_file)
+            for i, d in enumerate(config.get_parser(show_dictionaries=verbose).get_dicts()):
                 assert i < 1, "There must be exactly one configuration for %s - please restrict better" % vm_name
 
-                # TODO: parameter postprocessing - to be simplified later on
-                test_object = TestObject(vm_name, vm_parser)
+                test_object = TestObject(vm_name, config)
                 test_object.object_str = object_strs[vm_name]
 
             test_objects.append(test_object)
@@ -101,8 +100,10 @@ class CartesianLoader(VirtTestLoader):
         test_nodes = []
 
         # prepare initial parser as starting configuration and get through tests
-        test_parser = param.prepare_parser(base_file="sets.cfg", ovrwrt_str=nodes_str)
-        for i, d in enumerate(test_parser.get_dicts()):
+        early_config = param.Reparsable()
+        early_config.parse_next_file("sets.cfg")
+        early_config.parse_next_str(nodes_str)
+        for i, d in enumerate(early_config.get_parser().get_dicts()):
             name = prefix + str(i+1)
             objects, objstrs = [], {}
 
@@ -142,24 +143,21 @@ class CartesianLoader(VirtTestLoader):
 
             # final variant multiplication to produce final test node configuration
             logging.debug("Multiplying the vm variants by the test variants using %s", main_object.name)
-            setup_str = param.re_str(d["name"], nodes_str)
             try:
                 # combine object configurations
                 for test_object in objects:
                     objstrs[test_object.name] = test_object.object_str
-                vm_parser = param.prepare_parser(base_file="objects.cfg",
-                                                 base_str=param.vm_str(d["vms"], objstrs),
-                                                 base_dict={"main_vm": main_object.name},
-                                                 ovrwrt_file=param.vms_ovrwrt_file,
-                                                 ovrwrt_str="",
-                                                 ovrwrt_dict={})
-                parser = param.update_parser(vm_parser,
-                                             ovrwrt_base_file="sets.cfg",
-                                             ovrwrt_file=param.tests_ovrwrt_file,
-                                             ovrwrt_str=setup_str,
-                                             ovrwrt_dict={},
-                                             show_dictionaries=verbose)
-                test_nodes.append(TestNode(name, parser, objects))
+                config = param.Reparsable()
+                config.parse_next_batch(base_file="objects.cfg",
+                                        base_str=param.vm_str(d["vms"], objstrs),
+                                        base_dict={"main_vm": main_object.name},
+                                        ovrwrt_file=param.vms_ovrwrt_file)
+                config.parse_next_batch(base_file="sets.cfg",
+                                        ovrwrt_file=param.tests_ovrwrt_file,
+                                        ovrwrt_str=param.re_str(d["name"], nodes_str))
+                # do this only to print the dictionaries to the console
+                config.get_parser(show_dictionaries=verbose)
+                test_nodes.append(TestNode(name, config, objects))
                 logging.debug("Parsed a test '%s' with main test object %s",
                               d["shortname"], main_object.name)
             except param.EmptyCartesianProduct:
@@ -222,11 +220,13 @@ class CartesianLoader(VirtTestLoader):
         if verbose:
             logging.info("%s selected test variant(s)", len(test_nodes))
         if len(test_nodes) == 0:
-            object_restrictions = param.dict_to_str(graph.test_objects)
+            object_restrictions = param.ParsedDict(graph.test_objects).parsable_form()
             for object_str in object_strs.values():
                 object_restrictions += object_str
-            raise param.EmptyCartesianProduct(param.print_restriction(base_str=object_restrictions,
-                                                                      ovrwrt_str=nodes_str))
+            config = param.Reparsable()
+            config.parse_next_str(object_restrictions)
+            config.parse_next_str(nodes_str)
+            raise param.EmptyCartesianProduct(config.print_parsed())
 
         return test_nodes, test_objects
 
@@ -350,12 +350,12 @@ class CartesianLoader(VirtTestLoader):
         setup_dict = {"abort_on_error": "yes", "set_state_on_error": "",
                       "vms": " ".join(objects),
                       "main_vm": objects[0]}
-        setup_str = param.dict_to_str(setup_dict) + param_str
+        setup_str = param.ParsedDict(setup_dict).parsable_form() + param_str
         nodes = self.parse_nodes(param.re_str("0scan", setup_str, objectless=True), graph)
-        for i, d in enumerate(nodes[0].parser.get_dicts()):
+        for i, d in enumerate(nodes[0].config.get_parser().get_dicts()):
             logging.debug("Reached shared root %s", d["shortname"])
             assert i < 1, "There can only be one shared root"
-        return TestNode("0s", nodes[0].parser, [])
+        return TestNode("0s", nodes[0].config, [])
 
     def parse_create_node(self, graph, object_name, param_str):
         """
@@ -374,15 +374,15 @@ class CartesianLoader(VirtTestLoader):
         test_object = objects[0]
         setup_dict = {"set_state": "root", "set_type": "offline"}
         setup_str = param.re_str("0root", param_str, objectless=True)
-        parser = param.update_parser(test_object.parser,
-                                     ovrwrt_base_file="sets.cfg",
-                                     ovrwrt_file=param.tests_ovrwrt_file,
-                                     ovrwrt_str=setup_str,
-                                     ovrwrt_dict=setup_dict)
-        for i, d in enumerate(parser.get_dicts()):
+        config = test_object.config.get_copy()
+        config.parse_next_batch(base_file="sets.cfg",
+                                ovrwrt_file=param.tests_ovrwrt_file,
+                                ovrwrt_str=setup_str,
+                                ovrwrt_dict=setup_dict)
+        for i, d in enumerate(config.get_parser().get_dicts()):
             logging.debug("Reached %s root %s", object_name, d["shortname"])
             assert i < 1, "There can only be one root for %s" % object_name
-        return [TestNode("0r", parser, [test_object])]
+        return [TestNode("0r", config, [test_object])]
 
     """internals - get/parse, duplicates"""
     def _get_and_parse_parent(self, graph, test_node, test_object, param_str, setup_restr):
@@ -476,10 +476,10 @@ class CartesianLoader(VirtTestLoader):
                 clone_variant = child.params["name"]
                 clone_name = child.name + "b" + str(i+1)
                 clone_str = param.re_str(clone_variant)
-                parser = param.update_parser(child.parser,
-                                             ovrwrt_str=clone_str)
+                config = child.config.get_copy()
+                config.parse_next_str(clone_str)
 
-                clones.append(TestNode(clone_name, parser, list(child.objects)))
+                clones.append(TestNode(clone_name, config, list(child.objects)))
 
                 # clone setup with the exception of unique parent copy
                 for clone_setup in child.setup_nodes:

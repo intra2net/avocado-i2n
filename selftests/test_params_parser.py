@@ -24,21 +24,19 @@ class ParamsParserTest(unittest.TestCase):
 
     def test_parser_params(self):
         self.base_str = "only tutorial1\n"
-        parser = param.prepare_parser(base_dict=self.base_dict,
-                                      base_str=self.base_str,
-                                      base_file=self.base_file,
-                                      show_restriction=False,
-                                      show_dictionaries=False,
-                                      show_dict_fullname=False,
-                                      show_dict_contents=False)
-        params = param.prepare_params(base_dict=self.base_dict,
-                                      base_str=self.base_str,
-                                      base_file=self.base_file,
-                                      show_restriction=False,
-                                      show_dictionaries=False,
-                                      show_dict_fullname=False,
-                                      show_dict_contents=False)
-        d = param.peek(parser)
+        config = param.Reparsable()
+        config.parse_next_batch(base_file=self.base_file,
+                                base_str=self.base_str,
+                                base_dict=self.base_dict)
+        parser = config.get_parser(show_restriction=False,
+                                   show_dictionaries=False,
+                                   show_dict_fullname=False,
+                                   show_dict_contents=False)
+        params = config.get_params(show_restriction=False,
+                                   show_dictionaries=False,
+                                   show_dict_fullname=False,
+                                   show_dict_contents=False)
+        d = parser.get_dicts().__next__()
         for key in params.keys():
             self.assertEqual(params[key], d[key], "The %s parameter must coincide: %s != %s" % (key, params[key], d[key]))
 

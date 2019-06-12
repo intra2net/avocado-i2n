@@ -92,7 +92,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.args.tests_str += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
         test_object = graph.objects[0]
-        dict_generator = test_object.parser.get_dicts()
+        dict_generator = test_object.config.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
         # Parser of test objects must contain exactly one dictionary
         self.assertRaises(StopIteration, dict_generator.__next__)
@@ -104,7 +104,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.args.tests_str += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
         test_node = graph.nodes[0]
-        dict_generator = test_node.parser.get_dicts()
+        dict_generator = test_node.config.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
         # Parser of test objects must contain exactly one dictionary
         self.assertRaises(StopIteration, dict_generator.__next__)

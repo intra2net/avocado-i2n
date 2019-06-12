@@ -40,23 +40,23 @@ class TestObject(object):
 
     def params(self):
         """Parameters property."""
-        return param.peek(self.parser)
+        return self.config.get_params()
     params = property(fget=params)
 
     def id(self):
         return self.name
     id = property(fget=id)
 
-    def __init__(self, name, parser):
+    def __init__(self, name, config):
         """
         Construct a test object (vm) for any test nodes (tests).
 
         :param str name: name of the test object
-        :param parser: variant configuration for the test object
-        :type parser: Parser object
+        :param config: variant configuration for the test object
+        :type config: :py:class:`param.Reparsable`
         """
         self.name = name
-        self.parser = parser
+        self.config = config
 
         self.current_state = "unknown"
 
@@ -84,7 +84,7 @@ class TestNode(object):
     def params(self):
         """Parameters (cache) property."""
         if self._params_cache is None:
-            self._params_cache = param.peek(self.parser)
+            self._params_cache = self.config.get_params()
         return self._params_cache
     params = property(fget=params)
 
@@ -97,18 +97,18 @@ class TestNode(object):
         return self.name
     count = property(fget=count)
 
-    def __init__(self, name, parser, objects):
+    def __init__(self, name, config, objects):
         """
         Construct a test node (test) for any test objects (vms).
 
         :param str name: name of the test node
-        :param parser: variant configuration for the test node
-        :type parser: Parser object
+        :param config: variant configuration for the test node
+        :type config: :py:class:`param.Reparsable`
         :param objects: objects participating in the test node
         :type objects: [TestObject]
         """
         self.name = name
-        self.parser = parser
+        self.config = config
         self._params_cache = None
 
         self.should_run = True

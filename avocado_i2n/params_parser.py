@@ -3,7 +3,7 @@
 SUMMARY
 ------------------------------------------------------
 Module for handling all Cartesian config parsing and
-further customization (wrapper of virt config parsing).
+making it reusable and maximally performant.
 
 Copyright: Intra2net AG
 
@@ -64,190 +64,282 @@ if not os.path.exists(os.path.join(os.environ['HOME'], vms_ovrwrt_file)):
 ###################################################################
 
 
-def print_restriction(base_file="", base_str="", ovrwrt_file="", ovrwrt_str=""):
+class ParsedContent():
+    """Class for parsed content of a general type."""
+
+    def __init__(self, content):
+        """Initialize the parsed content."""
+        self.content = content
+
+    def reportable_form(self):
+        """
+        Parsed content representation used in reports of parsing steps.
+
+        :returns: resulting report-compatible string
+        :rtype: str
+        :raises :py:class:`NotImlementedError` as this is an abstract method
+        """
+        raise NotImlementedError("Parsed content is an abstract class with no parsalbe form")
+
+    def parsable_form(self):
+        """
+        Convert parameter content into parsable string.
+
+        :returns: resulting parsable string
+        :rtype: str
+        :raises :py:class:`NotImlementedError` as this is an abstract method
+        """
+        raise NotImlementedError("Parsed content is an abstract class with no parsalbe form")
+
+
+class ParsedFile(ParsedContent):
+    """Class for parsed content of file type."""
+
+    def __init__(self, content):
+        """Initialize the parsed content."""
+        super().__init__(content)
+        self.filename = content
+
+    def reportable_form(self):
+        """
+        Parsed file representation used in reports of parsing steps.
+
+        Arguments are identical to the ones of the parent class.
+        """
+        return "\tParsed file:\n\t\t%s\n" % self.content
+
+    def parsable_form(self):
+        """
+        Convert parameter file name into parsable string.
+
+        :returns: resulting parsable string
+        :rtype: str
+        """
+        return "include %s\n" % self.content
+
+
+class ParsedStr(ParsedContent):
+    """Class for parsed content of string type."""
+
+    def reportable_form(self):
+        """
+        Parsed string representation used in reports of parsing steps.
+
+        Arguments are identical to the ones of the parent class.
+        """
+        return "\tParsed string:\n\t\t%s\n" % self.content.rstrip("\n").replace("\n", "\n\t\t")
+
+    def parsable_form(self):
+        """
+        Convert parameter string into parsable string.
+
+        :returns: resulting parsable string
+        :rtype: str
+
+        This is equivalent to the string since the string
+        is parsable by definition.
+        """
+        return self.content
+
+
+class ParsedDict(ParsedContent):
+    """Class for parsed content of dictionary type."""
+
+    def reportable_form(self):
+        """
+        Parsed dictionary representation used in reports of parsing steps.
+
+        Arguments are identical to the ones of the parent class.
+        """
+        return "\tParsed dictionary:\n\t\t%s\n" % self.parsable_form().rstrip("\n").replace("\n", "\n\t\t")
+
+    def parsable_form(self):
+        """
+        Convert parameter dictionary into parsable string.
+
+        :returns: resulting parsable string
+        :rtype: str
+        """
+        param_str = ""
+        for (key, value) in self.content.items():
+            param_str += "%s = %s\n" % (key, value)
+        return param_str
+
+
+class Reparsable():
     """
-    Return any available information about a parser restriction.
-
-    :param str base_file: file to be parsed first
-    :param str base_str: string to be parsed first
-    :param str ovrwrt_file: file to be parsed last
-    :param str ovrwrt_str: string to be parsed last
-    :returns: structured text of the base/ovrwrt file/string contents
-    :rtype: str
+    Class to represent quickly parsable Cartesian configuration,
+    producing both parser and parameters (parser dicts) on demand.
     """
-    restriction = "Parsing parameters with the following configuration:\n"
-    restriction += "\tBase file:\n\t\t%s\n" % base_file if base_file != "" else ""
-    restriction += "\tBase string:\n\t\t%s\n" % base_str.replace("\n", "\n\t\t") if base_str != "" else ""
-    restriction += "\tOverwrite file:\n\t\t%s\n" % ovrwrt_file if ovrwrt_file != "" else ""
-    restriction += "\tOverwrite string:\n\t\t%s\n" % ovrwrt_str.replace("\n", "\n\t\t") if ovrwrt_str != "" else ""
-    return restriction
 
+    def __init__(self):
+        """Initialize the parsable structure."""
+        self.steps = []
 
-def copy_parser(parser):
-    """
-    Copy a parser in the most efficient way possible.
+    def parse_next_file(self, pfile, overwrite=False):
+        """
+        Add a file parsing step.
 
-    :param parser: source parser to copy from
-    :type parser: Parser object
-    :returns: new parser copy
-    :rtype: Parser object
-    """
-    new_parser = cartesian_config.Parser()
-    new_parser.node.content = copy.copy(parser.node.content)
-    new_parser.node.children = copy.copy(parser.node.children)
-    new_parser.node.labels = copy.copy(parser.node.labels)
-    return new_parser
+        :param str pfile: file to be parsed next
+        :param bool overwrite: whether the file is an overwrite (custom) or
+                               base file (i.e. in $HOME or test suite location)
+        """
+        if overwrite:
+            filename = os.path.join(os.environ['HOME'], pfile)
+        else:
+            filename = os.path.join(custom_configs_dir, pfile)
+        self.steps.append(ParsedFile(filename))
 
+    def parse_next_str(self, pstring):
+        """
+        Add a string parsing step.
 
-def prepare_parser(base_dict=None, base_str="", base_file=None,
-                   ovrwrt_dict=None, ovrwrt_str="", ovrwrt_file=None,
+        :param str pstring: string to be parsed next
+        """
+        self.steps.append(ParsedStr(pstring))
+
+    def parse_next_dict(self, pdict):
+        """
+        Add a dictionary parsing step.
+
+        :param pdict: dictionary to be parsed next
+        :type pdict: {str, str}
+        """
+        self.steps.append(ParsedDict(pdict))
+
+    def parse_next_batch(self,
+                         base_file=None, base_str="", base_dict=None,
+                         ovrwrt_file=None, ovrwrt_str="", ovrwrt_dict=None):
+        """
+        Parse a batch of base file, string, and dictionary, and possibly an
+        overwrite file (with custom parameters at the user's home location).
+
+        :param base_file: file to be parsed first
+        :type base_file: str or None
+        :param base_str: string to be parsed first
+        :type base_str: str or None
+        :param base_dict: params to be added first
+        :type base_dict: {str, str} or None
+        :param ovrwrt_file: file to be parsed last
+        :type ovrwrt_file: str or None
+        :param ovrwrt_str: string to be parsed last
+        :type ovrwrt_str: str or None
+        :param ovrwrt_dict: params to be added last
+        :type ovrwrt_dict: {str, str} or None
+
+        The priority of the setting follows the order of the arguments:
+        Dictionary with some parameters is topmost, string with some
+        parameters is next and the file with parameters is taken as a base.
+        The overwriting version is taken last, the base version first.
+        """
+        if base_file:
+            self.parse_next_file(base_file)
+        if base_str:
+            self.parse_next_str(base_str)
+        if base_dict:
+            self.parse_next_dict(base_dict)
+        if ovrwrt_file:
+            self.parse_next_file(ovrwrt_file, overwrite=True)
+        if ovrwrt_str:
+            self.parse_next_str(ovrwrt_str)
+        if ovrwrt_dict:
+            self.parse_next_dict(ovrwrt_dict)
+
+    def get_parser(self,
+                   show_restriction=False, show_dictionaries=False,
+                   show_dict_fullname=False, show_dict_contents=False,
+                   show_empty_cartesian_product=True):
+        """
+        Get a basic parameters parser with its dictionaries.
+
+        :param bool show_restriction: whether to show the restriction strings
+        :param bool show_dictionaries: whether to show the obtained variants
+        :param bool show_dict_fullname: whether to show the variant fullname rather than its shortname
+        :param bool show_dict_contents: whether to show the obtained variant parameters
+        :param bool show_empty_cartesian_product: whether to check and show the resulting cartesian product
+
+        :returns: resulting parser
+        :rtype: :py:class:`cartesian_config.Parser`
+        :raises: :py:class:`EmptyCartesianProduct` if no combination of the restrictions exists
+        """
+        parser = cartesian_config.Parser()
+        hostname = os.environ.get("PREFIX", os.environ.get("HOSTNAME", "avocado"))
+        parser.parse_string("hostname = %s\n" % hostname)
+
+        for step in self.steps:
+            if isinstance(step, ParsedFile):
+                parser.parse_file(step.filename)
+            if isinstance(step, ParsedStr):
+                parser.parse_string(step.content)
+            if isinstance(step, ParsedDict):
+                parser.parse_string(step.parsable_form())
+
+        # log any required information
+        if show_restriction:
+            logging.debug(self.print_parsed())
+        if show_dictionaries:
+            options = collections.namedtuple("options", ['repr_mode', 'fullname', 'contents'])
+            show_parser = self.get_parser(show_dictionaries=False)
+            cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents), show_parser.get_dicts())
+
+        # detect empty Cartesian product
+        if show_empty_cartesian_product:
+            try:
+                empty_parser = self.get_parser(show_empty_cartesian_product=False)
+                empty_parser.get_dicts().__next__()
+            except StopIteration:
+                raise EmptyCartesianProduct(self.print_parsed()) from None
+
+        return parser
+
+    def get_params(self, list_of_keys=None,
                    show_restriction=False, show_dictionaries=False,
                    show_dict_fullname=False, show_dict_contents=False):
-    """
-    Get a basic parameters parser with its dictionaries.
+        """
+        Get a single parameter dictionary from the currently parsed configuration.
 
-    :param base_file: file to be parsed first
-    :type base_file: str or None
-    :param str base_str: string to be parsed first
-    :param base_dict: params to be added first
-    :type base_dict: {str, str} or None
+        :param list_of_keys: list of parameters key in the final selection
+        :type list_of_keys: [str] or None
+        :returns: first variant dictionary from all current parsed steps
+        :rtype: :py:class:`Params`
 
-    :param ovrwrt_file: file to be parsed last
-    :type ovrwrt_file: str or None
-    :param str ovrwrt_str: string to be parsed last
-    :param ovrwrt_dict: params to be added last
-    :type ovrwrt_dict: {str, str} or None
+        The rest of the arguments are identical to the ones from :py:method:`get_parser`.
+        """
+        parser = self.get_parser(show_restriction=show_restriction,
+                                 show_dictionaries=show_dictionaries,
+                                 show_dict_fullname=show_dict_fullname,
+                                 show_dict_contents=show_dict_contents)
+        default_params = parser.get_dicts().__next__()
+        if list_of_keys is None:
+            selected_params = default_params
+        else:
+            selected_params = {key: default_params[key] for key in list_of_keys}
+        return Params(selected_params)
 
-    :param bool show_restriction: whether to show the restriction strings
-    :param bool show_dictionaries: whether to show the obtained variants
-    :param bool show_dict_fullname: whether to show the variant fullname rather than its shortname
-    :param bool show_dict_contents: whether to show the obtained variant parameters
+    def get_copy(self):
+        """
+        Get a copy of the current reparsable that can safely be updated further.
 
-    :returns: resulting parser
-    :rtype: Parser object
-    :raises: :py:class:`EmptyCartesianProduct` if no combination of the restrictions exists
+        :returns: a copy of self with all current parsed steps in an independent list
+        :rtype: :py:class:`Reparsable`
 
-    The priority of the setting follows the order of the arguments:
-    Dictionary with some parameters is topmost, string with some
-    parameters is next and the file with parameters is taken as a base.
-    The overwriting version is taken last, the base version first.
-    """
-    parser = cartesian_config.Parser()
-    hostname = os.environ.get("PREFIX", os.environ.get("HOSTNAME", "avocado"))
-    parser.parse_string("hostname = %s\n" % hostname)
+        The rest of the arguments are identical to the ones from :py:method:`get_parser`.
+        """
+        new = Reparsable()
+        new.steps = copy.copy(self.steps)
+        return new
 
-    # configuration base
-    if base_file is not None:
-        parser.parse_file(os.path.join(custom_configs_dir, base_file))
-    if base_dict is not None:
-        base_str += dict_to_str(base_dict)
-    parser.parse_string(base_str)
+    def print_parsed(self):
+        """
+        Return printable information about what was parsed so far.
 
-    # configuration top
-    if ovrwrt_file is not None:
-        parser.parse_file(os.path.join(os.environ['HOME'], ovrwrt_file))
-    if ovrwrt_dict is not None:
-        ovrwrt_str += dict_to_str(ovrwrt_dict)
-    parser.parse_string(ovrwrt_str)
-
-    # log any required information
-    if show_restriction:
-        logging.debug(print_restriction(base_file=base_file, base_str=base_str,
-                                        ovrwrt_file=ovrwrt_file, ovrwrt_str=ovrwrt_str))
-    if show_dictionaries:
-        options = collections.namedtuple("options", ['repr_mode', 'fullname', 'contents'])
-        cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents), parser.get_dicts())
-
-    # detect empty Cartesian product
-    try:
-        parser.get_dicts().__next__()
-    except StopIteration:
-        raise EmptyCartesianProduct(print_restriction(base_file=base_file, base_str=base_str,
-                                                      ovrwrt_file=ovrwrt_file, ovrwrt_str=ovrwrt_str)) from None
-
-    return parser
-
-
-def update_parser(parser, ovrwrt_dict=None, ovrwrt_str="",
-                  ovrwrt_file=None, ovrwrt_base_file=None,
-                  show_restriction=False, show_dictionaries=False,
-                  show_dict_fullname=False, show_dict_contents=False):
-    """
-    Get a new independent parser from an old already provided one.
-
-    :param ovrwrt_base_file: file to be parsed first
-    :type ovrwrt_base_file: str or None
-    :param ovrwrt_file: file to be parsed last
-    :type ovrwrt_file: str or None
-    :param str ovrwrt_str: string to be parsed last
-    :param ovrwrt_dict: params to be added last
-    :type ovrwrt_dict: {str, str} or None
-
-    :param bool show_restriction: whether to show the restriction strings
-    :param bool show_dictionaries: whether to show the obtained variants
-    :param bool show_dict_fullname: whether to show the variant fullname rather than its shortname
-    :param bool show_dict_contents: whether to show the obtained variant parameters
-
-    :returns: resulting parser
-    :rtype: Parser object
-    :raises: :py:class:`EmptyCartesianProduct` if no combination of the restrictions exists
-    """
-    parser = copy_parser(parser)
-
-    # configuration update
-    if ovrwrt_base_file is not None:
-        parser.parse_file(os.path.join(custom_configs_dir, ovrwrt_base_file))
-    if ovrwrt_file is not None:
-        parser.parse_file(os.path.join(os.environ['HOME'], ovrwrt_file))
-    if ovrwrt_dict is not None:
-        ovrwrt_str += dict_to_str(ovrwrt_dict)
-    parser.parse_string(ovrwrt_str)
-
-    # log any required information
-    if show_restriction:
-        logging.debug(print_restriction(base_file=ovrwrt_base_file,
-                                        ovrwrt_file=ovrwrt_file, ovrwrt_str=ovrwrt_str))
-    if show_dictionaries:
-        options = collections.namedtuple("options", ['repr_mode', 'fullname', 'contents'])
-        cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents), parser.get_dicts())
-
-    # detect empty Cartesian product
-    try:
-        parser.get_dicts().__next__()
-    except StopIteration:
-        raise EmptyCartesianProduct(print_restriction(base_file=ovrwrt_base_file,
-                                                      ovrwrt_file=ovrwrt_file, ovrwrt_str=ovrwrt_str)) from None
-
-    return parser
-
-
-def prepare_params(list_of_keys=None,
-                   base_dict=None, base_str="", base_file=None,
-                   ovrwrt_dict=None, ovrwrt_str="", ovrwrt_file=None,
-                   show_restriction=False, show_dictionaries=False,
-                   show_dict_fullname=False, show_dict_contents=False):
-    """
-    Get listed parameters from the main configuration file (used for defaults).
-
-    :param list_of_keys: list of parameters key in the final selection
-    :type list_of_keys: [str] or None
-    :returns: first variant dictionary from the prepared parser
-    :rtype: Params object
-
-    The rest of the parameters are identical to the methods before.
-
-    For specifying the product for the parameters, the overwrite string with 'only'
-    can be used. Otherwise, 'only parse_params' together with default product is
-    used as a dummy restriction to get the parameters but avoid Cartesian explosion.
-    So if you specify `only` be careful for such possibility.
-    """
-    parser = prepare_parser(base_dict=base_dict, base_str=base_str, base_file=base_file,
-                            ovrwrt_dict=ovrwrt_dict, ovrwrt_str=ovrwrt_str, ovrwrt_file=ovrwrt_file,
-                            show_restriction=show_restriction,
-                            show_dictionaries=show_dictionaries,
-                            show_dict_fullname=show_dict_fullname,
-                            show_dict_contents=show_dict_contents)
-    return peek(parser)
+        :returns: structured text of the base/ovrwrt file/str/dict parse steps
+        :rtype: str
+        """
+        restriction = "Parsing parameters with the following configuration:\n"
+        for step in self.steps:
+            restriction += step.reportable_form()
+        return restriction
 
 
 ###################################################################
@@ -262,7 +354,9 @@ def all_vms():
     :returns: all available (from configuration) vms
     :rtype: [str]
     """
-    return prepare_params(list_of_keys=["vms"], base_file="guest-base.cfg").objects("vms")
+    rep = Reparsable()
+    rep.parse_next_file("guest-base.cfg")
+    return rep.get_params(list_of_keys=["vms"]).objects("vms")
 
 
 def main_vm():
@@ -272,41 +366,9 @@ def main_vm():
     :returns: main available (from configuration) vm
     :rtype: str or None
     """
-    return prepare_params(list_of_keys=["main_vm"], base_file="guest-base.cfg").get("main_vm")
-
-
-def peek(parser, list_of_keys=None):
-    """
-    Peek into a parsed dictionary.
-
-    :param parser: parser to get the first variant dictionary from
-    :type parser: Parser object
-    :param list_of_keys: list of parameters key in the final selection
-    :type list_of_keys: [str] or None
-    :returns: the first variant dictionary from the prepared parser
-    :rtype: Params object
-    """
-    default_params = parser.get_dicts().__next__()
-    if list_of_keys is None:
-        selected_params = default_params
-    else:
-        selected_params = {key: default_params[key] for key in list_of_keys}
-    return Params(selected_params)
-
-
-def dict_to_str(param_dict):
-    """
-    Convert parameter dictionary into parameter string.
-
-    :param param_dict: parameters dictionary to be converted
-    :type param_dict: {str, str}
-    :returns: resulting parameter string
-    :rtype: str
-    """
-    param_str = ""
-    for (key, value) in param_dict.items():
-        param_str += "%s = %s\n" % (key, value)
-    return param_str
+    rep = Reparsable()
+    rep.parse_next_file("guest-base.cfg")
+    return rep.get_params(list_of_keys=["main_vm"]).get("main_vm")
 
 
 def re_str(variant, ovrwrt_str="", tag="", objectless=False):
@@ -346,7 +408,7 @@ def vm_str(vms, variant_strs):
     """
     variant_str = ""
     for vm, variant in variant_strs.items():
-        subvariant = "".join(["    " + l + "\n" for l in variant.split("\n")])
+        subvariant = "".join(["    " + l + "\n" for l in variant.rstrip("\n").split("\n")])
         variant_str += "%s:\n%s" % (vm, subvariant)
     variant_str += "join " + vms + "\n"
     return variant_str
