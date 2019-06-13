@@ -8,6 +8,7 @@ from virttest import env_process
 
 from . import params_parser as param
 from . import state_setup
+from .vmnet import VMNetwork
 
 
 def params_from_cmd(args):
@@ -139,8 +140,20 @@ def params_from_cmd(args):
 
 def env_process_hooks():
     """
-    Add env processing hooks to handle online/offline state get/set operations.
+    Add env processing hooks to handle online/offline state get/set operations
+    and vmnet networking setup and instance attachment to environment.
     """
+    def get_network_state(test, params, env):
+        vmn = VMNetwork(test, params, env)
+        vmn.setup_host_bridges()
+        vmn.setup_host_services()
+        env.vmnet = vmn
+        type(env).get_vmnet = lambda self: self.vmnet
+    def network_state(fn):
+        def wrapper(test, params, env):
+            get_network_state(test, params, env)
+            fn(test, params, env)
+        return wrapper
     def online_state(fn):
         def wrapper(test, params, env):
             params["skip_types"] = "offline"
@@ -154,6 +167,6 @@ def env_process_hooks():
             del params["skip_types"]
         return wrapper
     env_process.preprocess_vm_off_hook = offline_state(state_setup.get_state)
-    env_process.preprocess_vm_on_hook = online_state(state_setup.get_state)
+    env_process.preprocess_vm_on_hook = network_state(online_state(state_setup.get_state))
     env_process.postprocess_vm_on_hook = online_state(state_setup.set_state)
     env_process.postprocess_vm_off_hook = offline_state(state_setup.set_state)
