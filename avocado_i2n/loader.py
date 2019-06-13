@@ -77,7 +77,7 @@ class CartesianLoader(VirtTestLoader):
                 # TODO: parameter postprocessing - to be simplified later on
                 test_object = TestObject(vm_name, vm_parser)
                 test_object.object_str = object_strs[vm_name]
-                test_object.unique_params = param.vm_unique_params(d, [vm_name])
+                test_object.unique_params = param.hostname_aware_params(d, [vm_name])
                 test_object.parser = param.update_parser(vm_parser, ovrwrt_dict=test_object.unique_params)
 
             test_objects.append(test_object)

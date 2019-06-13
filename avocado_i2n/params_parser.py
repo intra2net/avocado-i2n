@@ -345,38 +345,29 @@ def vm_str(vms, variant_strs):
 ###################################################################
 
 
-def vm_unique_params(params, param_objects):
+def hostname_aware_params(params, param_objects):
     """
     Generate unique parameter values for each listed parameter object
-    using its name.
+    using the name of the local host.
 
     :param params: parameters to be extended per parameter object
     :type params: {str, str}
     :param param_objects: the parameter objects to multiply with
     :type param_objects: [str]
     :returns: multiplied object-specific parameters
-    :rtype: Params object
+    :rtype: {str, str}
 
-    .. note:: If a `PREFIX` environment variable is set, the multiplied
-        paramers will also be prefixed with its value. This is useful for
-        performing multiple test runs in parallel.
-    .. note:: Currently only implemented for vm objects.
+    .. note:: The host name is set using the `PREFIX` environment variable to
+        be used as a prefix for these parameters. This is useful for performing
+        multiple test runs in parallel.
     """
-    prefix = os.environ['PREFIX'] if 'PREFIX' in os.environ else 'host'
-    params = Params(params)
-    unique_keys = params.objects("vm_unique_keys")
-    unique_params = Params()
-    for key in unique_keys:
+    hostname = os.environ.get("PREFIX", "")
+    hostname_keys = params.get("hostname_aware_params", "").split(" ")
+    hostname_params = {}
+    for key in hostname_keys:
         for name in param_objects:
-            vmprefix = "%s_%s" % (prefix, name)
             vmkey = "%s_%s" % (key, name)
             value = params.get(vmkey, params.get(key, ""))
             if value != "":
-                # TODO: still need to handle better cases where a unique directory
-                # is required (e.g. due to mount locations) like this one
-                if key == "image_name" and ".lvm." in params["name"]:
-                    pre, post = os.path.dirname(value), os.path.basename(value)
-                    unique_params[vmkey] = os.path.join(pre, vmprefix, post)
-                else:
-                    unique_params[vmkey] = "%s_%s" % (vmprefix, value)
-    return unique_params
+                hostname_params[vmkey] = value.replace("${hostname}", hostname)
+    return hostname_params
