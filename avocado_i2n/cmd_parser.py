@@ -213,7 +213,10 @@ def env_process_hooks():
     and vmnet networking setup and instance attachment to environment.
     """
     def get_network_state(test, params, env):
-        vmn = VMNetwork(test, params, env)
+        suite_path = settings.as_dict().get('i2n.common.suite_path')
+        sys.path.append(os.path.join(suite_path, "utils"))
+        import intranator_vmnet as ivmnet
+        vmn = ivmnet.IntranatorVMNetwork(test, params, env)
         vmn.setup_host_bridges()
         vmn.setup_host_services()
         env.vmnet = vmn
