@@ -61,8 +61,7 @@ class TestObject(object):
         self.current_state = "unknown"
 
         # TODO: integrate these features better
-        self.object_string = None
-        self.unique_params = None
+        self.object_str = None
 
     def is_permanent(self):
         """

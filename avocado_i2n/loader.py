@@ -77,8 +77,6 @@ class CartesianLoader(VirtTestLoader):
                 # TODO: parameter postprocessing - to be simplified later on
                 test_object = TestObject(vm_name, vm_parser)
                 test_object.object_str = object_strs[vm_name]
-                test_object.unique_params = param.hostname_aware_params(d, [vm_name])
-                test_object.parser = param.update_parser(vm_parser, ovrwrt_dict=test_object.unique_params)
 
             test_objects.append(test_object)
         return test_objects
@@ -106,7 +104,7 @@ class CartesianLoader(VirtTestLoader):
         test_parser = param.prepare_parser(base_file="sets.cfg", ovrwrt_str=nodes_str)
         for i, d in enumerate(test_parser.get_dicts()):
             name = prefix + str(i+1)
-            objects, objstrs, objdicts = [], {}, {}
+            objects, objstrs = [], {}
 
             # decide about test objects participating in the test node
             if d.get("vms") is None and object_name != "":
@@ -143,13 +141,12 @@ class CartesianLoader(VirtTestLoader):
                 # combine object configurations
                 for test_object in objects:
                     objstrs[test_object.name] = test_object.object_str
-                    objdicts.update(test_object.unique_params)
                 vm_parser = param.prepare_parser(base_file="objects.cfg",
                                                  base_str=param.vm_str(d["vms"], objstrs),
                                                  base_dict={"main_vm": base_object.name},
                                                  ovrwrt_file=param.vms_ovrwrt_file,
                                                  ovrwrt_str="",
-                                                 ovrwrt_dict=objdicts)
+                                                 ovrwrt_dict={})
                 parser = param.update_parser(vm_parser,
                                              ovrwrt_base_file="sets.cfg",
                                              ovrwrt_file=param.tests_ovrwrt_file,

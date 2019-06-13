@@ -133,6 +133,8 @@ def prepare_parser(base_dict=None, base_str="", base_file=None,
     The overwriting version is taken last, the base version first.
     """
     parser = cartesian_config.Parser()
+    hostname = os.environ.get("PREFIX", os.environ.get("HOSTNAME", "avocado"))
+    parser.parse_string("hostname = %s\n" % hostname)
 
     # configuration base
     if base_file is not None:
@@ -338,36 +340,3 @@ def vm_str(vms, variant_strs):
         variant_str += "%s:\n%s" % (vm, subvariant)
     variant_str += "join " + vms + "\n"
     return variant_str
-
-
-###################################################################
-# parameter manipuation for heterogeneuous variantization
-###################################################################
-
-
-def hostname_aware_params(params, param_objects):
-    """
-    Generate unique parameter values for each listed parameter object
-    using the name of the local host.
-
-    :param params: parameters to be extended per parameter object
-    :type params: {str, str}
-    :param param_objects: the parameter objects to multiply with
-    :type param_objects: [str]
-    :returns: multiplied object-specific parameters
-    :rtype: {str, str}
-
-    .. note:: The host name is set using the `PREFIX` environment variable to
-        be used as a prefix for these parameters. This is useful for performing
-        multiple test runs in parallel.
-    """
-    hostname = os.environ.get("PREFIX", "")
-    hostname_keys = params.get("hostname_aware_params", "").split(" ")
-    hostname_params = {}
-    for key in hostname_keys:
-        for name in param_objects:
-            vmkey = "%s_%s" % (key, name)
-            value = params.get(vmkey, params.get(key, ""))
-            if value != "":
-                hostname_params[vmkey] = value.replace("${hostname}", hostname)
-    return hostname_params
