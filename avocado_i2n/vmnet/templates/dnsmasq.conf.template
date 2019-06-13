@@ -1,0 +1,18 @@
+## AUTOTEST TEMPLATE FOR SMALL SCALE DHCP/DNS SERVICES USING DNSMASQ ##
+
+pid-file=/var/run/autotest-dnsmasq.pid
+addn-hosts=/etc/dnsmasq.d/autotest-hosts.conf
+expand-hosts
+
+# only attach to the required interfaces, not to *:53
+bind-interfaces
+except-interface=lo
+
+# extra logging
+log-queries
+log-dhcp
+log-facility=/tmp/dnsmasq.log
+
+# good netizenship
+domain-needed
+bogus-priv
