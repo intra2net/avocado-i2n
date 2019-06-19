@@ -21,7 +21,7 @@ from avocado.core.runner import TestRunner
 from virttest import utils_misc
 
 from . import params_parser as param
-from .cartesian_graph import TestGraph, TestNode
+from .cartgraph import TestGraph, TestNode
 
 
 class CartesianRunner(TestRunner):

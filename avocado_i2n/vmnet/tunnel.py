@@ -27,7 +27,12 @@ import logging
 from virttest import utils_params
 
 
-class VPNConn(object):
+class VMTunnel(object):
+    """General class for network tunnels between vms."""
+    pass
+
+
+class VPNConn(VMTunnel):
     """
     The vpnconn class - a connection object responsible
     for all VPN configuration.

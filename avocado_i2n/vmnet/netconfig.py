@@ -2,7 +2,7 @@
 
 SUMMARY
 ------------------------------------------------------
-Netconfig object for the vmnet utility.
+Network configuration object for the VM network.
 
 Copyright: Intra2net AG
 
@@ -26,7 +26,7 @@ import ipaddress
 from avocado.core import exceptions
 
 
-class Netconfig(object):
+class VMNetconfig(object):
     """
     The netconfig class - a collection of interfaces
     sharing the same network configuration.

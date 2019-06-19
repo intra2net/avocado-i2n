@@ -44,7 +44,7 @@ from avocado.core.settings import settings
 from avocado.utils import process
 
 from . import params_parser as param
-from .cartesian_graph import TestGraph, TestNode
+from .cartgraph import TestGraph, TestNode
 from .loader import CartesianLoader
 from .runner import CartesianRunner
 

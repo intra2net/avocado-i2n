@@ -41,10 +41,10 @@ from avocado.core import exceptions
 from virttest import utils_net, utils_params
 import aexpect
 
-from .iface import Interface
+from .interface import VMInterface
 from .node import VMNode
-from .config import Netconfig
-from .vpn import VPNConn
+from .netconfig import VMNetconfig
+from .tunnel import VMTunnel
 
 
 class VMNetwork(object):
@@ -60,7 +60,7 @@ class VMNetwork(object):
         the `env` and the `test` instance.
 
         .. note:: The params attribute is just a shallow copy to preserve the hierarchy:
-            network level params = test level params -> vmnode level params = test object params
+            network level params = test level params -> node level params = test object params
             -> interface level params = rarely used outside of the vm network
         """
         self.params = params
@@ -68,13 +68,13 @@ class VMNetwork(object):
         self.test = test
 
         # component types (could be replaced with extended ones)
-        self.new_vmnode = VMNode
-        self.new_interface = Interface
-        self.new_netconfig = Netconfig
-        self.new_vpnconn = VPNConn
+        self.new_node = VMNode
+        self.new_interface = VMInterface
+        self.new_netconfig = VMNetconfig
+        self.new_vpnconn = VMTunnel
 
         # component instances
-        self.vmnodes = {}
+        self.nodes = {}
         self.interfaces = {}
         self.netconfigs = {}
         self.tunnels = {}
@@ -92,8 +92,8 @@ class VMNetwork(object):
             else:
                 vm.params = vm_params
 
-            self.vmnodes[vm_name] = self.new_vmnode(vm)
-            self.integrate_vmnode(self.vmnodes[vm_name])
+            self.nodes[vm_name] = self.new_node(vm)
+            self.integrate_node(self.nodes[vm_name])
         logging.debug("Constructed network configuration:\n%s", self)
 
     def __repr__(self):
@@ -101,21 +101,21 @@ class VMNetwork(object):
         for netconfig in self.netconfigs.values():
             dump = "%s\n\t%s" % (dump, str(netconfig))
             for iface in netconfig.interfaces.values():
-                dump = "%s\n\t\t%s -> %s" % (dump, str(iface), str(iface.vmnode))
+                dump = "%s\n\t\t%s -> %s" % (dump, str(iface), str(iface.node))
         return dump
 
     def start_all_sessions(self):
         """Start a session to each of the vm nodes."""
-        for vmnode in self.vmnodes.values():
-            vmnode.get_session()
+        for node in self.nodes.values():
+            node.get_session()
 
     """VM node retrieval methods"""
-    def _get_single_vmnode(self):
+    def _get_single_node(self):
         """Get the only vm node in the network and raise error if it is not the only one."""
-        if len(self.vmnodes.values()) != 1:
+        if len(self.nodes.values()) != 1:
             raise exceptions.TestError("A multi-vm network was thought of as a single-vm network")
         else:
-            return list(self.vmnodes.values())[0]
+            return list(self.nodes.values())[0]
 
     def get_single_vm(self):
         """
@@ -124,8 +124,8 @@ class VMNetwork(object):
         :returns: only vm in the network
         :rtype: VM object
         """
-        vmnode = self._get_single_vmnode()
-        return vmnode.platform
+        node = self._get_single_node()
+        return node.platform
 
     def get_single_vm_with_session(self):
         """
@@ -134,10 +134,10 @@ class VMNetwork(object):
         :returns: vm and its last session
         :rtype: (VM object, Session object)
         """
-        vmnode = self._get_single_vmnode()
-        if vmnode.last_session is None:
+        node = self._get_single_node()
+        if node.last_session is None:
             self.start_all_sessions()
-        return (vmnode.platform, vmnode.last_session)
+        return (node.platform, node.last_session)
 
     def get_ordered_vms(self, vm_num=None):
         """
@@ -148,13 +148,13 @@ class VMNetwork(object):
         :rtype: (VM object)
         :raises: :py:class:`exceptions.TestError` if # of vms != N
         """
-        if vm_num is not None and len(self.vmnodes.values()) != vm_num:
+        if vm_num is not None and len(self.nodes.values()) != vm_num:
             raise exceptions.TestError("The vm network was expected to have %s vms while "
-                                       "it has %s" % (vm_num, len(self.vmnodes.values())))
+                                       "it has %s" % (vm_num, len(self.nodes.values())))
         else:
             vms = []
-            for key in sorted(self.vmnodes.keys()):
-                vms.append(self.vmnodes[key].platform)
+            for key in sorted(self.nodes.keys()):
+                vms.append(self.nodes[key].platform)
             return tuple(vms)
 
     def get_vms(self):
@@ -184,41 +184,41 @@ class VMNetwork(object):
         # NOTE: fix the keys order to a particular order
         role_keys = roles.keys()
         role_tuple = collections.namedtuple("role_tuple", role_keys, verbose=False)
-        role_platforms = [self.vmnodes[roles[key]].platform for key in role_keys]
+        role_platforms = [self.nodes[roles[key]].platform for key in role_keys]
         return role_tuple(*role_platforms)
 
     """VM network modification methods"""
-    def integrate_vmnode(self, vmnode):
+    def integrate_node(self, node):
         """
         Add all interfaces and netconfigs resulting from a new vm node
         into the vm net, thus integrating the configuration into
         the available one.
 
-        :param vmnode: vm node to be integrated into the vmnet
-        :type vmnode: VMNode object
+        :param node: vm node to be integrated into the vmnet
+        :type node: :py:class:`VMNode`
         """
-        logging.debug("Generating all interfaces for %s", vmnode.name)
+        logging.debug("Generating all interfaces for %s", node.name)
         def get_interfaces(node):
             """
             Generate new interfaces from the vm restricted parameters
             that can be retrieved from the platform.
 
             :returns: interfaces of the vm node
-            :rtype: {str, :py:class:`Interface`}
+            :rtype: {str, :py:class:`VMInterface`}
             """
             for nic_name in node.platform.params.objects("nics"):
                 nic_params = node.platform.params.object_params(nic_name)
                 node.interfaces[nic_name] = self.new_interface(nic_params)
             return node.interfaces
-        get_interfaces(vmnode)
-        for nic_name in vmnode.interfaces.keys():
-            ikey = "%s.%s" % (vmnode.name, nic_name)
-            self.interfaces[ikey] = vmnode.interfaces[nic_name]
-            self.interfaces[ikey].vmnode = vmnode
+        get_interfaces(node)
+        for nic_name in node.interfaces.keys():
+            ikey = "%s.%s" % (node.name, nic_name)
+            self.interfaces[ikey] = node.interfaces[nic_name]
+            self.interfaces[ikey].node = node
             logging.debug('Generated interface {0}: {1}'.format(ikey, self.interfaces[ikey]))
 
-        logging.debug("Generating all netconfigs for %s", vmnode.name)
-        for interface in vmnode.interfaces.values():
+        logging.debug("Generating all netconfigs for %s", node.name)
+        for interface in node.interfaces.values():
             interface_attached = False
             logging.debug("Generating netconfigs for interface {0}".format(interface))
             for netconfig in self.netconfigs.values():
@@ -295,13 +295,13 @@ class VMNetwork(object):
     def _configure_local_dhcp(self, config_string, declarations, interface):
         if interface.netconfig is None:
             raise exceptions.TestError("The interface %s does not belong to any netconfig", interface)
-        elif interface.vmnode is None:
+        elif interface.node is None:
             raise exceptions.TestError("The interface %s does come from any vm node", interface)
         elif interface.netconfig.netdst in self.params.get("host_dhcp_blacklist", ""):
             raise exceptions.TestError("The netconfig %s is blacklisted for host DHCP service!" % interface.netconfig)
         else:
             netconfig = interface.netconfig
-            vmnode = interface.vmnode
+            node = interface.node
 
         # main DHCP config
         if interface.params.get("host_dhcp_authoritative", "no") == "yes":
@@ -328,17 +328,17 @@ class VMNetwork(object):
 
         # register DHCP host in the DHCP config file
         if interface.params.get("host_dhcp_authoritative", "no") == "yes":
-            if not re.search("host %s {.+?}" % vmnode.name, config_string, re.DOTALL):
-                logging.info("Adding DHCP host %s", vmnode.name)
+            if not re.search("host %s {.+?}" % node.name, config_string, re.DOTALL):
+                logging.info("Adding DHCP host %s", node.name)
                 host_string = declarations["host"]
-                host_string = host_string.replace("#VMNAME#", vmnode.name)
-                host_string = host_string.replace("#VMHOSTNAME#", "%s.net.lan" % vmnode.name)
+                host_string = host_string.replace("#VMNAME#", node.name)
+                host_string = host_string.replace("#VMHOSTNAME#", "%s.net.lan" % node.name)
                 host_string = host_string.replace("#INIC_MAC#", interface.mac)
                 host_string = host_string.replace("#INIC_IP#", interface.ip)
                 logging.debug("Adding host to dhcpd.conf:\n%s", host_string)
                 config_string += "\n" + host_string
         else:
-            logging.info("Adding DHCP host %s", vmnode.name)
+            logging.info("Adding DHCP host %s", node.name)
             host_string = "dhcp-host=%s,%s" % (interface.mac, interface.ip)
             logging.debug("Adding host to dnsmasc.conf:\n%s", host_string)
             config_string += "\n" + host_string
@@ -355,13 +355,13 @@ class VMNetwork(object):
     def _configure_local_dns(self, config_string, declarations, interface):
         if interface.netconfig is None:
             raise exceptions.TestError("The interface %s does not belong to any netconfig", interface)
-        elif interface.vmnode is None:
+        elif interface.node is None:
             raise exceptions.TestError("The interface %s does come from any vm node", interface)
         elif interface.netconfig.netdst in self.params.get("host_dns_blacklist", ""):
             raise exceptions.TestError("The netconfig %s is blacklisted for host DNS service!" % interface.netconfig)
         else:
             netconfig = interface.netconfig
-            vmnode = interface.vmnode
+            node = interface.node
 
         if interface.params.get("host_dns_authoritative", "no") == "yes":
             if not re.search("view \"%s\"" % netconfig.view, config_string, re.DOTALL):
@@ -391,7 +391,7 @@ class VMNetwork(object):
                 fwd_string = fwd_string.replace("#ZONEIP#", netconfig.host_ip)
                 rev_string = declarations["rev"].replace("#ZONENAME#", netconfig.domain)
                 rev_string = rev_string.replace("#ZONEREV#", netconfig.rev)
-                fwd_string += "%s \t\t IN \t A \t %s\n" % (vmnode.name, interface.ip)
+                fwd_string += "%s \t\t IN \t A \t %s\n" % (node.name, interface.ip)
                 open("/var/named/%s.fwd" % netconfig.view, "w").write(fwd_string)
                 open("/var/named/%s.rev" % netconfig.view, "w").write(rev_string)
 
@@ -412,7 +412,7 @@ class VMNetwork(object):
                 host_string = "%s %s\n" % (netconfig.host_ip, netconfig.domain)
                 if host_string not in declarations["hosts"]:
                     declarations["hosts"] += host_string
-                guest_host_string = "%s %s\n" % (interface.ip, vmnode.name)
+                guest_host_string = "%s %s\n" % (interface.ip, node.name)
                 declarations["hosts"] += guest_host_string
 
                 # handle cases with non-authoritative DNS only
@@ -426,13 +426,13 @@ class VMNetwork(object):
     def _configure_local_nat(self, interface, set_rules=True):
         if interface.netconfig is None:
             raise exceptions.TestError("The interface %s does not belong to any netconfig", interface)
-        elif interface.vmnode is None:
+        elif interface.node is None:
             raise exceptions.TestError("The interface %s does come from any vm node", interface)
         elif interface.netconfig.netdst in self.params.get("host_dns_blacklist", ""):
             raise exceptions.TestError("The netconfig %s is blacklisted for host DNS service!" % interface.netconfig)
         else:
             netconfig = interface.netconfig
-            vmnode = interface.vmnode
+            node = interface.node
 
         internal_netdst = netconfig.netdst
         external_netdst = netconfig.ext_netdst
@@ -474,7 +474,7 @@ class VMNetwork(object):
             dhcp_string = dhcp_string.replace("%s\n" % dhcp_declarations["host"], "")
         with open(os.path.join(data_path, "named.conf.template"), "r") as f:
             dns_string = f.read()
-            dns_declarations["all"] = open(os.path.join(data_path, "all.fwd"), "r").read()
+            dns_declarations["all"] = open(os.path.join(data_path, "all.fwd.template"), "r").read()
             dns_declarations["fwd"] = open(os.path.join(data_path, "zone.fwd.template"), "r").read()
             dns_declarations["rev"] = open(os.path.join(data_path, "zone.rev.template"), "r").read()
             dns_declarations["view"] = re.search("view \"#VIEWNAME#\" .+?rev\";.+?};.+?};",
@@ -634,7 +634,7 @@ class VMNetwork(object):
             # get any previous configuration if available - unfortunately,
             # no better way of handling missing key was available
             try:
-                nic = interface.vmnode.platform.virtnet[nic_name]
+                nic = interface.node.platform.virtnet[nic_name]
             except IndexError:
                 logging.debug("No nic object %s is available at %s", nic_name, vm_name)
                 nic = None
@@ -684,7 +684,7 @@ class VMNetwork(object):
         :returns: generated ephemeral clients
         :rtype: (VM object)
         """
-        server = self.vmnodes[server_name].platform
+        server = self.nodes[server_name].platform
         client_params = {}
         logging.info("Spawning %i client(s) for %s", clients_num, server.name)
         client_params.update(self._generate_clients_parameters(server_name, clients_num, nic))
@@ -702,22 +702,22 @@ class VMNetwork(object):
                                         self.test.bindir)
 
             logging.debug("Integrating the ephemeral vm in the vm network")
-            self.vmnodes[client_name] = self.new_vmnode(client)
-            self.integrate_vmnode(self.vmnodes[client_name])
+            self.nodes[client_name] = self.new_node(client)
+            self.integrate_node(self.nodes[client_name])
 
             logging.debug("Adding as an intraclient and booting the ephemeral vm")
-            interface = self.vmnodes[client_name].interfaces[client_params["nics"]]
+            interface = self.nodes[client_name].interfaces[client_params["nics"]]
             self._register_client_at_server(interface, server, enable_dhcp=True)
-            self.vmnodes[client_name].platform.create()
+            self.nodes[client_name].platform.create()
 
         # verify clients are running (2nd loop so clients boot in parallel)
         for client_name in new_clients:
-            self.vmnodes[client_name].get_session(serial=True)
+            self.nodes[client_name].get_session(serial=True)
 
         # NOTE: since such clients are created on the run and don't have nics for communication
         # with the host we need to disable some automatic postprocessing functionality
         self.params["kill_unresponsive_vms"] = "no"
-        return tuple([self.vmnodes[key].platform for key in new_clients])
+        return tuple([self.nodes[key].platform for key in new_clients])
 
     def _generate_clients_parameters(self, server_name, clients_num, nic="onic"):
         overwrite_dict = {}
@@ -725,7 +725,7 @@ class VMNetwork(object):
 
         for i in range(clients_num):
             logging.debug("Adding client %i for %s", i, server_name)
-            server_interface = self.vmnodes[server_name].interfaces[nic]
+            server_interface = self.nodes[server_name].interfaces[nic]
 
             # main
             client = "%sclient%i" % (server_name, i)
@@ -764,7 +764,7 @@ class VMNetwork(object):
         Register a client vm at a server vm.
 
         :param interface: network interface containing the new configuration
-        :type interface: Interface object
+        :type interface: :py:class:`VMInterface`
         :param server: server where the (DHCP) client will be registered
         :type server: VM object
         :param bool enable_dhcp: whether to use DHCP or static IP
@@ -777,7 +777,7 @@ class VMNetwork(object):
 
         :param str nic: nic name known by the vm operating system
         :param interface: network interface containing the new configuration
-        :type interface: Interface object
+        :type interface: :py:class:`VMInterface`
         :param vm: vm whose nic will be reconfigured
         :type vm: VM object
         :raises: :py:class:`exceptions.TestError` if the client is an Android device
@@ -804,7 +804,7 @@ class VMNetwork(object):
         any vm participating in it.
 
         :param netconfig: netconfig to change the IP of
-        :type netconfig: Netconfig object
+        :type netconfig: :py:class:`VMNetconfig`
         :param str new_ip: new IP address for the netconfig
         :param new_mask: new network mask for the netconfig
         :type new_mask: str or None
@@ -835,21 +835,21 @@ class VMNetwork(object):
 
         logging.debug("Updating the network configuration of the relevant platforms")
         for interface in netconfig.interfaces.values():
-            vmnode = interface.vmnode
-            logging.info("Changing the ip of %s to %s", vmnode.name, interface.ip)
+            node = interface.node
+            logging.info("Changing the ip of %s to %s", node.name, interface.ip)
 
             # HACK: revise dictionaries to avoid having to do reverse lookup
-            for name, value in vmnode.interfaces.items():
+            for name, value in node.interfaces.items():
                 if value == interface:
                     interface_nic = name
-            self._reconfigure_vm_nic(interface_nic, interface, vmnode.platform)
+            self._reconfigure_vm_nic(interface_nic, interface, node.platform)
 
             # updating proto (higher level) params (test params -> vm params -> nic params)
             # TODO: need to update more parameters and be more flexible about the nic name
             interface.params["netmask"] = new_mask
             interface.params["ip"] = interface.ip
-            vmnode.platform.params["ip_onic"] = interface.ip
-            vmnode.platform.params["ip_onic_%s" % vmnode.name] = interface.ip
+            node.platform.params["ip_onic"] = interface.ip
+            node.platform.params["ip_onic_%s" % node.name] = interface.ip
 
     def set_static_address(self, client, server,
                            client_nic="inic", server_nic="onic"):
@@ -941,9 +941,9 @@ class VMNetwork(object):
                            self.params["own_id_type"],
                            self.params["foreign_id_type"]]
 
-        left_vmnode = self.vmnodes[vm1.name]
-        right_vmnode = self.vmnodes[vm2.name]
-        self.tunnels[vpn_name] = self.new_vpnconn(vpn_name, left_vmnode, right_vmnode,
+        left_node = self.nodes[vm1.name]
+        right_node = self.nodes[vm2.name]
+        self.tunnels[vpn_name] = self.new_vpnconn(vpn_name, left_node, right_node,
                                                   self, left_variant, psk_variant)
         self.tunnels[vpn_name].configure_between_endpoints(self, left_variant, psk_variant)
 
@@ -987,9 +987,9 @@ class VMNetwork(object):
 
         Regarding the client, only its parameters will be updated by this method.
         """
-        left_vmnode = self.vmnodes[server.name]
-        right_vmnode = self.vmnodes[client.name]
-        self.tunnels[vpn_name] = self.new_vpnconn(vpn_name, left_vmnode, right_vmnode, self,
+        left_node = self.nodes[server.name]
+        right_node = self.nodes[client.name]
+        self.tunnels[vpn_name] = self.new_vpnconn(vpn_name, left_node, right_node, self,
                                                   [self.params.get("lan_type", "nic"),
                                                    self.params.get("remote_type", "modeconfig"),
                                                    self.params.get("peer_type", "dynip")],
@@ -1151,10 +1151,10 @@ class VMNetwork(object):
         else:
             dst_vm_server_name = dst_vm.name
             dst_iface = self.interfaces["%s.%s" % (dst_vm.name, dst_nic)]
-        dst_vm_server = self.vmnodes[dst_vm_server_name].platform
+        dst_vm_server = self.nodes[dst_vm_server_name].platform
 
         # check if the source vm shares a network with a fixed destination nic
-        for src_iface in self.vmnodes[src_vm.name].interfaces.values():
+        for src_iface in self.nodes[src_vm.name].interfaces.values():
             if src_iface.netconfig == dst_iface.netconfig:
                 logging.debug("Internal IP %s of %s is accessible to %s",
                               dst_iface.ip, dst_vm.name, src_vm.name)
@@ -1267,20 +1267,20 @@ class VMNetwork(object):
         If no `dst_vm` is provided, the ping happens directly to `ping_dst`.
         """
         if src_vm is None and dst_vm is None:
-            logging.info("Commencing mutual ping of %d vms (including self ping).", len(self.vmnodes))
+            logging.info("Commencing mutual ping of %d vms (including self ping).", len(self.nodes))
             failed = False
 
-            for vmnode1 in self.vmnodes.values():
-                for interface1 in vmnode1.interfaces.values():
-                    for vmnode2 in self.vmnodes.values():
-                        for interface2 in vmnode2.interfaces.values():
+            for node1 in self.nodes.values():
+                for interface1 in node1.interfaces.values():
+                    for node2 in self.nodes.values():
+                        for interface2 in node2.interfaces.values():
                             for netconfig in self.netconfigs.values():
                                 if interface1.ip in netconfig.interfaces and interface2.ip in netconfig.interfaces:
-                                    direction_str = "%s (%s) from %s (%s)" % (vmnode2.name, interface2.ip,
-                                                                              vmnode1.name, interface1.ip)
+                                    direction_str = "%s (%s) from %s (%s)" % (node2.name, interface2.ip,
+                                                                              node1.name, interface1.ip)
                                     try:
                                         logging.debug("Pinging %s", direction_str)
-                                        vmnode1.platform.session.cmd("ping -c 1 %s" % interface2.ip)
+                                        node1.platform.session.cmd("ping -c 1 %s" % interface2.ip)
                                     except aexpect.ShellCmdError:
                                         logging.info("Failed to ping %s", direction_str)
                                         failed = True
@@ -1410,7 +1410,7 @@ class VMNetwork(object):
     # TODO: evaluate if these methods will really be used
     def __len__(self):
         """Count guests in the vm network."""
-        return len(self.vmnodes)
+        return len(self.nodes)
 
     def __getitem__(self, idx):
         """
@@ -1423,12 +1423,12 @@ class VMNetwork(object):
         :raises: :py:class:`exceptions.TypeError` if unexpected type is detected
         """
         if isinstance(idx, int) is True:
-            vmnodes_list = sorted(self.vmnodes.keys())
-            return self.vmnodes[vmnodes_list[idx]]
+            nodes_list = sorted(self.nodes.keys())
+            return self.nodes[nodes_list[idx]]
         elif isinstance(idx, str) is True:
-            return self.vmnodes[idx]
+            return self.nodes[idx]
         raise TypeError("Expected int or string, got \"%s\"." % type(idx))
 
     def __iter__(self):
         """Iterate over vm network members."""
-        return self.vmnodes.__iter__()
+        return self.nodes.__iter__()

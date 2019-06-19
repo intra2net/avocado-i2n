@@ -19,7 +19,7 @@ import logging
 from avocado_vt.loader import VirtTestLoader
 
 from . import params_parser as param
-from .cartesian_graph import TestGraph, TestNode, TestObject
+from .cartgraph import TestGraph, TestNode, TestObject
 
 
 class CartesianLoader(VirtTestLoader):

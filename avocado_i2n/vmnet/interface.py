@@ -10,7 +10,7 @@ Copyright: Intra2net AG
 CONTENTS
 ------------------------------------------------------
 This is the basic building block of the vm network. Interfaces are grouped
-in vmnodes (the virtual machines they belong to) and in netconfigs (the
+in nodes (the virtual machines they belong to) and in netconfigs (the
 local networks they define together).
 
 
@@ -20,17 +20,17 @@ INTERFACE
 """
 
 
-class Interface(object):
+class VMInterface(object):
     """The interface class."""
 
     """Structural vmnet properties"""
-    def vmnode(self, value=None):
-        """A reference to the vmnode the interface belongs to."""
+    def node(self, value=None):
+        """A reference to the node the interface belongs to."""
         if value is not None:
-            self._vmnode = value
+            self._node = value
         else:
-            return self._vmnode
-    vmnode = property(fget=vmnode, fset=vmnode)
+            return self._node
+    node = property(fget=node, fset=node)
 
     def netconfig(self, value=None):
         """A reference to the netconfig the interface belongs to."""
@@ -72,7 +72,7 @@ class Interface(object):
         :param params: configuration parameters
         :type params: {str, str}
         """
-        self._vmnode = None
+        self._node = None
         self._netconfig = None
         self._params = params
 
@@ -80,7 +80,7 @@ class Interface(object):
         self._ip = params["ip"]
 
     def __repr__(self):
-        vm_name = "none" if self.vmnode is None else self.vmnode.name
+        vm_name = "none" if self.node is None else self.node.name
         net_name = "none" if self.netconfig is None else self.netconfig.net_ip
         iface_tuple = (self.ip, self.mac, vm_name, net_name)
         return "[iface] addr='%s', mac='%s' platform='%s' netconfig='%s'" % iface_tuple
