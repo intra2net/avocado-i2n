@@ -1405,30 +1405,3 @@ class VMNetwork(object):
                     logging.info(file_transfer.group(1))
                     return
         raise exceptions.TestFail("No file progress bars were found - couldn't copy %s" % src_path)
-
-    """VM network direct access methods"""
-    # TODO: evaluate if these methods will really be used
-    def __len__(self):
-        """Count guests in the vm network."""
-        return len(self.nodes)
-
-    def __getitem__(self, idx):
-        """
-        Index operation. Depending on whether the index given is an integer
-        or a string, returns the vm at a given position or with the given
-        name, respectively.
-
-        :param idx: index or name of the retrieved vm
-        :type idx: int or str
-        :raises: :py:class:`exceptions.TypeError` if unexpected type is detected
-        """
-        if isinstance(idx, int) is True:
-            nodes_list = sorted(self.nodes.keys())
-            return self.nodes[nodes_list[idx]]
-        elif isinstance(idx, str) is True:
-            return self.nodes[idx]
-        raise TypeError("Expected int or string, got \"%s\"." % type(idx))
-
-    def __iter__(self):
-        """Iterate over vm network members."""
-        return self.nodes.__iter__()
