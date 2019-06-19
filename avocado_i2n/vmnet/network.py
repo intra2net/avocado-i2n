@@ -209,7 +209,7 @@ class VMNetwork(object):
             interfaces = {}
             for nic_name in node.platform.params.objects("nics"):
                 nic_params = node.platform.params.object_params(nic_name)
-                interfaces[nic_name] = self.new_interface(nic_params)
+                interfaces[nic_name] = self.new_interface(nic_name, nic_params)
             return interfaces
         node.interfaces = get_interfaces(node)
         for nic_name in node.interfaces.keys():
@@ -822,13 +822,14 @@ class VMNetwork(object):
             netconfig.interfaces[interface.ip] = interface
 
         assert len(netconfig.interfaces) > 0, "The network %s must have at least one interface" % netconfig
-        nic_params = list(netconfig.interfaces.values())[-1].params.copy()
+        nic_interface = list(netconfig.interfaces.values())[-1]
+        nic_params = nic_interface.params.copy()
         nic_params["ip"] = new_ip
         if new_mask is not None:
             nic_params["netmask"] = new_mask
         if new_gw is not None:
             nic_params["ip_provider"] = new_gw
-        interface = self.new_interface(nic_params)
+        interface = self.new_interface(nic_interface.name, nic_params)
 
         del self.netconfigs[netconfig.net_ip]
         netconfig.from_interface(interface)
@@ -847,11 +848,11 @@ class VMNetwork(object):
             self._reconfigure_vm_nic(interface_nic, interface, node.platform)
 
             # updating proto (higher level) params (test params -> vm params -> nic params)
-            # TODO: need to update more parameters and be more flexible about the nic name
+            # TODO: need to update more parameters or regenerate at once
             interface.params["netmask"] = new_mask
             interface.params["ip"] = interface.ip
-            node.platform.params["ip_onic"] = interface.ip
-            node.platform.params["ip_onic_%s" % node.name] = interface.ip
+            node.platform.params["ip_%s" % interface.name] = interface.ip
+            node.platform.params["ip_%s_%s" % (interface.name, node.name)] = interface.ip
 
     def set_static_address(self, client, server,
                            client_nic="inic", server_nic="onic"):

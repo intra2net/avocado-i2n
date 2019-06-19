@@ -38,7 +38,7 @@ class VPNConn(VMTunnel):
     for all VPN configuration.
     """
 
-    """Structural vmnet properties"""
+    """Structural properties"""
     def left(self, value=None):
         """A reference to the left vmnode of the tunnel."""
         if value is not None:
@@ -65,7 +65,7 @@ class VPNConn(VMTunnel):
 
     """Connection properties"""
     def name(self, value=None):
-        """A proxy reference to the vm name."""
+        """Name for the connection."""
         if value is not None:
             self._name = value
         else:

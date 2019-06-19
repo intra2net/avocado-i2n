@@ -32,7 +32,7 @@ class VMNetconfig(object):
     sharing the same network configuration.
     """
 
-    """Structural vmnet properties"""
+    """Structural properties"""
     def interfaces(self, value=None):
         """A collection of interfaces the netconfig represents."""
         if value is not None:

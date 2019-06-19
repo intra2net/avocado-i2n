@@ -30,7 +30,7 @@ class VMNode(object):
     sharing the same platform.
     """
 
-    """Structural vmnet properties"""
+    """Structural properties"""
     def interfaces(self, value=None):
         """A collection of interfaces the vmnode represents."""
         if value is not None:

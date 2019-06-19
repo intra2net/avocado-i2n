@@ -23,7 +23,7 @@ INTERFACE
 class VMInterface(object):
     """The interface class."""
 
-    """Structural vmnet properties"""
+    """Structural properties"""
     def node(self, value=None):
         """A reference to the node the interface belongs to."""
         if value is not None:
@@ -65,13 +65,24 @@ class VMInterface(object):
             return self._ip
     ip = property(fget=ip, fset=ip)
 
-    def __init__(self, params):
+    """Interface properties"""
+    def name(self, value=None):
+        """Name for the interface."""
+        if value is not None:
+            self._name = value
+        else:
+            return self._name
+    name = property(fget=name, fset=name)
+
+    def __init__(self, name, params):
         """
         Construct an interface with configuration from the parameters.
 
         :param params: configuration parameters
         :type params: {str, str}
         """
+        self._name = name
+
         self._node = None
         self._netconfig = None
         self._params = params
@@ -82,5 +93,5 @@ class VMInterface(object):
     def __repr__(self):
         vm_name = "none" if self.node is None else self.node.name
         net_name = "none" if self.netconfig is None else self.netconfig.net_ip
-        iface_tuple = (self.ip, self.mac, vm_name, net_name)
-        return "[iface] addr='%s', mac='%s' platform='%s' netconfig='%s'" % iface_tuple
+        iface_tuple = (self.name, self.ip, self.mac, vm_name, net_name)
+        return "[iface] name='%s', addr='%s', mac='%s' platform='%s' netconfig='%s'" % iface_tuple
