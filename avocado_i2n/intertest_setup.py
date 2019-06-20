@@ -476,7 +476,7 @@ def develop(args, run_params, tag=""):
     """
     vms = run_params["vms"]
     mode = run_params.get("devmode", "generator")
-    setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
+    setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
     setup_str = param.re_str("develop.%s" % mode) + param.dict_to_str(setup_dict) + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
@@ -642,7 +642,7 @@ def boot(args, run_params, tag=""):
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
     vms = run_params["vms"]
-    setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
+    setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
     setup_str = param.re_str("manage.start") + param.dict_to_str(setup_dict) + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one boot test variant from %s" % tests
@@ -667,7 +667,7 @@ def download(args, run_params, tag=""):
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
     vms = run_params["vms"]
-    setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
+    setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
     setup_str = param.re_str("manage.download") + param.dict_to_str(setup_dict) + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one download test variant from %s" % tests
@@ -692,7 +692,7 @@ def upload(args, run_params, tag=""):
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
     vms = run_params["vms"]
-    setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
+    setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
     setup_str = param.re_str("manage.upload") + param.dict_to_str(setup_dict) + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one upload test variant from %s" % tests
@@ -715,7 +715,7 @@ def shutdown(args, run_params, tag=""):
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
     vms = run_params["vms"]
-    setup_dict = {"vms": vms, "base_vm": run_params.objects("vms")[0]}
+    setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
     setup_str = param.re_str("manage.stop") + param.dict_to_str(setup_dict) + args.param_str
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs, prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one shutdown test variant from %s" % tests

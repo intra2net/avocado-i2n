@@ -97,7 +97,7 @@ class CartesianLoader(VirtTestLoader):
         :raises: :py:class:`exceptions.ValueError` if the base vm is not among the vms for a node
         :raises: :py:class:`param.EmptyCartesianProduct` if no result on preselected vm
         """
-        base_object = None
+        main_object = None
         test_nodes = []
 
         # prepare initial parser as starting configuration and get through tests
@@ -110,17 +110,23 @@ class CartesianLoader(VirtTestLoader):
             if d.get("vms") is None and object_name != "":
                 # case of singleton test
                 d["vms"] = object_name
-                d["base_vm"] = object_name
+                d["main_vm"] = object_name
             elif d.get("vms") is None and object_name == "":
                 # case of default singleton test
-                d["vms"] = d["base_vm"]
+                d["main_vm"] = d.get("main_vm", param.main_vm())
+                d["vms"] = d["main_vm"]
             elif object_name != "":
                 # case of specified object (dependency) as well as node
+                d["main_vm"] = d.get("main_vm", param.main_vm())
                 fixed_vms = d["vms"].split(" ")
                 assert object_name in fixed_vms, "Predefined test object %s for test node '%s' not among:"\
                                                  " %s" % (object_name, d["shortname"], d["vms"])
-                assert d["base_vm"] in fixed_vms, "Base test object %s for test node '%s' not among:"\
-                                                 " %s" % (d["base_vm"], d["shortname"], d["vms"])
+            else:
+                # case of leaf node
+                d["main_vm"] = d.get("main_vm", param.main_vm())
+                fixed_vms = d["vms"].split(" ")
+                assert d["main_vm"] in fixed_vms, "Main test object %s for test node '%s' not among:"\
+                                                 " %s" % (d["main_vm"], d["shortname"], d["vms"])
 
             # get configuration of each participating object and choose the one to mix with the node
             logging.debug("Fetching test objects %s to parse a test node", d["vms"].replace(" ", ", "))
@@ -128,14 +134,14 @@ class CartesianLoader(VirtTestLoader):
                 vms = graph.get_objects_by(param_key="main_vm", param_val="^"+vm_name+"$")
                 assert len(vms) == 1, "Test object %s not existing or unique in: %s" % (vm_name, vms)
                 objects.append(vms[0])
-                if d["base_vm"] == vms[0].name:
-                    base_object = vms[0]
-            if base_object is None:
-                raise ValueError("Could not detect the base object among '%s' "
+                if d["main_vm"] == vms[0].name:
+                    main_object = vms[0]
+            if main_object is None:
+                raise ValueError("Could not detect the main object among '%s' "
                                  "in the test '%s'" % (d["vms"], d["shortname"]))
 
             # final variant multiplication to produce final test node configuration
-            logging.debug("Multiplying the vm variants by the test variants using %s", base_object.name)
+            logging.debug("Multiplying the vm variants by the test variants using %s", main_object.name)
             setup_str = param.re_str(d["name"], nodes_str)
             try:
                 # combine object configurations
@@ -143,7 +149,7 @@ class CartesianLoader(VirtTestLoader):
                     objstrs[test_object.name] = test_object.object_str
                 vm_parser = param.prepare_parser(base_file="objects.cfg",
                                                  base_str=param.vm_str(d["vms"], objstrs),
-                                                 base_dict={"main_vm": base_object.name},
+                                                 base_dict={"main_vm": main_object.name},
                                                  ovrwrt_file=param.vms_ovrwrt_file,
                                                  ovrwrt_str="",
                                                  ovrwrt_dict={})
@@ -154,14 +160,14 @@ class CartesianLoader(VirtTestLoader):
                                              ovrwrt_dict={},
                                              show_dictionaries=verbose)
                 test_nodes.append(TestNode(name, parser, objects))
-                logging.debug("Parsed a test '%s' with base configuration of %s",
-                              d["shortname"], base_object.name)
+                logging.debug("Parsed a test '%s' with main test object %s",
+                              d["shortname"], main_object.name)
             except param.EmptyCartesianProduct:
                 # empty product on a preselected test object implies something is wrong with the selection
                 if object_name != "":
                     raise
                 logging.debug("Test '%s' not compatible with the %s configuration - skipping",
-                              d["shortname"], base_object.name)
+                              d["shortname"], main_object.name)
 
         return test_nodes
 
@@ -343,7 +349,7 @@ class CartesianLoader(VirtTestLoader):
         objects = sorted(graph.test_objects.keys())
         setup_dict = {"abort_on_error": "yes", "set_state_on_error": "",
                       "vms": " ".join(objects),
-                      "base_vm": objects[0]}
+                      "main_vm": objects[0]}
         setup_str = param.dict_to_str(setup_dict) + param_str
         nodes = self.parse_nodes(param.re_str("0scan", setup_str, objectless=True), graph)
         for i, d in enumerate(nodes[0].parser.get_dicts()):

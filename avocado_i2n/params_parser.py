@@ -260,9 +260,19 @@ def all_vms():
     Return all vms that can be passed for any test configuration.
 
     :returns: all available (from configuration) vms
-    :rtype: list
+    :rtype: [str]
     """
     return prepare_params(list_of_keys=["vms"], base_file="guest-base.cfg").objects("vms")
+
+
+def main_vm():
+    """
+    Return the default main vm that can be passed for any test configuration.
+
+    :returns: main available (from configuration) vm
+    :rtype: str or None
+    """
+    return prepare_params(list_of_keys=["main_vm"], base_file="guest-base.cfg").get("main_vm")
 
 
 def peek(parser, list_of_keys=None):
