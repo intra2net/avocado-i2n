@@ -274,21 +274,27 @@ class Reparsable():
             if isinstance(step, ParsedDict):
                 parser.parse_string(step.parsable_form())
 
-        # log any required information
+        # log any required information and detect empty Cartesian product
         if show_restriction:
             logging.debug(self.print_parsed())
-        if show_dictionaries:
+        if show_dictionaries or show_empty_cartesian_product:
             options = collections.namedtuple("options", ['repr_mode', 'fullname', 'contents'])
-            show_parser = self.get_parser(show_dictionaries=False)
-            cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents), show_parser.get_dicts())
-
-        # detect empty Cartesian product
-        if show_empty_cartesian_product:
-            try:
-                empty_parser = self.get_parser(show_empty_cartesian_product=False)
-                empty_parser.get_dicts().__next__()
-            except StopIteration:
-                raise EmptyCartesianProduct(self.print_parsed()) from None
+            peek_parser = self.get_parser(show_dictionaries=False, show_empty_cartesian_product=False)
+            # break generator into first detectable entry and rest to reuse it better
+            peek_generator = peek_parser.get_dicts()
+            if show_empty_cartesian_product:
+                try:
+                    peek_dict = peek_generator.__next__()
+                    if show_dictionaries:
+                        cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents),
+                                                     (peek_dict,))
+                        cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents),
+                                                     peek_generator)
+                except StopIteration:
+                    raise EmptyCartesianProduct(self.print_parsed()) from None
+            else:
+                cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents),
+                                             peek_generator)
 
         return parser
 
