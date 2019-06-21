@@ -71,13 +71,13 @@ class CartesianLoader(VirtTestLoader):
                                     base_str=param.vm_str(vm_name, object_strs),
                                     base_dict={"main_vm": vm_name},
                                     ovrwrt_file=param.vms_ovrwrt_file)
-            for i, d in enumerate(config.get_parser(show_dictionaries=verbose).get_dicts()):
-                assert i < 1, "There must be exactly one configuration for %s - please restrict better" % vm_name
 
-                test_object = TestObject(vm_name, config)
-                test_object.object_str = object_strs[vm_name]
-
+            test_object = TestObject(vm_name, config)
+            test_object.regenerate_params(verbose=verbose)
+            # TODO: object string and state management require further development on the test objects
+            test_object.object_str = object_strs[vm_name]
             test_objects.append(test_object)
+
         return test_objects
 
     def parse_nodes(self, nodes_str, graph, prefix="", object_name="", verbose=False):
@@ -143,23 +143,24 @@ class CartesianLoader(VirtTestLoader):
 
             # final variant multiplication to produce final test node configuration
             logging.debug("Multiplying the vm variants by the test variants using %s", main_object.name)
+            # combine object configurations
+            for test_object in objects:
+                objstrs[test_object.name] = test_object.object_str
+            config = param.Reparsable()
+            config.parse_next_batch(base_file="objects.cfg",
+                                    base_str=param.vm_str(d["vms"], objstrs),
+                                    base_dict={"main_vm": main_object.name},
+                                    ovrwrt_file=param.vms_ovrwrt_file)
+            config.parse_next_batch(base_file="sets.cfg",
+                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_str=param.re_str(d["name"], nodes_str))
+
+            test_node = TestNode(name, config, objects)
             try:
-                # combine object configurations
-                for test_object in objects:
-                    objstrs[test_object.name] = test_object.object_str
-                config = param.Reparsable()
-                config.parse_next_batch(base_file="objects.cfg",
-                                        base_str=param.vm_str(d["vms"], objstrs),
-                                        base_dict={"main_vm": main_object.name},
-                                        ovrwrt_file=param.vms_ovrwrt_file)
-                config.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file,
-                                        ovrwrt_str=param.re_str(d["name"], nodes_str))
-                # do this only to print the dictionaries to the console
-                config.get_parser(show_dictionaries=verbose)
-                test_nodes.append(TestNode(name, config, objects))
+                test_node.regenerate_params(verbose=verbose)
                 logging.debug("Parsed a test '%s' with main test object %s",
                               d["shortname"], main_object.name)
+                test_nodes.append(test_node)
             except param.EmptyCartesianProduct:
                 # empty product on a preselected test object implies something is wrong with the selection
                 if object_name != "":
@@ -352,10 +353,11 @@ class CartesianLoader(VirtTestLoader):
                       "main_vm": objects[0]}
         setup_str = param.ParsedDict(setup_dict).parsable_form() + param_str
         nodes = self.parse_nodes(param.re_str("0scan", setup_str, objectless=True), graph)
-        for i, d in enumerate(nodes[0].config.get_parser().get_dicts()):
-            logging.debug("Reached shared root %s", d["shortname"])
-            assert i < 1, "There can only be one shared root"
-        return TestNode("0s", nodes[0].config, [])
+        assert len(nodes) == 1, "There can only be one shared root"
+        scan_node = TestNode("0s", nodes[0].config, [])
+        scan_node.regenerate_params()
+        logging.debug("Reached shared root %s", scan_node.params["shortname"])
+        return scan_node
 
     def parse_create_node(self, graph, object_name, param_str):
         """
@@ -379,10 +381,10 @@ class CartesianLoader(VirtTestLoader):
                                 ovrwrt_file=param.tests_ovrwrt_file,
                                 ovrwrt_str=setup_str,
                                 ovrwrt_dict=setup_dict)
-        for i, d in enumerate(config.get_parser().get_dicts()):
-            logging.debug("Reached %s root %s", object_name, d["shortname"])
-            assert i < 1, "There can only be one root for %s" % object_name
-        return [TestNode("0r", config, [test_object])]
+        create_node = TestNode("0r", config, [test_object])
+        create_node.regenerate_params()
+        logging.debug("Reached %s root %s", object_name, create_node.params["shortname"])
+        return [create_node]
 
     """internals - get/parse, duplicates"""
     def _get_and_parse_parent(self, graph, test_node, test_object, param_str, setup_restr):

@@ -12,7 +12,7 @@ class ParamsParserTest(unittest.TestCase):
 
     def setUp(self):
         self.base_dict = {}
-        self.base_str = ""
+        self.base_str = "only normal\n"
         self.base_file = "sets.cfg"
         self.show_restriction = False
         self.show_dictionaries = False
@@ -23,7 +23,7 @@ class ParamsParserTest(unittest.TestCase):
         pass
 
     def test_parser_params(self):
-        self.base_str = "only tutorial1\n"
+        self.base_str += "only tutorial1\n"
         config = param.Reparsable()
         config.parse_next_batch(base_file=self.base_file,
                                 base_str=self.base_str,

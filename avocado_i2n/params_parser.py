@@ -298,18 +298,28 @@ class Reparsable():
         """
         Get a single parameter dictionary from the currently parsed configuration.
 
+        The parameter dictionary is always validated for existence (nonempty
+        Cartesian product) and uniqueness (no more than one final variant).
+
         :param list_of_keys: list of parameters key in the final selection
         :type list_of_keys: [str] or None
         :returns: first variant dictionary from all current parsed steps
         :rtype: :py:class:`Params`
+        :raises: :py:class:`AssertionError` if the parameter dictionary is not unique
 
         The rest of the arguments are identical to the ones from :py:method:`get_parser`.
         """
         parser = self.get_parser(show_restriction=show_restriction,
                                  show_dictionaries=show_dictionaries,
                                  show_dict_fullname=show_dict_fullname,
-                                 show_dict_contents=show_dict_contents)
-        default_params = parser.get_dicts().__next__()
+                                 show_dict_contents=show_dict_contents,
+                                 show_empty_cartesian_product=True)
+
+        for i, d in enumerate(parser.get_dicts()):
+            if i == 0:
+                default_params = d
+            assert i < 1, "There must be at most one configuration for the restriction:\n%s" % self.print_parsed()
+
         if list_of_keys is None:
             selected_params = default_params
         else:

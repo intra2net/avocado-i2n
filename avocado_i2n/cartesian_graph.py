@@ -39,8 +39,10 @@ class TestObject(object):
     """A wrapper for a test object used in one or more test nodes."""
 
     def params(self):
-        """Parameters property."""
-        return self.config.get_params()
+        """Parameters (cache) property."""
+        if self._params_cache is None:
+            self.regenerate_params()
+        return self._params_cache
     params = property(fget=params)
 
     def id(self):
@@ -57,6 +59,7 @@ class TestObject(object):
         """
         self.name = name
         self.config = config
+        self._params_cache = None
 
         self.current_state = "unknown"
 
@@ -74,6 +77,14 @@ class TestObject(object):
         """
         return self.params.get("permanent_vm", "no") == "yes"
 
+    def regenerate_params(self, verbose=False):
+        """
+        Regenerate all parameters from the current reparsable config.
+
+        :param bool verbose: whether to show generated parameter dictionaries
+        """
+        self._params_cache = self.config.get_params(show_dictionaries=verbose)
+
 
 class TestNode(object):
     """
@@ -84,7 +95,7 @@ class TestNode(object):
     def params(self):
         """Parameters (cache) property."""
         if self._params_cache is None:
-            self._params_cache = self.config.get_params()
+            self.regenerate_params()
         return self._params_cache
     params = property(fget=params)
 
@@ -297,6 +308,14 @@ class TestNode(object):
         else:
             raise ValueError("Invalid test node - %s and %s are not directly dependent "
                              "in any way" % (test_node.params["shortname"], self.params["shortname"]))
+
+    def regenerate_params(self, verbose=False):
+        """
+        Regenerate all parameters from the current reparsable config.
+
+        :param bool verbose: whether to show generated parameter dictionaries
+        """
+        self._params_cache = self.config.get_params(show_dictionaries=verbose)
 
 
 class TestGraph(object):
