@@ -35,6 +35,12 @@ install:
   - pip install -r requirements_pip.txt
   # TODO: after integrating more of our patches we can use the origin repo
   #- git clone --depth 1 https://github.com/avocado-framework/avocado.git avocado-libs
+  - git clone --depth 1 https://github.com/intra2net/aexpect.git aexpect-libs
+  - cd aexpect-libs
+  - pip install -e .
+  - cd ..
+  # TODO: after integrating more of our patches we can use the origin repo
+  #- git clone --depth 1 https://github.com/avocado-framework/avocado.git avocado-libs
   - git clone --depth 1 https://github.com/intra2net/avocado.git avocado-libs
   - cd avocado-libs
   - pip install -e .
