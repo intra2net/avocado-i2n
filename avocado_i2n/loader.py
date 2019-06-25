@@ -233,7 +233,7 @@ class CartesianLoader(VirtTestLoader):
 
     def parse_object_trees(self, param_str, nodes_str, object_strs=None,
                            prefix="", object_names="",
-                           objectless=False, verbose=True):
+                           objectless=False, verbose=False):
         """
         Parse all user defined tests (leaves) and their dependencies (internal nodes)
         connecting them according to the required/provided setup states of each test
@@ -326,7 +326,8 @@ class CartesianLoader(VirtTestLoader):
         param_str, nodes_str, object_strs = self.args.param_str, self.args.tests_str, self.args.vm_strs
         prefix = self.args.prefix
 
-        graph = self.parse_object_trees(param_str, nodes_str, object_strs, prefix)
+        graph = self.parse_object_trees(param_str, nodes_str, object_strs, prefix,
+                                        verbose=self.args.subcommand!="list")
         test_suite = [n.get_test_factory() for n in graph.nodes]
 
         # HACK: pass the constructed graph to the runner using static attribute hack
