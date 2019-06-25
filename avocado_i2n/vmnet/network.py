@@ -286,7 +286,7 @@ class VMNetwork(object):
             interface.ip = proxy_interface.netconfig.get_allocatable_address()
             interface.netconfig = proxy_interface.netconfig
 
-        # TODO: update the vm node specific and the nic specific parameters
+        # TODO: need to update all relevant parameters or regenerate at once
         self.params["netdst_%s_%s" % (client_nic, client.name)] = netconfig.netdst
         self.params["ip_%s_%s" % (client_nic, client.name)] = interface.ip
         self.params["netmask_%s_%s" % (client_nic, client.name)] = netconfig.netmask
@@ -687,17 +687,18 @@ class VMNetwork(object):
         :rtype: (VM object)
         """
         server = self.nodes[server_name].platform
-        client_params = {}
+        inherited_server_params = server.params.copy()
         logging.info("Spawning %i client(s) for %s", clients_num, server.name)
-        client_params.update(self._generate_clients_parameters(server_name, clients_num, nic))
-        self.params.update(client_params)
-        new_clients = client_params["vms_%s" % server.name].strip()
-        new_clients = new_clients.split(" ")
+        new_client_params = self._generate_clients_parameters(server_name, clients_num, nic)
+        # TODO: need to update all relevant parameters or regenerate at once
+        self.params.update(new_client_params)
+        inherited_server_params.update(new_client_params)
+        new_clients = new_client_params["vms_%s" % server.name].strip().split(" ")
         for client_name in new_clients:
             self.params["vms"] += " %s" % client_name
 
             logging.debug("Registering the ephemeral vm in the environment")
-            client_params = self.params.object_params(client_name)
+            client_params = inherited_server_params.object_params(client_name)
             client = self.env.create_vm(client_params.get('vm_type'),
                                         client_params.get('target'),
                                         client_name, client_params,
@@ -848,7 +849,7 @@ class VMNetwork(object):
             self._reconfigure_vm_nic(interface_nic, interface, node.platform)
 
             # updating proto (higher level) params (test params -> vm params -> nic params)
-            # TODO: need to update more parameters or regenerate at once
+            # TODO: need to update all relevant parameters or regenerate at once
             interface.params["netmask"] = new_mask
             interface.params["ip"] = interface.ip
             node.platform.params["ip_%s" % interface.name] = interface.ip
