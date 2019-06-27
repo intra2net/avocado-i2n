@@ -4,8 +4,11 @@ import re
 
 from avocado.core.output import LOG_JOB as log
 from avocado.core.settings import settings
+from virttest import env_process
 
 from . import params_parser as param
+from . import state_setup
+from .vmnet import VMNetwork
 
 
 def params_from_cmd(args):
@@ -77,9 +80,11 @@ def params_from_cmd(args):
     log.debug("Parsed param string '%s'", param_str)
 
     # get minimal configurations and parse defaults if no command line arguments
-    tests_params = param.prepare_params(base_file="groups-base.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file,
-                                        ovrwrt_str=param_str)
+    tests_config = param.Reparsable()
+    tests_config.parse_next_batch(base_file="groups-base.cfg",
+                                  ovrwrt_file=param.tests_ovrwrt_file,
+                                  ovrwrt_str=param_str)
+    tests_params = tests_config.get_params()
     tests_str += param_str
     if use_tests_default:
         default = tests_params.get("default_only", "all")
@@ -90,10 +95,12 @@ def params_from_cmd(args):
     args.tests_str = tests_str
     log.debug("Parsed tests string '%s'", tests_str)
 
-    vms_params = param.prepare_params(base_file="guest-base.cfg",
-                                      ovrwrt_dict={"vms": " ".join(selected_vms)},
-                                      ovrwrt_file=param.vms_ovrwrt_file,
-                                      ovrwrt_str=param_str)
+    vms_config = param.Reparsable()
+    vms_config.parse_next_batch(base_file="guest-base.cfg",
+                                ovrwrt_file=param.vms_ovrwrt_file,
+                                ovrwrt_str=param_str,
+                                ovrwrt_dict={"vms": " ".join(selected_vms)})
+    vms_params = vms_config.get_params()
     for vm_name in available_vms:
         # some selected vms might not be restricted on the command line so check again
         if vm_name not in vm_strs:
@@ -108,9 +115,11 @@ def params_from_cmd(args):
     log.debug("Parsed vm strings '%s'", vm_strs)
 
     # control against invoking internal tests
-    control_parser = param.prepare_parser(base_file="sets.cfg",
-                                          ovrwrt_file=param.tests_ovrwrt_file,
-                                          ovrwrt_str=tests_str)
+    control_config = param.Reparsable()
+    control_config.parse_next_batch(base_file="sets.cfg",
+                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_str=tests_str)
+    control_parser = control_config.get_parser()
     if with_nontrivial_restrictions:
         for d in control_parser.get_dicts():
             if ".internal." in d["name"] or ".original." in d["name"]:
@@ -124,3 +133,40 @@ def params_from_cmd(args):
 
     # log into files for each major level the way it was done for autotest
     args.store_logging_stream = [":10", ":20", ":30", ":40"]
+
+    # attach environment processing hooks
+    env_process_hooks()
+
+
+def env_process_hooks():
+    """
+    Add env processing hooks to handle online/offline state get/set operations
+    and vmnet networking setup and instance attachment to environment.
+    """
+    def get_network_state(test, params, env):
+        vmn = VMNetwork(test, params, env)
+        vmn.setup_host_bridges()
+        vmn.setup_host_services()
+        env.vmnet = vmn
+        type(env).get_vmnet = lambda self: self.vmnet
+    def network_state(fn):
+        def wrapper(test, params, env):
+            get_network_state(test, params, env)
+            fn(test, params, env)
+        return wrapper
+    def online_state(fn):
+        def wrapper(test, params, env):
+            params["skip_types"] = "offline"
+            fn(params, env)
+            del params["skip_types"]
+        return wrapper
+    def offline_state(fn):
+        def wrapper(test, params, env):
+            params["skip_types"] = "online ramdisk"
+            fn(params, env)
+            del params["skip_types"]
+        return wrapper
+    env_process.preprocess_vm_off_hook = offline_state(state_setup.get_state)
+    env_process.preprocess_vm_on_hook = network_state(online_state(state_setup.get_state))
+    env_process.postprocess_vm_on_hook = online_state(state_setup.set_state)
+    env_process.postprocess_vm_off_hook = offline_state(state_setup.set_state)

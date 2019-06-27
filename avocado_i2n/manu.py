@@ -36,10 +36,12 @@ class Manu(CLICmd):
 
         cmd_parser.params_from_cmd(args)
 
-        run_params = param.prepare_params(base_file="guest-base.cfg",
-                                          ovrwrt_dict={"vms": " ".join(args.selected_vms)},
-                                          ovrwrt_file=param.vms_ovrwrt_file,
-                                          ovrwrt_str=args.param_str)
+        run_config = param.Reparsable()
+        run_config.parse_next_batch(base_file="guest-base.cfg",
+                                    ovrwrt_file=param.vms_ovrwrt_file,
+                                    ovrwrt_str=args.param_str,
+                                    ovrwrt_dict={"vms": " ".join(args.selected_vms)})
+        run_params = run_config.get_params()
         # prepare a setup step or a chain of such
         run_params["count"] = 0
         setup_chain = run_params["setup"].split()

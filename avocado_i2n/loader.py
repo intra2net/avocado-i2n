@@ -17,10 +17,9 @@ import re
 import logging
 
 from avocado_vt.loader import VirtTestLoader
-from virttest import utils_params
 
 from . import params_parser as param
-from .cartesian_graph import TestGraph, TestNode, TestObject
+from .cartgraph import TestGraph, TestNode, TestObject
 
 
 class CartesianLoader(VirtTestLoader):
@@ -67,28 +66,18 @@ class CartesianLoader(VirtTestLoader):
             if vm_name not in object_strs:
                 object_strs[vm_name] = ""
             # all possible hardware-software combinations for a given vm
-            vm_parser = param.prepare_parser(base_file="objects.cfg",
-                                             base_str=param.vm_str(vm_name, ""),
-                                             base_dict={"main_vm": vm_name},
-                                             ovrwrt_str=object_strs[vm_name],
-                                             show_dictionaries=verbose)
-            for i, d in enumerate(vm_parser.get_dicts()):
-                assert i < 1, "There must be exactly one configuration for %s - please restrict better" % vm_name
+            config = param.Reparsable()
+            config.parse_next_batch(base_file="objects.cfg",
+                                    base_str=param.vm_str(vm_name, object_strs),
+                                    base_dict={"main_vm": vm_name},
+                                    ovrwrt_file=param.vms_ovrwrt_file)
 
-                # parameter postprocessing - some expansion and simplification
-                vm_params = utils_params.multiply_params_per_object(d, [vm_name])
-                vm_params = utils_params.object_params(vm_params, vm_name, param.all_vms())
-                # NOTE: this is still not perfect - it also overwrites parameters under conditional blocks with
-                # their defaults outside of the conditional blocks (newly defined parameters are preserved though)
-                vm_params.pop("cdrom_cd1", None)
-                vm_params.pop("cdroms", None)
-                # that may later be invoked (i.e. replaced by irrelevant defaults outside of the blocks)
-                vm_parser = param.update_parser(vm_parser, ovrwrt_dict=vm_params.drop_dict_internals())
+            test_object = TestObject(vm_name, config)
+            test_object.regenerate_params(verbose=verbose)
+            # TODO: object string and state management require further development on the test objects
+            test_object.object_str = object_strs[vm_name]
+            test_objects.append(test_object)
 
-                # parameter postprocessing - add custom overwrite files with custom paths, etc.
-                vm_parser = param.update_parser(vm_parser, ovrwrt_file=param.vms_ovrwrt_file)
-
-            test_objects.append(TestObject(vm_name, vm_parser))
         return test_objects
 
     def parse_nodes(self, nodes_str, graph, prefix="", object_name="", verbose=False):
@@ -107,68 +96,77 @@ class CartesianLoader(VirtTestLoader):
         :raises: :py:class:`exceptions.ValueError` if the base vm is not among the vms for a node
         :raises: :py:class:`param.EmptyCartesianProduct` if no result on preselected vm
         """
-        base_object = None
+        main_object = None
         test_nodes = []
 
         # prepare initial parser as starting configuration and get through tests
-        parser = param.prepare_parser(base_file="sets.cfg", ovrwrt_str=nodes_str)
-        for i, d in enumerate(parser.get_dicts()):
+        early_config = param.Reparsable()
+        early_config.parse_next_file("sets.cfg")
+        early_config.parse_next_str(nodes_str)
+        for i, d in enumerate(early_config.get_parser().get_dicts()):
             name = prefix + str(i+1)
-            objects, objnames, objdicts = [], [], []
+            objects, objstrs = [], {}
 
             # decide about test objects participating in the test node
             if d.get("vms") is None and object_name != "":
                 # case of singleton test
                 d["vms"] = object_name
-                d["base_vm"] = object_name
+                d["main_vm"] = object_name
             elif d.get("vms") is None and object_name == "":
                 # case of default singleton test
-                d["vms"] = d["base_vm"]
+                d["main_vm"] = d.get("main_vm", param.main_vm())
+                d["vms"] = d["main_vm"]
             elif object_name != "":
                 # case of specified object (dependency) as well as node
+                d["main_vm"] = d.get("main_vm", param.main_vm())
                 fixed_vms = d["vms"].split(" ")
                 assert object_name in fixed_vms, "Predefined test object %s for test node '%s' not among:"\
                                                  " %s" % (object_name, d["shortname"], d["vms"])
-                assert d["base_vm"] in fixed_vms, "Base test object %s for test node '%s' not among:"\
-                                                 " %s" % (d["base_vm"], d["shortname"], d["vms"])
+            else:
+                # case of leaf node
+                d["main_vm"] = d.get("main_vm", param.main_vm())
+                fixed_vms = d["vms"].split(" ")
+                assert d["main_vm"] in fixed_vms, "Main test object %s for test node '%s' not among:"\
+                                                 " %s" % (d["main_vm"], d["shortname"], d["vms"])
 
             # get configuration of each participating object and choose the one to mix with the node
-            logging.debug("Fetching test objects %s to parse a test node", d["vms"].replace(" ", ","))
+            logging.debug("Fetching test objects %s to parse a test node", d["vms"].replace(" ", ", "))
             for vm_name in d["vms"].split(" "):
                 vms = graph.get_objects_by(param_key="main_vm", param_val="^"+vm_name+"$")
                 assert len(vms) == 1, "Test object %s not existing or unique in: %s" % (vm_name, vms)
                 objects.append(vms[0])
-                objnames.append(vms[0].name)
-                objdicts.append(vms[0].params)
-                if d["base_vm"] == vms[0].name:
-                    base_object = vms[0]
-            if base_object is None:
-                raise ValueError("Could not detect the base object among '%s' "
+                if d["main_vm"] == vms[0].name:
+                    main_object = vms[0]
+            if main_object is None:
+                raise ValueError("Could not detect the main object among '%s' "
                                  "in the test '%s'" % (d["vms"], d["shortname"]))
 
             # final variant multiplication to produce final test node configuration
-            logging.debug("Multiplying the vm variants by the test variants using %s", base_object.name)
-            setup_dict = {}
-            if len(objects) > 1:
-                setup_dict = utils_params.merge_object_params(objnames, objdicts, "vms", base_object.name)
-            setup_str = param.re_str(d["name"], nodes_str)
+            logging.debug("Multiplying the vm variants by the test variants using %s", main_object.name)
+            # combine object configurations
+            for test_object in objects:
+                objstrs[test_object.name] = test_object.object_str
+            config = param.Reparsable()
+            config.parse_next_batch(base_file="objects.cfg",
+                                    base_str=param.vm_str(d["vms"], objstrs),
+                                    base_dict={"main_vm": main_object.name},
+                                    ovrwrt_file=param.vms_ovrwrt_file)
+            config.parse_next_batch(base_file="sets.cfg",
+                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_str=param.re_str(d["name"], nodes_str))
+
+            test_node = TestNode(name, config, objects)
             try:
-                # combine object configurations
-                parser = param.update_parser(base_object.parser, ovrwrt_dict=setup_dict)
-                # now restrict to selected nodes
-                parser = param.update_parser(parser, ovrwrt_str=setup_str,
-                                             ovrwrt_file=param.tests_ovrwrt_file,
-                                             ovrwrt_base_file="sets.cfg",
-                                             show_dictionaries=verbose)
-                test_nodes.append(TestNode(name, parser, objects))
-                logging.debug("Parsed a test '%s' with base configuration of %s",
-                              d["shortname"], base_object.name)
+                test_node.regenerate_params(verbose=verbose)
+                logging.debug("Parsed a test '%s' with main test object %s",
+                              d["shortname"], main_object.name)
+                test_nodes.append(test_node)
             except param.EmptyCartesianProduct:
                 # empty product on a preselected test object implies something is wrong with the selection
                 if object_name != "":
                     raise
                 logging.debug("Test '%s' not compatible with the %s configuration - skipping",
-                              d["shortname"], base_object.name)
+                              d["shortname"], main_object.name)
 
         return test_nodes
 
@@ -223,11 +221,13 @@ class CartesianLoader(VirtTestLoader):
         if verbose:
             logging.info("%s selected test variant(s)", len(test_nodes))
         if len(test_nodes) == 0:
-            object_restrictions = param.dict_to_str(graph.test_objects)
+            object_restrictions = param.ParsedDict(graph.test_objects).parsable_form()
             for object_str in object_strs.values():
                 object_restrictions += object_str
-            raise param.EmptyCartesianProduct(param.print_restriction(base_str=object_restrictions,
-                                                                      ovrwrt_str=nodes_str))
+            config = param.Reparsable()
+            config.parse_next_str(object_restrictions)
+            config.parse_next_str(nodes_str)
+            raise param.EmptyCartesianProduct(config.print_parsed())
 
         return test_nodes, test_objects
 
@@ -350,13 +350,14 @@ class CartesianLoader(VirtTestLoader):
         objects = sorted(graph.test_objects.keys())
         setup_dict = {"abort_on_error": "yes", "set_state_on_error": "",
                       "vms": " ".join(objects),
-                      "base_vm": objects[0]}
-        setup_str = param.dict_to_str(setup_dict) + param_str
+                      "main_vm": objects[0]}
+        setup_str = param.ParsedDict(setup_dict).parsable_form() + param_str
         nodes = self.parse_nodes(param.re_str("0scan", setup_str, objectless=True), graph)
-        for i, d in enumerate(nodes[0].parser.get_dicts()):
-            logging.debug("Reached shared root %s", d["shortname"])
-            assert i < 1, "There can only be one shared root"
-        return TestNode("0s", nodes[0].parser, [])
+        assert len(nodes) == 1, "There can only be one shared root"
+        scan_node = TestNode("0s", nodes[0].config, [])
+        scan_node.regenerate_params()
+        logging.debug("Reached shared root %s", scan_node.params["shortname"])
+        return scan_node
 
     def parse_create_node(self, graph, object_name, param_str):
         """
@@ -375,15 +376,15 @@ class CartesianLoader(VirtTestLoader):
         test_object = objects[0]
         setup_dict = {"set_state": "root", "set_type": "offline"}
         setup_str = param.re_str("0root", param_str, objectless=True)
-        parser = param.update_parser(test_object.parser,
-                                     ovrwrt_dict=setup_dict,
-                                     ovrwrt_str=setup_str,
-                                     ovrwrt_file=param.tests_ovrwrt_file,
-                                     ovrwrt_base_file="sets.cfg")
-        for i, d in enumerate(parser.get_dicts()):
-            logging.debug("Reached %s root %s", object_name, d["shortname"])
-            assert i < 1, "There can only be one root for %s" % object_name
-        return [TestNode("0r", parser, [test_object])]
+        config = test_object.config.get_copy()
+        config.parse_next_batch(base_file="sets.cfg",
+                                ovrwrt_file=param.tests_ovrwrt_file,
+                                ovrwrt_str=setup_str,
+                                ovrwrt_dict=setup_dict)
+        create_node = TestNode("0r", config, [test_object])
+        create_node.regenerate_params()
+        logging.debug("Reached %s root %s", object_name, create_node.params["shortname"])
+        return [create_node]
 
     """internals - get/parse, duplicates"""
     def _get_and_parse_parent(self, graph, test_node, test_object, param_str, setup_restr):
@@ -477,10 +478,10 @@ class CartesianLoader(VirtTestLoader):
                 clone_variant = child.params["name"]
                 clone_name = child.name + "b" + str(i+1)
                 clone_str = param.re_str(clone_variant)
-                parser = param.update_parser(child.parser,
-                                             ovrwrt_str=clone_str)
+                config = child.config.get_copy()
+                config.parse_next_str(clone_str)
 
-                clones.append(TestNode(clone_name, parser, list(child.objects)))
+                clones.append(TestNode(clone_name, config, list(child.objects)))
 
                 # clone setup with the exception of unique parent copy
                 for clone_setup in child.setup_nodes:

@@ -8,7 +8,7 @@ import re
 from avocado.core import exceptions
 
 import unittest_importer
-from avocado_i2n.cartesian_graph import TestGraph
+from avocado_i2n.cartgraph import TestGraph
 from avocado_i2n.loader import CartesianLoader
 from avocado_i2n.runner import CartesianRunner
 
@@ -60,7 +60,7 @@ def mock_check_state(params, env, print_pos=True, print_neg=True):
     return DummyStateCheck(params, env, print_pos=True, print_neg=True).result
 
 
-@mock.patch('avocado_i2n.cartesian_graph.state_setup.check_state', mock_check_state)
+@mock.patch('avocado_i2n.cartgraph.graph.state_setup.check_state', mock_check_state)
 @mock.patch.object(CartesianRunner, 'run_test_node', mock_run_test_node)
 @mock.patch.object(TestGraph, 'load_setup_list', mock.MagicMock())
 class CartesianGraphTest(unittest.TestCase):
@@ -92,7 +92,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.args.tests_str += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
         test_object = graph.objects[0]
-        dict_generator = test_object.parser.get_dicts()
+        dict_generator = test_object.config.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
         # Parser of test objects must contain exactly one dictionary
         self.assertRaises(StopIteration, dict_generator.__next__)
@@ -104,7 +104,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.args.tests_str += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
         test_node = graph.nodes[0]
-        dict_generator = test_node.parser.get_dicts()
+        dict_generator = test_node.config.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
         # Parser of test objects must contain exactly one dictionary
         self.assertRaises(StopIteration, dict_generator.__next__)

@@ -36,7 +36,7 @@ from virttest import error_context
 
 # custom imports
 from avocado_i2n import state_setup
-from avocado_i2n.cartesian_graph import TestGraph
+from avocado_i2n.cartgraph import TestGraph
 
 
 ###############################################################################
