@@ -789,8 +789,8 @@ def push(args, run_params, tag=""):
     setup_str += param.ParsedDict({"vm_action": "push",
                                    "skip_image_processing": "yes"}).parsable_form()
     tests, _ = args.graph.l.parse_object_nodes(setup_str, args.vm_strs,
-                                                     object_names=run_params["vms"],
-                                                     objectless=True, prefix=tag)
+                                               object_names=run_params["vms"],
+                                               objectless=True, prefix=tag)
     for test in tests:
         args.graph.r.run_test_node(TestNode(tag, test.config, []))
 
@@ -873,7 +873,7 @@ def unset(args, run_params, tag=""):
         config.parse_next_batch(base_file="sets.cfg",
                                 ovrwrt_file=param.tests_ovrwrt_file,
                                 ovrwrt_str=param.re_str("manage.unchanged",
-                                                        args.param_str, objectless=True),
+                                                        setup_str, objectless=True),
                                 ovrwrt_dict={"vm_action": "unset",
                                              "skip_image_processing": "yes"})
         args.graph.r.run_test_node(TestNode(tag, config, []))
