@@ -567,13 +567,15 @@ class VMNetwork(object):
             with open("/etc/dnsmasq.d/avocado-hosts.conf", "w") as f:
                 f.write(dns_declarations["hosts"])
             logging.debug("Resetting DHCP/DNS service")
-            process.run("kill $(cat /var/run/avocado-dnsmasq.pid)",
-                        shell=True, ignore_status=True)
+        if os.path.exists("/var/run/avocado-dnsmasq.pid"):
+            with open("/var/run/avocado-dnsmasq.pid") as f:
+                try:
+                    os.kill(int(f.read()), 15)
+                except ProcessLookupError:
+                    logging.debug("DNSMASQ process is already dead and can't be reset")
+        if dns_dhcp_set_config:
             time.sleep(1)
             process.run("dnsmasq --conf-file=%s" % dns_dhcp_config)
-        else:
-            process.run("kill $(cat /var/run/avocado-dnsmasq.pid)",
-                        shell=True, ignore_status=True)
 
     def _add_new_bridge(self, interface):
         netdst = interface.netconfig.netdst
