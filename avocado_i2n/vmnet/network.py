@@ -1252,7 +1252,7 @@ class VMNetwork(object):
         log = log_vm.session.cmd("rm -f /var/log/messages")
         log = log_vm.session.cmd("/etc/init.d/rsyslog restart")
 
-    def ping(self, src_vm=None, dst_vm=None, ping_dst=None, dst_nic="onic", netconfig_num=3):
+    def ping(self, src_vm=None, dst_vm=None, dst_addr=None, dst_nic="onic", netconfig_num=3):
         """
         Pings a vm from another vm to test most basic connectivity.
 
@@ -1260,17 +1260,17 @@ class VMNetwork(object):
         :type src_vm: VM object
         :param dst_vm: destination vm which will be pinged
         :type dst_vm: VM object
-        :param str ping_dst: explicit IP or domain to use for pinging
+        :param str dst_addr: explicit IP or domain to use for pinging
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
         :param int netconfig_num: legacy parameter needed for finding IP through VPN routes
 
         If no source and destination vms are provided, the ping happens
         among all LAN members, throwing an exception if one of the pings fails.
 
-        If no `ping_dst` is provided, the IP is obtained by analyzing the network topology
+        If no `dst_addr` is provided, the IP is obtained by analyzing the network topology
         from `src_vm` to `dst_vm`.
 
-        If no `dst_vm` is provided, the ping happens directly to `ping_dst`.
+        If no `dst_vm` is provided, the ping happens directly to `dst_addr`.
         """
         if src_vm is None and dst_vm is None:
             logging.info("Commencing mutual ping of %d vms (including self ping).", len(self.nodes))
@@ -1297,11 +1297,42 @@ class VMNetwork(object):
                 logging.info("Mutual ping of all LAN members successful!")
 
         else:
-            if ping_dst is None:
-                ping_dst = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic, netconfig_num=netconfig_num)
-            logging.info("Pinging %s from %s", ping_dst, src_vm.name)
-            result = src_vm.session.cmd("ping %s -c 3" % ping_dst)
+            if dst_addr is None:
+                dst_addr = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic, netconfig_num=netconfig_num)
+            logging.info("Pinging %s from %s", dst_addr, src_vm.name)
+            result = src_vm.session.cmd("ping %s -c 3" % dst_addr)
             logging.info(result.split("\n")[-3])
+
+    def ssh_connectivity(self, src_vm, dst_vm, dst_addr, dst_port=22):
+        """
+        Test connectivity using an SSH port and protocol.
+
+        Arguments are similar to the :py:meth:`ping` method.
+        """
+        logging.info("Connecting from %s to %s of %s at port %s",
+                     src_vm.name, dst_addr, dst_vm.name, dst_port)
+        ssh_cmd = "echo \"test\" | socat - TCP4:%s:%s,connect-timeout=3" % (dst_addr, dst_port)
+        ssh_reponse = src_vm.session.cmd(ssh_cmd, ok_status=[0, 1])
+        if "OpenSSH" not in ssh_reponse:
+            raise exceptions.TestFail("Connecting the port %s failed with the following outputs:\n%s" % (dst_port, ssh_reponse))
+        else:
+            logging.info("Connection succeeded")
+
+    def http_connectivity(self, src_vm, dst_vm, dst_addr, dst_port=443):
+        """
+        Test connectivity using an HTTP port and protocol.
+
+        Arguments are similar to the :py:meth:`ping` method.
+        """
+        logging.info("Connecting from %s to %s of %s at port %s",
+                     src_vm.name, dst_addr, dst_vm.name, dst_port)
+        html_cmd = "echo \"GET / HTTP/1.0\" | socat - TCP4:%s:%s,connect-timeout=3" % (dst_addr, dst_port)
+        html_reponse = src_vm.session.cmd(html_cmd, ok_status=[0, 1])
+        #src_vm_result = left_session.cmd("echo \"GET / HTTP/1.0\" | telnet %s %s" % dst_addr, ok_status = [0, 1])
+        if "HTML" not in html_reponse:
+            raise exceptions.TestFail("Connecting the port %s failed with the following outputs:\n%s" % (dst_port, html_reponse))
+        else:
+            logging.info("Connection succeeded")
 
     def _ssh_client_hostname(self, src_vm, dst_vm, ssh_ip, timeout=10):
         logging.info("Retrieving host name of client %s from %s through ip %s",
