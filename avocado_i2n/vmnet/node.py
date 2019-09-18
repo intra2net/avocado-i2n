@@ -130,13 +130,13 @@ class VMNode(object):
         """
         Reboot or wait for a vm node to reboot returning its last words.
 
-        This is currently supported only for intranators.
-
         :param bool trigger: whether to trigger the reboot or just wait for it
-        :raises: :py:class:`exceptions.NotImplementedError` if vm node is not an intranator
+        :raises: :py:class:`exceptions.NotImplementedError` if vm node is not a linux machine
+
+        This is currently supported only for linux vms.
         """
-        if self.name not in ["vm1", "vm2", "vm3"]:
-            raise NotImplementedError("Rebooting is only supported for intranators")
+        if self.params["os_type"] != "linux":
+            raise NotImplementedError("Rebooting is currently only supported for linux machines")
 
         if trigger:
             self.last_session.cmd("reboot")

@@ -584,13 +584,16 @@ def internal(args, run_params, tag=""):
 @with_cartesian_graph
 def sysupdate(args, run_params, tag=""):
     """
-    Update an intranator system and reset its install state.
+    Update an updatable system and reset its install state.
 
     :param args: command line arguments
     :type args: :py:class:`argparse.Namespace`
     :param run_params: parameters with minimal vm configuration
     :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
+
+    "Updatable" here means that the system is compatible with a "system_update"
+    test defined for a vm with this system as its guest OS configuration.
     """
     vms = args.graph.l.parse_objects(args.vm_strs, run_params.get("vms", ""))
     for vm in vms:
