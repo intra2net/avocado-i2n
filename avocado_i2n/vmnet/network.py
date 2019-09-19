@@ -974,7 +974,8 @@ class VMNetwork(object):
                                                      apply_key_foreign, apply_firewall_ruleset)
 
     def configure_roadwarrior_vpn_on_server(self, vpn_name, server, client, apply_key_own=False,
-                                            apply_key_foreign=False, apply_firewall_ruleset=False):
+                                            apply_key_foreign=False, apply_firewall_ruleset=False,
+                                            modeconfig=True):
         """
         Configure a VPN connection (tunnel) on a vm to play the role of a VPN
         server for any individual clients to access it from the internet.
@@ -987,6 +988,7 @@ class VMNetwork(object):
         :param bool apply_key_own: whether to apply KEY_OWN configuration
         :param bool apply_key_foreign: whether to apply KEY_FOREIGN configuration
         :param bool apply_firewall_ruleset: whether to apply FIREWALL_RULESET configuration
+        :param bool modeconfig: whether it is a ModeConfig connection
 
         Regarding the client, only its parameters will be updated by this method.
         """
@@ -996,7 +998,7 @@ class VMNetwork(object):
                                                   [self.params.get("lan_type", "nic"),
                                                    self.params.get("remote_type", "modeconfig"),
                                                    self.params.get("peer_type", "dynip")],
-                                                  roadwarrior=True)
+                                                  modeconfig=modeconfig)
 
         # some parameter modification for the road warrior connection
         vpn_params = self.tunnels[vpn_name].params

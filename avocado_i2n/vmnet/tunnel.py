@@ -98,7 +98,7 @@ class VPNConn(VMTunnel):
             return self._name
     name = property(fget=name, fset=name)
 
-    def __init__(self, name, vm1, vm2, vmnet, left_variant, psk_variant=None, roadwarrior=False):
+    def __init__(self, name, vm1, vm2, vmnet, left_variant, psk_variant=None, modeconfig=False):
         """
         Construct the full set of required vpn parameters for a given vpn left variant
         that are not already defined in the parameters of the two vms (left `vm1` with
@@ -115,7 +115,7 @@ class VPNConn(VMTunnel):
         :type left_variant: (str, str, str)
         :param psk_variant: PSK configuration in the case PSK is used
         :type psk_variant: (str, str, str)
-        :param bool roadwarrior: whether it is a roadwarrior connection
+        :param bool modeconfig: whether it is a ModeConfig connection
 
         The additional psk variant is used for a psk configuration.
         """
@@ -138,8 +138,7 @@ class VPNConn(VMTunnel):
         vpnparams["vpnconn_remote_net_%s_%s" % (name, vm2.name)] = netconfig1.net_ip
         vpnparams["vpnconn_remote_netmask_%s_%s" % (name, vm2.name)] = netconfig1.netmask
         vpnparams["vpnconn_peer_type_%s_%s" % (name, vm2.name)] = right_variant[2].upper()
-        # roadwarrior requires vm1 to be the server and vm2 the client (it is not symmetric)
-        if roadwarrior is False:
+        if modeconfig is False:
             netconfig2 = vmnet.interfaces["%s.onic" % vm2.name].netconfig
             vpnparams["vpnconn_remote_net_%s_%s" % (name, vm1.name)] = netconfig2.net_ip
             vpnparams["vpnconn_remote_netmask_%s_%s" % (name, vm1.name)] = netconfig2.netmask
