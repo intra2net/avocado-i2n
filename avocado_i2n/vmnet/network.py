@@ -1252,7 +1252,7 @@ class VMNetwork(object):
         log = log_vm.session.cmd("rm -f /var/log/messages")
         log = log_vm.session.cmd("/etc/init.d/rsyslog restart")
 
-    def ping(self, src_vm=None, dst_vm=None, dst_addr=None, dst_nic="onic", netconfig_num=3):
+    def ping(self, src_vm=None, dst_vm=None, dst_addr=None, dst_nic="onic", netconfig_num=3, validate_status=True):
         """
         Pings a vm from another vm to test most basic connectivity.
 
@@ -1263,6 +1263,9 @@ class VMNetwork(object):
         :param str dst_addr: explicit IP or domain to use for pinging
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
         :param int netconfig_num: legacy parameter needed for finding IP through VPN routes
+        :param bool validate_status: whether to validate the ping status and raise error
+        :returns: the result of the last successful or performed ping
+        :rtype: (int, str)
 
         If no source and destination vms are provided, the ping happens
         among all LAN members, throwing an exception if one of the pings fails.
@@ -1284,24 +1287,28 @@ class VMNetwork(object):
                                 if interface1.ip in netconfig.interfaces and interface2.ip in netconfig.interfaces:
                                     direction_str = "%s (%s) from %s (%s)" % (node2.name, interface2.ip,
                                                                               node1.name, interface1.ip)
-                                    try:
-                                        logging.debug("Pinging %s", direction_str)
-                                        node1.platform.session.cmd("ping -c 1 %s" % interface2.ip)
-                                    except aexpect.ShellCmdError:
-                                        logging.info("Failed to ping %s", direction_str)
-                                        failed = True
+                                    logging.debug("Pinging %s", direction_str)
+                                    status, output = node1.platform.session.cmd_status_output("ping -c 1 %s" % interface2.ip)
+                                    failed = failed or status != 0
 
-            if failed is True:
-                exceptions.TestError("Mutual ping of all LAN members unsuccessful.")
-            else:
-                logging.info("Mutual ping of all LAN members successful!")
+            if validate_status and failed:
+                raise exceptions.TestError("Mutual ping of all LAN members unsuccessful")
+            elif validate_status:
+                logging.info("Mutual ping of all LAN members successful")
+            return status, output
 
         else:
             if dst_addr is None:
                 dst_addr = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic, netconfig_num=netconfig_num)
+
             logging.info("Pinging %s from %s", dst_addr, src_vm.name)
-            result = src_vm.session.cmd("ping %s -c 3" % dst_addr)
-            logging.info(result.split("\n")[-3])
+            status, output = src_vm.session.cmd_status_output("ping %s -c 3" % dst_addr)
+
+            if validate_status and status != 0:
+                raise exceptions.TestError("Ping of %s (%s) from %s unsuccessful" % (dst_vm.name, dst_addr, src_vm.name))
+            elif validate_status:
+                logging.debug(output.split("\n")[-3])
+            return status, output
 
     def port_connectivity(self, msg, src_vm, dst_vm, address, port=80, protocol="TCP",
                           validate_status=False, validate_output="", require_blocked=False):
