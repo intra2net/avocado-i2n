@@ -1303,36 +1303,61 @@ class VMNetwork(object):
             result = src_vm.session.cmd("ping %s -c 3" % dst_addr)
             logging.info(result.split("\n")[-3])
 
-    def ssh_connectivity(self, src_vm, dst_vm, dst_addr, dst_port=22):
+    def port_connectivity(self, msg, src_vm, dst_vm, dst_addr, dst_port=80,
+                          validate_status=False, validate_output="", require_blocked=False):
         """
-        Test connectivity using an SSH port and protocol.
+        Test connectivity using a predefined port (usually in addition to pinging).
 
-        Arguments are similar to the :py:meth:`ping` method.
+        Arguments are similar to the :py:meth:`ping` method with the exception of:
+
+        :param str msg: probing data to be sent to the port
+        :param int dst_port: forwarding port to send the message to
+        :returns: the result of the last successful or performed port connection attempt
+        :rtype: (int, str)
         """
-        logging.info("Connecting from %s to %s of %s at port %s",
-                     src_vm.name, dst_addr, dst_vm.name, dst_port)
-        ssh_cmd = "echo \"test\" | socat - TCP4:%s:%s,connect-timeout=3" % (dst_addr, dst_port)
-        ssh_reponse = src_vm.session.cmd(ssh_cmd, ok_status=[0, 1])
-        if "OpenSSH" not in ssh_reponse:
-            raise exceptions.TestFail("Connecting the port %s failed with the following outputs:\n%s" % (dst_port, ssh_reponse))
-        else:
-            logging.info("Connection succeeded")
+        logging.info("Connecting from %s to %s (%s) at port %s",
+                     src_vm.name, dst_vm.name, dst_addr, dst_port)
+        cmd = "echo \"%s\" | socat - TCP4:%s:%s,connect-timeout=3" % (msg, dst_addr, dst_port)
+        #status, output = left_session.cmd_status_output("echo \"%s\" | telnet %s %s" % (msg, dst_addr, dst_port))
+        status, output = src_vm.session.cmd_status_output(cmd)
+        logging.debug(output)
 
-    def http_connectivity(self, src_vm, dst_vm, dst_addr, dst_port=443):
+        if validate_status:
+            status_condition = status != 0 if require_blocked else status == 0
+            if status_condition:
+                logging.info("Port %s connection status matched", dst_port)
+            else:
+                state = "reachable" if require_blocked else "unreachable"
+                raise exceptions.TestError("Port of %s (%s:%s) is %s from %s" % (dst_vm.name, dst_addr, dst_port, state, src_vm.name))
+        if validate_output:
+            output_condition = validate_output not in output if require_blocked else validate_output in output
+            if output_condition:
+                state = "blocked" if require_blocked else "succeeded"
+                logging.info("Connection %s as expected", state)
+            else:
+                state = "not blocked" if require_blocked else "failed"
+                raise exceptions.TestFail("Connecting the port %s %s with the following outputs:\n%s" % (dst_port, state, output))
+        return status, output
+
+    def http_connectivity(self, src_vm, dst_vm, dst_addr, dst_port=443, require_blocked=False):
         """
         Test connectivity using an HTTP port and protocol.
 
         Arguments are similar to the :py:meth:`ping` method.
         """
-        logging.info("Connecting from %s to %s of %s at port %s",
-                     src_vm.name, dst_addr, dst_vm.name, dst_port)
-        html_cmd = "echo \"GET / HTTP/1.0\" | socat - TCP4:%s:%s,connect-timeout=3" % (dst_addr, dst_port)
-        html_reponse = src_vm.session.cmd(html_cmd, ok_status=[0, 1])
-        #src_vm_result = left_session.cmd("echo \"GET / HTTP/1.0\" | telnet %s %s" % dst_addr, ok_status = [0, 1])
-        if "HTML" not in html_reponse:
-            raise exceptions.TestFail("Connecting the port %s failed with the following outputs:\n%s" % (dst_port, html_reponse))
-        else:
-            logging.info("Connection succeeded")
+        return self.port_connectivity("GET / HTTP/1.0", src_vm, dst_vm, dst_addr, dst_port,
+                                      validate_status=True, validate_output="HTML",
+                                      require_blocked=require_blocked)
+
+    def ssh_connectivity(self, src_vm, dst_vm, dst_addr, dst_port=22, require_blocked=False):
+        """
+        Test connectivity using an SSH port and protocol.
+
+        Arguments are similar to the :py:meth:`ping` method.
+        """
+        return self.port_connectivity("test", src_vm, dst_vm, dst_addr, dst_port,
+                                      validate_status=True, validate_output="OpenSSH",
+                                      require_blocked=require_blocked)
 
     def _ssh_client_hostname(self, src_vm, dst_vm, ssh_ip, timeout=10):
         logging.info("Retrieving host name of client %s from %s through ip %s",
