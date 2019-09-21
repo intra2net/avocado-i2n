@@ -1288,7 +1288,8 @@ class VMNetwork(object):
                                     direction_str = "%s (%s) from %s (%s)" % (node2.name, interface2.ip,
                                                                               node1.name, interface1.ip)
                                     logging.debug("Pinging %s", direction_str)
-                                    status, output = node1.platform.session.cmd_status_output("ping -c 1 %s" % interface2.ip)
+                                    count_limit = "" if node1.params.get("os_type", "linux") == "windows" else "-c 1"
+                                    status, output = node1.platform.session.cmd_status_output("ping %s %s" % (count_limit, interface2.ip))
                                     failed = failed or status != 0
 
             if validate_status and failed:
@@ -1302,7 +1303,8 @@ class VMNetwork(object):
                 dst_addr = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic, netconfig_num=netconfig_num)
 
             logging.info("Pinging %s from %s", dst_addr, src_vm.name)
-            status, output = src_vm.session.cmd_status_output("ping %s -c 3" % dst_addr)
+            count_limit = "" if src_vm.params.get("os_type", "linux") == "windows" else "-c 3"
+            status, output = src_vm.session.cmd_status_output("ping %s %s" % (dst_addr, count_limit))
 
             if validate_status and status != 0:
                 raise exceptions.TestError("Ping of %s (%s) from %s unsuccessful" % (dst_vm.name, dst_addr, src_vm.name))
