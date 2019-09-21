@@ -109,6 +109,20 @@ class VMNode(object):
         vm_tuple = (self.name, len(self.remote_sessions))
         return "[node] name='%s', sessions='%s'" % vm_tuple
 
+    def in_netconfig(self, netconfig):
+        """
+        Check whether one of node's interfaces already belongs to the netconfig.
+
+        :param interface: interface to check in the netconfig
+        :type interface: Netconfig object
+        :returns: the interface that is already present in the netconfig or None
+        :rtype: Interface object or None
+        """
+        for interface in self.interfaces.values():
+            if netconfig.has_interface(interface):
+                return interface
+        return None
+
     def get_session(self, serial=False):
         """
         The basic network login - get a session from a vmnode.

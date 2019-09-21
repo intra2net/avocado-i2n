@@ -223,7 +223,7 @@ class VMNetwork(object):
             interface_attached = False
             logging.debug("Generating netconfigs for interface {0}".format(interface))
             for netconfig in self.netconfigs.values():
-                if netconfig.can_add(interface):
+                if netconfig.can_add_interface(interface):
                     logging.debug("Adding interface {0}".format(interface))
                     netconfig.add_interface(interface)
                     interface_attached = True
@@ -1068,10 +1068,10 @@ class VMNetwork(object):
             self.configure_vpn_between_vms(fvpn, vms[i], vms[i + 1], left_variant, psk_variant)
 
     """VM network test methods"""
-    def get_vpn_accessible_ip(self, src_vm, dst_vm, dst_vm_server=None, netconfig_num=3):
+    def get_vpn_accessible_ip(self, src_vm, dst_vm, dst_vm_server=None):
         """
-        Get acessible ip from a vm to a vm given using heuristics about
-        the netconfigs of the entire vm network.
+        Get accessible ip from a vm to a vm given using heuristics about
+        the tunnels and netconfigs of the entire vm network.
 
         :param src_vm: source vm whose IPs are starting points
         :type src_vm: VM object
@@ -1079,18 +1079,17 @@ class VMNetwork(object):
         :type dst_vm: VM object
         :param dst_vm_server: explicit server (of network) for the destination vm
         :type dst_vm_server: VM object
-        :param int netconfig_num: legacy parameter needed for finding IP through VPN routes
         :returns: the IP with which the destination vm can be accessed from the source vm
         :rtype: str
         :raises: :py:class:`exceptions.TestError` if the destination server is not a server or
-            the source or destination vms are not on the network
+            the source or destination vms are not connected by a tunnel
 
         This ip can then be used for ping, tcp tests, etc.
 
-        .. note:: Keep in mind that strict naming conventions of the vpn connections
-            between netconfigs are required. When you decide about the parameters of a
-            vm, you have to append them with '_vpn_X.X' where the two X are the indices
-            of the netconfigs where the servers are located, sorted in ascending order.
+        .. note:: Keep in mind that strict naming conventions of the vpn connections between
+            netconfigs are required for this to work. When you decide about the parameters of a
+            vm, you have to append them with '_vpnX.X' where the two X are the indices of the
+            netconfigs where the servers are located, sorted in ascending order.
         """
         if dst_vm_server is None:
             dst_vm_server = dst_vm
@@ -1102,37 +1101,20 @@ class VMNetwork(object):
             # NOTE: the "onic" interface is the only one used for VPN connections
             interface = self.interfaces["%s.onic" % dst_vm.name]
 
-        def get_vpn_id():
-            src_index = -1
-            dst_index = -1
-            for i in range(netconfig_num):
-                if "vm%i" % (i+1) in src_vm.name:
-                    src_index = i
-                if "vm%i" % (i+1) in dst_vm.name:
-                    dst_index = i
-                if src_index != -1 and dst_index != -1:
-                    break
-            if src_index == -1:
-                raise exceptions.TestError("The source vm %s could not be found in any local network" % src_vm.name)
-            if dst_index == -1:
-                raise exceptions.TestError("The destination vm %s could not be found in any local network" % dst_vm.name)
-            if src_index == dst_index:
-                raise exceptions.TestError("The source vm %s and the destination vm %s should not be located in the same network"
-                                      " in order to be accessible through a VPN connection" % (src_vm.name, dst_vm.name))
-            # sort indices to get the universal vpn id
-            if src_index < dst_index:
-                vpn_id = "vpn%s.%s" % (src_index, dst_index)
-            else:
-                vpn_id = "vpn%s.%s" % (dst_index, src_index)
-            logging.debug("Found a vpn connection with id %s between %s and %s",
-                          vpn_id, src_vm.name, dst_vm.name)
-            return vpn_id
+        node1, node2 = self.nodes[src_vm.name], self.nodes[dst_vm.name]
+        for id, tunnel in self.tunnels.items():
+            if tunnel.connects_nodes(node1, node2):
+                logging.debug("Found a vpn connection with id %s between %s and %s",
+                              id, src_vm.name, dst_vm.name)
+                vpn = tunnel
+                break
+        else:
+            raise exceptions.TestError("The source %s and destination %s are not connected by a tunnel" % (src_vm.name, dst_vm.name))
+        vpn_params = vpn.left_params if dst_vm_server == vpn.left.platform else vpn.right_params
 
-        vpn_id = get_vpn_id()
         # try to get translated ip (NAT) and if not get inner ip which is used
         # in the default vpn configuration
         if "client" in dst_vm.name:
-            vpn_params = dst_vm_server.params.object_params(vpn_id)
             nat_ip_server = vpn_params.get("ip_nat")
             if nat_ip_server is not None:
                 logging.debug("Obtaining translated IP address of an ephemeral client %s",
@@ -1143,12 +1125,11 @@ class VMNetwork(object):
                 nat_ip = interface.ip
                 logging.debug("Retrieved original ip %s for %s", nat_ip, dst_vm.name)
         else:
-            vpn_params = dst_vm.params.object_params(vpn_id)
             nat_ip = vpn_params.get("ip_nat", interface.ip)
             logging.debug("Retrieved network translated ip %s for %s", nat_ip, dst_vm.name)
         return nat_ip
 
-    def _get_accessible_ip(self, src_vm, dst_vm, dst_nic="onic", netconfig_num=3):
+    def _get_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):
         # determine dst_vm server and interface
         if "client" in dst_vm.name:
             dst_vm_server_name = re.match("(vm\d+)client\d+", dst_vm.name).group(1)
@@ -1172,10 +1153,9 @@ class VMNetwork(object):
         # do a VPN search as the last resort (of what we have implemented so far)
         logging.debug("No accessible IP found in local networks, falling back to VPN search")
         return self.get_vpn_accessible_ip(src_vm, dst_vm,
-                                          dst_vm_server=dst_vm_server,
-                                          netconfig_num=netconfig_num)
+                                          dst_vm_server=dst_vm_server)
 
-    def verify_vpn_in_log(self, src_vm, dst_vm, log_vm=None, netconfigs_num=3):
+    def verify_vpn_in_log(self, src_vm, dst_vm, log_vm=None):
         """
         Search for the appropriate message in the vpn log file.
 
@@ -1185,7 +1165,6 @@ class VMNetwork(object):
         :type dst_vm: VM object
         :param log_vm: vm where all packets are logged
         :type log_vm: VM object
-        :param int netconfig_num: legacy parameter needed for finding IP through VPN routes
         :raises: :py:class:`exceptions.TestError` if the source or destination vms are not on the network
         :raises: :py:class:`exceptions.TestFail` if the VPN packets were not logged properly
 
@@ -1193,44 +1172,27 @@ class VMNetwork(object):
         """
         if log_vm is None:
             log_vm = dst_vm
-        src_index = -1
-        dst_index = -1
-        log_index = -1
 
-        for i in range(netconfigs_num):
-            if "vm%i" % (i+1) in src_vm.name:
-                src_index = i
-            if "vm%i" % (i+1) in dst_vm.name:
-                dst_index = i
-            if "vm%i" % (i+1) in log_vm.name:
-                log_index = i
-            if src_index != -1 and dst_index != -1 and log_index != -1:
-                if log_index == src_index:
-                    remote_index = dst_index
-                elif log_index == dst_index:
-                    remote_index = src_index
-                else:
-                    # ignore cases where the logging machine is in a different
-                    # netconfig than the source and the destination machine
-                    return
-                if log_index == remote_index:
-                    # ignore cases where the source and destination machine
-                    # are in the same netconfig since no vpn connection is used
-                    return
-                log_message = "VPN%i.%i" % (log_index, remote_index)
+        node1, node2 = self.nodes[src_vm.name], self.nodes[dst_vm.name]
+        for id, tunnel in self.tunnels.items():
+            if tunnel.connects_nodes(node1, node2):
+                logging.debug("Found a vpn connection with id %s between %s and %s",
+                              id, src_vm.name, dst_vm.name)
+                vpn = tunnel
+                left_index, right_index = id.lstrip("vpn").split(".")
                 break
-        if src_index == -1:
-            raise exceptions.TestError("The source vm %s could not be found in any local network" % src_vm.name)
-        if dst_index == -1:
-            raise exceptions.TestError("The destination vm %s could not be found in any local network" % dst_vm)
-        if log_index == -1:
-            raise exceptions.TestError("The logging vm %s could not be found in any local network" % log_vm)
+        else:
+            raise exceptions.TestError("The source %s and destination %s are not connected by a tunnel" % (src_vm.name, dst_vm.name))
 
-        wrong_messages = []
-        for i in range(netconfigs_num):
-            if i == log_index or i == remote_index:
-                continue
-            wrong_messages.append("VPN_%i.%i" % (log_index, i))
+        if log_vm == vpn.left.platform:
+            log_index = int(left_index)
+            remote_index = int(right_index)
+        elif log_vm == vpn.right.platform:
+            log_index = int(right_index)
+            remote_index = int(left_index)
+        else:
+            raise exceptions.TestError("The logging vm %s must be one of the VPN endpoints %s or %s" % (log_vm.name, src_vm.name, dst_vm.name))
+        log_message = "VPN%i.%i" % (log_index, remote_index) if log_vm == vpn.left.platform else "VPN%i.%i" % (remote_index, log_index)
         deny_message = "%s_DENY" % log_message
 
         # BUG: there is a problem in firewall logging of VPN with NAT - skip check to test working features
@@ -1245,14 +1207,14 @@ class VMNetwork(object):
             raise exceptions.TestFail("No message with %s was found in log" % log_message)
         if deny_message in log:
             raise exceptions.TestFail("The deny message %s was found in log" % deny_message)
-        for wrong_message in wrong_messages:
-            if wrong_message in log:
-                raise exceptions.TestFail("Wrong message %s in addition to %s was found in log" % (wrong_message, log_message))
+        for message in re.findall("VPN_%i\.\d+" % log_index, log):
+            if message != log_message:
+                raise exceptions.TestFail("Wrong message %s in addition to %s was found in log" % (message, log_message))
         logging.info("Ok, resetting the messages log at %s", log_vm.name)
         log = log_vm.session.cmd("rm -f /var/log/messages")
         log = log_vm.session.cmd("/etc/init.d/rsyslog restart")
 
-    def ping(self, src_vm=None, dst_vm=None, dst_addr=None, dst_nic="onic", netconfig_num=3, validate_status=True):
+    def ping(self, src_vm=None, dst_vm=None, dst_addr=None, dst_nic="onic", validate_status=True):
         """
         Pings a vm from another vm to test most basic connectivity.
 
@@ -1262,7 +1224,6 @@ class VMNetwork(object):
         :type dst_vm: VM object
         :param str dst_addr: explicit IP or domain to use for pinging
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
-        :param int netconfig_num: legacy parameter needed for finding IP through VPN routes
         :param bool validate_status: whether to validate the ping status and raise error
         :returns: the result of the last successful or performed ping
         :rtype: (int, str)
@@ -1300,7 +1261,7 @@ class VMNetwork(object):
 
         else:
             if dst_addr is None:
-                dst_addr = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic, netconfig_num=netconfig_num)
+                dst_addr = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
 
             logging.info("Pinging %s from %s", dst_addr, src_vm.name)
             count_limit = "" if src_vm.params.get("os_type", "linux") == "windows" else "-c 3"
@@ -1452,7 +1413,7 @@ class VMNetwork(object):
                     return dst_hostname
         raise exceptions.TestFail("No server host name found")
 
-    def ssh_hostname(self, src_vm, dst_vm, dst_nic="onic", netconfig_num=3, timeout=10):
+    def ssh_hostname(self, src_vm, dst_vm, dst_nic="onic", timeout=10):
         """
         Get the host name of a vm from any other vm in the vm net
         using the SSH protocol.
@@ -1462,7 +1423,6 @@ class VMNetwork(object):
         :param dst_vm: destination vm with the SSH server
         :type dst_vm: VM object
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
-        :param int netconfig_num: legacy parameter needed for finding IP through VPN routes
         :param int timeout: timeout for the SSH connection
         :returns: the hostname of the SSH server
         :rtype: str+
@@ -1470,13 +1430,13 @@ class VMNetwork(object):
         This tests the TCP connectivity and verifies it leads to the
         correct machine.
         """
-        ssh_ip = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic, netconfig_num=netconfig_num)
+        ssh_ip = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
         if "client" in dst_vm.name:
             return self._ssh_client_hostname(src_vm, dst_vm, ssh_ip, timeout)
         else:
             return self._ssh_server_hostname(src_vm, dst_vm, ssh_ip, timeout)
 
-    def scp_files(self, src_path, dst_path, src_vm, dst_vm, dst_nic="onic", netconfig_num=3, timeout=10):
+    def scp_files(self, src_path, dst_path, src_vm, dst_vm, dst_nic="onic", timeout=10):
         """
         Copy files securely where built-in methods like :py:func:`vm.copy_files_to` fail.
 
@@ -1487,14 +1447,12 @@ class VMNetwork(object):
         :param dst_vm: destination vm with the ssh server
         :type dst_vm: VM object
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
-        :param int netconfig_num: legacy parameter needed for finding IP through VPN routes
         :param int timeout: timeout for the SSH connection
         :raises: :py:class:`exceptions.TestFail` if the files couldn't be copied
 
         The paths `src_path` and `dst_path` must be strings, possibly with a wildcard.
-        The `netconfig_num parameter` is a helper in case we use the legacy ip search (via vpn).
         """
-        ssh_ip = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic, netconfig_num=netconfig_num)
+        ssh_ip = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
         logging.info("Copying files %s from %s to %s", src_path, src_vm.name, dst_vm.name)
         src_vm.session.sendline("scp -o StrictHostKeyChecking=no "
                                 "-o HostKeyAlgorithms=+ssh-dss "

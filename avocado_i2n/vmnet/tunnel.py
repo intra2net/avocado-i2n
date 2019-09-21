@@ -40,7 +40,7 @@ class VPNConn(VMTunnel):
 
     """Structural properties"""
     def left(self, value=None):
-        """A reference to the left vmnode of the tunnel."""
+        """A reference to the left node of the tunnel."""
         if value is not None:
             self._left = value
         else:
@@ -48,12 +48,38 @@ class VPNConn(VMTunnel):
     left = property(fget=left, fset=left)
 
     def right(self, value=None):
-        """A reference to the right vmnode of the tunnel."""
+        """A reference to the right node of the tunnel."""
         if value is not None:
             self._right = value
         else:
             return self._right
     right = property(fget=right, fset=right)
+
+    def left_net(self, value=None):
+        """A reference to the left netconfig of the tunnel."""
+        if value is not None:
+            self._left_net = value
+        else:
+            return self._left_net
+    left_net = property(fget=left_net, fset=left_net)
+
+    def right_net(self, value=None):
+        """A reference to the right netconfig of the tunnel."""
+        if value is not None:
+            self._right_net = value
+        else:
+            return self._right_net
+    right_net = property(fget=right_net, fset=right_net)
+
+    def left_params(self, value=None):
+        """The vpn generated left side parameters."""
+        return self.left.params.object_params(self.name)
+    left_params = property(fget=left_params)
+
+    def right_params(self, value=None):
+        """The vpn generated right side parameters."""
+        return self.right.params.object_params(self.name)
+    right_params = property(fget=right_params)
 
     def params(self, value=None):
         """The vpn generated test parameters."""
@@ -80,9 +106,9 @@ class VPNConn(VMTunnel):
 
         :param str name: name of the VPN connection
         :param vm1: left side vm of the VPN tunnel
-        :type vm1: VM object
+        :type vm1: Node object
         :param vm2: right side vm of the VPN tunnel
-        :type vm2: VM object
+        :type vm2: Node object
         :param vmnet: the vm network simulating the internet
         :type vmnet: VMNetwork object
         :param left_variant: left side configuration (right side is determined from it)
@@ -118,6 +144,7 @@ class VPNConn(VMTunnel):
             vpnparams["vpnconn_remote_net_%s_%s" % (name, vm1.name)] = netconfig2.net_ip
             vpnparams["vpnconn_remote_netmask_%s_%s" % (name, vm1.name)] = netconfig2.netmask
         else:
+            netconfig2 = None
             vpnparams["vpnconn_remote_modeconfig_ip_%s_%s" % (name, vm1.name)] = "172.30.0.1"
         vpnparams["vpnconn_peer_type_%s_%s" % (name, vm1.name)] = left_variant[2].upper()
 
@@ -138,8 +165,29 @@ class VPNConn(VMTunnel):
 
         self._params = vpnparams
         self._left = vm1
+        self._left_net = netconfig1
         self._right = vm2
+        self._right_net = netconfig2
         self._name = name
+
+    def connects_nodes(self, node1, node2):
+        """
+        Check whether a tunnel connects two vm nodes, i.e. they are in directly connected
+        as VPN peers or indirectly in VPN connected LANs (netconfigs).
+
+        :param node1: one side vm of the VPN tunnel
+        :type node1: VM node
+        :param node2: another side vm of the VPN tunnel
+        :type node2: VM node
+        :returns: whether the tunnel connects the two nodes
+        :rtype: bool
+        """
+        if node1 == self.left or (self.left_net and node1.in_netconfig(self.left_net)):
+            return node2 == self.right or (self.right_net and node2.in_netconfig(self.right_net))
+        elif node1 == self.right or (self.right_net and node1.in_netconfig(self.right_net)):
+            return node2 == self.left or (self.left_net and node2.in_netconfig(self.left_net))
+        else:
+            return False
 
     def _get_peer_variant(self, left_variant):
         """
