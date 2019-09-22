@@ -32,12 +32,17 @@ class VMNode(object):
 
     """Structural properties"""
     def interfaces(self, value=None):
-        """A collection of interfaces the vmnode represents."""
+        """A collection of interfaces the vm node represents."""
         if value is not None:
             self._interfaces = value
         else:
             return self._interfaces
     interfaces = property(fget=interfaces, fset=interfaces)
+
+    def ephemeral(self):
+        """Whether the vm node is ephemeral (spawned in a network)."""
+        return self._ephemeral
+    ephemeral = property(fget=ephemeral)
 
     """Platform properties"""
     def platform(self, value=None):
@@ -93,14 +98,17 @@ class VMNode(object):
             return self._last_session
     last_session = property(fget=last_session, fset=last_session)
 
-    def __init__(self, platform):
+    def __init__(self, platform, ephemeral=False):
         """
         Construct a vm node from a vm platform.
 
         :param platform: the vm platform that communicates in the vm network
         :type platform: VM object
+        :param bool ephemeral: whether the node is ephemeral (spawned in a network)
         """
         self._interfaces = {}
+
+        self._ephemeral = ephemeral
 
         self._platform = platform
         self._last_session = None
@@ -122,6 +130,14 @@ class VMNode(object):
             if netconfig.has_interface(interface):
                 return interface
         return None
+
+    def get_single_interface(self):
+        """
+        Get a single (first) interface of the node.
+
+        This is useful for nodes having just one interface.
+        """
+        return list(self.interfaces.values())[0]
 
     def get_session(self, serial=False):
         """

@@ -707,7 +707,7 @@ class VMNetwork(object):
                                         self.test.bindir)
 
             logging.debug("Integrating the ephemeral vm in the vm network")
-            self.nodes[client_name] = self.new_node(client)
+            self.nodes[client_name] = self.new_node(client, ephemeral=True)
             self.integrate_node(self.nodes[client_name])
 
             logging.debug("Adding as an intraclient and booting the ephemeral vm")
@@ -728,12 +728,12 @@ class VMNetwork(object):
         overwrite_dict = {}
         overwrite_dict["vms_%s" % server_name] = ""
 
-        for i in range(clients_num):
+        for i in range(1, clients_num+1):
             logging.debug("Adding client %i for %s", i, server_name)
             server_interface = self.nodes[server_name].interfaces[nic]
 
             # main
-            client = "%sclient%i" % (server_name, i)
+            client = "%seph%i" % (server_name, i)
             overwrite_dict["vms_%s" % server_name] += "%s " % client
             overwrite_dict["start_vm_%s" % client] = "yes"
             overwrite_dict["kill_vm_%s" % client] = self.params.get("kill_clients", "yes")
@@ -1093,9 +1093,9 @@ class VMNetwork(object):
         """
         if dst_vm_server is None:
             dst_vm_server = dst_vm
-            if "client" in dst_vm_server:
-                raise exceptions.TestError("The client vm %s cannot be a VPN server" % dst_vm.name)
-        if "client" in dst_vm.name:
+            if self.nodes[dst_vm_server.name].ephemeral:
+                raise exceptions.TestError("The ephemeral vm %s cannot be a VPN server" % dst_vm.name)
+        if self.nodes[dst_vm.name].ephemeral:
             interface = self.interfaces["%s.%s" % (dst_vm.name, dst_vm.params["nics"])]
         else:
             # NOTE: the "onic" interface is the only one used for VPN connections
@@ -1114,7 +1114,7 @@ class VMNetwork(object):
 
         # try to get translated ip (NAT) and if not get inner ip which is used
         # in the default vpn configuration
-        if "client" in dst_vm.name:
+        if self.nodes[dst_vm.name].ephemeral:
             nat_ip_server = vpn_params.get("ip_nat")
             if nat_ip_server is not None:
                 logging.debug("Obtaining translated IP address of an ephemeral client %s",
@@ -1131,17 +1131,18 @@ class VMNetwork(object):
 
     def _get_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):
         # determine dst_vm server and interface
-        if "client" in dst_vm.name:
-            dst_vm_server_name = re.match("(vm\d+)client\d+", dst_vm.name).group(1)
-            # NOTE: ephemeral clients have only one nic so force its use
-            dst_iface = self.interfaces["%s.%s" % (dst_vm.name, dst_vm.params["nics"])]
+        dst_node = self.nodes[dst_vm.name]
+        if dst_node.ephemeral:
+            # ephemeral clients have only one interface
+            dst_iface = dst_node.get_single_interface()
+            dst_vm_server = dst_iface.netconfig.interfaces[dst_iface.netconfig.gateway].node.platform
         else:
-            dst_vm_server_name = dst_vm.name
             dst_iface = self.interfaces["%s.%s" % (dst_vm.name, dst_nic)]
-        dst_vm_server = self.nodes[dst_vm_server_name].platform
+            dst_vm_server = self.nodes[dst_vm.name].platform
 
         # check if the source vm shares a network with a fixed destination nic
-        for src_iface in self.nodes[src_vm.name].interfaces.values():
+        src_node = self.nodes[src_vm.name]
+        for src_iface in src_node.interfaces.values():
             if src_iface.netconfig == dst_iface.netconfig:
                 logging.debug("Internal IP %s of %s is accessible to %s",
                               dst_iface.ip, dst_vm.name, src_vm.name)
@@ -1425,7 +1426,7 @@ class VMNetwork(object):
         correct machine.
         """
         ssh_ip = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
-        if "client" in dst_vm.name:
+        if self.nodes[dst_vm.name].ephemeral:
             return self._ssh_client_hostname(src_vm, dst_vm, ssh_ip, timeout)
         else:
             return self._ssh_server_hostname(src_vm, dst_vm, ssh_ip, timeout)
