@@ -1195,12 +1195,6 @@ class VMNetwork(object):
         log_message = "VPN%i.%i" % (log_index, remote_index) if log_vm == vpn.left.platform else "VPN%i.%i" % (remote_index, log_index)
         deny_message = "%s_DENY" % log_message
 
-        # BUG: there is a problem in firewall logging of VPN with NAT - skip check to test working features
-        if self.params.get("report_bugs", "yes") == "yes" and log_message == "VPN0.2" and log_vm.params.get("has_logging_bug", "no") == "yes":
-            log = log_vm.session.cmd("rm -f /var/log/messages")
-            log = log_vm.session.cmd("/etc/init.d/rsyslog restart")
-            return
-
         logging.info("Checking log of %s for the firewall rule tag %s ", log_vm.name, log_message)
         log = log_vm.session.cmd("cat /var/log/messages")
         if log_message not in log:
