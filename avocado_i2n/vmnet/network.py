@@ -1068,17 +1068,16 @@ class VMNetwork(object):
             self.configure_vpn_between_vms(fvpn, vms[i], vms[i + 1], left_variant, psk_variant)
 
     """VM network test methods"""
-    def get_vpn_accessible_ip(self, src_vm, dst_vm, dst_vm_server=None):
+    def get_vpn_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):
         """
-        Get accessible ip from a vm to a vm given using heuristics about
+        Get an accessible IP from a vm to a vm given using heuristics about
         the tunnels and netconfigs of the entire vm network.
 
         :param src_vm: source vm whose IPs are starting points
         :type src_vm: VM object
         :param dst_vm: destination vm whose IPs are ending points
         :type dst_vm: VM object
-        :param dst_vm_server: explicit server (of network) for the destination vm
-        :type dst_vm_server: VM object
+        :param str dst_nic: network interface for the destination vm
         :returns: the IP with which the destination vm can be accessed from the source vm
         :rtype: str
         :raises: :py:class:`exceptions.TestError` if the destination server is not a server or
@@ -1091,15 +1090,14 @@ class VMNetwork(object):
             vm, you have to append them with '_vpnX.X' where the two X are the indices of the
             netconfigs where the servers are located, sorted in ascending order.
         """
-        if dst_vm_server is None:
-            dst_vm_server = dst_vm
-            if self.nodes[dst_vm_server.name].ephemeral:
-                raise exceptions.TestError("The ephemeral vm %s cannot be a VPN server" % dst_vm.name)
-        if self.nodes[dst_vm.name].ephemeral:
-            interface = self.interfaces["%s.%s" % (dst_vm.name, dst_vm.params["nics"])]
+        dst_node = self.nodes[dst_vm.name]
+        if dst_node.ephemeral:
+            # ephemeral clients have only one interface
+            dst_iface = dst_node.get_single_interface()
+            server_node = dst_iface.netconfig.interfaces[dst_iface.netconfig.gateway].node
         else:
-            # NOTE: the "onic" interface is the only one used for VPN connections
-            interface = self.interfaces["%s.onic" % dst_vm.name]
+            dst_iface = self.interfaces["%s.%s" % (dst_vm.name, dst_nic)]
+            server_node = self.nodes[dst_vm.name]
 
         node1, node2 = self.nodes[src_vm.name], self.nodes[dst_vm.name]
         for id, tunnel in self.tunnels.items():
@@ -1110,7 +1108,7 @@ class VMNetwork(object):
                 break
         else:
             raise exceptions.TestError("The source %s and destination %s are not connected by a tunnel" % (src_vm.name, dst_vm.name))
-        vpn_params = vpn.left_params if dst_vm_server == vpn.left.platform else vpn.right_params
+        vpn_params = vpn.left_params if server_node == vpn.left else vpn.right_params
 
         # try to get translated ip (NAT) and if not get inner ip which is used
         # in the default vpn configuration
@@ -1119,18 +1117,32 @@ class VMNetwork(object):
             if nat_ip_server is not None:
                 logging.debug("Obtaining translated IP address of an ephemeral client %s",
                               dst_vm.name)
-                nat_ip = interface.netconfig.translate_address(interface, nat_ip_server)
+                nat_ip = dst_iface.netconfig.translate_address(dst_iface, nat_ip_server)
                 logging.debug("Retrieved network translated ip %s for %s", nat_ip, dst_vm.name)
             else:
-                nat_ip = interface.ip
+                nat_ip = dst_iface.ip
                 logging.debug("Retrieved original ip %s for %s", nat_ip, dst_vm.name)
         else:
-            nat_ip = vpn_params.get("ip_nat", interface.ip)
+            nat_ip = vpn_params.get("ip_nat", dst_iface.ip)
             logging.debug("Retrieved network translated ip %s for %s", nat_ip, dst_vm.name)
         return nat_ip
 
-    def _get_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):
-        # determine dst_vm server and interface
+    def get_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):
+        """
+        Get an accessible IP from a vm to a vm given using heuristics about
+        the tunnels and netconfigs of the entire vm network.
+
+        :param src_vm: source vm whose IPs are starting points
+        :type src_vm: VM object
+        :param dst_vm: destination vm whose IPs are ending points
+        :type dst_vm: VM object
+        :param str dst_nic: network interface for the destination vm
+        :returns: the IP with which the destination vm can be accessed from the source vm
+        :rtype: str
+
+        This ip can then be used for ping, tcp tests, etc.
+        """
+        logging.debug("Searching for IP of %s that is accessible to %s", dst_vm.name, src_vm.name)
         dst_node = self.nodes[dst_vm.name]
         if dst_node.ephemeral:
             # ephemeral clients have only one interface
@@ -1153,8 +1165,7 @@ class VMNetwork(object):
 
         # do a VPN search as the last resort (of what we have implemented so far)
         logging.debug("No accessible IP found in local networks, falling back to VPN search")
-        return self.get_vpn_accessible_ip(src_vm, dst_vm,
-                                          dst_vm_server=dst_vm_server)
+        return self.get_vpn_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
 
     def verify_vpn_in_log(self, src_vm, dst_vm, log_vm=None):
         """
@@ -1209,7 +1220,7 @@ class VMNetwork(object):
         log = log_vm.session.cmd("rm -f /var/log/messages")
         log = log_vm.session.cmd("/etc/init.d/rsyslog restart")
 
-    def ping(self, src_vm=None, dst_vm=None, dst_addr=None, dst_nic="onic", validate_status=True):
+    def ping(self, src_vm=None, dst_vm=None, dst_nic="onic", address=None, validate_status=True):
         """
         Pings a vm from another vm to test most basic connectivity.
 
@@ -1217,8 +1228,8 @@ class VMNetwork(object):
         :type src_vm: VM object
         :param dst_vm: destination vm which will be pinged
         :type dst_vm: VM object
-        :param str dst_addr: explicit IP or domain to use for pinging
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
+        :param str address: explicit IP or domain to use for pinging
         :param bool validate_status: whether to validate the ping status and raise error
         :returns: the result of the last successful or performed ping
         :rtype: (int, str)
@@ -1226,10 +1237,10 @@ class VMNetwork(object):
         If no source and destination vms are provided, the ping happens
         among all LAN members, throwing an exception if one of the pings fails.
 
-        If no `dst_addr` is provided, the IP is obtained by analyzing the network topology
+        If no `address` is provided, the IP is obtained by analyzing the network topology
         from `src_vm` to `dst_vm`.
 
-        If no `dst_vm` is provided, the ping happens directly to `dst_addr`.
+        If no `dst_vm` is provided, the ping happens directly to `address`.
         """
         if src_vm is None and dst_vm is None:
             logging.info("Commencing mutual ping of %d vms (including self ping).", len(self.nodes))
@@ -1255,20 +1266,21 @@ class VMNetwork(object):
             return status, output
 
         else:
-            if dst_addr is None:
-                dst_addr = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+            if address is None:
+                address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
 
-            logging.info("Pinging %s from %s", dst_addr, src_vm.name)
+            logging.info("Pinging %s from %s", address, src_vm.name)
             count_limit = "" if src_vm.params.get("os_type", "linux") == "windows" else "-c 3"
-            status, output = src_vm.session.cmd_status_output("ping %s %s" % (dst_addr, count_limit))
+            status, output = src_vm.session.cmd_status_output("ping %s %s" % (address, count_limit))
 
             if validate_status and status != 0:
-                raise exceptions.TestError("Ping of %s (%s) from %s unsuccessful" % (dst_vm.name, dst_addr, src_vm.name))
+                raise exceptions.TestError("Ping of %s (%s) from %s unsuccessful" % (dst_vm.name, address, src_vm.name))
             elif validate_status:
                 logging.debug(output.split("\n")[-3])
             return status, output
 
-    def port_connectivity(self, msg, src_vm, dst_vm, address, port=80, protocol="TCP",
+    def port_connectivity(self, msg, src_vm, dst_vm, dst_nic="onic",
+                          address=None, port=80, protocol="TCP",
                           validate_status=False, validate_output="", require_blocked=False):
         """
         Test connectivity using a predefined port (usually in addition to pinging).
@@ -1281,6 +1293,9 @@ class VMNetwork(object):
         :returns: the result of the last successful or performed port connection attempt
         :rtype: (int, str)
         """
+        if address is None:
+            address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+
         logging.info("Connecting from %s to %s (%s) at %s port %s",
                      src_vm.name, dst_vm.name, address, protocol, port)
         src_vm.session.sendline("cat <<EOF | socat - %s:%s:%s,connect-timeout=3" % (protocol, address, port))
@@ -1305,8 +1320,8 @@ class VMNetwork(object):
                 raise exceptions.TestFail("Connecting the port %s %s with the following outputs:\n%s" % (port, state, output))
         return status, output
 
-    def http_connectivity(self, src_vm, dst_vm,
-                          address, port=80, protocol="HTTP",
+    def http_connectivity(self, src_vm, dst_vm, dst_nic="onic",
+                          address=None, port=80, protocol="HTTP",
                           require_blocked=False):
         """
         Test connectivity using an HTTP port and protocol.
@@ -1322,8 +1337,8 @@ class VMNetwork(object):
                                       validate_status=True, validate_output="HTML",
                                       require_blocked=require_blocked)
 
-    def https_connectivity(self, src_vm, dst_vm,
-                           address, port=443, protocol="HTTPS",
+    def https_connectivity(self, src_vm, dst_vm, dst_nic="onic",
+                           address=None, port=443, protocol="HTTPS",
                            require_blocked=False):
         """
         Test connectivity using an HTTPS port and protocol.
@@ -1333,6 +1348,8 @@ class VMNetwork(object):
         :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
         """
         logging.debug("Sending probing data for the HTTPS protocol")
+        if address is None:
+            address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
         if protocol != "HTTPS":
             raise exceptions.TestError("Invalid protocol for HTTPS port connectivity: %s" % protocol)
 
@@ -1350,8 +1367,8 @@ class VMNetwork(object):
                 raise exceptions.TestFail("HTTPS connection to %s succeeded with the following outputs:\n%s" % (port, output))
         return status, output
 
-    def ssh_connectivity(self, src_vm, dst_vm,
-                         address, port=22, protocol="SSH",
+    def ssh_connectivity(self, src_vm, dst_vm, dst_nic="onic",
+                         address=None, port=22, protocol="SSH",
                          require_blocked=False):
         """
         Test connectivity using an SSH port and protocol.
@@ -1363,7 +1380,7 @@ class VMNetwork(object):
         logging.debug("Sending probing data for the SSH protocol")
         if protocol != "SSH":
             raise exceptions.TestError("Invalid protocol for SSH port connectivity: %s" % protocol)
-        return self.port_connectivity("test", src_vm, dst_vm, address, port, "TCP",
+        return self.port_connectivity("test", src_vm, dst_vm, dst_nic, address, port, "TCP",
                                       validate_status=True, validate_output="OpenSSH",
                                       require_blocked=require_blocked)
 
@@ -1425,7 +1442,7 @@ class VMNetwork(object):
         This tests the TCP connectivity and verifies it leads to the
         correct machine.
         """
-        ssh_ip = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+        ssh_ip = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
         if self.nodes[dst_vm.name].ephemeral:
             return self._ssh_client_hostname(src_vm, dst_vm, ssh_ip, timeout)
         else:
@@ -1447,7 +1464,7 @@ class VMNetwork(object):
 
         The paths `src_path` and `dst_path` must be strings, possibly with a wildcard.
         """
-        ssh_ip = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+        ssh_ip = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
         logging.info("Copying files %s from %s to %s", src_path, src_vm.name, dst_vm.name)
         src_vm.session.sendline("scp -o StrictHostKeyChecking=no "
                                 "-o HostKeyAlgorithms=+ssh-dss "
@@ -1473,7 +1490,8 @@ class VMNetwork(object):
                     return
         raise exceptions.TestFail("No file progress bars were found - couldn't copy %s" % src_path)
 
-    def ftp_connectivity(self, msg, file, src_vm, dst_vm, address, port, protocol):
+    def ftp_connectivity(self, msg, file, src_vm, dst_vm, dst_nic="onic",
+                         address=None, port=21):
         """
         Send file request to an FTP destination port and address and verify it was received.
 
@@ -1484,8 +1502,9 @@ class VMNetwork(object):
         :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
         """
         logging.debug("Sending the data '%s' in a file %s", msg, file)
-        if protocol != "FTP":
-            raise exceptions.TestError("Invalid protocol for FTP port connectivity: %s" % protocol)
+        if address is None:
+            address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+        protocol = "FTP"
 
         address = "%s://%s:%s/%s" % (protocol.lower(), address, port, file)
         credentials = "%s:%s" % (src_vm.params["ftp_username"], src_vm.params["ftp_password"])
@@ -1494,7 +1513,8 @@ class VMNetwork(object):
         logging.debug("Got status %s and file content:\n%s", status, output)
         return status == 0 and msg in output
 
-    def tftp_connectivity(self, msg, file, src_vm, dst_vm, address, port, protocol):
+    def tftp_connectivity(self, msg, file, src_vm, dst_vm, dst_nic="onic",
+                          address=None, port=69):
         """
         Send file request to an TFTP destination port and address and verify it was received.
         Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
@@ -1504,8 +1524,9 @@ class VMNetwork(object):
         :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
         """
         logging.debug("Sending the data '%s' in a file %s", msg, file)
-        if protocol != "TFTP":
-            raise exceptions.TestError("Invalid protocol for TFTP port connectivity: %s" % protocol)
+        if address is None:
+            address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+        protocol = "TFTP"
 
         address = "%s://%s:%s/%s" % (protocol.lower(), address, port, file)
         cmd = "curl " + address
