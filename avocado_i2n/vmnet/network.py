@@ -1341,7 +1341,7 @@ class VMNetwork(object):
         return status, output
 
     def http_connectivity(self, src_vm, dst_vm,
-                          address, port=443, protocol="HTTPS",
+                          address, port=80, protocol="HTTP",
                           require_blocked=False):
         """
         Test connectivity using an HTTP port and protocol.
@@ -1350,12 +1350,40 @@ class VMNetwork(object):
 
         :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
         """
-        logging.debug("Sending probing data for the HTTPS protocol")
-        if protocol not in ["HTTP", "HTTPS"]:
-            raise exceptions.TestError("Invalid protocol for HTTP(S) port connectivity: %s" % protocol)
-        return self.port_connectivity("GET / HTTP/1.0", src_vm, dst_vm, address, port, "TCP",
+        logging.debug("Sending probing data for the HTTP protocol")
+        if protocol != "HTTP":
+            raise exceptions.TestError("Invalid protocol for HTTP port connectivity: %s" % protocol)
+        return self.port_connectivity("GET / HTTP/1.0", src_vm, dst_vm, dst_nic, address, port, "TCP",
                                       validate_status=True, validate_output="HTML",
                                       require_blocked=require_blocked)
+
+    def https_connectivity(self, src_vm, dst_vm,
+                           address, port=443, protocol="HTTPS",
+                           require_blocked=False):
+        """
+        Test connectivity using an HTTPS port and protocol.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method.
+
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        logging.debug("Sending probing data for the HTTPS protocol")
+        if protocol != "HTTPS":
+            raise exceptions.TestError("Invalid protocol for HTTPS port connectivity: %s" % protocol)
+
+        address = "%s://%s:%s" % (protocol.lower(), address, port)
+        # make self-signed certificates nonfatal for the HTTPS probing
+        cmd = "curl -k " + address
+        status, output = src_vm.session.cmd_status_output(cmd)
+        logging.debug("Got status %s and page content:\n%s", status, output)
+
+        if require_blocked:
+            if status == 0 and "HTML" in output:
+                raise exceptions.TestFail("HTTPS connection to %s failed with the following outputs:\n%s" % (port, output))
+        else:
+            if status != 0 and "HTML" not in output:
+                raise exceptions.TestFail("HTTPS connection to %s succeeded with the following outputs:\n%s" % (port, output))
+        return status, output
 
     def ssh_connectivity(self, src_vm, dst_vm,
                          address, port=22, protocol="SSH",
