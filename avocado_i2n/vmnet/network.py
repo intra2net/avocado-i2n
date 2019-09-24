@@ -803,7 +803,7 @@ class VMNetwork(object):
         else:
             raise NotImplementedError("Trying to configure nic on %s with an unsupported os %s" % (vm.name, vm.params["os_variant"]))
 
-    def change_network_address(self, netconfig, new_ip, new_mask=None, new_gw=None):
+    def change_network_address(self, netconfig, new_ip, new_mask=None):
         """
         Change the ip of a netconfig and more specifically of the network interface of
         any vm participating in it.
@@ -813,25 +813,22 @@ class VMNetwork(object):
         :param str new_ip: new IP address for the netconfig
         :param new_mask: new network mask for the netconfig
         :type new_mask: str or None
-        :param new_gw: new gateway for the netconfig
-        :type new_gw: str or None
 
         .. note:: The network must have at least one interface in order to change its address.
         """
         logging.debug("Updating the network configuration of the vm network")
         for interface in list(netconfig.interfaces.values()):
             del netconfig.interfaces[interface.ip]
-            interface.ip = netconfig.translate_address(interface, new_ip)
+            interface.ip = netconfig.translate_address(interface.ip, new_ip)
             netconfig.interfaces[interface.ip] = interface
 
         assert len(netconfig.interfaces) > 0, "The network %s must have at least one interface" % netconfig
         nic_interface = list(netconfig.interfaces.values())[-1]
         nic_params = nic_interface.params.copy()
         nic_params["ip"] = new_ip
+        nic_params["ip_provider"] = netconfig.translate_address(netconfig.gateway, new_ip)
         if new_mask is not None:
             nic_params["netmask"] = new_mask
-        if new_gw is not None:
-            nic_params["ip_provider"] = new_gw
         interface = self.new_interface(nic_interface.name, nic_params)
 
         del self.netconfigs[netconfig.net_ip]
@@ -1117,7 +1114,7 @@ class VMNetwork(object):
             if nat_ip_server is not None:
                 logging.debug("Obtaining translated IP address of an ephemeral client %s",
                               dst_vm.name)
-                nat_ip = dst_iface.netconfig.translate_address(dst_iface, nat_ip_server)
+                nat_ip = dst_iface.netconfig.translate_address(dst_iface.ip, nat_ip_server)
                 logging.debug("Retrieved network translated ip %s for %s", nat_ip, dst_vm.name)
             else:
                 nat_ip = dst_iface.ip

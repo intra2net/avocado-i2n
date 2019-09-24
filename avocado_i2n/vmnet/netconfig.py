@@ -347,7 +347,7 @@ class VMNetconfig(object):
         net_ip = ipaddress.IPv4Address(str(self.net_ip))
         return str(ipaddress.IPv4Address(str(net_ip + new_address)))
 
-    def translate_address(self, interface, nat_ip):
+    def translate_address(self, ip, nat_ip):
         """
         Return the NAT translated IP of an interface or alternatively the IP
         of an interface masked by a desired network address.
@@ -358,7 +358,7 @@ class VMNetconfig(object):
         :returns: the translated IP of the interface
         :rtype: str
         """
-        source_ip = ipaddress.IPv4Address(str(interface.ip))
+        source_ip = ipaddress.IPv4Address(ip)
         source_part = int(source_ip) - int(ipaddress.IPv4Address(str(self.net_ip)))
         target_iface = ipaddress.ip_interface("%s/%s" % (nat_ip, self.mask_bit))
         target_part = int(target_iface.network.network_address)
