@@ -1,7 +1,7 @@
 ## TEMPLATE FOR SMALL SCALE DHCP/DNS SERVICES USING DNSMASQ ##
 
 pid-file=/var/run/avocado-dnsmasq.pid
-addn-hosts=/etc/dnsmasq.d/avocado-hosts.conf
+addn-hosts=/etc/avocado-hosts.conf
 expand-hosts
 
 # only attach to the required interfaces, not to *:53
@@ -11,7 +11,8 @@ except-interface=lo
 # extra logging
 log-queries
 log-dhcp
-log-facility=/tmp/dnsmasq.log
+# we keep this disabled to log to the default syslog
+#log-facility=/var/log/dnsmasq.log
 
 # good netizenship
 domain-needed
