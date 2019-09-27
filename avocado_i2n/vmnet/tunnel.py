@@ -229,7 +229,7 @@ class VPNConn(VMTunnel):
         :param psk_variant: PSK configuration in the case PSK is used
         :type psk_variant: (str, str, str)
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
-        :type apply_extra_options: {str, bool}
+        :type apply_extra_options: {str, any}
 
         The left variant is a list of three parameters: `lan_type`, `remote_type`, `peer_type`.
 
@@ -257,14 +257,14 @@ class VPNConn(VMTunnel):
 
     def configure_on_endpoint(self, vm, vmnet, apply_extra_options=None):
         """
-        Configure a vpn connection on an endopoint virtual machine.
+        Configure a vpn connection on an endpoint virtual machine.
 
         :param vm: vm where the VPN will be configured
         :type vm: VM object
         :param vmnet: the vm network simulating the internet
         :type vmnet: VMNetwork object
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
-        :type apply_extra_options: {str, bool}
+        :type apply_extra_options: {str, any}
 
         The provided virtual machine parameters will be used
         for configuration of the vpn connection.
@@ -275,7 +275,46 @@ class VPNConn(VMTunnel):
         if not apply_extra_options:
             apply_extra_options = {}
 
-        raise NotImplementedError("Need implementation for some OS")
+        node = vmnet.nodes[vm.name]
+        logging.info("Configuring tunnel %s on %s", self.name, node.name)
+        if node == self.left:
+            node_params = self.left_params
+            other = self.right
+            other_params = self.right_params
+        elif node == self.right:
+            node_params = self.right_params
+            other = self.left
+            other_params = self.left_params
+        else:
+            raise ValueError("The configured %s is not among the tunnel endpoints %s and %s",
+                             node.name, self.left.name, self.right.name)
+        vpnconn_parameters = {}
+        for key in node_params.keys():
+            if "vpnconn" in key:
+                vpnconn_parameters[key] = node_params[key]
+
+        local1 = vmnet.interfaces["%s.onic" % vm.name]
+        local2 = vmnet.interfaces["%s.onic" % other.name]
+        remote1 = vmnet.interfaces["%s.inic" % vm.name]
+        remote2 = vmnet.interfaces["%s.inic" % other.name]
+        ip1 = other_params.get("vpnconn_nat_peer_ip", remote1.ip)
+        ip2 = vpnconn_parameters.get("vpnconn_nat_peer_ip", remote2.ip)
+
+        add_cmd = "ip tunnel add %s mode gre remote %s local %s ttl 255"
+        vm.session.cmd(add_cmd % (self.name, ip2, remote1.ip))
+        vm.session.cmd("ip link set %s up" % self.name)
+        vm.session.cmd("ip addr add %s dev %s" % (local1.ip, self.name))
+        vm.session.cmd("ip route add %s/%s dev %s" % (local2.netconfig.net_ip,
+                                                      local2.netconfig.mask_bit,
+                                                      self.name))
+
+        if apply_extra_options.get("apply_firewall_ruleset", True):
+            # 47 stand for GRE (Generic Routing Encapsulation)
+            protocol_id = apply_extra_options.get("tunnel_protocol_id", 47)
+            if other_params.get("vpnconn_nat_peer_ip") is not None:
+                vm.session.cmd("iptables -I INPUT -i eth1 -p %s -j ACCEPT" % protocol_id)
+            vm.session.cmd("iptables -I INPUT -i %s -p icmp -j ACCEPT" % self.name)
+            vm.session.cmd("iptables -I OUTPUT -o %s -p icmp -j ACCEPT" % self.name)
 
     def _import_key(self, from_vm, to_vm, vmnet):
         raise NotImplementedError("Need implementation for some OS")

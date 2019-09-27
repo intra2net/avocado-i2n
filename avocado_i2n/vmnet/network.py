@@ -874,56 +874,9 @@ class VMNetwork(object):
         client_iface.netconfig.gateway = server_iface.ip
         self._reconfigure_vm_nic(client_nic, client_iface, client)
 
-    def configure_gre_tunnel_between_vms(self, vm1, vm2, ip1=None, ip2=None):
-        """
-        Configure a GRE connection (tunnel) between two vms.
-
-        :param vm1: left side vm of the tunnel
-        :type vm1: VM object
-        :param vm2: right side vm of the tunnel
-        :type vm2: VM object
-        :param str ip1: IP of the left vm
-        :param str ip2: IP of the right vm
-
-        If `ip1` and/or `ip2` are provided, they will be used as remote IPs instead
-        of the default remote interface IPs. A typical use case where `ip1/ip2`
-        are needed is when one or both of the vms are NAT-ed and their default
-        (inic) IPs are not accessible from the outside.
-        """
-        net1 = "%snet" % vm2.name
-        local1 = self.interfaces["%s.onic" % vm1.name]
-        remote1 = self.interfaces["%s.inic" % vm1.name]
-        net2 = "%snet" % vm1.name
-        local2 = self.interfaces["%s.onic" % vm2.name]
-        remote2 = self.interfaces["%s.inic" % vm2.name]
-
-        add_cmd = "ip tunnel add %s mode gre remote %s local %s ttl 255"
-        vm1.session.cmd(add_cmd % (net1, ip2 if ip2 is not None else remote2.ip, remote1.ip))
-        vm1.session.cmd("ip link set %s up" % net1)
-        vm1.session.cmd("ip addr add %s dev %s" % (local1.ip, net1))
-        vm1.session.cmd("ip route add %s/%s dev %s" % (local2.netconfig.net_ip,
-                                                       local2.netconfig.mask_bit,
-                                                       net1))
-        vm2.session.cmd(add_cmd % (net2, ip1 if ip1 is not None else remote1.ip, remote2.ip))
-        vm2.session.cmd("ip link set %s up" % net2)
-        vm2.session.cmd("ip addr add %s dev %s" % (local2.ip, net2))
-        vm2.session.cmd("ip route add %s/%s dev %s" % (local1.netconfig.net_ip,
-                                                       local1.netconfig.mask_bit,
-                                                       net2))
-
-        gre_protocol_id = 47
-        if ip1 is not None:
-            vm1.session.cmd("iptables -I INPUT -i eth1 -p %s -j ACCEPT" % gre_protocol_id)
-        vm1.session.cmd("iptables -I INPUT -i %snet -p icmp -j ACCEPT" % vm2.name)
-        vm1.session.cmd("iptables -I OUTPUT -o %snet -p icmp -j ACCEPT" % vm2.name)
-        if ip2 is not None:
-            vm2.session.cmd("iptables -I INPUT -i eth1 -p %s -j ACCEPT" % gre_protocol_id)
-        vm2.session.cmd("iptables -I INPUT -i %snet -p icmp -j ACCEPT" % vm1.name)
-        vm2.session.cmd("iptables -I OUTPUT -o %snet -p icmp -j ACCEPT" % vm1.name)
-
-    def configure_vpn_between_vms(self, vpn_name, vm1, vm2,
-                                  left_variant=None, psk_variant=None,
-                                  apply_extra_options=None):
+    def configure_tunnel_between_vms(self, vpn_name, vm1, vm2,
+                                     left_variant=None, psk_variant=None,
+                                     apply_extra_options=None):
         """
         Configure a VPN connection (tunnel) between two vms.
 
@@ -937,7 +890,7 @@ class VMNetwork(object):
         :param psk_variant: PSK configuration in the case PSK is used
         :type psk_variant: (str, str, str)
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
-        :type apply_extra_options: {str, bool}
+        :type apply_extra_options: {str, any}
         """
         if left_variant is None:
             left_variant = [self.params.get("lan_type", "nic"),
@@ -955,7 +908,7 @@ class VMNetwork(object):
         self.tunnels[vpn_name].configure_between_endpoints(self, left_variant, psk_variant,
                                                            apply_extra_options)
 
-    def configure_vpn_on_vm(self, vpn_name, vm, apply_extra_options=None):
+    def configure_tunnel_on_vm(self, vpn_name, vm, apply_extra_options=None):
         """
         Configure a VPN connection (tunnel) on a vm, assuming it is manually
         or independently configured on the other end.
@@ -964,7 +917,7 @@ class VMNetwork(object):
         :param vm: vm where the VPN will be configured
         :type vm: VM object
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
-        :type apply_extra_options: {str, bool}
+        :type apply_extra_options: {str, any}
         :raises: :py:class:`exceptions.KeyError` if not all VPN parameters are present
 
         Currently the method uses only existing VPN connections.
@@ -986,7 +939,7 @@ class VMNetwork(object):
         :param client: vm which will be connecting individual device
         :type client: VM object
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
-        :type apply_extra_options: {str, bool}
+        :type apply_extra_options: {str, any}
 
         Regarding the client, only its parameters will be updated by this method.
         """
@@ -1009,7 +962,7 @@ class VMNetwork(object):
         client.params = params1
         server.params = params2
 
-        self.configure_vpn_on_vm(vpn_name, server, apply_extra_options)
+        self.configure_tunnel_on_vm(name, server, apply_extra_options)
 
     def configure_vpn_route(self, vms, vpns, left_variant=None, psk_variant=None,
                             extra_apply_options=None):
@@ -1063,8 +1016,8 @@ class VMNetwork(object):
             vms[i + 1].params["vpnconn_lan_net_%s" % fvpn] = next_net
             vms[i + 1].params["vpnconn_remote_net_%s" % fvpn] = prev_net
 
-            self.configure_vpn_between_vms(fvpn, vms[i], vms[i + 1], left_variant, psk_variant,
-                                           extra_apply_options)
+            self.configure_tunnel_between_vms(fvpn, vms[i], vms[i + 1], left_variant, psk_variant,
+                                              extra_apply_options)
 
     """VM network test methods"""
     def get_vpn_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):
