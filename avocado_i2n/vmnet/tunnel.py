@@ -170,6 +170,12 @@ class VPNConn(VMTunnel):
         self._right_net = netconfig2
         self._name = name
 
+    def __repr__(self):
+        left_net = "none" if self.left_net is None else self.left_net.net_ip
+        right_net = "none" if self.right_net is None else self.right_net.net_ip
+        tunnel_tuple = (self.name, self.left.name, self.right.name, left_net, right_net)
+        return "[tunnel] name='%s', left='%s', right='%s', lnet='%s', rnet='%s'" % tunnel_tuple
+
     def connects_nodes(self, node1, node2):
         """
         Check whether a tunnel connects two vm nodes, i.e. they are in directly connected
