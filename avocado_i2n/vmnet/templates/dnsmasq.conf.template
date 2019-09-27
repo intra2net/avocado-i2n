@@ -11,7 +11,8 @@ except-interface=lo
 # extra logging
 log-queries
 log-dhcp
-log-facility=/var/log/dnsmasq.log
+# we keep this disabled to log to the default syslog
+#log-facility=/var/log/dnsmasq.log
 
 # good netizenship
 domain-needed
