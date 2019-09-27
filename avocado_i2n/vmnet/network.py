@@ -921,7 +921,9 @@ class VMNetwork(object):
         vm2.session.cmd("iptables -I INPUT -i %snet -p icmp -j ACCEPT" % vm1.name)
         vm2.session.cmd("iptables -I OUTPUT -o %snet -p icmp -j ACCEPT" % vm1.name)
 
-    def configure_vpn_between_vms(self, vpn_name, vm1, vm2, left_variant=None, psk_variant=None):
+    def configure_vpn_between_vms(self, vpn_name, vm1, vm2,
+                                  left_variant=None, psk_variant=None,
+                                  apply_extra_options=None):
         """
         Configure a VPN connection (tunnel) between two vms.
 
@@ -934,6 +936,8 @@ class VMNetwork(object):
         :type left_variant: (str, str, str)
         :param psk_variant: PSK configuration in the case PSK is used
         :type psk_variant: (str, str, str)
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, bool}
         """
         if left_variant is None:
             left_variant = [self.params.get("lan_type", "nic"),
@@ -948,10 +952,10 @@ class VMNetwork(object):
         right_node = self.nodes[vm2.name]
         self.tunnels[vpn_name] = self.new_vpnconn(vpn_name, left_node, right_node,
                                                   self, left_variant, psk_variant)
-        self.tunnels[vpn_name].configure_between_endpoints(self, left_variant, psk_variant)
+        self.tunnels[vpn_name].configure_between_endpoints(self, left_variant, psk_variant,
+                                                           apply_extra_options)
 
-    def configure_vpn_on_vm(self, vpn_name, vm, apply_key_own=False,
-                            apply_key_foreign=False, apply_firewall_ruleset=False):
+    def configure_vpn_on_vm(self, vpn_name, vm, apply_extra_options=None):
         """
         Configure a VPN connection (tunnel) on a vm, assuming it is manually
         or independently configured on the other end.
@@ -959,9 +963,8 @@ class VMNetwork(object):
         :param str vpn_name: name of the VPN connection
         :param vm: vm where the VPN will be configured
         :type vm: VM object
-        :param bool apply_key_own: whether to apply KEY_OWN configuration
-        :param bool apply_key_foreign: whether to apply KEY_FOREIGN configuration
-        :param bool apply_firewall_ruleset: whether to apply FIREWALL_RULESET configuration
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, bool}
         :raises: :py:class:`exceptions.KeyError` if not all VPN parameters are present
 
         Currently the method uses only existing VPN connections.
@@ -970,12 +973,9 @@ class VMNetwork(object):
             raise KeyError("Currently, every VPN connection has to be created defining both"
                            " ends and it can only then be configured on a single vm %s" % vm.name)
 
-        self.tunnels[vpn_name].configure_on_endpoint(vm, self, apply_key_own,
-                                                     apply_key_foreign, apply_firewall_ruleset)
+        self.tunnels[vpn_name].configure_on_endpoint(vm, self, apply_extra_options)
 
-    def configure_roadwarrior_vpn_on_server(self, vpn_name, server, client, apply_key_own=False,
-                                            apply_key_foreign=False, apply_firewall_ruleset=False,
-                                            modeconfig=True):
+    def configure_roadwarrior_vpn_on_server(self, vpn_name, server, client, apply_extra_options=None):
         """
         Configure a VPN connection (tunnel) on a vm to play the role of a VPN
         server for any individual clients to access it from the internet.
@@ -985,10 +985,8 @@ class VMNetwork(object):
         :type server: VM object
         :param client: vm which will be connecting individual device
         :type client: VM object
-        :param bool apply_key_own: whether to apply KEY_OWN configuration
-        :param bool apply_key_foreign: whether to apply KEY_FOREIGN configuration
-        :param bool apply_firewall_ruleset: whether to apply FIREWALL_RULESET configuration
-        :param bool modeconfig: whether it is a ModeConfig connection
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, bool}
 
         Regarding the client, only its parameters will be updated by this method.
         """
@@ -998,7 +996,7 @@ class VMNetwork(object):
                                                   [self.params.get("lan_type", "nic"),
                                                    self.params.get("remote_type", "modeconfig"),
                                                    self.params.get("peer_type", "dynip")],
-                                                  modeconfig=modeconfig)
+                                                  modeconfig=apply_extra_options.get("modeconfig", True))
 
         # some parameter modification for the road warrior connection
         vpn_params = self.tunnels[vpn_name].params
@@ -1011,10 +1009,10 @@ class VMNetwork(object):
         client.params = params1
         server.params = params2
 
-        self.configure_vpn_on_vm(vpn_name, server, apply_key_own,
-                                 apply_key_foreign, apply_firewall_ruleset)
+        self.configure_vpn_on_vm(vpn_name, server, apply_extra_options)
 
-    def configure_vpn_route(self, vms, vpns, left_variant=None, psk_variant=None):
+    def configure_vpn_route(self, vms, vpns, left_variant=None, psk_variant=None,
+                            extra_apply_options=None):
         """
         Build a set of vpn connections using vpn forwarding to gain access from
         one vm to another.
@@ -1027,6 +1025,7 @@ class VMNetwork(object):
         :type left_variant: (str, str, str)
         :param psk_variant: PSK configuration in the case PSK is used
         :type psk_variant: (str, str, str)
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
         :raises: :py:class:`exceptions.TestError` if #vpns < #vms - 1 or #vpns < 2 or #vms < 2
 
         Infrastructure of point to point vpn connections must already exist.
@@ -1064,7 +1063,8 @@ class VMNetwork(object):
             vms[i + 1].params["vpnconn_lan_net_%s" % fvpn] = next_net
             vms[i + 1].params["vpnconn_remote_net_%s" % fvpn] = prev_net
 
-            self.configure_vpn_between_vms(fvpn, vms[i], vms[i + 1], left_variant, psk_variant)
+            self.configure_vpn_between_vms(fvpn, vms[i], vms[i + 1], left_variant, psk_variant,
+                                           extra_apply_options)
 
     """VM network test methods"""
     def get_vpn_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):

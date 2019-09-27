@@ -217,7 +217,8 @@ class VPNConn(VMTunnel):
             right_variant[2] = "ip"
         return right_variant
 
-    def configure_between_endpoints(self, vmnet, left_variant, psk_variant=None):
+    def configure_between_endpoints(self, vmnet, left_variant, psk_variant=None,
+                                    apply_extra_options=None):
         """
         Build a vpn connection between two endpoint vms.
 
@@ -227,6 +228,8 @@ class VPNConn(VMTunnel):
         :type left_variant: (str, str, str)
         :param psk_variant: PSK configuration in the case PSK is used
         :type psk_variant: (str, str, str)
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, bool}
 
         The left variant is a list of three parameters: `lan_type`, `remote_type`, `peer_type`.
 
@@ -249,10 +252,10 @@ class VPNConn(VMTunnel):
         self.left.params = vpnparams1
         self.right.params = vpnparams2
 
-        self.configure_on_endpoint(self.left.platform, vmnet, False, False, True)
-        self.configure_on_endpoint(self.right.platform, vmnet, False, False, True)
+        self.configure_on_endpoint(self.left.platform, vmnet, apply_extra_options)
+        self.configure_on_endpoint(self.right.platform, vmnet, apply_extra_options)
 
-    def configure_on_endpoint(self, vm, vmnet):
+    def configure_on_endpoint(self, vm, vmnet, apply_extra_options=None):
         """
         Configure a vpn connection on an endopoint virtual machine.
 
@@ -260,6 +263,8 @@ class VPNConn(VMTunnel):
         :type vm: VM object
         :param vmnet: the vm network simulating the internet
         :type vmnet: VMNetwork object
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, bool}
 
         The provided virtual machine parameters will be used
         for configuration of the vpn connection.
@@ -267,6 +272,9 @@ class VPNConn(VMTunnel):
         The connection name can be used to also reconfigure an existing
         vpn connection.
         """
+        if not apply_extra_options:
+            apply_extra_options = {}
+
         raise NotImplementedError("Need implementation for some OS")
 
     def _import_key(self, from_vm, to_vm, vmnet):
