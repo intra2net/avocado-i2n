@@ -98,19 +98,17 @@ class VPNConn(VMTunnel):
             return self._name
     name = property(fget=name, fset=name)
 
-    def __init__(self, name, vm1, vm2, vmnet, left_variant, psk_variant=None, modeconfig=False):
+    def __init__(self, name, node1, node2, left_variant, psk_variant=None, modeconfig=False):
         """
         Construct the full set of required vpn parameters for a given vpn left variant
-        that are not already defined in the parameters of the two vms (left `vm1` with
-        right `vm2`).
+        that are not already defined in the parameters of the two vms (left `node1` with
+        right `node2`).
 
         :param str name: name of the VPN connection
-        :param vm1: left side vm of the VPN tunnel
-        :type vm1: Node object
-        :param vm2: right side vm of the VPN tunnel
-        :type vm2: Node object
-        :param vmnet: the vm network simulating the internet
-        :type vmnet: VMNetwork object
+        :param node1: left side node of the VPN tunnel
+        :type node1: VMNode object
+        :param node2: right side node of the VPN tunnel
+        :type node2: VMNode object
         :param left_variant: left side configuration (right side is determined from it)
         :type left_variant: (str, str, str)
         :param psk_variant: PSK configuration in the case PSK is used
@@ -122,30 +120,34 @@ class VPNConn(VMTunnel):
         vpnparams = utils_params.Params()
         right_variant = self._get_peer_variant(left_variant)
         logging.info("Preparing vpn connection parameters for each of %s and %s",
-                     vm1.name, vm2.name)
+                     node1.name, node2.name)
 
         # main parameters
-        vpnparams["vpnconn_%s_%s" % (name, vm1.name)] = name
-        vpnparams["vpnconn_%s_%s" % (name, vm2.name)] = name
-        vpnparams["vpn_side_%s_%s" % (name, vm1.name)] = "left"
-        vpnparams["vpn_side_%s_%s" % (name, vm2.name)] = "right"
-        vpnparams["vpnconn_lan_type_%s_%s" % (name, vm1.name)] = left_variant[0].upper()
-        vpnparams["vpnconn_lan_type_%s_%s" % (name, vm2.name)] = right_variant[0].upper()
-        vpnparams["vpnconn_remote_type_%s_%s" % (name, vm1.name)] = left_variant[1].upper()
-        vpnparams["vpnconn_remote_type_%s_%s" % (name, vm2.name)] = right_variant[1].upper()
+        vpnparams["vpnconn_%s_%s" % (name, node1.name)] = name
+        vpnparams["vpnconn_%s_%s" % (name, node2.name)] = name
+        vpnparams["vpn_side_%s_%s" % (name, node1.name)] = "left"
+        vpnparams["vpn_side_%s_%s" % (name, node2.name)] = "right"
+        vpnparams["vpnconn_lan_type_%s_%s" % (name, node1.name)] = left_variant[0].upper()
+        vpnparams["vpnconn_lan_type_%s_%s" % (name, node2.name)] = right_variant[0].upper()
+        vpnparams["vpnconn_remote_type_%s_%s" % (name, node1.name)] = left_variant[1].upper()
+        vpnparams["vpnconn_remote_type_%s_%s" % (name, node2.name)] = right_variant[1].upper()
 
-        netconfig1 = vmnet.interfaces["%s.onic" % vm1.name].netconfig
-        vpnparams["vpnconn_remote_net_%s_%s" % (name, vm2.name)] = netconfig1.net_ip
-        vpnparams["vpnconn_remote_netmask_%s_%s" % (name, vm2.name)] = netconfig1.netmask
-        vpnparams["vpnconn_peer_type_%s_%s" % (name, vm2.name)] = right_variant[2].upper()
+        netconfig1 = node1.interfaces["onic"].netconfig
+        vpnparams["vpnconn_lan_net_%s_%s" % (name, node1.name)] = netconfig1.net_ip
+        vpnparams["vpnconn_lan_netmask_%s_%s" % (name, node1.name)] = netconfig1.netmask
+        vpnparams["vpnconn_remote_net_%s_%s" % (name, node2.name)] = netconfig1.net_ip
+        vpnparams["vpnconn_remote_netmask_%s_%s" % (name, node2.name)] = netconfig1.netmask
+        vpnparams["vpnconn_peer_type_%s_%s" % (name, node2.name)] = right_variant[2].upper()
         if modeconfig is False:
-            netconfig2 = vmnet.interfaces["%s.onic" % vm2.name].netconfig
-            vpnparams["vpnconn_remote_net_%s_%s" % (name, vm1.name)] = netconfig2.net_ip
-            vpnparams["vpnconn_remote_netmask_%s_%s" % (name, vm1.name)] = netconfig2.netmask
+            netconfig2 = node2.interfaces["onic"].netconfig
+            vpnparams["vpnconn_lan_net_%s_%s" % (name, node2.name)] = netconfig2.net_ip
+            vpnparams["vpnconn_lan_netmask_%s_%s" % (name, node2.name)] = netconfig2.netmask
+            vpnparams["vpnconn_remote_net_%s_%s" % (name, node1.name)] = netconfig2.net_ip
+            vpnparams["vpnconn_remote_netmask_%s_%s" % (name, node1.name)] = netconfig2.netmask
         else:
             netconfig2 = None
-            vpnparams["vpnconn_remote_modeconfig_ip_%s_%s" % (name, vm1.name)] = "172.30.0.1"
-        vpnparams["vpnconn_peer_type_%s_%s" % (name, vm1.name)] = left_variant[2].upper()
+            vpnparams["vpnconn_remote_modeconfig_ip_%s_%s" % (name, node1.name)] = "172.30.0.1"
+        vpnparams["vpnconn_peer_type_%s_%s" % (name, node1.name)] = left_variant[2].upper()
 
         # psk parameters
         if psk_variant is None:
@@ -153,19 +155,39 @@ class VPNConn(VMTunnel):
         else:
             vpnparams["vpnconn_key_type_%s" % name] = "PSK"
             vpnparams["vpnconn_psk_%s" % name] = psk_variant[0]
-            vpnparams["vpnconn_psk_foreign_id_%s_%s" % (name, vm1.name)] = "arnold@%s" % vm2.name
-            vpnparams["vpnconn_psk_foreign_id_type_%s_%s" % (name, vm1.name)] = psk_variant[1].upper()
-            vpnparams["vpnconn_psk_own_id_%s_%s" % (name, vm1.name)] = "arnold@%s" % vm1.name
-            vpnparams["vpnconn_psk_own_id_type_%s_%s" % (name, vm1.name)] = psk_variant[2].upper()
-            vpnparams["vpnconn_psk_foreign_id_%s_%s" % (name, vm2.name)] = "arnold@%s" % vm1.name
-            vpnparams["vpnconn_psk_foreign_id_type_%s_%s" % (name, vm2.name)] = psk_variant[2].upper()
-            vpnparams["vpnconn_psk_own_id_%s_%s" % (name, vm2.name)] = "arnold@%s" % vm2.name
-            vpnparams["vpnconn_psk_own_id_type_%s_%s" % (name, vm2.name)] = psk_variant[1].upper()
+            vpnparams["vpnconn_psk_foreign_id_%s_%s" % (name, node1.name)] = "arnold@%s" % node2.name
+            vpnparams["vpnconn_psk_foreign_id_type_%s_%s" % (name, node1.name)] = psk_variant[1].upper()
+            vpnparams["vpnconn_psk_own_id_%s_%s" % (name, node1.name)] = "arnold@%s" % node1.name
+            vpnparams["vpnconn_psk_own_id_type_%s_%s" % (name, node1.name)] = psk_variant[2].upper()
+            vpnparams["vpnconn_psk_foreign_id_%s_%s" % (name, node2.name)] = "arnold@%s" % node1.name
+            vpnparams["vpnconn_psk_foreign_id_type_%s_%s" % (name, node2.name)] = psk_variant[2].upper()
+            vpnparams["vpnconn_psk_own_id_%s_%s" % (name, node2.name)] = "arnold@%s" % node2.name
+            vpnparams["vpnconn_psk_own_id_type_%s_%s" % (name, node2.name)] = psk_variant[1].upper()
+
+        # additional roadwarrior parameters
+        if left_variant[2] == "ip":
+            vpnparams["vpnconn_peer_ip_%s_%s" % (name, node1.name)] = node2.interfaces["inic"].ip
+            vpnparams["vpnconn_activation_%s_%s" % (name, node1.name)] = "ALWAYS"
+        elif left_variant[2] == "dynip":
+            vpnparams["vpnconn_activation_%s_%s" % (name, node1.name)] = "PASSIVE"
+        if right_variant[2] == "ip":
+            vpnparams["vpnconn_peer_ip_%s_%s" % (name, node2.name)] = node1.interfaces["inic"].ip
+            vpnparams["vpnconn_activation_%s_%s" % (name, node2.name)] = "ALWAYS"
+        elif right_variant[2] == "dynip":
+            vpnparams["vpnconn_activation_%s_%s" % (name, node2.name)] = "PASSIVE"
+
+        # overwrite the base vpn parameters with other already defined tunnel parameters
+        vpnparams1 = vpnparams.object_params(node1.name)
+        vpnparams2 = vpnparams.object_params(node2.name)
+        vpnparams1.update(node1.params)
+        vpnparams2.update(node2.params)
+        node1.params = vpnparams1
+        node2.params = vpnparams2
 
         self._params = vpnparams
-        self._left = vm1
+        self._left = node1
         self._left_net = netconfig1
-        self._right = vm2
+        self._right = node2
         self._right_net = netconfig2
         self._name = name
 
@@ -242,15 +264,6 @@ class VPNConn(VMTunnel):
         if psk_variant is None:
             self._import_key(self.left.platform, self.right.platform, vmnet)
             self._import_key(self.right.platform, self.left.platform, vmnet)
-
-        # add all new vpn parameters to the already defined vm parameters
-        # and throw away unnecessary parameters from this function
-        vpnparams1 = self.params.object_params(self.left.name)
-        vpnparams2 = self.params.object_params(self.right.name)
-        vpnparams1.update(self.left.params)
-        vpnparams2.update(self.right.params)
-        self.left.params = vpnparams1
-        self.right.params = vpnparams2
 
         self.configure_on_endpoint(self.left.platform, vmnet, apply_extra_options)
         self.configure_on_endpoint(self.right.platform, vmnet, apply_extra_options)

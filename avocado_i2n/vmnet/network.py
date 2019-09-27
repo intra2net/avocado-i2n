@@ -904,7 +904,7 @@ class VMNetwork(object):
         left_node = self.nodes[vm1.name]
         right_node = self.nodes[vm2.name]
         self.tunnels[vpn_name] = self.new_vpnconn(vpn_name, left_node, right_node,
-                                                  self, left_variant, psk_variant)
+                                                  left_variant, psk_variant)
         self.tunnels[vpn_name].configure_between_endpoints(self, left_variant, psk_variant,
                                                            apply_extra_options)
 
@@ -945,7 +945,7 @@ class VMNetwork(object):
         """
         left_node = self.nodes[server.name]
         right_node = self.nodes[client.name]
-        self.tunnels[vpn_name] = self.new_vpnconn(vpn_name, left_node, right_node, self,
+        self.tunnels[vpn_name] = self.new_vpnconn(vpn_name, left_node, right_node,
                                                   [self.params.get("lan_type", "nic"),
                                                    self.params.get("remote_type", "modeconfig"),
                                                    self.params.get("peer_type", "dynip")],
