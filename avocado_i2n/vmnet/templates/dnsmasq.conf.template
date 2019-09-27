@@ -1,7 +1,7 @@
 ## TEMPLATE FOR SMALL SCALE DHCP/DNS SERVICES USING DNSMASQ ##
 
 pid-file=/var/run/avocado-dnsmasq.pid
-addn-hosts=/etc/dnsmasq.d/avocado-hosts.conf
+addn-hosts=/etc/avocado-hosts.conf
 expand-hosts
 
 # only attach to the required interfaces, not to *:53

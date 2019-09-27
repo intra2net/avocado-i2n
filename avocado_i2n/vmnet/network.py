@@ -564,7 +564,7 @@ class VMNetwork(object):
             dns_dhcp_config = "/etc/dnsmasq.d/avocado.conf"
             with open(dns_dhcp_config, "w") as f:
                 f.write(dns_dhcp_string)
-            with open("/etc/dnsmasq.d/avocado-hosts.conf", "w") as f:
+            with open("/etc/avocado-hosts.conf", "w") as f:
                 f.write(dns_declarations["hosts"])
             logging.debug("Resetting DHCP/DNS service")
         if os.path.exists("/var/run/avocado-dnsmasq.pid"):
