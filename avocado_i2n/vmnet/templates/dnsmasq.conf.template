@@ -11,7 +11,7 @@ except-interface=lo
 # extra logging
 log-queries
 log-dhcp
-log-facility=/tmp/dnsmasq.log
+log-facility=/var/log/dnsmasq.log
 
 # good netizenship
 domain-needed
