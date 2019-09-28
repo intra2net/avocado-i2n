@@ -875,7 +875,8 @@ class VMNetwork(object):
         self._reconfigure_vm_nic(client_nic, client_iface, client)
 
     def configure_tunnel_between_vms(self, name, vm1, vm2,
-                                     left_variant=None, psk_variant=None,
+                                     left_variant=None,
+                                     authentification_options=None,
                                      apply_extra_options=None):
         """
         Configure a tunnel between two vms.
@@ -887,8 +888,8 @@ class VMNetwork(object):
         :type vm2: VM object
         :param left_variant: left side configuration (right side is determined from it)
         :type left_variant: (str, str, str)
-        :param psk_variant: PSK configuration in the case PSK is used
-        :type psk_variant: (str, str, str)
+        :param authentification_options: authentication configuration as described in
+                                         the tunnel constructor
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
         :type apply_extra_options: {str, any}
         """
@@ -896,17 +897,12 @@ class VMNetwork(object):
             left_variant = [self.params.get("lan_type", "nic"),
                             self.params.get("remote_type", "custom"),
                             self.params.get("peer_type", "ip")]
-        if psk_variant is None and self.params.get("psk", "") != "":
-            psk_variant = [self.params["psk"],
-                           self.params["own_id_type"],
-                           self.params["foreign_id_type"]]
 
         left_node = self.nodes[vm1.name]
         right_node = self.nodes[vm2.name]
         self.tunnels[name] = self.new_tunnel(name, left_node, right_node,
-                                             left_variant, psk_variant)
-        self.tunnels[name].configure_between_endpoints(self, left_variant, psk_variant,
-                                                       apply_extra_options)
+                                             left_variant, authentification_options)
+        self.tunnels[name].configure_between_endpoints(self, apply_extra_options)
 
     def configure_tunnel_on_vm(self, name, vm, apply_extra_options=None):
         """
@@ -964,8 +960,8 @@ class VMNetwork(object):
 
         self.configure_tunnel_on_vm(name, server, apply_extra_options)
 
-    def configure_vpn_route(self, vms, vpns, left_variant=None, psk_variant=None,
-                            extra_apply_options=None):
+    def configure_vpn_route(self, vms, vpns, left_variant=None,
+                            authentification_options=None, extra_apply_options=None):
         """
         Build a set of vpn connections using vpn forwarding to gain access from
         one vm to another.
@@ -976,8 +972,8 @@ class VMNetwork(object):
         :type vpns: [str]
         :param left_variant: left side configuration (right side is determined from it)
         :type left_variant: (str, str, str)
-        :param psk_variant: PSK configuration in the case PSK is used
-        :type psk_variant: (str, str, str)
+        :param authentification_options: authentication configuration as described in
+                                         the tunnel constructor
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
         :raises: :py:class:`exceptions.TestError` if #vpns < #vms - 1 or #vpns < 2 or #vms < 2
 
@@ -987,10 +983,6 @@ class VMNetwork(object):
             left_variant = [self.params.get("lan_type", "nic"),
                             self.params.get("remote_type", "custom"),
                             self.params.get("peer_type", "ip")]
-        if psk_variant is None and self.params.get("psk", "") != "":
-            psk_variant = [self.params["psk"],
-                           self.params["own_id_type"],
-                           self.params["foreign_id_type"]]
 
         if len(vpns) < 2 or len(vms) < 2 or len(vpns) < len(vms) - 1:
             raise exceptions.TestError("Insufficient vpn infrastructure - unnecessary vpn forwarding")
@@ -1016,8 +1008,8 @@ class VMNetwork(object):
             vms[i + 1].params["vpnconn_lan_net_%s" % fvpn] = next_net
             vms[i + 1].params["vpnconn_remote_net_%s" % fvpn] = prev_net
 
-            self.configure_tunnel_between_vms(fvpn, vms[i], vms[i + 1], left_variant, psk_variant,
-                                              extra_apply_options)
+            self.configure_tunnel_between_vms(fvpn, vms[i], vms[i + 1], left_variant,
+                                              authentification_options, extra_apply_options)
 
     """VM network test methods"""
     def get_tunnel_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):

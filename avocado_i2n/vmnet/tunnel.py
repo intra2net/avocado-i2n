@@ -89,7 +89,8 @@ class VMTunnel(object):
             return self._name
     name = property(fget=name, fset=name)
 
-    def __init__(self, name, node1, node2, left_variant, psk_variant=None, modeconfig=False):
+    def __init__(self, name, node1, node2, left_variant,
+                 authentification_options=None, modeconfig=False):
         """
         Construct the full set of required tunnel parameters for a given tunnel left variant
         that are not already defined in the parameters of the two vms (left `node1` with
@@ -102,11 +103,17 @@ class VMTunnel(object):
         :type node2: VMNode object
         :param left_variant: left side configuration (right side is determined from it)
         :type left_variant: (str, str, str)
-        :param psk_variant: PSK configuration in the case PSK is used
-        :type psk_variant: (str, str, str)
+        :param authentification_options: authentication configuration with at least one
+                                         key 'type' with value in "pubkey", "psk", "none"
+                                         and the rest of the keys providing type details
+        :type authentification_options: {str, str}
         :param bool modeconfig: whether it is a ModeConfig connection
 
-        The additional psk variant is used for a psk configuration.
+        The left variant is a list of three parameters: `lan_type`, `remote_type`, `peer_type`.
+
+        If a PSK (pre-shared secret) authentication type is specified, the relevant additional
+        options are `psk` for the secret word, `left_id` and `right_id` for the identification
+        type to be used on each side (either `ip` or any user-defined id).
         """
         params = utils_params.Params()
         right_variant = self._get_peer_variant(left_variant)
@@ -139,20 +146,32 @@ class VMTunnel(object):
             params["vpnconn_remote_modeconfig_ip_%s_%s" % (name, node1.name)] = "172.30.0.1"
         params["vpnconn_peer_type_%s_%s" % (name, node1.name)] = left_variant[2].upper()
 
-        # psk parameters
-        if psk_variant is None:
+        # authentication parameters
+        if authentification_options is None:
+            params["vpnconn_key_type_%s" % name] = "NONE"
+        elif authentification_options["type"] == "pubkey":
             params["vpnconn_key_type_%s" % name] = "PUBLIC"
-        else:
+        elif authentification_options["type"] == "psk":
             params["vpnconn_key_type_%s" % name] = "PSK"
-            params["vpnconn_psk_%s" % name] = psk_variant[0]
-            params["vpnconn_psk_foreign_id_%s_%s" % (name, node1.name)] = "arnold@%s" % node2.name
-            params["vpnconn_psk_foreign_id_type_%s_%s" % (name, node1.name)] = psk_variant[1].upper()
-            params["vpnconn_psk_own_id_%s_%s" % (name, node1.name)] = "arnold@%s" % node1.name
-            params["vpnconn_psk_own_id_type_%s_%s" % (name, node1.name)] = psk_variant[2].upper()
-            params["vpnconn_psk_foreign_id_%s_%s" % (name, node2.name)] = "arnold@%s" % node1.name
-            params["vpnconn_psk_foreign_id_type_%s_%s" % (name, node2.name)] = psk_variant[2].upper()
-            params["vpnconn_psk_own_id_%s_%s" % (name, node2.name)] = "arnold@%s" % node2.name
-            params["vpnconn_psk_own_id_type_%s_%s" % (name, node2.name)] = psk_variant[1].upper()
+
+            psk = authentification_options["psk"]
+            left_id = authentification_options["left_id"]
+            left_id_type = "IP" if left_id == "" else "CUSTOM"
+            right_id = authentification_options["right_id"]
+            right_id_type = "IP" if right_id == "" else "CUSTOM"
+
+            params["vpnconn_psk_%s" % name] = psk
+            params["vpnconn_psk_foreign_id_%s_%s" % (name, node1.name)] = right_id
+            params["vpnconn_psk_foreign_id_type_%s_%s" % (name, node1.name)] = right_id_type
+            params["vpnconn_psk_own_id_%s_%s" % (name, node1.name)] = left_id
+            params["vpnconn_psk_own_id_type_%s_%s" % (name, node1.name)] = left_id_type
+            params["vpnconn_psk_foreign_id_%s_%s" % (name, node2.name)] = left_id
+            params["vpnconn_psk_foreign_id_type_%s_%s" % (name, node2.name)] = left_id_type
+            params["vpnconn_psk_own_id_%s_%s" % (name, node2.name)] = right_id
+            params["vpnconn_psk_own_id_type_%s_%s" % (name, node2.name)] = right_id_type
+        else:
+            raise ValueError("Invalid choice of authentication type '%s', must be one of"
+                             " 'pubkey', 'psk', or 'none'" % authentification_options["type"])
 
         # additional roadwarrior parameters
         if left_variant[2] == "ip":
@@ -231,30 +250,21 @@ class VMTunnel(object):
             right_variant[2] = "ip"
         return right_variant
 
-    def configure_between_endpoints(self, vmnet, left_variant, psk_variant=None,
-                                    apply_extra_options=None):
+    def configure_between_endpoints(self, vmnet, apply_extra_options=None):
         """
         Build a tunnel between two endpoint vms.
 
         :param vmnet: the vm network simulating the internet
         :type vmnet: VMNetwork object
-        :param left_variant: left side configuration (right side is determined from it)
-        :type left_variant: (str, str, str)
-        :param psk_variant: PSK configuration in the case PSK is used
-        :type psk_variant: (str, str, str)
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
         :type apply_extra_options: {str, any}
-
-        The left variant is a list of three parameters: `lan_type`, `remote_type`, `peer_type`.
-
-        In addition, a psk variant can be specified (`psk`, `psk_foreign_id_type1`,
-        `psk_foreign_id_type2`).
         """
         logging.info("Building a tunnel %s between %s and %s",
                      self.name, self.left.name, self.right.name)
 
-        if psk_variant is None:
+        if self.left_params["vpnconn_key_type"] == "PUBLIC":
             self._import_key(self.left.platform, self.right.platform, vmnet)
+        if self.right_params["vpnconn_key_type"] == "PUBLIC":
             self._import_key(self.right.platform, self.left.platform, vmnet)
 
         self.configure_on_endpoint(self.left.platform, vmnet, apply_extra_options)
@@ -321,4 +331,4 @@ class VMTunnel(object):
             vm.session.cmd("iptables -I OUTPUT -o %s -p icmp -j ACCEPT" % self.name)
 
     def _import_key(self, from_vm, to_vm, vmnet):
-        raise NotImplementedError("Need implementation for some OS")
+        raise NotImplementedError("Public key authentication is not implemented for any guest OS")
