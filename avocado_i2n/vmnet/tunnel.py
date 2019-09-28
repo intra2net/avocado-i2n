@@ -115,6 +115,7 @@ class VMTunnel(object):
                                          key 'type' with value in "pubkey", "psk", "none"
                                          and the rest of the keys providing type details
         :type authentification_options: {str, str}
+        :raises: :py:class:`ValueError` if some of the supplied configuration is not valid
 
         The right side `local2`, `remote2`, `peer2` configuration is determined from the left side.
 
@@ -136,34 +137,45 @@ class VMTunnel(object):
         params["vpnconn_remote_type_%s_%s" % (name, node1.name)] = remote1.upper()
         params["vpnconn_remote_type_%s_%s" % (name, node2.name)] = remote2.upper()
 
-        netconfig1 = node1.interfaces["onic"].netconfig
-        params["vpnconn_lan_net_%s_%s" % (name, node1.name)] = netconfig1.net_ip
-        params["vpnconn_lan_netmask_%s_%s" % (name, node1.name)] = netconfig1.netmask
-        params["vpnconn_remote_net_%s_%s" % (name, node2.name)] = netconfig1.net_ip
-        params["vpnconn_remote_netmask_%s_%s" % (name, node2.name)] = netconfig1.netmask
-        params["vpnconn_peer_type_%s_%s" % (name, node2.name)] = peer2.upper()
-        if remote1 != "modeconfig":
+        if local1 == "nic":
+            netconfig1 = node1.interfaces["onic"].netconfig
+            params["vpnconn_lan_net_%s_%s" % (name, node1.name)] = netconfig1.net_ip
+            params["vpnconn_lan_netmask_%s_%s" % (name, node1.name)] = netconfig1.netmask
+            params["vpnconn_remote_net_%s_%s" % (name, node2.name)] = netconfig1.net_ip
+            params["vpnconn_remote_netmask_%s_%s" % (name, node2.name)] = netconfig1.netmask
+        elif local1 == "internetip":
+            netconfig1 = None
+        else:
+            raise ValueError("Invalid choice of left local type '%s', must be one of"
+                             " 'nic', 'internetip'" % local1)
+        if remote1 == "custom":
             netconfig2 = node2.interfaces["onic"].netconfig
             params["vpnconn_lan_net_%s_%s" % (name, node2.name)] = netconfig2.net_ip
             params["vpnconn_lan_netmask_%s_%s" % (name, node2.name)] = netconfig2.netmask
             params["vpnconn_remote_net_%s_%s" % (name, node1.name)] = netconfig2.net_ip
             params["vpnconn_remote_netmask_%s_%s" % (name, node1.name)] = netconfig2.netmask
-        else:
+        elif remote1 == "externalip":
+            netconfig2 = None
+        elif remote1 == "modeconfig":
             netconfig2 = None
             params["vpnconn_remote_modeconfig_ip_%s_%s" % (name, node1.name)] = "172.30.0.1"
-        params["vpnconn_peer_type_%s_%s" % (name, node1.name)] = peer1.upper()
+        else:
+            raise ValueError("Invalid choice of left remote type '%s', must be one of"
+                             " 'custom', 'externalip', or 'modeconfig'" % remote1)
 
         # road warrior parameters
+        params["vpnconn_peer_type_%s_%s" % (name, node1.name)] = peer1.upper()
         if peer1 == "ip":
             params["vpnconn_peer_ip_%s_%s" % (name, node1.name)] = node2.interfaces["inic"].ip
             params["vpnconn_activation_%s_%s" % (name, node1.name)] = "ALWAYS"
         elif peer1 == "dynip":
             params["vpnconn_activation_%s_%s" % (name, node1.name)] = "PASSIVE"
-        if peer2 == "ip":
-            params["vpnconn_peer_ip_%s_%s" % (name, node2.name)] = node1.interfaces["inic"].ip
-            params["vpnconn_activation_%s_%s" % (name, node2.name)] = "ALWAYS"
-        elif peer2 == "dynip":
-            params["vpnconn_activation_%s_%s" % (name, node2.name)] = "PASSIVE"
+        else:
+            raise ValueError("Invalid choice of left peer type '%s', must be one of"
+                             " 'ip', 'dynip'" % peer1)
+        params["vpnconn_peer_type_%s_%s" % (name, node2.name)] = peer2.upper()
+        params["vpnconn_peer_ip_%s_%s" % (name, node2.name)] = node1.interfaces["inic"].ip
+        params["vpnconn_activation_%s_%s" % (name, node2.name)] = "ALWAYS"
 
         # authentication parameters
         if authentification_options is None:
