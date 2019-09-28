@@ -943,20 +943,7 @@ class VMNetwork(object):
         left_node = self.nodes[server.name]
         right_node = self.nodes[client.name]
         self.tunnels[name] = self.new_tunnel(name, left_node, right_node,
-                                             local1, remote1, peer="dynip",
-                                             modeconfig=apply_extra_options.get("modeconfig", True))
-
-        # some parameter modification for the road warrior connection
-        vpn_params = self.tunnels[name].params
-        # add all new vpn parameters to the already defined vm parameters
-        # and throw away unnecessary parameters from this function
-        params1 = vpn_params.object_params(client.name)
-        params2 = vpn_params.object_params(server.name)
-        params1.update(client.params)
-        params2.update(server.params)
-        client.params = params1
-        server.params = params2
-
+                                             local1, remote1, peer1="dynip")
         self.configure_tunnel_on_vm(name, server, apply_extra_options)
 
     def configure_vpn_route(self, vms, vpns,

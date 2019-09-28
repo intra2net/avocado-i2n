@@ -90,7 +90,7 @@ class VMTunnel(object):
     name = property(fget=name, fset=name)
 
     def __init__(self, name, node1, node2, local1, remote1, peer1,
-                 authentification_options=None, modeconfig=False):
+                 authentification_options=None):
         """
         Construct the full set of required tunnel parameters for a given tunnel left configuration
         that are not already defined in the parameters of the two vms (left `node1` with
@@ -106,7 +106,8 @@ class VMTunnel(object):
                            (for point-to-site or point-to-point tunnels)
         :param str remote1: left remote type which is either 'custom' for right-site (could be used
                             for site-to-site or point-to-site tunnels) or 'externalip' for right-point
-                            (for site-to-point or point-to-point tunnels)
+                            (for site-to-point or point-to-point tunnels) or 'modeconfig' for special
+                            right-point (using a ModeConfig connection for a right road warrior)
         :param str peer1: left peer type which is either 'ip' for no NAT along the tunnel (the peer
                           having a public IP) or 'dynip' for a road warrior right end point (the peer
                           is behind NAT and its IP is changing)
@@ -114,7 +115,6 @@ class VMTunnel(object):
                                          key 'type' with value in "pubkey", "psk", "none"
                                          and the rest of the keys providing type details
         :type authentification_options: {str, str}
-        :param bool modeconfig: whether it is a ModeConfig connection
 
         The right side `local2`, `remote2`, `peer2` configuration is determined from the left side.
 
@@ -142,7 +142,7 @@ class VMTunnel(object):
         params["vpnconn_remote_net_%s_%s" % (name, node2.name)] = netconfig1.net_ip
         params["vpnconn_remote_netmask_%s_%s" % (name, node2.name)] = netconfig1.netmask
         params["vpnconn_peer_type_%s_%s" % (name, node2.name)] = peer2.upper()
-        if modeconfig is False:
+        if remote1 != "modeconfig":
             netconfig2 = node2.interfaces["onic"].netconfig
             params["vpnconn_lan_net_%s_%s" % (name, node2.name)] = netconfig2.net_ip
             params["vpnconn_lan_netmask_%s_%s" % (name, node2.name)] = netconfig2.netmask
@@ -152,6 +152,18 @@ class VMTunnel(object):
             netconfig2 = None
             params["vpnconn_remote_modeconfig_ip_%s_%s" % (name, node1.name)] = "172.30.0.1"
         params["vpnconn_peer_type_%s_%s" % (name, node1.name)] = peer1.upper()
+
+        # road warrior parameters
+        if peer1 == "ip":
+            params["vpnconn_peer_ip_%s_%s" % (name, node1.name)] = node2.interfaces["inic"].ip
+            params["vpnconn_activation_%s_%s" % (name, node1.name)] = "ALWAYS"
+        elif peer1 == "dynip":
+            params["vpnconn_activation_%s_%s" % (name, node1.name)] = "PASSIVE"
+        if peer2 == "ip":
+            params["vpnconn_peer_ip_%s_%s" % (name, node2.name)] = node1.interfaces["inic"].ip
+            params["vpnconn_activation_%s_%s" % (name, node2.name)] = "ALWAYS"
+        elif peer2 == "dynip":
+            params["vpnconn_activation_%s_%s" % (name, node2.name)] = "PASSIVE"
 
         # authentication parameters
         if authentification_options is None:
@@ -179,18 +191,6 @@ class VMTunnel(object):
         else:
             raise ValueError("Invalid choice of authentication type '%s', must be one of"
                              " 'pubkey', 'psk', or 'none'" % authentification_options["type"])
-
-        # additional roadwarrior parameters
-        if peer1 == "ip":
-            params["vpnconn_peer_ip_%s_%s" % (name, node1.name)] = node2.interfaces["inic"].ip
-            params["vpnconn_activation_%s_%s" % (name, node1.name)] = "ALWAYS"
-        elif peer1 == "dynip":
-            params["vpnconn_activation_%s_%s" % (name, node1.name)] = "PASSIVE"
-        if peer2 == "ip":
-            params["vpnconn_peer_ip_%s_%s" % (name, node2.name)] = node1.interfaces["inic"].ip
-            params["vpnconn_activation_%s_%s" % (name, node2.name)] = "ALWAYS"
-        elif peer2 == "dynip":
-            params["vpnconn_activation_%s_%s" % (name, node2.name)] = "PASSIVE"
 
         # overwrite the base vpn parameters with other already defined tunnel parameters
         params1 = params.object_params(node1.name)
