@@ -46,6 +46,22 @@ class VMTunnel(object):
             return self._right
     right = property(fget=right, fset=right)
 
+    def left_iface(self, value=None):
+        """A reference to the left interface of the tunnel."""
+        if value is not None:
+            self._left_iface = value
+        else:
+            return self._left_iface
+    left_iface = property(fget=left_iface, fset=left_iface)
+
+    def right_iface(self, value=None):
+        """A reference to the right interface of the tunnel."""
+        if value is not None:
+            self._right_iface = value
+        else:
+            return self._right_iface
+    right_iface = property(fget=right_iface, fset=right_iface)
+
     def left_net(self, value=None):
         """A reference to the left netconfig of the tunnel."""
         if value is not None:
@@ -89,8 +105,8 @@ class VMTunnel(object):
             return self._name
     name = property(fget=name, fset=name)
 
-    def __init__(self, name, node1, node2, local1, remote1, peer1,
-                 authentification_options=None):
+    def __init__(self, name, node1, node2,
+                 local1=None, remote1=None, peer1=None, auth=None):
         """
         Construct the full set of required tunnel parameters for a given tunnel left configuration
         that are not already defined in the parameters of the two vms (left `node1` with
@@ -101,20 +117,23 @@ class VMTunnel(object):
         :type node1: VMNode object
         :param node2: right side node of the tunnel
         :type node2: VMNode object
-        :param str local1: left local type which is either 'nic' for left-site (could be used for
-                           site-to-site or site-to-point tunnels) or 'internetip' for left-point
-                           (for point-to-site or point-to-point tunnels)
-        :param str remote1: left remote type which is either 'custom' for right-site (could be used
-                            for site-to-site or point-to-site tunnels) or 'externalip' for right-point
-                            (for site-to-point or point-to-point tunnels) or 'modeconfig' for special
-                            right-point (using a ModeConfig connection for a right road warrior)
-        :param str peer1: left peer type which is either 'ip' for no NAT along the tunnel (the peer
-                          having a public IP) or 'dynip' for a road warrior right end point (the peer
-                          is behind NAT and its IP is changing)
-        :param authentification_options: authentication configuration with at least one
-                                         key 'type' with value in "pubkey", "psk", "none"
-                                         and the rest of the keys providing type details
-        :type authentification_options: {str, str}
+        :param local1: left local configuration with at least one key 'type' with value 'nic'
+                       for left-site (could be used for site-to-site or site-to-point tunnels)
+                       or 'internetip' for left-point (for point-to-site or point-to-point tunnels)
+        :type local1: {str, str}
+        :param remote1: left remote configuration with at least one key 'type' with value 'custom'
+                        for right-site (could be used for site-to-site or point-to-site tunnels) or
+                        'externalip' for right-point (for site-to-point or point-to-point tunnels)
+                        or 'modeconfig' for special right-point (using a ModeConfig connection for
+                        a right road warrior)
+        :type remote1: {str, str}
+        :param peer1: left peer configuration with at least one key 'type' with value 'ip' for no
+                      NAT along the tunnel (the peer having a public IP) or 'dynip' for a road
+                      warrior right end point (the peer is behind NAT and its IP is changing)
+        :type peer1: {str, str}
+        :param auth: authentication configuration with at least one key 'type' with value in
+                     "pubkey", "psk", "none" and the rest of the keys providing type details
+        :type auth: {str, str}
         :raises: :py:class:`ValueError` if some of the supplied configuration is not valid
 
         The right side `local2`, `remote2`, `peer2` configuration is determined from the left side.
@@ -123,72 +142,81 @@ class VMTunnel(object):
         options are `psk` for the secret word, `left_id` and `right_id` for the identification
         type to be used on each side (either IP for empty id or any user-defined id).
         """
-        params = utils_params.Params()
-        local2, remote2, peer2 = self._get_peer_variant((local1, remote1, peer1))
         logging.info("Preparing tunnel parameters for each of %s and %s", node1.name, node2.name)
+        if local1 is None:
+            local1 = {"type": "nic", "nic": "onic"}
+        if remote1 is None:
+            remote1 = {"type": "custom", "nic": "onic"}
+        if peer1 is None:
+            peer1 = {"type": "ip", "nic": "inic"}
+        local2, remote2, peer2 = self._get_peer_variant(local1, remote1, peer1)
+        params = utils_params.Params()
 
         # main parameters
         params["vpnconn_%s_%s" % (name, node1.name)] = name
         params["vpnconn_%s_%s" % (name, node2.name)] = name
         params["vpn_side_%s_%s" % (name, node1.name)] = "left"
         params["vpn_side_%s_%s" % (name, node2.name)] = "right"
-        params["vpnconn_lan_type_%s_%s" % (name, node1.name)] = local1.upper()
-        params["vpnconn_lan_type_%s_%s" % (name, node2.name)] = local2.upper()
-        params["vpnconn_remote_type_%s_%s" % (name, node1.name)] = remote1.upper()
-        params["vpnconn_remote_type_%s_%s" % (name, node2.name)] = remote2.upper()
+        params["vpnconn_lan_type_%s_%s" % (name, node1.name)] = local1["type"].upper()
+        params["vpnconn_lan_type_%s_%s" % (name, node2.name)] = local2["type"].upper()
+        params["vpnconn_remote_type_%s_%s" % (name, node1.name)] = remote1["type"].upper()
+        params["vpnconn_remote_type_%s_%s" % (name, node2.name)] = remote2["type"].upper()
 
-        if local1 == "nic":
-            netconfig1 = node1.interfaces["onic"].netconfig
+        if local1["type"] == "nic":
+            netconfig1 = node1.interfaces[local1.get("nic", "onic")].netconfig
             params["vpnconn_lan_net_%s_%s" % (name, node1.name)] = netconfig1.net_ip
             params["vpnconn_lan_netmask_%s_%s" % (name, node1.name)] = netconfig1.netmask
             params["vpnconn_remote_net_%s_%s" % (name, node2.name)] = netconfig1.net_ip
             params["vpnconn_remote_netmask_%s_%s" % (name, node2.name)] = netconfig1.netmask
-        elif local1 == "internetip":
+        elif local1["type"] == "internetip":
             netconfig1 = None
         else:
             raise ValueError("Invalid choice of left local type '%s', must be one of"
-                             " 'nic', 'internetip'" % local1)
-        if remote1 == "custom":
-            netconfig2 = node2.interfaces["onic"].netconfig
+                             " 'nic', 'internetip'" % local1["type"])
+        if remote1["type"] == "custom":
+            netconfig2 = node2.interfaces[remote1.get("nic", "onic")].netconfig
             params["vpnconn_lan_net_%s_%s" % (name, node2.name)] = netconfig2.net_ip
             params["vpnconn_lan_netmask_%s_%s" % (name, node2.name)] = netconfig2.netmask
             params["vpnconn_remote_net_%s_%s" % (name, node1.name)] = netconfig2.net_ip
             params["vpnconn_remote_netmask_%s_%s" % (name, node1.name)] = netconfig2.netmask
-        elif remote1 == "externalip":
+        elif remote1["type"] == "externalip":
             netconfig2 = None
-        elif remote1 == "modeconfig":
+        elif remote1["type"] == "modeconfig":
             netconfig2 = None
-            params["vpnconn_remote_modeconfig_ip_%s_%s" % (name, node1.name)] = "172.30.0.1"
+            params["vpnconn_remote_modeconfig_ip_%s_%s" % (name, node1.name)] = remote1["modeconfig_ip"]
         else:
             raise ValueError("Invalid choice of left remote type '%s', must be one of"
-                             " 'custom', 'externalip', or 'modeconfig'" % remote1)
+                             " 'custom', 'externalip', or 'modeconfig'" % remote1["type"])
 
         # road warrior parameters
-        params["vpnconn_peer_type_%s_%s" % (name, node1.name)] = peer1.upper()
-        if peer1 == "ip":
-            params["vpnconn_peer_ip_%s_%s" % (name, node1.name)] = node2.interfaces["inic"].ip
+        params["vpnconn_peer_type_%s_%s" % (name, node1.name)] = peer1["type"].upper()
+        if peer1["type"] == "ip":
+            interface2 = node2.interfaces[peer1.get("nic", "inic")]
+            params["vpnconn_peer_ip_%s_%s" % (name, node1.name)] = interface2.ip
             params["vpnconn_activation_%s_%s" % (name, node1.name)] = "ALWAYS"
-        elif peer1 == "dynip":
+        elif peer1["type"] == "dynip":
+            interface2 = node2.interfaces[peer1.get("nic", "inic")]
             params["vpnconn_activation_%s_%s" % (name, node1.name)] = "PASSIVE"
         else:
             raise ValueError("Invalid choice of left peer type '%s', must be one of"
-                             " 'ip', 'dynip'" % peer1)
-        params["vpnconn_peer_type_%s_%s" % (name, node2.name)] = peer2.upper()
-        params["vpnconn_peer_ip_%s_%s" % (name, node2.name)] = node1.interfaces["inic"].ip
+                             " 'ip', 'dynip'" % peer1["type"])
+        params["vpnconn_peer_type_%s_%s" % (name, node2.name)] = peer2["type"].upper()
+        interface1 = node1.interfaces[peer2.get("nic", "inic")]
+        params["vpnconn_peer_ip_%s_%s" % (name, node2.name)] = interface1.ip
         params["vpnconn_activation_%s_%s" % (name, node2.name)] = "ALWAYS"
 
         # authentication parameters
-        if authentification_options is None:
+        if auth is None:
             params["vpnconn_key_type_%s" % name] = "NONE"
-        elif authentification_options["type"] == "pubkey":
+        elif auth["type"] == "pubkey":
             params["vpnconn_key_type_%s" % name] = "PUBLIC"
-        elif authentification_options["type"] == "psk":
+        elif auth["type"] == "psk":
             params["vpnconn_key_type_%s" % name] = "PSK"
 
-            psk = authentification_options["psk"]
-            left_id = authentification_options["left_id"]
+            psk = auth["psk"]
+            left_id = auth["left_id"]
             left_id_type = "IP" if left_id == "" else "CUSTOM"
-            right_id = authentification_options["right_id"]
+            right_id = auth["right_id"]
             right_id_type = "IP" if right_id == "" else "CUSTOM"
 
             params["vpnconn_psk_%s" % name] = psk
@@ -202,7 +230,7 @@ class VMTunnel(object):
             params["vpnconn_psk_own_id_type_%s_%s" % (name, node2.name)] = right_id_type
         else:
             raise ValueError("Invalid choice of authentication type '%s', must be one of"
-                             " 'pubkey', 'psk', or 'none'" % authentification_options["type"])
+                             " 'pubkey', 'psk', or 'none'" % auth["type"])
 
         # overwrite the base vpn parameters with other already defined tunnel parameters
         params1 = params.object_params(node1.name)
@@ -214,8 +242,10 @@ class VMTunnel(object):
 
         self._params = params
         self._left = node1
+        self._left_iface = interface1
         self._left_net = netconfig1
         self._right = node2
+        self._right_iface = interface2
         self._right_net = netconfig2
         self._name = name
 
@@ -224,8 +254,9 @@ class VMTunnel(object):
     def __repr__(self):
         left_net = "none" if self.left_net is None else self.left_net.net_ip
         right_net = "none" if self.right_net is None else self.right_net.net_ip
-        tunnel_tuple = (self.name, self.left.name, self.right.name, left_net, right_net)
-        return "[tunnel] name='%s', left='%s', right='%s', lnet='%s', rnet='%s'" % tunnel_tuple
+        tunnel_tuple = (self.name, self.left.name, self.left_iface.ip,
+                        self.right.name, self.right_iface.ip, left_net, right_net)
+        return "[tunnel] name='%s', left='%s(%s)', right='%s(%s)', lnet='%s', rnet='%s'" % tunnel_tuple
 
     def connects_nodes(self, node1, node2):
         """
@@ -246,7 +277,7 @@ class VMTunnel(object):
         else:
             return False
 
-    def _get_peer_variant(self, left_variant):
+    def _get_peer_variant(self, left_local, left_remote, left_peer):
         """
         Convert triple of parameters according to ipsec rules.
 
@@ -254,24 +285,30 @@ class VMTunnel(object):
         default parameter where the left variant has used a more
         "exotic" value.
         """
-        right_variant = ["nic", "custom", "ip"]
+        right_local = {"type": "nic"}
+        right_remote = {"type": "custom"}
+        right_peer = {"type": "ip"}
 
-        if left_variant[0] == "nic":
-            right_variant[1] = "custom"
-        elif left_variant[0] == "internetip":
-            right_variant[1] = "externalip"
-        if left_variant[1] == "custom":
-            right_variant[0] = "nic"
-        elif left_variant[1] == "externalip":
-            right_variant[0] = "internetip"
+        if left_local["type"] == "nic":
+            right_remote["type"] = "custom"
+            right_remote["nic"] = left_local["nic"]
+        elif left_local["type"] == "internetip":
+            right_remote["type"] = "externalip"
+        if left_remote["type"] == "custom":
+            right_local["type"] = "nic"
+            right_local["nic"] = left_remote["nic"]
+        elif left_remote["type"] == "externalip":
+            right_local["type"] = "internetip"
 
-        if left_variant[2] == "dynip":
-            right_variant[2] = "ip"
+        if left_peer["type"] == "dynip":
+            right_peer["type"] = "ip"
+            right_peer["nic"] = left_peer["nic"]
         # road warriors are always assumed to be on the left side
-        elif left_variant[2] == "ip":
-            right_variant[2] = "ip"
+        elif left_peer["type"] == "ip":
+            right_peer["type"] = "ip"
+            right_peer["nic"] = left_peer["nic"]
 
-        return right_variant
+        return right_local, right_remote, right_peer
 
     def configure_between_endpoints(self, vmnet, apply_extra_options=None):
         """
@@ -295,7 +332,7 @@ class VMTunnel(object):
 
     def configure_on_endpoint(self, vm, vmnet, apply_extra_options=None):
         """
-        Configure a tunnel on an endpoint virtual machine.
+        Configure a tunnel on an end point virtual machine.
 
         :param vm: vm where the tunnel will be configured
         :type vm: VM object
@@ -303,6 +340,7 @@ class VMTunnel(object):
         :type vmnet: VMNetwork object
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
         :type apply_extra_options: {str, any}
+        :raises: :py:class:`ValueError` if some of the supplied configuration is not valid
 
         The provided virtual machine parameters will be used
         for configuration of the tunnel.
@@ -315,40 +353,46 @@ class VMTunnel(object):
         node = vmnet.nodes[vm.name]
         logging.info("Configuring tunnel %s on %s", self.name, node.name)
         if node == self.left:
-            node_params = self.left_params
             other = self.right
-            other_params = self.right_params
+            params1 = self.left_params
+            params2 = self.right_params
+            interface1, interface2 = self.left_iface, self.right_iface
+            netconfig1, netconfig2 = self.left_net, self.right_net
         elif node == self.right:
-            node_params = self.right_params
             other = self.left
-            other_params = self.left_params
+            params1 = self.right_params
+            params2 = self.left_params
+            interface1, interface2 = self.right_iface, self.left_iface
+            netconfig1, netconfig2 = self.right_net, self.left_net
         else:
-            raise ValueError("The configured %s is not among the tunnel endpoints %s and %s",
+            raise ValueError("The configured %s is not among the tunnel end nodes %s and %s",
                              node.name, self.left.name, self.right.name)
-        vpnconn_parameters = {}
-        for key in node_params.keys():
-            if "vpnconn" in key:
-                vpnconn_parameters[key] = node_params[key]
 
-        local1 = vmnet.interfaces["%s.onic" % vm.name]
-        local2 = vmnet.interfaces["%s.onic" % other.name]
-        remote1 = vmnet.interfaces["%s.inic" % vm.name]
-        remote2 = vmnet.interfaces["%s.inic" % other.name]
-        ip1 = other_params.get("vpnconn_nat_peer_ip", remote1.ip)
-        ip2 = vpnconn_parameters.get("vpnconn_nat_peer_ip", remote2.ip)
+        # if opposite end point is a road warrior (behind NAT)
+        if params1["vpnconn_activation"] == "PASSIVE":
+            nat_ip = interface2.netconfig.interfaces[interface2.netconfig.gateway].ip
+            peer_ip2 = params1.get("vpnconn_nat_peer_ip", nat_ip)
+        else:
+            assert interface2.ip == params1["vpnconn_peer_ip"]
+            peer_ip2 = params1["vpnconn_peer_ip"]
 
         add_cmd = "ip tunnel add %s mode gre remote %s local %s ttl 255"
-        vm.session.cmd(add_cmd % (self.name, ip2, remote1.ip))
+        vm.session.cmd(add_cmd % (self.name, peer_ip2, interface1.ip))
         vm.session.cmd("ip link set %s up" % self.name)
-        vm.session.cmd("ip addr add %s dev %s" % (local1.ip, self.name))
-        vm.session.cmd("ip route add %s/%s dev %s" % (local2.netconfig.net_ip,
-                                                      local2.netconfig.mask_bit,
+        lan_iface = node.in_netconfig(netconfig1)
+        if lan_iface is None:
+            raise ValueError("Tunnel end node %s does not have interface in tunnel end net %s in %s"
+                             % (node.name, netconfig1.net_ip, self))
+        vm.session.cmd("ip addr add %s dev %s" % (lan_iface.ip, self.name))
+        vm.session.cmd("ip route add %s/%s dev %s" % (netconfig2.net_ip,
+                                                      netconfig2.mask_bit,
                                                       self.name))
 
         if apply_extra_options.get("apply_firewall_ruleset", True):
             # 47 stand for GRE (Generic Routing Encapsulation)
             protocol_id = apply_extra_options.get("tunnel_protocol_id", 47)
-            if other_params.get("vpnconn_nat_peer_ip") is not None:
+            # if current end point is a road warrior (behind NAT)
+            if params2["vpnconn_activation"] == "PASSIVE":
                 vm.session.cmd("iptables -I INPUT -i eth1 -p %s -j ACCEPT" % protocol_id)
             vm.session.cmd("iptables -I INPUT -i %s -p icmp -j ACCEPT" % self.name)
             vm.session.cmd("iptables -I OUTPUT -o %s -p icmp -j ACCEPT" % self.name)

@@ -16,7 +16,7 @@ needs, etc.). It can be used to test Proxy, Port forwarding,
 VPN, NAT, etc.
 
 Each vm is a network node and can have one of few currently supported
-operating systems. For VPN/GRE functionality it is also required to have
+operating systems. For ease of defaults use it is recommended to have
 at least three nics, respectively named "lnic" for local isolated
 connection to the host, "inic" for (internet) connection to the other
 nodes, and "onic" for other connection to own LAN.
@@ -875,8 +875,7 @@ class VMNetwork(object):
         self._reconfigure_vm_nic(client_nic, client_iface, client)
 
     def configure_tunnel_between_vms(self, name, vm1, vm2,
-                                     local1="nic", remote1="custom", peer1="ip",
-                                     authentification_options=None,
+                                     local1=None, remote1=None, peer1=None, auth=None,
                                      apply_extra_options=None):
         """
         Configure a tunnel between two vms.
@@ -886,19 +885,21 @@ class VMNetwork(object):
         :type vm1: VM object
         :param vm2: right side vm of the tunnel
         :type vm2: VM object
-        :param str local1: left local type as in tunnel constructor
-        :param str remote1: left remote type as in tunnel constructor
-        :param str peer1: left peer type as in tunnel constructor
-        :param authentification_options: authentication configuration as described in
-                                         the tunnel constructor
+        :param local1: left local type as in tunnel constructor
+        :type local1: {str, str}
+        :param remote1: left remote type as in tunnel constructor
+        :type remote1: {str, str}
+        :param peer1: left peer type as in tunnel constructor
+        :type peer1: {str, str}
+        :param auth: authentication configuration as described in the tunnel constructor
+        :type auth: {str, str}
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
         :type apply_extra_options: {str, any}
         """
         left_node = self.nodes[vm1.name]
         right_node = self.nodes[vm2.name]
         self.tunnels[name] = self.new_tunnel(name, left_node, right_node,
-                                             local1, remote1, peer1,
-                                             authentification_options)
+                                             local1, remote1, peer1, auth)
         self.tunnels[name].configure_between_endpoints(self, apply_extra_options)
 
     def configure_tunnel_on_vm(self, name, vm, apply_extra_options=None):
@@ -922,7 +923,7 @@ class VMNetwork(object):
         self.tunnels[name].configure_on_endpoint(vm, self, apply_extra_options)
 
     def configure_roadwarrior_vpn_on_server(self, name, server, client,
-                                            local1="nic", remote1="modeconfig",
+                                            local1=None, remote1=None, auth=None,
                                             apply_extra_options=None):
         """
         Configure a VPN connection (tunnel) on a vm to play the role of a VPN
@@ -933,22 +934,30 @@ class VMNetwork(object):
         :type server: VM object
         :param client: vm which will be connecting individual device
         :type client: VM object
-        :param str local1: left local type as in tunnel constructor
-        :param str remote1: left remote type as in tunnel constructor
+        :param local1: left local type as in tunnel constructor
+        :type local1: {str, str}
+        :param remote1: left remote type as in tunnel constructor
+        :type remote1: {str, str}
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
         :type apply_extra_options: {str, any}
 
         Regarding the client, only its parameters will be updated by this method.
         """
+        if local1 is None:
+            local1 = {"type": "nic", "nic": "onic"}
+        if remote1 is None:
+            remote1 = {"type": "modeconfig", "modeconfig_ip": "172.30.0.1"}
+        peer1 = {"type": "dynip", "nic": "inic"}
+
         left_node = self.nodes[server.name]
         right_node = self.nodes[client.name]
         self.tunnels[name] = self.new_tunnel(name, left_node, right_node,
-                                             local1, remote1, peer1="dynip")
+                                             local1, remote1, peer1, auth)
         self.configure_tunnel_on_vm(name, server, apply_extra_options)
 
     def configure_vpn_route(self, vms, vpns,
-                            local1="nic", remote1="custom", peer1="ip",
-                            authentification_options=None, extra_apply_options=None):
+                            local1=None, remote1=None, peer1=None, auth=None,
+                            extra_apply_options=None):
         """
         Build a set of vpn connections using vpn forwarding to gain access from
         one vm to another.
@@ -957,12 +966,16 @@ class VMNetwork(object):
         :type vms: [VM object]
         :param vpns: VPNs over which the route will be constructed
         :type vpns: [str]
-        :param str local1: left local type as in tunnel constructor
-        :param str remote1: left remote type as in tunnel constructor
-        :param str peer1: left peer type as in tunnel constructor
-        :param authentification_options: authentication configuration as described in
-                                         the tunnel constructor
+        :param local1: left local type as in tunnel constructor
+        :type local1: {str, str}
+        :param remote1: left remote type as in tunnel constructor
+        :type remote1: {str, str}
+        :param peer1: left peer type as in tunnel constructor
+        :type peer1: {str, str}
+        :param auth: authentication configuration as described in the tunnel constructor
+        :type auth: {str, str}
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, any}
         :raises: :py:class:`exceptions.TestError` if #vpns < #vms - 1 or #vpns < 2 or #vms < 2
 
         Infrastructure of point to point vpn connections must already exist.
@@ -991,8 +1004,9 @@ class VMNetwork(object):
             vms[i + 1].params["vpnconn_lan_net_%s" % fvpn] = next_net
             vms[i + 1].params["vpnconn_remote_net_%s" % fvpn] = prev_net
 
-            self.configure_tunnel_between_vms(fvpn, vms[i], vms[i + 1], local1, remote1, peer1,
-                                              authentification_options, extra_apply_options)
+            self.configure_tunnel_between_vms(fvpn, vms[i], vms[i + 1],
+                                              local1, remote1, peer1, auth,
+                                              extra_apply_options)
 
     """VM network test methods"""
     def get_tunnel_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):
