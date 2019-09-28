@@ -875,7 +875,7 @@ class VMNetwork(object):
         self._reconfigure_vm_nic(client_nic, client_iface, client)
 
     def configure_tunnel_between_vms(self, name, vm1, vm2,
-                                     left_variant=None,
+                                     local1="nic", remote1="custom", peer1="ip",
                                      authentification_options=None,
                                      apply_extra_options=None):
         """
@@ -886,22 +886,19 @@ class VMNetwork(object):
         :type vm1: VM object
         :param vm2: right side vm of the tunnel
         :type vm2: VM object
-        :param left_variant: left side configuration (right side is determined from it)
-        :type left_variant: (str, str, str)
+        :param str local1: left local type as in tunnel constructor
+        :param str remote1: left remote type as in tunnel constructor
+        :param str peer1: left peer type as in tunnel constructor
         :param authentification_options: authentication configuration as described in
                                          the tunnel constructor
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
         :type apply_extra_options: {str, any}
         """
-        if left_variant is None:
-            left_variant = [self.params.get("lan_type", "nic"),
-                            self.params.get("remote_type", "custom"),
-                            self.params.get("peer_type", "ip")]
-
         left_node = self.nodes[vm1.name]
         right_node = self.nodes[vm2.name]
         self.tunnels[name] = self.new_tunnel(name, left_node, right_node,
-                                             left_variant, authentification_options)
+                                             local1, remote1, peer1,
+                                             authentification_options)
         self.tunnels[name].configure_between_endpoints(self, apply_extra_options)
 
     def configure_tunnel_on_vm(self, name, vm, apply_extra_options=None):
@@ -924,7 +921,9 @@ class VMNetwork(object):
 
         self.tunnels[name].configure_on_endpoint(vm, self, apply_extra_options)
 
-    def configure_roadwarrior_vpn_on_server(self, name, server, client, apply_extra_options=None):
+    def configure_roadwarrior_vpn_on_server(self, name, server, client,
+                                            local1="nic", remote1="modeconfig",
+                                            apply_extra_options=None):
         """
         Configure a VPN connection (tunnel) on a vm to play the role of a VPN
         server for any individual clients to access it from the internet.
@@ -934,6 +933,8 @@ class VMNetwork(object):
         :type server: VM object
         :param client: vm which will be connecting individual device
         :type client: VM object
+        :param str local1: left local type as in tunnel constructor
+        :param str remote1: left remote type as in tunnel constructor
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
         :type apply_extra_options: {str, any}
 
@@ -942,9 +943,7 @@ class VMNetwork(object):
         left_node = self.nodes[server.name]
         right_node = self.nodes[client.name]
         self.tunnels[name] = self.new_tunnel(name, left_node, right_node,
-                                             [self.params.get("lan_type", "nic"),
-                                              self.params.get("remote_type", "modeconfig"),
-                                              self.params.get("peer_type", "dynip")],
+                                             local1, remote1, peer="dynip",
                                              modeconfig=apply_extra_options.get("modeconfig", True))
 
         # some parameter modification for the road warrior connection
@@ -960,7 +959,8 @@ class VMNetwork(object):
 
         self.configure_tunnel_on_vm(name, server, apply_extra_options)
 
-    def configure_vpn_route(self, vms, vpns, left_variant=None,
+    def configure_vpn_route(self, vms, vpns,
+                            local1="nic", remote1="custom", peer1="ip",
                             authentification_options=None, extra_apply_options=None):
         """
         Build a set of vpn connections using vpn forwarding to gain access from
@@ -970,8 +970,9 @@ class VMNetwork(object):
         :type vms: [VM object]
         :param vpns: VPNs over which the route will be constructed
         :type vpns: [str]
-        :param left_variant: left side configuration (right side is determined from it)
-        :type left_variant: (str, str, str)
+        :param str local1: left local type as in tunnel constructor
+        :param str remote1: left remote type as in tunnel constructor
+        :param str peer1: left peer type as in tunnel constructor
         :param authentification_options: authentication configuration as described in
                                          the tunnel constructor
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
@@ -979,11 +980,6 @@ class VMNetwork(object):
 
         Infrastructure of point to point vpn connections must already exist.
         """
-        if left_variant is None:
-            left_variant = [self.params.get("lan_type", "nic"),
-                            self.params.get("remote_type", "custom"),
-                            self.params.get("peer_type", "ip")]
-
         if len(vpns) < 2 or len(vms) < 2 or len(vpns) < len(vms) - 1:
             raise exceptions.TestError("Insufficient vpn infrastructure - unnecessary vpn forwarding")
 
@@ -1008,7 +1004,7 @@ class VMNetwork(object):
             vms[i + 1].params["vpnconn_lan_net_%s" % fvpn] = next_net
             vms[i + 1].params["vpnconn_remote_net_%s" % fvpn] = prev_net
 
-            self.configure_tunnel_between_vms(fvpn, vms[i], vms[i + 1], left_variant,
+            self.configure_tunnel_between_vms(fvpn, vms[i], vms[i + 1], local1, remote1, peer1,
                                               authentification_options, extra_apply_options)
 
     """VM network test methods"""
