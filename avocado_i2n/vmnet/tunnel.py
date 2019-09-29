@@ -355,12 +355,10 @@ class VMTunnel(object):
 
         return right_local, right_remote, right_peer
 
-    def configure_between_endpoints(self, vmnet, apply_extra_options=None):
+    def configure_between_endpoints(self, apply_extra_options=None):
         """
         Build a tunnel between two endpoint vms.
 
-        :param vmnet: the vm network simulating the internet
-        :type vmnet: VMNetwork object
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
         :type apply_extra_options: {str, any}
         """
@@ -368,21 +366,19 @@ class VMTunnel(object):
                      self.name, self.left.name, self.right.name)
 
         if self.left_params["vpnconn_key_type"] == "PUBLIC":
-            self.import_key_params(self.left.platform, self.right.platform, vmnet)
+            self.import_key_params(self.left, self.right)
         if self.right_params["vpnconn_key_type"] == "PUBLIC":
-            self.import_key_params(self.right.platform, self.left.platform, vmnet)
+            self.import_key_params(self.right, self.left)
 
-        self.configure_on_endpoint(self.left.platform, vmnet, apply_extra_options)
-        self.configure_on_endpoint(self.right.platform, vmnet, apply_extra_options)
+        self.configure_on_endpoint(self.left, apply_extra_options)
+        self.configure_on_endpoint(self.right, apply_extra_options)
 
-    def configure_on_endpoint(self, vm, vmnet, apply_extra_options=None):
+    def configure_on_endpoint(self, node, apply_extra_options=None):
         """
         Configure a tunnel on an end point virtual machine.
 
-        :param vm: vm where the tunnel will be configured
-        :type vm: VM object
-        :param vmnet: the vm network simulating the internet
-        :type vmnet: VMNetwork object
+        :param node: node end point where the tunnel will be configured
+        :type node: VMNode object
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
         :type apply_extra_options: {str, any}
         :raises: :py:class:`ValueError` if some of the supplied configuration is not valid
@@ -395,7 +391,7 @@ class VMTunnel(object):
         if not apply_extra_options:
             apply_extra_options = {}
 
-        node = vmnet.nodes[vm.name]
+        vm = node.platform
         logging.info("Configuring tunnel %s on %s", self.name, node.name)
         if node == self.left:
             other = self.right
@@ -442,20 +438,27 @@ class VMTunnel(object):
             vm.session.cmd("iptables -I INPUT -i %s -p icmp -j ACCEPT" % self.name)
             vm.session.cmd("iptables -I OUTPUT -o %s -p icmp -j ACCEPT" % self.name)
 
-    def import_key_params(self, from_vm, to_vm, vmnet):
+    def import_key_params(self, from_node, to_node):
         """
         This will generate own key configuration at the source vm
         and foreign key configuration at the destination vm.
 
-        :param from_vm: source vm to get the key from (and generate own key configuration on it
-                        containing all relevant key information)
-        :type from_vm: VM object
-        :param to_vm: destination vm to import the key to (and generate foreign key configuration
-                      on it containing all relevant key information)
-        :type to_vm: VM object
-        :param vmnet: the vm network simulating the internet
-        :type vmnet: VMNetwork object
+        :param from_node: source node to get the key from (and generate own key
+                          configuration on it containing all relevant key information)
+        :type from_node: VMNode object
+        :param to_node: destination node to import the key to (and generate foreign key
+                        configuration on it containing all relevant key information)
+        :type to_node: VMNode object
         """
+        assert from_node != to_node, "Cannot import key parameters from a vm node to itself"
+        if from_node not in [self.left, self.right]:
+            raise ValueError("The keys are not imported from any of the tunnel end points %s and %s and "
+                             "%s is not one of them" % (self.left.name, self.right.name, from_node.name))
+        if to_node not in [self.left, self.right]:
+            raise ValueError("The keys are not imported to any of the tunnel end points %s and %s and "
+                             "%s is not one of them" % (self.left.name, self.right.name, to_node.name))
+        from_vm, to_vm = from_node.platform, to_node.platform
+
         own_key_params = utils_params.Params({"vpnconn_own_key_name": "sample-key"})
         from_vm.params.update(own_key_params)
 

@@ -900,7 +900,7 @@ class VMNetwork(object):
         right_node = self.nodes[vm2.name]
         self.tunnels[name] = self.new_tunnel(name, left_node, right_node,
                                              local1, remote1, peer1, auth)
-        self.tunnels[name].configure_between_endpoints(self, apply_extra_options)
+        self.tunnels[name].configure_between_endpoints(apply_extra_options)
 
     def configure_tunnel_on_vm(self, name, vm, apply_extra_options=None):
         """
@@ -920,7 +920,8 @@ class VMNetwork(object):
             raise KeyError("Currently, every tunnel has to be created defining both"
                            " ends and it can only then be configured on a single vm %s" % vm.name)
 
-        self.tunnels[name].configure_on_endpoint(vm, self, apply_extra_options)
+        node = self.nodes[vm.name]
+        self.tunnels[name].configure_on_endpoint(node, apply_extra_options)
 
     def configure_roadwarrior_vpn_on_server(self, name, server, client,
                                             local1=None, remote1=None, auth=None,
