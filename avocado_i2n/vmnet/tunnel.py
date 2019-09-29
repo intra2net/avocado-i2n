@@ -80,23 +80,20 @@ class VMTunnel(object):
             return self._right_net
     right_net = property(fget=right_net, fset=right_net)
 
-    def left_params(self, value=None):
+    def left_params(self):
         """The tunnel generated left side parameters."""
         return self.left.params.object_params(self.name)
     left_params = property(fget=left_params)
 
-    def right_params(self, value=None):
+    def right_params(self):
         """The tunnel generated right side parameters."""
         return self.right.params.object_params(self.name)
     right_params = property(fget=right_params)
 
-    def params(self, value=None):
+    def params(self):
         """The tunnel generated test parameters."""
-        if value is not None:
-            self._params = value
-        else:
-            return self._params
-    params = property(fget=params, fset=params)
+        return self._params
+    params = property(fget=params)
 
     """Connection properties"""
     def name(self, value=None):
