@@ -25,6 +25,8 @@ import logging
 
 from virttest import utils_params
 
+from .netconfig import VMNetconfig
+
 
 class VMTunnel(object):
     """The tunnel class."""
@@ -120,6 +122,8 @@ class VMTunnel(object):
         :param local1: left local configuration with at least one key 'type' with value 'nic'
                        for left-site (could be used for site-to-site or site-to-point tunnels)
                        or 'internetip' for left-point (for point-to-site or point-to-point tunnels)
+                       or 'custom' for left-site or left-point that is not a LAN (e.g. for tunnel
+                       forwarding of another tunneled remote net)
         :type local1: {str, str}
         :param remote1: left remote configuration with at least one key 'type' with value 'custom'
                         for right-site (could be used for site-to-site or point-to-site tunnels) or
@@ -170,13 +174,28 @@ class VMTunnel(object):
             params["vpnconn_remote_netmask_%s_%s" % (name, node2.name)] = netconfig1.netmask
         elif local1["type"] == "internetip":
             netconfig1 = None
+        elif local1["type"] == "custom":
+            # "custom" configuration does no guarantee pre-existing netconfig like "nic"
+            # so create an address/netmask only netconfig to match against for compatibility
+            netconfig1 = VMNetconfig()
+            netconfig1.net_ip = local1["lnet"]
+            netconfig1.netmask = local1["lmask"]
+            params["vpnconn_lan_net_%s_%s" % (name, node1.name)] = local1["lnet"]
+            params["vpnconn_lan_netmask_%s_%s" % (name, node1.name)] = local1["lmask"]
         else:
             raise ValueError("Invalid choice of left local type '%s', must be one of"
-                             " 'nic', 'internetip'" % local1["type"])
+                             " 'nic', 'internetip', 'custom'" % local1["type"])
         if remote1["type"] == "custom":
-            netconfig2 = node2.interfaces[remote1.get("nic", "onic")].netconfig
-            params["vpnconn_lan_net_%s_%s" % (name, node2.name)] = netconfig2.net_ip
-            params["vpnconn_lan_netmask_%s_%s" % (name, node2.name)] = netconfig2.netmask
+            if local1["type"] == "custom":
+                netconfig2 = VMNetconfig()
+                netconfig2.net_ip = local1["rnet"]
+                netconfig2.netmask = local1["rmask"]
+                params["vpnconn_lan_net_%s_%s" % (name, node2.name)] = local1["rnet"]
+                params["vpnconn_lan_netmask_%s_%s" % (name, node2.name)] = local1["rmask"]
+            else:
+                netconfig2 = node2.interfaces[remote1.get("nic", "onic")].netconfig
+                params["vpnconn_lan_net_%s_%s" % (name, node2.name)] = netconfig2.net_ip
+                params["vpnconn_lan_netmask_%s_%s" % (name, node2.name)] = netconfig2.netmask
             params["vpnconn_remote_net_%s_%s" % (name, node1.name)] = netconfig2.net_ip
             params["vpnconn_remote_netmask_%s_%s" % (name, node1.name)] = netconfig2.netmask
         elif remote1["type"] == "externalip":
@@ -270,10 +289,33 @@ class VMTunnel(object):
         :returns: whether the tunnel connects the two nodes
         :rtype: bool
         """
-        if node1 == self.left or (self.left_net and node1.in_netconfig(self.left_net)):
-            return node2 == self.right or (self.right_net and node2.in_netconfig(self.right_net))
-        elif node1 == self.right or (self.right_net and node1.in_netconfig(self.right_net)):
-            return node2 == self.left or (self.left_net and node2.in_netconfig(self.left_net))
+        def on_the_left(node):
+            # node is the left end point of the tunnel
+            if node == self.left:
+                return True
+            # node is in the left end site of the tunnel
+            if self.left_net and node.check_interface(self.left_net.has_interface):
+                return True
+            # node is forwarded from the left end of the tunnel
+            if self.left_params["vpnconn_lan_type"] == "CUSTOM":
+                if node.check_interface(self.left_net.can_add_interface):
+                    return True
+        def on_the_right(node):
+            # node is the right end point of the tunnel
+            if node == self.right:
+                return True
+            # node is in the right end site of the tunnel
+            if self.right_net and node.check_interface(self.right_net.has_interface):
+                return True
+            # node is forwarded from the right end of the tunnel
+            if self.right_params["vpnconn_lan_type"] == "CUSTOM":
+                if node.check_interface(self.right_net.can_add_interface):
+                    return True
+
+        if on_the_left(node1) and on_the_right(node2):
+            return True
+        elif on_the_right(node1) and on_the_left(node2):
+            return True
         else:
             return False
 
@@ -295,8 +337,11 @@ class VMTunnel(object):
         elif left_local["type"] == "internetip":
             right_remote["type"] = "externalip"
         if left_remote["type"] == "custom":
-            right_local["type"] = "nic"
-            right_local["nic"] = left_remote["nic"]
+            if left_local["type"] == "custom":
+                right_local["type"] = "custom"
+            else:
+                right_local["type"] = "nic"
+                right_local["nic"] = left_remote["nic"]
         elif left_remote["type"] == "externalip":
             right_local["type"] = "internetip"
 
@@ -379,7 +424,7 @@ class VMTunnel(object):
         add_cmd = "ip tunnel add %s mode gre remote %s local %s ttl 255"
         vm.session.cmd(add_cmd % (self.name, peer_ip2, interface1.ip))
         vm.session.cmd("ip link set %s up" % self.name)
-        lan_iface = node.in_netconfig(netconfig1)
+        lan_iface = node.check_interface(netconfig1.has_interface)
         if lan_iface is None:
             raise ValueError("Tunnel end node %s does not have interface in tunnel end net %s in %s"
                              % (node.name, netconfig1.net_ip, self))

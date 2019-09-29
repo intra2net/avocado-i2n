@@ -956,18 +956,16 @@ class VMNetwork(object):
         self.configure_tunnel_on_vm(name, server, apply_extra_options)
 
     def configure_vpn_route(self, vms, vpns,
-                            local1=None, remote1=None, peer1=None, auth=None,
+                            remote1=None, peer1=None, auth=None,
                             extra_apply_options=None):
         """
-        Build a set of vpn connections using vpn forwarding to gain access from
+        Build a set of VPN connections using VPN forwarding to gain access from
         one vm to another.
 
         :param vms: vms to participate in the VPN route
         :type vms: [VM object]
         :param vpns: VPNs over which the route will be constructed
         :type vpns: [str]
-        :param local1: left local type as in tunnel constructor
-        :type local1: {str, str}
         :param remote1: left remote type as in tunnel constructor
         :type remote1: {str, str}
         :param peer1: left peer type as in tunnel constructor
@@ -978,31 +976,38 @@ class VMNetwork(object):
         :type apply_extra_options: {str, any}
         :raises: :py:class:`exceptions.TestError` if #vpns < #vms - 1 or #vpns < 2 or #vms < 2
 
-        Infrastructure of point to point vpn connections must already exist.
+        Infrastructure of point to point VPN connections must already exist.
         """
         if len(vpns) < 2 or len(vms) < 2 or len(vpns) < len(vms) - 1:
-            raise exceptions.TestError("Insufficient vpn infrastructure - unnecessary vpn forwarding")
+            raise exceptions.TestError("Insufficient VPN infrastructure - unnecessary VPN forwarding")
 
-        logging.info("Bulding vpn route %s", "-".join(vm.name for vm in vms))
+        logging.info("Building a VPN route %s", "-".join(vm.name for vm in vms))
         for i in range(len(vpns)):
-            fvpn = "%s_fwd" % vpns[i]
+            fvpn = "%sfwd" % vpns[i]
             if i == 0:
-                prev_net = vms[i + 1].params.object_params(vpns[i]).get("vpnconn_remote_net")
-                next_net = vms[i + 1].params.object_params(vpns[i + 1]).get("vpnconn_remote_net")
+                prev_net = vms[i+1].params.object_params(vpns[i]).get("vpnconn_remote_net")
+                prev_mask = vms[i+1].params.object_params(vpns[i]).get("vpnconn_remote_netmask")
+                next_net = vms[i+1].params.object_params(vpns[i+1]).get("vpnconn_remote_net")
+                next_mask = vms[i+1].params.object_params(vpns[i+1]).get("vpnconn_remote_netmask")
             elif i == len(vpns) - 1:
-                prev_net = vms[i].params.object_params(vpns[i - 1]).get("vpnconn_remote_net")
+                prev_net = vms[i].params.object_params(vpns[i-1]).get("vpnconn_remote_net")
+                prev_mask = vms[i].params.object_params(vpns[i-1]).get("vpnconn_remote_netmask")
                 next_net = vms[i].params.object_params(vpns[i]).get("vpnconn_remote_net")
+                next_mask = vms[i].params.object_params(vpns[i]).get("vpnconn_remote_netmask")
             else:
-                prev_net = vms[i - 1].params.object_params(vpns[i - 1]).get("vpnconn_remote_net")
-                next_net = vms[i + 1].params.object_params(vpns[i + 1]).get("vpnconn_remote_net")
-            logging.debug("Retrieved previous network %s and next network %s", prev_net, next_net)
+                prev_net = vms[i-1].params.object_params(vpns[i-1]).get("vpnconn_remote_net")
+                prev_mask = vms[i-1].params.object_params(vpns[i-1]).get("vpnconn_remote_netmask")
+                next_net = vms[i+1].params.object_params(vpns[i+1]).get("vpnconn_remote_net")
+                next_mask = vms[i+1].params.object_params(vpns[i+1]).get("vpnconn_remote_mask")
+            logging.debug("Retrieved previous network %s/%s and next network %s/%s",
+                          prev_net, prev_mask, next_net, next_mask)
 
-            vms[i].params["vpnconn_lan_type_%s" % fvpn] = "CUSTOM"
-            vms[i].params["vpnconn_lan_net_%s" % fvpn] = prev_net
+            local1 = {"type": "custom",
+                      "lnet": prev_net, "lmask": prev_mask,
+                      "rnet": next_net, "rmask": next_mask}
+
             vms[i].params["vpnconn_remote_net_%s" % fvpn] = next_net
-            vms[i + 1].params["vpnconn_lan_type_%s" % fvpn] = "CUSTOM"
-            vms[i + 1].params["vpnconn_lan_net_%s" % fvpn] = next_net
-            vms[i + 1].params["vpnconn_remote_net_%s" % fvpn] = prev_net
+            vms[i+1].params["vpnconn_remote_net_%s" % fvpn] = prev_net
 
             self.configure_tunnel_between_vms(fvpn, vms[i], vms[i + 1],
                                               local1, remote1, peer1, auth,
@@ -1126,7 +1131,7 @@ class VMNetwork(object):
                 logging.debug("Found a vpn connection with id %s between %s and %s",
                               id, src_vm.name, dst_vm.name)
                 vpn = tunnel
-                left_index, right_index = id.lstrip("vpn").split(".")
+                left_index, right_index = re.match("^vpn(\d+)\.(\d+)\w*", id).group(1,2)
                 break
         else:
             raise exceptions.TestError("The source %s and destination %s are not connected by a tunnel" % (src_vm.name, dst_vm.name))
