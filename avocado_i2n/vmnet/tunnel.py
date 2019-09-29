@@ -323,9 +323,9 @@ class VMTunnel(object):
                      self.name, self.left.name, self.right.name)
 
         if self.left_params["vpnconn_key_type"] == "PUBLIC":
-            self._import_key(self.left.platform, self.right.platform, vmnet)
+            self.import_key_params(self.left.platform, self.right.platform, vmnet)
         if self.right_params["vpnconn_key_type"] == "PUBLIC":
-            self._import_key(self.right.platform, self.left.platform, vmnet)
+            self.import_key_params(self.right.platform, self.left.platform, vmnet)
 
         self.configure_on_endpoint(self.left.platform, vmnet, apply_extra_options)
         self.configure_on_endpoint(self.right.platform, vmnet, apply_extra_options)
@@ -397,5 +397,29 @@ class VMTunnel(object):
             vm.session.cmd("iptables -I INPUT -i %s -p icmp -j ACCEPT" % self.name)
             vm.session.cmd("iptables -I OUTPUT -o %s -p icmp -j ACCEPT" % self.name)
 
-    def _import_key(self, from_vm, to_vm, vmnet):
+    def import_key_params(self, from_vm, to_vm, vmnet):
+        """
+        This will generate own key configuration at the source vm
+        and foreign key configuration at the destination vm.
+
+        :param from_vm: source vm to get the key from (and generate own key configuration on it
+                        containing all relevant key information)
+        :type from_vm: VM object
+        :param to_vm: destination vm to import the key to (and generate foreign key configuration
+                      on it containing all relevant key information)
+        :type to_vm: VM object
+        :param vmnet: the vm network simulating the internet
+        :type vmnet: VMNetwork object
+        """
+        own_key_params = utils_params.Params({"vpnconn_own_key_name": "sample-key"})
+        from_vm.params.update(own_key_params)
+
+        def get_imported_key_params(from_params):
+            to_params = from_params.copy()
+            to_params["vpnconn_foreign_key_name"] = from_params["vpnconn_own_key_name"]
+            del to_params["vpnconn_own_key_name"]
+            return to_params
+        foreign_key_params = get_imported_key_params(own_key_params)
+        to_vm.params.update(foreign_key_params)
+
         raise NotImplementedError("Public key authentication is not implemented for any guest OS")
