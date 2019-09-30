@@ -36,9 +36,11 @@ setup(name='avocado-framework-plugins-i2n',
       packages=['avocado_i2n', 'avocado_i2n.plugins', 'avocado_i2n.cartgraph', 'avocado_i2n.vmnet'],
       package_data={'avocado_i2n.vmnet': ['templates/*.template']},
       install_requires=['avocado-framework-plugins-vt', 'aexpect'],
-      data_files=[(get_dir(['etc', 'avocado', 'conf.d']),
-                   ['etc/avocado/conf.d/i2n.conf'])],
+      include_package_data=True,
       entry_points={
+          'avocado.plugins.settings': [
+              'i2n-settings = avocado_i2n.plugins.i2n_settings:I2NSettings',
+              ],
           'avocado.plugins.cli': [
               'auto = avocado_i2n.plugins.auto:Auto',
               ],

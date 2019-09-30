@@ -75,6 +75,8 @@ graph structure.
 
 %install
 %{__python3} setup.py install --root %{buildroot} --skip-build
+%{__mkdir} -p %{buildroot}%{_sysconfdir}/avocado/conf.d
+%{__mv} %{buildroot}%{python3_sitelib}/avocado_i2n/conf.d/* %{buildroot}%{_sysconfdir}/avocado/conf.d
 
 %files -n python3-%{name}
 %defattr(-,root,root,-)

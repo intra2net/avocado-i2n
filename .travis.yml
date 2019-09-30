@@ -71,7 +71,7 @@ install:
   #- AVOCADO_LOG_DEBUG=yes avocado vt-bootstrap --vt-skip-verify-download-assets --yes-to-all
   - pip install -e .
   # TODO: local (editable) pip installation does not take care of the config files of both av-vt and av-i2n
-  - cp etc/avocado/conf.d/i2n.conf avocado-libs/avocado/etc/avocado/conf.d/i2n.conf
+  - cp avocado_i2n/conf.d/i2n.conf avocado-libs/avocado/etc/avocado/conf.d/i2n.conf
   # TODO: install the sample test provider in a location that does not require sudo
   - sudo bash install_tp.sh
 
