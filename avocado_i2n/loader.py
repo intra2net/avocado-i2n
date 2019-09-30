@@ -27,17 +27,19 @@ class CartesianLoader(VirtTestLoader):
 
     name = 'cartesian_graph'
 
-    def __init__(self, args=None, extra_params=None):
+    def __init__(self, config=None, extra_params=None):
         """
         Construct the Cartesian loader.
 
-        :param args: command line arguments
-        :type args: :py:class:`argparse.Namespace`
+        :param config: command line arguments
+        :type config: {str, str}
         :param extra_params: extra configuration parameters
         :type extra_params: {str, str}
         """
         self.logdir = extra_params.pop('logdir', None)
-        super().__init__(args, extra_params)
+        super().__init__(config, extra_params)
+        # VT is still behind taking on the new config structure (once done remove this)
+        self.config = vars(self.args)
 
     """parsing functionality"""
     def parse_objects(self, object_strs=None, object_names="", verbose=False):
@@ -322,12 +324,12 @@ class CartesianLoader(VirtTestLoader):
         :rtype: [(type, {str, str})]
         """
         if references is not None:
-            assert references.split() == self.args.params
-        param_str, nodes_str, object_strs = self.args.param_str, self.args.tests_str, self.args.vm_strs
-        prefix = self.args.prefix
+            assert references.split() == self.config["params"]
+        param_str, nodes_str, object_strs = self.config["param_str"], self.config["tests_str"], self.config["vm_strs"]
+        prefix = self.config["prefix"]
 
         graph = self.parse_object_trees(param_str, nodes_str, object_strs, prefix,
-                                        verbose=self.args.subcommand!="list")
+                                        verbose=self.config["subcommand"]!="list")
         test_suite = [n.get_test_factory() for n in graph.nodes]
 
         # HACK: pass the constructed graph to the runner using static attribute hack

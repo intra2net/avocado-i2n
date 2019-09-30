@@ -70,15 +70,15 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.fail_switch = []
         DummyStateCheck.present_states = []
 
-        self.args = mock.MagicMock()
-        self.args.param_str = ""
-        self.args.tests_str = "only all\n"
-        self.args.vm_strs = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
+        self.config = {}
+        self.config["param_str"] = ""
+        self.config["tests_str"] = "only all\n"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
 
         self.prefix = ""
         self.main_vm = ""
 
-        self.loader = CartesianLoader(args=self.args, extra_params={})
+        self.loader = CartesianLoader(config=self.config, extra_params={})
         self.job = mock.MagicMock()
         self.job.logdir = "."
         self.result = mock.MagicMock()
@@ -89,8 +89,8 @@ class CartesianGraphTest(unittest.TestCase):
         shutil.rmtree("./graph_traverse", ignore_errors=True)
 
     def test_object_params(self):
-        self.args.tests_str += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
         test_object = graph.objects[0]
         dict_generator = test_object.config.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
@@ -101,8 +101,8 @@ class CartesianGraphTest(unittest.TestCase):
             self.assertEqual(dict1[key], test_object.params[key], "The values of key %s %s=%s must be the same" % (key, dict1[key], test_object.params[key]))
 
     def test_node_params(self):
-        self.args.tests_str += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
         test_node = graph.nodes[0]
         dict_generator = test_node.config.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
@@ -113,8 +113,8 @@ class CartesianGraphTest(unittest.TestCase):
             self.assertEqual(dict1[key], test_node.params[key], "The values of key %s %s=%s must be the same" % (key, dict1[key], test_node.params[key]))
 
     def test_one_leaf(self):
-        self.args.tests_str += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
@@ -125,12 +125,12 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 7
-        self.runner.run_traversal(graph, self.args.param_str)
+        self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_one_leaf_with_path_setup(self):
-        self.args.tests_str += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
         DummyStateCheck.present_states = ["root", "install"]
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
@@ -141,12 +141,12 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 4
-        self.runner.run_traversal(graph, self.args.param_str)
+        self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_one_leaf_with_step_setup(self):
-        self.args.tests_str += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
         DummyStateCheck.present_states = ["install", "customize_vm"]
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
@@ -156,12 +156,12 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 4
-        self.runner.run_traversal(graph, self.args.param_str)
+        self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_two_objects_without_setup(self):
-        self.args.tests_str += "only tutorial3\n"
-        graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
+        self.config["tests_str"] += "only tutorial3\n"
+        graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
         DummyStateCheck.present_states = []
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
@@ -182,12 +182,12 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * 13
-        self.runner.run_traversal(graph, self.args.param_str)
+        self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_two_objects_with_setup(self):
-        self.args.tests_str += "only tutorial3\n"
-        graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
+        self.config["tests_str"] += "only tutorial3\n"
+        graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
         DummyStateCheck.present_states = ["root", "install", "customize_vm"]
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
@@ -198,13 +198,13 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * 5
-        self.runner.run_traversal(graph, self.args.param_str)
+        self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_abort_run(self):
-        self.args.tests_str += "only tutorial1\n"
-        self.args.param_str += "abort_on_error=yes\n"
-        graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm)
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_str"] += "abort_on_error=yes\n"
+        graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
         DummyStateCheck.present_states = ["root", "install"]
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
@@ -215,26 +215,26 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.fail_switch = [False] * 3
         DummyTestRunning.fail_switch[2] = True
         with self.assertRaises(exceptions.TestSkipError):
-            self.runner.run_traversal(graph, self.args.param_str)
+            self.runner.run_traversal(graph, self.config["param_str"])
 
     def test_trees_difference_zero(self):
-        self.args.tests_str = "only nonleaves\n"
-        self.args.tests_str += "only set_provider\n"
+        self.config["tests_str"] = "only nonleaves\n"
+        self.config["tests_str"] += "only set_provider\n"
         self.main_vm = "vm1"
-        graph = self.loader.parse_object_trees(self.args.param_str, self.args.tests_str, self.args.vm_strs, self.prefix, self.main_vm, objectless=True)
+        graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm, objectless=True)
         graph.flag_parent_intersection(graph, flag_type="run", flag=False)
-        self.runner.run_traversal(graph, self.args.param_str)
+        self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_trees_difference(self):
-        self.args.tests_str = "only nonleaves\n"
-        tests_str1 = self.args.tests_str
+        self.config["tests_str"] = "only nonleaves\n"
+        tests_str1 = self.config["tests_str"]
         tests_str1 += "only set_provider\n"
-        tests_str2 = self.args.tests_str
+        tests_str2 = self.config["tests_str"]
         tests_str2 += "only install\n"
         self.main_vm = "vm2"
-        graph = self.loader.parse_object_trees(self.args.param_str, tests_str1, self.args.vm_strs, self.prefix, self.main_vm, objectless=True)
-        reuse_graph = self.loader.parse_object_trees(self.args.param_str, tests_str2, self.args.vm_strs, self.prefix, self.main_vm, objectless=True)
+        graph = self.loader.parse_object_trees(self.config["param_str"], tests_str1, self.config["vm_strs"], self.prefix, self.main_vm, objectless=True)
+        reuse_graph = self.loader.parse_object_trees(self.config["param_str"], tests_str2, self.config["vm_strs"], self.prefix, self.main_vm, objectless=True)
 
         graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
         DummyTestRunning.asserted_tests = [
@@ -242,7 +242,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.permanent.set_provider.vm2", "vms": "^vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * 2
-        self.runner.run_traversal(graph, self.args.param_str)
+        self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
 

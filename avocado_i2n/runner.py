@@ -149,7 +149,7 @@ class CartesianRunner(TestRunner):
         summary = set()
         if self.job.sysinfo is not None:
             self.job.sysinfo.start_job_hook()
-        param_str = self.job.args.param_str
+        param_str = self.job.config["param_str"]
 
         try:
             graph.visualize(self.job.logdir)

@@ -11,20 +11,20 @@ from . import state_setup
 from .vmnet import VMNetwork
 
 
-def params_from_cmd(args):
+def params_from_cmd(config):
     """
     Take care of command line overwriting, parameter preparation,
     setup and cleanup chains, and paths/utilities for all host controls.
 
-    :param args: command line arguments
-    :type args: :py:class:`argparse.Namespace`
+    :param config: command line arguments
+    :type config: {str, str}
     """
     root_path = settings.get_value('i2n.common', 'suite_path', default=None)
     sys.path.insert(1, os.path.join(root_path, "utils"))
 
     # validate typed vm names and possible vm specific restrictions
-    args.available_vms = available_vms = param.all_vms()
-    args.selected_vms = selected_vms = list(available_vms)
+    config["available_vms"] = available_vms = param.all_vms()
+    config["selected_vms"] = selected_vms = list(available_vms)
     # If the command line restrictions don't contain any of our primary restrictions
     # (all|normal|gui|nongui|minimal|none), we add "only <default>" to the list where <default> is the
     # primary restriction definition found in the configs. If the configs are also
@@ -39,7 +39,7 @@ def params_from_cmd(args):
     vm_strs = {}
     # the run string includes only pure parameters
     param_str = ""
-    for cmd_param in args.params:
+    for cmd_param in config["params"]:
         try:
             (key, value) = re.findall("(\w+)=(.*)", cmd_param)[0]
             if key == "only" or key == "no":
@@ -76,7 +76,7 @@ def params_from_cmd(args):
                 param_str += "%s = %s\n" % (key, value)
         except IndexError:
             pass
-    args.param_str = param_str
+    config["param_str"] = param_str
     log.debug("Parsed param string '%s'", param_str)
 
     # get minimal configurations and parse defaults if no command line arguments
@@ -92,7 +92,7 @@ def params_from_cmd(args):
             raise ValueError("Invalid primary restriction 'only=%s'! It has to be one "
                              "of %s" % (default, ", ".join(primary_tests_restrictions)))
         tests_str += "only %s\n" % default
-    args.tests_str = tests_str
+    config["tests_str"] = tests_str
     log.debug("Parsed tests string '%s'", tests_str)
 
     vms_config = param.Reparsable()
@@ -111,7 +111,7 @@ def params_from_cmd(args):
             if default is None:
                 raise ValueError("No default variant restriction found for %s!" % vm_name)
             vm_strs[vm_name] += "only %s\n" % default
-    args.vm_strs = vm_strs
+    config["vm_strs"] = vm_strs
     log.debug("Parsed vm strings '%s'", vm_strs)
 
     # control against invoking internal tests
@@ -129,10 +129,10 @@ def params_from_cmd(args):
                                  "to run an internal test %s." % d["name"])
 
     # prefix for all tests of the current run making it possible to perform multiple runs in one command
-    args.prefix = ""
+    config["prefix"] = ""
 
     # log into files for each major level the way it was done for autotest
-    args.store_logging_stream = [":10", ":20", ":30", ":40"]
+    config["store_logging_stream"] = [":10", ":20", ":30", ":40"]
 
     # attach environment processing hooks
     env_process_hooks()
