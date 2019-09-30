@@ -27,7 +27,7 @@ def get_dir(system_path=None, virtual_path=None):
         return os.path.join(*(['/'] + system_path))
 
 
-setup(name='avocado-plugins-i2n',
+setup(name='avocado-framework-plugins-i2n',
       version=VERSION,
       description='Avocado Intra2net Plugins',
       author='Intra2net AG',
@@ -35,7 +35,7 @@ setup(name='avocado-plugins-i2n',
       url='http://github.com/intra2net/avocado-i2n',
       packages=['avocado_i2n', 'avocado_i2n.cartgraph', 'avocado_i2n.vmnet'],
       package_data={'avocado_i2n.vmnet': ['templates/*.template']},
-      install_requires=['avocado-plugins-vt', 'aexpect'],
+      install_requires=['avocado-framework-plugins-vt', 'aexpect'],
       data_files=[(get_dir(['etc', 'avocado', 'conf.d']),
                    ['etc/avocado/conf.d/i2n.conf'])],
       entry_points={

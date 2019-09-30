@@ -78,12 +78,12 @@ graph structure.
 
 %files -n python3-%{name}
 %defattr(-,root,root,-)
-%dir /etc/avocado
-%dir /etc/avocado/conf.d
-%config(noreplace)/etc/avocado/conf.d/i2n.conf
+%dir %{_sysconfdir}/avocado
+%dir %{_sysconfdir}/avocado/conf.d
+%config(noreplace)%{_sysconfdir}/avocado/conf.d/i2n.conf
 %doc README.md LICENSE
 %{python3_sitelib}/avocado_i2n*
-%{python3_sitelib}/avocado_plugins_i2n*
+%{python3_sitelib}/avocado_framework_plugins_i2n*
 
 %changelog
 * Fri Sep 27 2019 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 71.0-0
