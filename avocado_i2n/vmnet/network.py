@@ -1220,9 +1220,9 @@ class VMNetwork(object):
         log = log_vm.session.cmd("rm -f /var/log/messages")
         log = log_vm.session.cmd("/etc/init.d/rsyslog restart")
 
-    def ping(self, src_vm=None, dst_vm=None, dst_nic="onic", address=None, validate_status=True):
+    def ping(self, src_vm, dst_vm, dst_nic="onic", address=None, validate_status=True):
         """
-        Pings a vm from another vm to test most basic connectivity.
+        Pings a vm from another vm to test basic ICMP connectivity.
 
         :param src_vm: source vm which will ping
         :type src_vm: VM object
@@ -1231,53 +1231,55 @@ class VMNetwork(object):
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
         :param str address: explicit IP or domain to use for pinging
         :param bool validate_status: whether to validate the ping status and raise error
-        :returns: the result of the last successful or performed ping
+        :returns: the status and output of the performed ping
         :rtype: (int, str)
-
-        If no source and destination vms are provided, the ping happens
-        among all LAN members, throwing an exception if one of the pings fails.
+        :raises: :py:class:`exceptions.TestError` if the performed ping failed
 
         If no `address` is provided, the IP is obtained by analyzing the network topology
         from `src_vm` to `dst_vm`.
 
         If no `dst_vm` is provided, the ping happens directly to `address`.
         """
-        if src_vm is None and dst_vm is None:
-            logging.info("Commencing mutual ping of %d vms (including self ping).", len(self.nodes))
-            failed = False
+        if address is None:
+            address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
 
-            for node1 in self.nodes.values():
-                for interface1 in node1.interfaces.values():
-                    for node2 in self.nodes.values():
-                        for interface2 in node2.interfaces.values():
-                            for netconfig in self.netconfigs.values():
-                                if interface1.ip in netconfig.interfaces and interface2.ip in netconfig.interfaces:
-                                    direction_str = "%s (%s) from %s (%s)" % (node2.name, interface2.ip,
-                                                                              node1.name, interface1.ip)
-                                    logging.debug("Pinging %s", direction_str)
-                                    count_limit = "" if node1.params.get("os_type", "linux") == "windows" else "-c 1"
-                                    status, output = node1.platform.session.cmd_status_output("ping %s %s" % (count_limit, interface2.ip))
-                                    failed = failed or status != 0
+        logging.info("Pinging %s (%s) from %s", dst_vm.name, address, src_vm.name)
+        count_limit = "" if src_vm.params.get("os_type", "linux") == "windows" else "-c 3"
+        status, output = src_vm.session.cmd_status_output("ping %s %s" % (address, count_limit))
 
-            if validate_status and failed:
-                raise exceptions.TestError("Mutual ping of all LAN members unsuccessful")
-            elif validate_status:
-                logging.info("Mutual ping of all LAN members successful")
-            return status, output
+        if validate_status and status != 0:
+            raise exceptions.TestError("Ping of %s (%s) from %s unsuccessful" % (dst_vm.name, address, src_vm.name))
+        elif validate_status:
+            logging.debug(output.split("\n")[-3])
+        return status, output
 
-        else:
-            if address is None:
-                address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+    def ping_all(self):
+        """
+        Pings all nodes from each other in order to test complete basic ICMP connectivity.
 
-            logging.info("Pinging %s from %s", address, src_vm.name)
-            count_limit = "" if src_vm.params.get("os_type", "linux") == "windows" else "-c 3"
-            status, output = src_vm.session.cmd_status_output("ping %s %s" % (address, count_limit))
+        :raises: :py:class:`exceptions.TestError` if a network mutual ping failed
 
-            if validate_status and status != 0:
-                raise exceptions.TestError("Ping of %s (%s) from %s unsuccessful" % (dst_vm.name, address, src_vm.name))
-            elif validate_status:
-                logging.debug(output.split("\n")[-3])
-            return status, output
+        The ping happens among all LAN members, throwing an exception if one of the pings fails.
+        """
+        logging.info("Commencing mutual ping of %d vms (including self ping).", len(self.nodes))
+        failed = False
+
+        for node1 in self.nodes.values():
+            for interface1 in node1.interfaces.values():
+                for node2 in self.nodes.values():
+                    for interface2 in node2.interfaces.values():
+                        for netconfig in self.netconfigs.values():
+                            if interface1.ip in netconfig.interfaces and interface2.ip in netconfig.interfaces:
+                                direction_str = "%s (%s) from %s (%s)" % (node2.name, interface2.ip,
+                                                                          node1.name, interface1.ip)
+                                logging.debug("Pinging %s", direction_str)
+                                count_limit = "" if node1.params.get("os_type", "linux") == "windows" else "-c 1"
+                                status, output = node1.platform.session.cmd_status_output("ping %s %s" % (count_limit, interface2.ip))
+                                failed = failed or status != 0
+
+        if failed:
+            raise exceptions.TestError("Mutual ping of all LAN members unsuccessful")
+        logging.info("Mutual ping of all LAN members successful")
 
     def port_connectivity(self, msg, src_vm, dst_vm, dst_nic="onic",
                           address=None, port=80, protocol="TCP",
