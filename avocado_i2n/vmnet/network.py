@@ -1220,7 +1220,7 @@ class VMNetwork(object):
         log = log_vm.session.cmd("rm -f /var/log/messages")
         log = log_vm.session.cmd("/etc/init.d/rsyslog restart")
 
-    def ping(self, src_vm, dst_vm, dst_nic="onic", address=None, validate_status=True):
+    def ping(self, src_vm, dst_vm, dst_nic="onic", address=None):
         """
         Pings a vm from another vm to test basic ICMP connectivity.
 
@@ -1230,10 +1230,8 @@ class VMNetwork(object):
         :type dst_vm: VM object
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
         :param str address: explicit IP or domain to use for pinging
-        :param bool validate_status: whether to validate the ping status and raise error
         :returns: the status and output of the performed ping
         :rtype: (int, str)
-        :raises: :py:class:`exceptions.TestError` if the performed ping failed
 
         If no `address` is provided, the IP is obtained by analyzing the network topology
         from `src_vm` to `dst_vm`.
@@ -1245,13 +1243,25 @@ class VMNetwork(object):
 
         logging.info("Pinging %s (%s) from %s", dst_vm.name, address, src_vm.name)
         count_limit = "" if src_vm.params.get("os_type", "linux") == "windows" else "-c 3"
-        status, output = src_vm.session.cmd_status_output("ping %s %s" % (address, count_limit))
+        return src_vm.session.cmd_status_output("ping %s %s" % (address, count_limit))
 
-        if validate_status and status != 0:
+    def ping_validate(self, src_vm, dst_vm, dst_nic="onic", address=None):
+        """
+        Pings a vm from another vm to test basic ICMP connectivity and bails on nonzero status.
+
+        Arguments are similar to the ones from :py:method:`ping` with the exception of:
+
+        :raises: :py:class:`exceptions.TestError` if the performed ping failed
+
+        This method does not perform a refined exit status check, you can use the non-validated
+        version and perform your own customization if you wish.
+        """
+        status, output = self.ping(src_vm, dst_vm, dst_nic=dst_nic, address=address)
+
+        if status != 0:
             raise exceptions.TestError("Ping of %s (%s) from %s unsuccessful" % (dst_vm.name, address, src_vm.name))
-        elif validate_status:
+        else:
             logging.debug(output.split("\n")[-3])
-        return status, output
 
     def ping_all(self):
         """
@@ -1273,8 +1283,7 @@ class VMNetwork(object):
                                 direction_str = "%s (%s) from %s (%s)" % (node2.name, interface2.ip,
                                                                           node1.name, interface1.ip)
                                 logging.debug("Pinging %s", direction_str)
-                                count_limit = "" if node1.params.get("os_type", "linux") == "windows" else "-c 1"
-                                status, output = node1.platform.session.cmd_status_output("ping %s %s" % (count_limit, interface2.ip))
+                                status, output = self.ping(node1.platform, node2.platform, address=interface2.ip)
                                 failed = failed or status != 0
 
         if failed:
@@ -1282,8 +1291,7 @@ class VMNetwork(object):
         logging.info("Mutual ping of all LAN members successful")
 
     def port_connectivity(self, msg, src_vm, dst_vm, dst_nic="onic",
-                          address=None, port=80, protocol="TCP",
-                          validate_status=False, validate_output="", require_blocked=False):
+                          address=None, port=80, protocol="TCP"):
         """
         Test connectivity using a predefined port (usually in addition to pinging).
 
@@ -1292,7 +1300,7 @@ class VMNetwork(object):
         :param str msg: probing data to be sent to the port
         :param int port: forwarding port to send the message to
         :param str protocol: protocol type (TCP, UDP or something over them)
-        :returns: the result of the last successful or performed port connection attempt
+        :returns: the result of the performed port connection attempt
         :rtype: (int, str)
         """
         if address is None:
@@ -1302,29 +1310,46 @@ class VMNetwork(object):
                      src_vm.name, dst_vm.name, address, protocol, port)
         src_vm.session.sendline("cat <<EOF | socat - %s:%s:%s,connect-timeout=3" % (protocol, address, port))
         src_vm.session.sendline(msg)
+
         status, output = src_vm.session.cmd_status_output("EOF", safe=True)
         logging.debug("Status %s and output from the connection attempt:\n%s", status, output)
-
-        if validate_status:
-            status_condition = status != 0 if require_blocked else status == 0
-            if status_condition:
-                logging.info("Port %s connection status matched", port)
-            else:
-                state = "reachable" if require_blocked else "unreachable"
-                raise exceptions.TestError("Port of %s (%s:%s) is %s from %s" % (dst_vm.name, address, port, state, src_vm.name))
-        if validate_output:
-            output_condition = validate_output not in output if require_blocked else validate_output in output
-            if output_condition:
-                state = "blocked" if require_blocked else "succeeded"
-                logging.info("Connection %s as expected", state)
-            else:
-                state = "not blocked" if require_blocked else "failed"
-                raise exceptions.TestFail("Connecting the port %s %s with the following outputs:\n%s" % (port, state, output))
         return status, output
 
+    def port_connectivity_validate(self, msg, src_vm, dst_vm, dst_nic="onic",
+                                   address=None, port=80, protocol="TCP",
+                                   validate_output="", require_blocked=False):
+        """
+        Test connectivity using a predefined port (usually in addition to pinging).
+
+        Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
+
+        :param str validate_output: string to find in the command output and validate against
+        :param bool require_blocked: whether to expect nonzero status from the connection attempt
+        :raises: :py:class:`exceptions.TestError` if the performed port connection attempt failed
+
+        This method does not perform a refined exit status check, you can use the non-validated
+        version and perform your own customization if you wish.
+        """
+        status, output = self.port_connectivity(msg, src_vm, dst_vm, dst_nic=dst_nic,
+                                                address=address, port=port, protocol=protocol)
+
+        status_condition = status != 0 if require_blocked else status == 0
+        if status_condition:
+            logging.info("Port %s connection status matched", port)
+        else:
+            state = "reachable" if require_blocked else "unreachable"
+            raise exceptions.TestError("Port of %s (%s:%s) is %s from %s" % (dst_vm.name, address, port, state, src_vm.name))
+
+        output_condition = validate_output not in output if require_blocked else validate_output in output
+        if output_condition:
+            state = "blocked" if require_blocked else "succeeded"
+            logging.info("Connection %s as expected", state)
+        else:
+            state = "not blocked" if require_blocked else "failed"
+            raise exceptions.TestFail("Connecting the port %s %s with the following outputs:\n%s" % (port, state, output))
+
     def http_connectivity(self, src_vm, dst_vm, dst_nic="onic",
-                          address=None, port=80, protocol="HTTP",
-                          require_blocked=False):
+                          address=None, port=80, protocol="HTTP"):
         """
         Test connectivity using an HTTP port and protocol.
 
@@ -1335,13 +1360,26 @@ class VMNetwork(object):
         logging.debug("Sending probing data for the HTTP protocol")
         if protocol != "HTTP":
             raise exceptions.TestError("Invalid protocol for HTTP port connectivity: %s" % protocol)
-        return self.port_connectivity("GET / HTTP/1.0", src_vm, dst_vm, dst_nic, address, port, "TCP",
-                                      validate_status=True, validate_output="HTML",
-                                      require_blocked=require_blocked)
+        return self.port_connectivity("GET / HTTP/1.0", src_vm, dst_vm, dst_nic, address, port, "TCP")
+
+    def http_connectivity_validate(self, src_vm, dst_vm, dst_nic="onic",
+                                   address=None, port=80, protocol="HTTP",
+                                   require_blocked=False):
+        """
+        Test connectivity using an HTTP port and protocol.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method.
+
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        logging.debug("Sending probing data for the HTTP protocol")
+        if protocol != "HTTP":
+            raise exceptions.TestError("Invalid protocol for HTTP port connectivity: %s" % protocol)
+        return self.port_connectivity_validate("GET / HTTP/1.0", src_vm, dst_vm, dst_nic, address, port, "TCP",
+                                               validate_output="HTML", require_blocked=require_blocked)
 
     def https_connectivity(self, src_vm, dst_vm, dst_nic="onic",
-                           address=None, port=443, protocol="HTTPS",
-                           require_blocked=False):
+                           address=None, port=443, protocol="HTTPS"):
         """
         Test connectivity using an HTTPS port and protocol.
 
@@ -1354,24 +1392,34 @@ class VMNetwork(object):
             address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
         if protocol != "HTTPS":
             raise exceptions.TestError("Invalid protocol for HTTPS port connectivity: %s" % protocol)
-
         address = "%s://%s:%s" % (protocol.lower(), address, port)
         # make self-signed certificates nonfatal for the HTTPS probing
         cmd = "curl -k " + address
         status, output = src_vm.session.cmd_status_output(cmd)
         logging.debug("Got status %s and page content:\n%s", status, output)
+        return status, output
 
+    def https_connectivity_validate(self, src_vm, dst_vm, dst_nic="onic",
+                                    address=None, port=443, protocol="HTTPS",
+                                    require_blocked=False):
+        """
+        Test connectivity using an HTTPS port and protocol.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method.
+
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        status, output = self.https_connectivity(src_vm, dst_vm, dst_nic=dst_nic,
+                                                 address=address, port=port, protocol=protocol)
         if require_blocked:
             if status == 0 and "HTML" in output:
                 raise exceptions.TestFail("HTTPS connection to %s failed with the following outputs:\n%s" % (port, output))
         else:
             if status != 0 and "HTML" not in output:
                 raise exceptions.TestFail("HTTPS connection to %s succeeded with the following outputs:\n%s" % (port, output))
-        return status, output
 
     def ssh_connectivity(self, src_vm, dst_vm, dst_nic="onic",
-                         address=None, port=22, protocol="SSH",
-                         require_blocked=False):
+                         address=None, port=22, protocol="SSH"):
         """
         Test connectivity using an SSH port and protocol.
 
@@ -1382,9 +1430,23 @@ class VMNetwork(object):
         logging.debug("Sending probing data for the SSH protocol")
         if protocol != "SSH":
             raise exceptions.TestError("Invalid protocol for SSH port connectivity: %s" % protocol)
-        return self.port_connectivity("test", src_vm, dst_vm, dst_nic, address, port, "TCP",
-                                      validate_status=True, validate_output="OpenSSH",
-                                      require_blocked=require_blocked)
+        return self.port_connectivity("test", src_vm, dst_vm, dst_nic, address, port, "TCP")
+
+    def ssh_connectivity_validate(self, src_vm, dst_vm, dst_nic="onic",
+                                  address=None, port=22, protocol="SSH",
+                                  require_blocked=False):
+        """
+        Test connectivity using an SSH port and protocol.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method.
+
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        logging.debug("Sending probing data for the SSH protocol")
+        if protocol != "SSH":
+            raise exceptions.TestError("Invalid protocol for SSH port connectivity: %s" % protocol)
+        return self.port_connectivity_validate("test", src_vm, dst_vm, dst_nic, address, port, "TCP",
+                                               validate_output="OpenSSH", require_blocked=require_blocked)
 
     def _ssh_client_hostname(self, src_vm, dst_vm, ssh_ip, timeout=10):
         logging.info("Retrieving host name of client %s from %s through ip %s",
@@ -1513,7 +1575,27 @@ class VMNetwork(object):
         cmd = "curl -u %s --disable-epsv %s" % (credentials, address)
         status, output = src_vm.session.cmd_status_output(cmd)
         logging.debug("Got status %s and file content:\n%s", status, output)
-        return status == 0 and msg in output
+        return status, output
+
+    def ftp_connectivity_validate(self, msg, file, src_vm, dst_vm, dst_nic="onic",
+                                  address=None, port=21, require_blocked=False):
+        """
+        Send file request to an FTP destination port and address and verify it was received.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
+
+        :param file: file to retrieve containing the test data or none if sent directly
+        :type file: str or None
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        status, output = self.ftp_connectivity(msg, file, src_vm, dst_vm, dst_nic=dst_nic,
+                                               address=address, port=port)
+        if require_blocked:
+            if status == 0 and msg in output:
+                raise exceptions.TestFail("FTP connection to %s failed with the following outputs:\n%s" % (port, output))
+        else:
+            if status != 0 and msg not in output:
+                raise exceptions.TestFail("FTP connection to %s succeeded with the following outputs:\n%s" % (port, output))
 
     def tftp_connectivity(self, msg, file, src_vm, dst_vm, dst_nic="onic",
                           address=None, port=69):
@@ -1534,4 +1616,23 @@ class VMNetwork(object):
         cmd = "curl " + address
         status, output = src_vm.session.cmd_status_output(cmd)
         logging.debug("Got status %s and file content:\n%s", status, output)
-        return status == 0 and msg in output
+        return status, output
+
+    def tftp_connectivity_validate(self, msg, file, src_vm, dst_vm, dst_nic="onic",
+                                   address=None, port=69, require_blocked=False):
+        """
+        Send file request to an TFTP destination port and address and verify it was received.
+        Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
+
+        :param file: file to retrieve containing the test data or none if sent directly
+        :type file: str or None
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        status, output = self.tftp_connectivity(msg, file, src_vm, dst_vm, dst_nic=dst_nic,
+                                                address=address, port=port)
+        if require_blocked:
+            if status == 0 and msg in output:
+                raise exceptions.TestFail("TFTP connection to %s failed with the following outputs:\n%s" % (port, output))
+        else:
+            if status != 0 and msg not in output:
+                raise exceptions.TestFail("TFTP connection to %s succeeded with the following outputs:\n%s" % (port, output))
