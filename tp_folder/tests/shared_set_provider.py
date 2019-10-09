@@ -38,4 +38,4 @@ def run(test, params, env):
     vmnet = env.get_vmnet()
     vm, session = vmnet.get_single_vm_with_session()
 
-    vmnet.ping()
+    vmnet.ping_all()
