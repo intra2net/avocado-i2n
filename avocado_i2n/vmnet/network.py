@@ -16,7 +16,7 @@ needs, etc.). It can be used to test Proxy, Port forwarding,
 VPN, NAT, etc.
 
 Each vm is a network node and can have one of few currently supported
-operating systems. For VPN/GRE functionality it is also required to have
+operating systems. For ease of defaults use it is recommended to have
 at least three nics, respectively named "lnic" for local isolated
 connection to the host, "inic" for (internet) connection to the other
 nodes, and "onic" for other connection to own LAN.
@@ -71,7 +71,7 @@ class VMNetwork(object):
         self.new_node = VMNode
         self.new_interface = VMInterface
         self.new_netconfig = VMNetconfig
-        self.new_vpnconn = VMTunnel
+        self.new_tunnel = VMTunnel
 
         # component instances
         self.nodes = {}
@@ -223,7 +223,7 @@ class VMNetwork(object):
             interface_attached = False
             logging.debug("Generating netconfigs for interface {0}".format(interface))
             for netconfig in self.netconfigs.values():
-                if netconfig.can_add(interface):
+                if netconfig.can_add_interface(interface):
                     logging.debug("Adding interface {0}".format(interface))
                     netconfig.add_interface(interface)
                     interface_attached = True
@@ -707,7 +707,7 @@ class VMNetwork(object):
                                         self.test.bindir)
 
             logging.debug("Integrating the ephemeral vm in the vm network")
-            self.nodes[client_name] = self.new_node(client)
+            self.nodes[client_name] = self.new_node(client, ephemeral=True)
             self.integrate_node(self.nodes[client_name])
 
             logging.debug("Adding as an intraclient and booting the ephemeral vm")
@@ -728,12 +728,12 @@ class VMNetwork(object):
         overwrite_dict = {}
         overwrite_dict["vms_%s" % server_name] = ""
 
-        for i in range(clients_num):
+        for i in range(1, clients_num+1):
             logging.debug("Adding client %i for %s", i, server_name)
             server_interface = self.nodes[server_name].interfaces[nic]
 
             # main
-            client = "%sclient%i" % (server_name, i)
+            client = "%seph%i" % (server_name, i)
             overwrite_dict["vms_%s" % server_name] += "%s " % client
             overwrite_dict["start_vm_%s" % client] = "yes"
             overwrite_dict["kill_vm_%s" % client] = self.params.get("kill_clients", "yes")
@@ -803,7 +803,7 @@ class VMNetwork(object):
         else:
             raise NotImplementedError("Trying to configure nic on %s with an unsupported os %s" % (vm.name, vm.params["os_variant"]))
 
-    def change_network_address(self, netconfig, new_ip, new_mask=None, new_gw=None):
+    def change_network_address(self, netconfig, new_ip, new_mask=None):
         """
         Change the ip of a netconfig and more specifically of the network interface of
         any vm participating in it.
@@ -813,25 +813,22 @@ class VMNetwork(object):
         :param str new_ip: new IP address for the netconfig
         :param new_mask: new network mask for the netconfig
         :type new_mask: str or None
-        :param new_gw: new gateway for the netconfig
-        :type new_gw: str or None
 
         .. note:: The network must have at least one interface in order to change its address.
         """
         logging.debug("Updating the network configuration of the vm network")
         for interface in list(netconfig.interfaces.values()):
             del netconfig.interfaces[interface.ip]
-            interface.ip = netconfig.translate_address(interface, new_ip)
+            interface.ip = netconfig.translate_address(interface.ip, new_ip)
             netconfig.interfaces[interface.ip] = interface
 
         assert len(netconfig.interfaces) > 0, "The network %s must have at least one interface" % netconfig
         nic_interface = list(netconfig.interfaces.values())[-1]
         nic_params = nic_interface.params.copy()
         nic_params["ip"] = new_ip
+        nic_params["ip_provider"] = netconfig.translate_address(netconfig.gateway, new_ip)
         if new_mask is not None:
             nic_params["netmask"] = new_mask
-        if new_gw is not None:
-            nic_params["ip_provider"] = new_gw
         interface = self.new_interface(nic_interface.name, nic_params)
 
         del self.netconfigs[netconfig.net_ip]
@@ -877,290 +874,228 @@ class VMNetwork(object):
         client_iface.netconfig.gateway = server_iface.ip
         self._reconfigure_vm_nic(client_nic, client_iface, client)
 
-    def configure_gre_tunnel_between_vms(self, vm1, vm2, ip1=None, ip2=None):
+    def configure_tunnel_between_vms(self, name, vm1, vm2,
+                                     local1=None, remote1=None, peer1=None, auth=None,
+                                     apply_extra_options=None):
         """
-        Configure a GRE connection (tunnel) between two vms.
+        Configure a tunnel between two vms.
 
+        :param str name: name of the tunnel
         :param vm1: left side vm of the tunnel
         :type vm1: VM object
         :param vm2: right side vm of the tunnel
         :type vm2: VM object
-        :param str ip1: IP of the left vm
-        :param str ip2: IP of the right vm
-
-        If `ip1` and/or `ip2` are provided, they will be used as remote IPs instead
-        of the default remote interface IPs. A typical use case where `ip1/ip2`
-        are needed is when one or both of the vms are NAT-ed and their default
-        (inic) IPs are not accessible from the outside.
+        :param local1: left local type as in tunnel constructor
+        :type local1: {str, str}
+        :param remote1: left remote type as in tunnel constructor
+        :type remote1: {str, str}
+        :param peer1: left peer type as in tunnel constructor
+        :type peer1: {str, str}
+        :param auth: authentication configuration as described in the tunnel constructor
+        :type auth: {str, str}
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, any}
         """
-        net1 = "%snet" % vm2.name
-        local1 = self.interfaces["%s.onic" % vm1.name]
-        remote1 = self.interfaces["%s.inic" % vm1.name]
-        net2 = "%snet" % vm1.name
-        local2 = self.interfaces["%s.onic" % vm2.name]
-        remote2 = self.interfaces["%s.inic" % vm2.name]
-
-        add_cmd = "ip tunnel add %s mode gre remote %s local %s ttl 255"
-        vm1.session.cmd(add_cmd % (net1, ip2 if ip2 is not None else remote2.ip, remote1.ip))
-        vm1.session.cmd("ip link set %s up" % net1)
-        vm1.session.cmd("ip addr add %s dev %s" % (local1.ip, net1))
-        vm1.session.cmd("ip route add %s/%s dev %s" % (local2.netconfig.net_ip,
-                                                       local2.netconfig.mask_bit,
-                                                       net1))
-        vm2.session.cmd(add_cmd % (net2, ip1 if ip1 is not None else remote1.ip, remote2.ip))
-        vm2.session.cmd("ip link set %s up" % net2)
-        vm2.session.cmd("ip addr add %s dev %s" % (local2.ip, net2))
-        vm2.session.cmd("ip route add %s/%s dev %s" % (local1.netconfig.net_ip,
-                                                       local1.netconfig.mask_bit,
-                                                       net2))
-
-        gre_protocol_id = 47
-        if ip1 is not None:
-            vm1.session.cmd("iptables -I INPUT -i eth1 -p %s -j ACCEPT" % gre_protocol_id)
-        vm1.session.cmd("iptables -I INPUT -i %snet -p icmp -j ACCEPT" % vm2.name)
-        vm1.session.cmd("iptables -I OUTPUT -o %snet -p icmp -j ACCEPT" % vm2.name)
-        if ip2 is not None:
-            vm2.session.cmd("iptables -I INPUT -i eth1 -p %s -j ACCEPT" % gre_protocol_id)
-        vm2.session.cmd("iptables -I INPUT -i %snet -p icmp -j ACCEPT" % vm1.name)
-        vm2.session.cmd("iptables -I OUTPUT -o %snet -p icmp -j ACCEPT" % vm1.name)
-
-    def configure_vpn_between_vms(self, vpn_name, vm1, vm2, left_variant=None, psk_variant=None):
-        """
-        Configure a VPN connection (tunnel) between two vms.
-
-        :param str vpn_name: name of the VPN connection
-        :param vm1: left side vm of the VPN tunnel
-        :type vm1: VM object
-        :param vm2: right side vm of the VPN tunnel
-        :type vm2: VM object
-        :param left_variant: left side configuration (right side is determined from it)
-        :type left_variant: (str, str, str)
-        :param psk_variant: PSK configuration in the case PSK is used
-        :type psk_variant: (str, str, str)
-        """
-        if left_variant is None:
-            left_variant = [self.params.get("lan_type", "nic"),
-                            self.params.get("remote_type", "custom"),
-                            self.params.get("peer_type", "ip")]
-        if psk_variant is None and self.params.get("psk", "") != "":
-            psk_variant = [self.params["psk"],
-                           self.params["own_id_type"],
-                           self.params["foreign_id_type"]]
-
         left_node = self.nodes[vm1.name]
         right_node = self.nodes[vm2.name]
-        self.tunnels[vpn_name] = self.new_vpnconn(vpn_name, left_node, right_node,
-                                                  self, left_variant, psk_variant)
-        self.tunnels[vpn_name].configure_between_endpoints(self, left_variant, psk_variant)
+        self.tunnels[name] = self.new_tunnel(name, left_node, right_node,
+                                             local1, remote1, peer1, auth)
+        self.tunnels[name].configure_between_endpoints(apply_extra_options)
 
-    def configure_vpn_on_vm(self, vpn_name, vm, apply_key_own=False,
-                            apply_key_foreign=False, apply_firewall_ruleset=False):
+    def configure_tunnel_on_vm(self, name, vm, apply_extra_options=None):
         """
-        Configure a VPN connection (tunnel) on a vm, assuming it is manually
+        Configure a tunnel on a vm, assuming it is manually
         or independently configured on the other end.
 
-        :param str vpn_name: name of the VPN connection
-        :param vm: vm where the VPN will be configured
+        :param str name: name of the tunnel
+        :param vm: vm where the tunnel will be configured
         :type vm: VM object
-        :param bool apply_key_own: whether to apply KEY_OWN configuration
-        :param bool apply_key_foreign: whether to apply KEY_FOREIGN configuration
-        :param bool apply_firewall_ruleset: whether to apply FIREWALL_RULESET configuration
-        :raises: :py:class:`exceptions.KeyError` if not all VPN parameters are present
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, any}
+        :raises: :py:class:`exceptions.KeyError` if not all tunnel parameters are present
 
-        Currently the method uses only existing VPN connections.
+        Currently the method uses only existing tunnels.
         """
-        if vpn_name not in self.tunnels:
-            raise KeyError("Currently, every VPN connection has to be created defining both"
+        if name not in self.tunnels:
+            raise KeyError("Currently, every tunnel has to be created defining both"
                            " ends and it can only then be configured on a single vm %s" % vm.name)
 
-        self.tunnels[vpn_name].configure_on_endpoint(vm, self, apply_key_own,
-                                                     apply_key_foreign, apply_firewall_ruleset)
+        node = self.nodes[vm.name]
+        self.tunnels[name].configure_on_endpoint(node, apply_extra_options)
 
-    def configure_roadwarrior_vpn_on_server(self, vpn_name, server, client, apply_key_own=False,
-                                            apply_key_foreign=False, apply_firewall_ruleset=False):
+    def configure_roadwarrior_vpn_on_server(self, name, server, client,
+                                            local1=None, remote1=None, auth=None,
+                                            apply_extra_options=None):
         """
         Configure a VPN connection (tunnel) on a vm to play the role of a VPN
         server for any individual clients to access it from the internet.
 
-        :param str vpn_name: name of the VPN connection
+        :param str name: name of the VPN connection
         :param server: vm which will be the VPN server for roadwarrior connections
         :type server: VM object
         :param client: vm which will be connecting individual device
         :type client: VM object
-        :param bool apply_key_own: whether to apply KEY_OWN configuration
-        :param bool apply_key_foreign: whether to apply KEY_FOREIGN configuration
-        :param bool apply_firewall_ruleset: whether to apply FIREWALL_RULESET configuration
+        :param local1: left local type as in tunnel constructor
+        :type local1: {str, str}
+        :param remote1: left remote type as in tunnel constructor
+        :type remote1: {str, str}
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, any}
 
         Regarding the client, only its parameters will be updated by this method.
         """
+        if local1 is None:
+            local1 = {"type": "nic", "nic": "onic"}
+        if remote1 is None:
+            remote1 = {"type": "modeconfig", "modeconfig_ip": "172.30.0.1"}
+        peer1 = {"type": "dynip", "nic": "inic"}
+
         left_node = self.nodes[server.name]
         right_node = self.nodes[client.name]
-        self.tunnels[vpn_name] = self.new_vpnconn(vpn_name, left_node, right_node, self,
-                                                  [self.params.get("lan_type", "nic"),
-                                                   self.params.get("remote_type", "modeconfig"),
-                                                   self.params.get("peer_type", "dynip")],
-                                                  roadwarrior=True)
+        self.tunnels[name] = self.new_tunnel(name, left_node, right_node,
+                                             local1, remote1, peer1, auth)
+        self.configure_tunnel_on_vm(name, server, apply_extra_options)
 
-        # some parameter modification for the road warrior connection
-        vpn_params = self.tunnels[vpn_name].params
-        # add all new vpn parameters to the already defined vm parameters
-        # and throw away unnecessary parameters from this function
-        params1 = vpn_params.object_params(client.name)
-        params2 = vpn_params.object_params(server.name)
-        params1.update(client.params)
-        params2.update(server.params)
-        client.params = params1
-        server.params = params2
-
-        self.configure_vpn_on_vm(vpn_name, server, apply_key_own,
-                                 apply_key_foreign, apply_firewall_ruleset)
-
-    def configure_vpn_route(self, vms, vpns, left_variant=None, psk_variant=None):
+    def configure_vpn_route(self, vms, vpns,
+                            remote1=None, peer1=None, auth=None,
+                            extra_apply_options=None):
         """
-        Build a set of vpn connections using vpn forwarding to gain access from
+        Build a set of VPN connections using VPN forwarding to gain access from
         one vm to another.
 
         :param vms: vms to participate in the VPN route
         :type vms: [VM object]
         :param vpns: VPNs over which the route will be constructed
         :type vpns: [str]
-        :param left_variant: left side configuration (right side is determined from it)
-        :type left_variant: (str, str, str)
-        :param psk_variant: PSK configuration in the case PSK is used
-        :type psk_variant: (str, str, str)
+        :param remote1: left remote type as in tunnel constructor
+        :type remote1: {str, str}
+        :param peer1: left peer type as in tunnel constructor
+        :type peer1: {str, str}
+        :param auth: authentication configuration as described in the tunnel constructor
+        :type auth: {str, str}
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, any}
         :raises: :py:class:`exceptions.TestError` if #vpns < #vms - 1 or #vpns < 2 or #vms < 2
 
-        Infrastructure of point to point vpn connections must already exist.
+        Infrastructure of point to point VPN connections must already exist.
         """
-        if left_variant is None:
-            left_variant = [self.params.get("lan_type", "nic"),
-                            self.params.get("remote_type", "custom"),
-                            self.params.get("peer_type", "ip")]
-        if psk_variant is None and self.params.get("psk", "") != "":
-            psk_variant = [self.params["psk"],
-                           self.params["own_id_type"],
-                           self.params["foreign_id_type"]]
-
         if len(vpns) < 2 or len(vms) < 2 or len(vpns) < len(vms) - 1:
-            raise exceptions.TestError("Insufficient vpn infrastructure - unnecessary vpn forwarding")
+            raise exceptions.TestError("Insufficient VPN infrastructure - unnecessary VPN forwarding")
 
-        logging.info("Bulding vpn route %s", "-".join(vm.name for vm in vms))
+        logging.info("Building a VPN route %s", "-".join(vm.name for vm in vms))
         for i in range(len(vpns)):
-            fvpn = "%s_fwd" % vpns[i]
+            fvpn = "%sfwd" % vpns[i]
             if i == 0:
-                prev_net = vms[i + 1].params.object_params(vpns[i]).get("vpnconn_remote_net")
-                next_net = vms[i + 1].params.object_params(vpns[i + 1]).get("vpnconn_remote_net")
+                prev_net = vms[i+1].params.object_params(vpns[i]).get("vpnconn_remote_net")
+                prev_mask = vms[i+1].params.object_params(vpns[i]).get("vpnconn_remote_netmask")
+                next_net = vms[i+1].params.object_params(vpns[i+1]).get("vpnconn_remote_net")
+                next_mask = vms[i+1].params.object_params(vpns[i+1]).get("vpnconn_remote_netmask")
             elif i == len(vpns) - 1:
-                prev_net = vms[i].params.object_params(vpns[i - 1]).get("vpnconn_remote_net")
+                prev_net = vms[i].params.object_params(vpns[i-1]).get("vpnconn_remote_net")
+                prev_mask = vms[i].params.object_params(vpns[i-1]).get("vpnconn_remote_netmask")
                 next_net = vms[i].params.object_params(vpns[i]).get("vpnconn_remote_net")
+                next_mask = vms[i].params.object_params(vpns[i]).get("vpnconn_remote_netmask")
             else:
-                prev_net = vms[i - 1].params.object_params(vpns[i - 1]).get("vpnconn_remote_net")
-                next_net = vms[i + 1].params.object_params(vpns[i + 1]).get("vpnconn_remote_net")
-            logging.debug("Retrieved previous network %s and next network %s", prev_net, next_net)
+                prev_net = vms[i-1].params.object_params(vpns[i-1]).get("vpnconn_remote_net")
+                prev_mask = vms[i-1].params.object_params(vpns[i-1]).get("vpnconn_remote_netmask")
+                next_net = vms[i+1].params.object_params(vpns[i+1]).get("vpnconn_remote_net")
+                next_mask = vms[i+1].params.object_params(vpns[i+1]).get("vpnconn_remote_mask")
+            logging.debug("Retrieved previous network %s/%s and next network %s/%s",
+                          prev_net, prev_mask, next_net, next_mask)
 
-            vms[i].params["vpnconn_lan_type_%s" % fvpn] = "CUSTOM"
-            vms[i].params["vpnconn_lan_net_%s" % fvpn] = prev_net
+            local1 = {"type": "custom",
+                      "lnet": prev_net, "lmask": prev_mask,
+                      "rnet": next_net, "rmask": next_mask}
+
             vms[i].params["vpnconn_remote_net_%s" % fvpn] = next_net
-            vms[i + 1].params["vpnconn_lan_type_%s" % fvpn] = "CUSTOM"
-            vms[i + 1].params["vpnconn_lan_net_%s" % fvpn] = next_net
-            vms[i + 1].params["vpnconn_remote_net_%s" % fvpn] = prev_net
+            vms[i+1].params["vpnconn_remote_net_%s" % fvpn] = prev_net
 
-            self.configure_vpn_between_vms(fvpn, vms[i], vms[i + 1], left_variant, psk_variant)
+            self.configure_tunnel_between_vms(fvpn, vms[i], vms[i + 1],
+                                              local1, remote1, peer1, auth,
+                                              extra_apply_options)
 
     """VM network test methods"""
-    def get_vpn_accessible_ip(self, src_vm, dst_vm, dst_vm_server=None, netconfig_num=3):
+    def get_tunnel_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):
         """
-        Get acessible ip from a vm to a vm given using heuristics about
-        the netconfigs of the entire vm network.
+        Get an accessible IP from a vm to a vm given using heuristics about
+        the tunnels and netconfigs of the entire vm network.
 
         :param src_vm: source vm whose IPs are starting points
         :type src_vm: VM object
         :param dst_vm: destination vm whose IPs are ending points
         :type dst_vm: VM object
-        :param dst_vm_server: explicit server (of network) for the destination vm
-        :type dst_vm_server: VM object
-        :param int netconfig_num: legacy parameter needed for finding IP through VPN routes
+        :param str dst_nic: network interface for the destination vm
         :returns: the IP with which the destination vm can be accessed from the source vm
         :rtype: str
         :raises: :py:class:`exceptions.TestError` if the destination server is not a server or
-            the source or destination vms are not on the network
+            the source or destination vms are not connected by a tunnel
 
         This ip can then be used for ping, tcp tests, etc.
-
-        .. note:: Keep in mind that strict naming conventions of the vpn connections
-            between netconfigs are required. When you decide about the parameters of a
-            vm, you have to append them with '_vpn_X.X' where the two X are the indices
-            of the netconfigs where the servers are located, sorted in ascending order.
         """
-        if dst_vm_server is None:
-            dst_vm_server = dst_vm
-            if "client" in dst_vm_server:
-                raise exceptions.TestError("The client vm %s cannot be a VPN server" % dst_vm.name)
-        if "client" in dst_vm.name:
-            interface = self.interfaces["%s.%s" % (dst_vm.name, dst_vm.params["nics"])]
+        dst_node = self.nodes[dst_vm.name]
+        if dst_node.ephemeral:
+            # ephemeral clients have only one interface
+            dst_iface = dst_node.get_single_interface()
+            server_node = dst_iface.netconfig.interfaces[dst_iface.netconfig.gateway].node
         else:
-            # NOTE: the "onic" interface is the only one used for VPN connections
-            interface = self.interfaces["%s.onic" % dst_vm.name]
+            dst_iface = self.interfaces["%s.%s" % (dst_vm.name, dst_nic)]
+            server_node = self.nodes[dst_vm.name]
 
-        def get_vpn_id():
-            src_index = -1
-            dst_index = -1
-            for i in range(netconfig_num):
-                if "vm%i" % (i+1) in src_vm.name:
-                    src_index = i
-                if "vm%i" % (i+1) in dst_vm.name:
-                    dst_index = i
-                if src_index != -1 and dst_index != -1:
-                    break
-            if src_index == -1:
-                raise exceptions.TestError("The source vm %s could not be found in any local network" % src_vm.name)
-            if dst_index == -1:
-                raise exceptions.TestError("The destination vm %s could not be found in any local network" % dst_vm.name)
-            if src_index == dst_index:
-                raise exceptions.TestError("The source vm %s and the destination vm %s should not be located in the same network"
-                                      " in order to be accessible through a VPN connection" % (src_vm.name, dst_vm.name))
-            # sort indices to get the universal vpn id
-            if src_index < dst_index:
-                vpn_id = "vpn%s.%s" % (src_index, dst_index)
-            else:
-                vpn_id = "vpn%s.%s" % (dst_index, src_index)
-            logging.debug("Found a vpn connection with id %s between %s and %s",
-                          vpn_id, src_vm.name, dst_vm.name)
-            return vpn_id
+        node1, node2 = self.nodes[src_vm.name], self.nodes[dst_vm.name]
+        for id, tunnel in self.tunnels.items():
+            if tunnel.connects_nodes(node1, node2):
+                logging.debug("Found a tunnel with id %s between %s and %s",
+                              id, src_vm.name, dst_vm.name)
+                break
+        else:
+            raise exceptions.TestError("The source %s and destination %s are not connected by a tunnel" % (src_vm.name, dst_vm.name))
+        tunnel_params = tunnel.left_params if server_node == tunnel.left else tunnel.right_params
 
-        vpn_id = get_vpn_id()
         # try to get translated ip (NAT) and if not get inner ip which is used
-        # in the default vpn configuration
-        if "client" in dst_vm.name:
-            vpn_params = dst_vm_server.params.object_params(vpn_id)
-            nat_ip_server = vpn_params.get("ip_nat")
+        # in the default tunnel configuration
+        if self.nodes[dst_vm.name].ephemeral:
+            nat_ip_server = tunnel_params.get("ip_nat")
             if nat_ip_server is not None:
                 logging.debug("Obtaining translated IP address of an ephemeral client %s",
                               dst_vm.name)
-                nat_ip = interface.netconfig.translate_address(interface, nat_ip_server)
+                nat_ip = dst_iface.netconfig.translate_address(dst_iface.ip, nat_ip_server)
                 logging.debug("Retrieved network translated ip %s for %s", nat_ip, dst_vm.name)
             else:
-                nat_ip = interface.ip
+                nat_ip = dst_iface.ip
                 logging.debug("Retrieved original ip %s for %s", nat_ip, dst_vm.name)
         else:
-            vpn_params = dst_vm.params.object_params(vpn_id)
-            nat_ip = vpn_params.get("ip_nat", interface.ip)
+            nat_ip = tunnel_params.get("ip_nat", dst_iface.ip)
             logging.debug("Retrieved network translated ip %s for %s", nat_ip, dst_vm.name)
         return nat_ip
 
-    def _get_accessible_ip(self, src_vm, dst_vm, dst_nic="onic", netconfig_num=3):
-        # determine dst_vm server and interface
-        if "client" in dst_vm.name:
-            dst_vm_server_name = re.match("(vm\d+)client\d+", dst_vm.name).group(1)
-            # NOTE: ephemeral clients have only one nic so force its use
-            dst_iface = self.interfaces["%s.%s" % (dst_vm.name, dst_vm.params["nics"])]
+    def get_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):
+        """
+        Get an accessible IP from a vm to a vm given using heuristics about
+        the tunnels and netconfigs of the entire vm network.
+
+        :param src_vm: source vm whose IPs are starting points
+        :type src_vm: VM object
+        :param dst_vm: destination vm whose IPs are ending points
+        :type dst_vm: VM object
+        :param str dst_nic: network interface for the destination vm
+        :returns: the IP with which the destination vm can be accessed from the source vm
+        :rtype: str
+
+        This ip can then be used for ping, tcp tests, etc.
+        """
+        logging.debug("Searching for IP of %s that is accessible to %s", dst_vm.name, src_vm.name)
+        dst_node = self.nodes[dst_vm.name]
+        if dst_node.ephemeral:
+            # ephemeral clients have only one interface
+            dst_iface = dst_node.get_single_interface()
+            dst_vm_server = dst_iface.netconfig.interfaces[dst_iface.netconfig.gateway].node.platform
         else:
-            dst_vm_server_name = dst_vm.name
             dst_iface = self.interfaces["%s.%s" % (dst_vm.name, dst_nic)]
-        dst_vm_server = self.nodes[dst_vm_server_name].platform
+            dst_vm_server = self.nodes[dst_vm.name].platform
 
         # check if the source vm shares a network with a fixed destination nic
-        for src_iface in self.nodes[src_vm.name].interfaces.values():
+        src_node = self.nodes[src_vm.name]
+        for src_iface in src_node.interfaces.values():
             if src_iface.netconfig == dst_iface.netconfig:
                 logging.debug("Internal IP %s of %s is accessible to %s",
                               dst_iface.ip, dst_vm.name, src_vm.name)
@@ -1169,13 +1104,11 @@ class VMNetwork(object):
         # TODO: we could also do some general routing and gateway search but this is
         # rather unnecessary with the current user requirements
 
-        # do a VPN search as the last resort (of what we have implemented so far)
-        logging.debug("No accessible IP found in local networks, falling back to VPN search")
-        return self.get_vpn_accessible_ip(src_vm, dst_vm,
-                                          dst_vm_server=dst_vm_server,
-                                          netconfig_num=netconfig_num)
+        # do a tunnel search as the last resort (of what we have implemented so far)
+        logging.debug("No accessible IP found in local networks, falling back to tunnel search")
+        return self.get_tunnel_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
 
-    def verify_vpn_in_log(self, src_vm, dst_vm, log_vm=None, netconfigs_num=3):
+    def verify_vpn_in_log(self, src_vm, dst_vm, log_vm=None):
         """
         Search for the appropriate message in the vpn log file.
 
@@ -1185,7 +1118,6 @@ class VMNetwork(object):
         :type dst_vm: VM object
         :param log_vm: vm where all packets are logged
         :type log_vm: VM object
-        :param int netconfig_num: legacy parameter needed for finding IP through VPN routes
         :raises: :py:class:`exceptions.TestError` if the source or destination vms are not on the network
         :raises: :py:class:`exceptions.TestFail` if the VPN packets were not logged properly
 
@@ -1193,51 +1125,28 @@ class VMNetwork(object):
         """
         if log_vm is None:
             log_vm = dst_vm
-        src_index = -1
-        dst_index = -1
-        log_index = -1
 
-        for i in range(netconfigs_num):
-            if "vm%i" % (i+1) in src_vm.name:
-                src_index = i
-            if "vm%i" % (i+1) in dst_vm.name:
-                dst_index = i
-            if "vm%i" % (i+1) in log_vm.name:
-                log_index = i
-            if src_index != -1 and dst_index != -1 and log_index != -1:
-                if log_index == src_index:
-                    remote_index = dst_index
-                elif log_index == dst_index:
-                    remote_index = src_index
-                else:
-                    # ignore cases where the logging machine is in a different
-                    # netconfig than the source and the destination machine
-                    return
-                if log_index == remote_index:
-                    # ignore cases where the source and destination machine
-                    # are in the same netconfig since no vpn connection is used
-                    return
-                log_message = "VPN%i.%i" % (log_index, remote_index)
+        node1, node2 = self.nodes[src_vm.name], self.nodes[dst_vm.name]
+        for id, tunnel in self.tunnels.items():
+            if tunnel.connects_nodes(node1, node2):
+                logging.debug("Found a vpn connection with id %s between %s and %s",
+                              id, src_vm.name, dst_vm.name)
+                vpn = tunnel
+                left_index, right_index = re.match("^vpn(\d+)\.(\d+)\w*", id).group(1,2)
                 break
-        if src_index == -1:
-            raise exceptions.TestError("The source vm %s could not be found in any local network" % src_vm.name)
-        if dst_index == -1:
-            raise exceptions.TestError("The destination vm %s could not be found in any local network" % dst_vm)
-        if log_index == -1:
-            raise exceptions.TestError("The logging vm %s could not be found in any local network" % log_vm)
+        else:
+            raise exceptions.TestError("The source %s and destination %s are not connected by a tunnel" % (src_vm.name, dst_vm.name))
 
-        wrong_messages = []
-        for i in range(netconfigs_num):
-            if i == log_index or i == remote_index:
-                continue
-            wrong_messages.append("VPN_%i.%i" % (log_index, i))
+        if log_vm == vpn.left.platform:
+            log_index = int(left_index)
+            remote_index = int(right_index)
+        elif log_vm == vpn.right.platform:
+            log_index = int(right_index)
+            remote_index = int(left_index)
+        else:
+            raise exceptions.TestError("The logging vm %s must be one of the VPN endpoints %s or %s" % (log_vm.name, src_vm.name, dst_vm.name))
+        log_message = "VPN%i.%i" % (log_index, remote_index) if log_vm == vpn.left.platform else "VPN%i.%i" % (remote_index, log_index)
         deny_message = "%s_DENY" % log_message
-
-        # BUG: there is a problem in firewall logging of VPN with NAT - skip check to test working features
-        if self.params.get("report_bugs", "yes") == "yes" and log_message == "VPN0.2" and log_vm.params.get("has_logging_bug", "no") == "yes":
-            log = log_vm.session.cmd("rm -f /var/log/messages")
-            log = log_vm.session.cmd("/etc/init.d/rsyslog restart")
-            return
 
         logging.info("Checking log of %s for the firewall rule tag %s ", log_vm.name, log_message)
         log = log_vm.session.cmd("cat /var/log/messages")
@@ -1245,63 +1154,240 @@ class VMNetwork(object):
             raise exceptions.TestFail("No message with %s was found in log" % log_message)
         if deny_message in log:
             raise exceptions.TestFail("The deny message %s was found in log" % deny_message)
-        for wrong_message in wrong_messages:
-            if wrong_message in log:
-                raise exceptions.TestFail("Wrong message %s in addition to %s was found in log" % (wrong_message, log_message))
+        for message in re.findall("VPN_%i\.\d+" % log_index, log):
+            if message != log_message:
+                raise exceptions.TestFail("Wrong message %s in addition to %s was found in log" % (message, log_message))
         logging.info("Ok, resetting the messages log at %s", log_vm.name)
         log = log_vm.session.cmd("rm -f /var/log/messages")
         log = log_vm.session.cmd("/etc/init.d/rsyslog restart")
 
-    def ping(self, src_vm=None, dst_vm=None, ping_dst=None, dst_nic="onic", netconfig_num=3):
+    def ping(self, src_vm, dst_vm, dst_nic="onic", address=None):
         """
-        Pings a vm from another vm to test most basic connectivity.
+        Pings a vm from another vm to test basic ICMP connectivity.
 
         :param src_vm: source vm which will ping
         :type src_vm: VM object
         :param dst_vm: destination vm which will be pinged
         :type dst_vm: VM object
-        :param str ping_dst: explicit IP or domain to use for pinging
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
-        :param int netconfig_num: legacy parameter needed for finding IP through VPN routes
+        :param str address: explicit IP or domain to use for pinging
+        :returns: the status and output of the performed ping
+        :rtype: (int, str)
 
-        If no source and destination vms are provided, the ping happens
-        among all LAN members, throwing an exception if one of the pings fails.
-
-        If no `ping_dst` is provided, the IP is obtained by analyzing the network topology
+        If no `address` is provided, the IP is obtained by analyzing the network topology
         from `src_vm` to `dst_vm`.
 
-        If no `dst_vm` is provided, the ping happens directly to `ping_dst`.
+        If no `dst_vm` is provided, the ping happens directly to `address`.
         """
-        if src_vm is None and dst_vm is None:
-            logging.info("Commencing mutual ping of %d vms (including self ping).", len(self.nodes))
-            failed = False
+        if address is None:
+            address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
 
-            for node1 in self.nodes.values():
-                for interface1 in node1.interfaces.values():
-                    for node2 in self.nodes.values():
-                        for interface2 in node2.interfaces.values():
-                            for netconfig in self.netconfigs.values():
-                                if interface1.ip in netconfig.interfaces and interface2.ip in netconfig.interfaces:
-                                    direction_str = "%s (%s) from %s (%s)" % (node2.name, interface2.ip,
-                                                                              node1.name, interface1.ip)
-                                    try:
-                                        logging.debug("Pinging %s", direction_str)
-                                        node1.platform.session.cmd("ping -c 1 %s" % interface2.ip)
-                                    except aexpect.ShellCmdError:
-                                        logging.info("Failed to ping %s", direction_str)
-                                        failed = True
+        logging.info("Pinging %s (%s) from %s", dst_vm.name, address, src_vm.name)
+        count_limit = "" if src_vm.params.get("os_type", "linux") == "windows" else "-c 3"
+        return src_vm.session.cmd_status_output("ping %s %s" % (address, count_limit))
 
-            if failed is True:
-                exceptions.TestError("Mutual ping of all LAN members unsuccessful.")
-            else:
-                logging.info("Mutual ping of all LAN members successful!")
+    def ping_validate(self, src_vm, dst_vm, dst_nic="onic", address=None):
+        """
+        Pings a vm from another vm to test basic ICMP connectivity and bails on nonzero status.
 
+        Arguments are similar to the ones from :py:method:`ping` with the exception of:
+
+        :raises: :py:class:`exceptions.TestError` if the performed ping failed
+
+        This method does not perform a refined exit status check, you can use the non-validated
+        version and perform your own customization if you wish.
+        """
+        status, output = self.ping(src_vm, dst_vm, dst_nic=dst_nic, address=address)
+
+        if status != 0:
+            raise exceptions.TestError("Ping of %s (%s) from %s unsuccessful" % (dst_vm.name, address, src_vm.name))
         else:
-            if ping_dst is None:
-                ping_dst = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic, netconfig_num=netconfig_num)
-            logging.info("Pinging %s from %s", ping_dst, src_vm.name)
-            result = src_vm.session.cmd("ping %s -c 3" % ping_dst)
-            logging.info(result.split("\n")[-3])
+            logging.debug(output.split("\n")[-3])
+
+    def ping_all(self):
+        """
+        Pings all nodes from each other in order to test complete basic ICMP connectivity.
+
+        :raises: :py:class:`exceptions.TestError` if a network mutual ping failed
+
+        The ping happens among all LAN members, throwing an exception if one of the pings fails.
+        """
+        logging.info("Commencing mutual ping of %d vms (including self ping).", len(self.nodes))
+        failed = False
+
+        for node1 in self.nodes.values():
+            for interface1 in node1.interfaces.values():
+                for node2 in self.nodes.values():
+                    for interface2 in node2.interfaces.values():
+                        for netconfig in self.netconfigs.values():
+                            if interface1.ip in netconfig.interfaces and interface2.ip in netconfig.interfaces:
+                                direction_str = "%s (%s) from %s (%s)" % (node2.name, interface2.ip,
+                                                                          node1.name, interface1.ip)
+                                logging.debug("Pinging %s", direction_str)
+                                status, output = self.ping(node1.platform, node2.platform, address=interface2.ip)
+                                failed = failed or status != 0
+
+        if failed:
+            raise exceptions.TestError("Mutual ping of all LAN members unsuccessful")
+        logging.info("Mutual ping of all LAN members successful")
+
+    def port_connectivity(self, msg, src_vm, dst_vm, dst_nic="onic",
+                          address=None, port=80, protocol="TCP"):
+        """
+        Test connectivity using a predefined port (usually in addition to pinging).
+
+        Arguments are similar to the :py:meth:`ping` method with the exception of:
+
+        :param str msg: probing data to be sent to the port
+        :param int port: forwarding port to send the message to
+        :param str protocol: protocol type (TCP, UDP or something over them)
+        :returns: the result of the performed port connection attempt
+        :rtype: (int, str)
+        """
+        if address is None:
+            address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+
+        logging.info("Connecting from %s to %s (%s) at %s port %s",
+                     src_vm.name, dst_vm.name, address, protocol, port)
+        src_vm.session.sendline("cat <<EOF | socat - %s:%s:%s,connect-timeout=3" % (protocol, address, port))
+        src_vm.session.sendline(msg)
+
+        status, output = src_vm.session.cmd_status_output("EOF", safe=True)
+        logging.debug("Status %s and output from the connection attempt:\n%s", status, output)
+        return status, output
+
+    def port_connectivity_validate(self, msg, src_vm, dst_vm, dst_nic="onic",
+                                   address=None, port=80, protocol="TCP",
+                                   validate_output="", require_blocked=False):
+        """
+        Test connectivity using a predefined port (usually in addition to pinging).
+
+        Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
+
+        :param str validate_output: string to find in the command output and validate against
+        :param bool require_blocked: whether to expect nonzero status from the connection attempt
+        :raises: :py:class:`exceptions.TestError` if the performed port connection attempt failed
+
+        This method does not perform a refined exit status check, you can use the non-validated
+        version and perform your own customization if you wish.
+        """
+        status, output = self.port_connectivity(msg, src_vm, dst_vm, dst_nic=dst_nic,
+                                                address=address, port=port, protocol=protocol)
+
+        status_condition = status != 0 if require_blocked else status == 0
+        if status_condition:
+            logging.info("Port %s connection status matched", port)
+        else:
+            state = "reachable" if require_blocked else "unreachable"
+            raise exceptions.TestError("Port of %s (%s:%s) is %s from %s" % (dst_vm.name, address, port, state, src_vm.name))
+
+        output_condition = validate_output not in output if require_blocked else validate_output in output
+        if output_condition:
+            state = "blocked" if require_blocked else "succeeded"
+            logging.info("Connection %s as expected", state)
+        else:
+            state = "not blocked" if require_blocked else "failed"
+            raise exceptions.TestFail("Connecting the port %s %s with the following outputs:\n%s" % (port, state, output))
+
+    def http_connectivity(self, src_vm, dst_vm, dst_nic="onic",
+                          address=None, port=80, protocol="HTTP"):
+        """
+        Test connectivity using an HTTP port and protocol.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method.
+
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        logging.debug("Sending probing data for the HTTP protocol")
+        if protocol != "HTTP":
+            raise exceptions.TestError("Invalid protocol for HTTP port connectivity: %s" % protocol)
+        return self.port_connectivity("GET / HTTP/1.0", src_vm, dst_vm, dst_nic, address, port, "TCP")
+
+    def http_connectivity_validate(self, src_vm, dst_vm, dst_nic="onic",
+                                   address=None, port=80, protocol="HTTP",
+                                   require_blocked=False):
+        """
+        Test connectivity using an HTTP port and protocol.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method.
+
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        logging.debug("Sending probing data for the HTTP protocol")
+        if protocol != "HTTP":
+            raise exceptions.TestError("Invalid protocol for HTTP port connectivity: %s" % protocol)
+        return self.port_connectivity_validate("GET / HTTP/1.0", src_vm, dst_vm, dst_nic, address, port, "TCP",
+                                               validate_output="HTML", require_blocked=require_blocked)
+
+    def https_connectivity(self, src_vm, dst_vm, dst_nic="onic",
+                           address=None, port=443, protocol="HTTPS"):
+        """
+        Test connectivity using an HTTPS port and protocol.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method.
+
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        logging.debug("Sending probing data for the HTTPS protocol")
+        if address is None:
+            address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+        if protocol != "HTTPS":
+            raise exceptions.TestError("Invalid protocol for HTTPS port connectivity: %s" % protocol)
+        address = "%s://%s:%s" % (protocol.lower(), address, port)
+        # make self-signed certificates nonfatal for the HTTPS probing
+        cmd = "curl -k " + address
+        status, output = src_vm.session.cmd_status_output(cmd)
+        logging.debug("Got status %s and page content:\n%s", status, output)
+        return status, output
+
+    def https_connectivity_validate(self, src_vm, dst_vm, dst_nic="onic",
+                                    address=None, port=443, protocol="HTTPS",
+                                    require_blocked=False):
+        """
+        Test connectivity using an HTTPS port and protocol.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method.
+
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        status, output = self.https_connectivity(src_vm, dst_vm, dst_nic=dst_nic,
+                                                 address=address, port=port, protocol=protocol)
+        if require_blocked:
+            if status == 0 and "HTML" in output:
+                raise exceptions.TestFail("HTTPS connection to %s failed with the following outputs:\n%s" % (port, output))
+        else:
+            if status != 0 and "HTML" not in output:
+                raise exceptions.TestFail("HTTPS connection to %s succeeded with the following outputs:\n%s" % (port, output))
+
+    def ssh_connectivity(self, src_vm, dst_vm, dst_nic="onic",
+                         address=None, port=22, protocol="SSH"):
+        """
+        Test connectivity using an SSH port and protocol.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method.
+
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        logging.debug("Sending probing data for the SSH protocol")
+        if protocol != "SSH":
+            raise exceptions.TestError("Invalid protocol for SSH port connectivity: %s" % protocol)
+        return self.port_connectivity("test", src_vm, dst_vm, dst_nic, address, port, "TCP")
+
+    def ssh_connectivity_validate(self, src_vm, dst_vm, dst_nic="onic",
+                                  address=None, port=22, protocol="SSH",
+                                  require_blocked=False):
+        """
+        Test connectivity using an SSH port and protocol.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method.
+
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        logging.debug("Sending probing data for the SSH protocol")
+        if protocol != "SSH":
+            raise exceptions.TestError("Invalid protocol for SSH port connectivity: %s" % protocol)
+        return self.port_connectivity_validate("test", src_vm, dst_vm, dst_nic, address, port, "TCP",
+                                               validate_output="OpenSSH", require_blocked=require_blocked)
 
     def _ssh_client_hostname(self, src_vm, dst_vm, ssh_ip, timeout=10):
         logging.info("Retrieving host name of client %s from %s through ip %s",
@@ -1344,7 +1430,7 @@ class VMNetwork(object):
                     return dst_hostname
         raise exceptions.TestFail("No server host name found")
 
-    def ssh_hostname(self, src_vm, dst_vm, dst_nic="onic", netconfig_num=3, timeout=10):
+    def ssh_hostname(self, src_vm, dst_vm, dst_nic="onic", timeout=10):
         """
         Get the host name of a vm from any other vm in the vm net
         using the SSH protocol.
@@ -1354,7 +1440,6 @@ class VMNetwork(object):
         :param dst_vm: destination vm with the SSH server
         :type dst_vm: VM object
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
-        :param int netconfig_num: legacy parameter needed for finding IP through VPN routes
         :param int timeout: timeout for the SSH connection
         :returns: the hostname of the SSH server
         :rtype: str+
@@ -1362,13 +1447,13 @@ class VMNetwork(object):
         This tests the TCP connectivity and verifies it leads to the
         correct machine.
         """
-        ssh_ip = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic, netconfig_num=netconfig_num)
-        if "client" in dst_vm.name:
+        ssh_ip = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+        if self.nodes[dst_vm.name].ephemeral:
             return self._ssh_client_hostname(src_vm, dst_vm, ssh_ip, timeout)
         else:
             return self._ssh_server_hostname(src_vm, dst_vm, ssh_ip, timeout)
 
-    def scp_files(self, src_path, dst_path, src_vm, dst_vm, dst_nic="onic", netconfig_num=3, timeout=10):
+    def scp_files(self, src_path, dst_path, src_vm, dst_vm, dst_nic="onic", timeout=10):
         """
         Copy files securely where built-in methods like :py:func:`vm.copy_files_to` fail.
 
@@ -1379,14 +1464,12 @@ class VMNetwork(object):
         :param dst_vm: destination vm with the ssh server
         :type dst_vm: VM object
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
-        :param int netconfig_num: legacy parameter needed for finding IP through VPN routes
         :param int timeout: timeout for the SSH connection
         :raises: :py:class:`exceptions.TestFail` if the files couldn't be copied
 
         The paths `src_path` and `dst_path` must be strings, possibly with a wildcard.
-        The `netconfig_num parameter` is a helper in case we use the legacy ip search (via vpn).
         """
-        ssh_ip = self._get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic, netconfig_num=netconfig_num)
+        ssh_ip = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
         logging.info("Copying files %s from %s to %s", src_path, src_vm.name, dst_vm.name)
         src_vm.session.sendline("scp -o StrictHostKeyChecking=no "
                                 "-o HostKeyAlgorithms=+ssh-dss "
@@ -1411,3 +1494,86 @@ class VMNetwork(object):
                     logging.info(file_transfer.group(1))
                     return
         raise exceptions.TestFail("No file progress bars were found - couldn't copy %s" % src_path)
+
+    def ftp_connectivity(self, msg, file, src_vm, dst_vm, dst_nic="onic",
+                         address=None, port=21):
+        """
+        Send file request to an FTP destination port and address and verify it was received.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
+
+        :param file: file to retrieve containing the test data or none if sent directly
+        :type file: str or None
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        logging.debug("Sending the data '%s' in a file %s", msg, file)
+        if address is None:
+            address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+        protocol = "FTP"
+
+        address = "%s://%s:%s/%s" % (protocol.lower(), address, port, file)
+        credentials = "%s:%s" % (src_vm.params["ftp_username"], src_vm.params["ftp_password"])
+        cmd = "curl -u %s --disable-epsv %s" % (credentials, address)
+        status, output = src_vm.session.cmd_status_output(cmd)
+        logging.debug("Got status %s and file content:\n%s", status, output)
+        return status, output
+
+    def ftp_connectivity_validate(self, msg, file, src_vm, dst_vm, dst_nic="onic",
+                                  address=None, port=21, require_blocked=False):
+        """
+        Send file request to an FTP destination port and address and verify it was received.
+
+        Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
+
+        :param file: file to retrieve containing the test data or none if sent directly
+        :type file: str or None
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        status, output = self.ftp_connectivity(msg, file, src_vm, dst_vm, dst_nic=dst_nic,
+                                               address=address, port=port)
+        if require_blocked:
+            if status == 0 and msg in output:
+                raise exceptions.TestFail("FTP connection to %s failed with the following outputs:\n%s" % (port, output))
+        else:
+            if status != 0 and msg not in output:
+                raise exceptions.TestFail("FTP connection to %s succeeded with the following outputs:\n%s" % (port, output))
+
+    def tftp_connectivity(self, msg, file, src_vm, dst_vm, dst_nic="onic",
+                          address=None, port=69):
+        """
+        Send file request to an TFTP destination port and address and verify it was received.
+        Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
+
+        :param file: file to retrieve containing the test data or none if sent directly
+        :type file: str or None
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        logging.debug("Sending the data '%s' in a file %s", msg, file)
+        if address is None:
+            address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+        protocol = "TFTP"
+
+        address = "%s://%s:%s/%s" % (protocol.lower(), address, port, file)
+        cmd = "curl " + address
+        status, output = src_vm.session.cmd_status_output(cmd)
+        logging.debug("Got status %s and file content:\n%s", status, output)
+        return status, output
+
+    def tftp_connectivity_validate(self, msg, file, src_vm, dst_vm, dst_nic="onic",
+                                   address=None, port=69, require_blocked=False):
+        """
+        Send file request to an TFTP destination port and address and verify it was received.
+        Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
+
+        :param file: file to retrieve containing the test data or none if sent directly
+        :type file: str or None
+        :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
+        """
+        status, output = self.tftp_connectivity(msg, file, src_vm, dst_vm, dst_nic=dst_nic,
+                                                address=address, port=port)
+        if require_blocked:
+            if status == 0 and msg in output:
+                raise exceptions.TestFail("TFTP connection to %s failed with the following outputs:\n%s" % (port, output))
+        else:
+            if status != 0 and msg not in output:
+                raise exceptions.TestFail("TFTP connection to %s succeeded with the following outputs:\n%s" % (port, output))

@@ -50,7 +50,7 @@ def run(test, params, env):
     vms = vmnet.get_vms()
     server_vm = vms.server
     client_vm = vms.client
-    vmnet.ping()
+    vmnet.ping_all()
 
     error_context.context("misc commands on each vm")
     tmp_server = server_vm.session.cmd("ls " + server_vm.params["tmp_dir"])

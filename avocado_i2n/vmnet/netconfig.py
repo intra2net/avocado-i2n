@@ -264,6 +264,39 @@ class VMNetconfig(object):
         self.interfaces[interface.ip].netconfig = self
         self.validate()
 
+    def has_interface(self, interface):
+        """
+        Check whether an interface already belongs to the netconfig.
+
+        :param interface: interface to check in the netconfig
+        :type interface: Interface object
+        :returns: whether the interface is already present in the netconfig
+        :rtype: bool
+        """
+        return interface.ip in self.interfaces.keys()
+
+    def can_add_interface(self, interface):
+        """
+        Check if an interface can be added to the netconfig based on its
+        desired IP address and throw Exceptions if it is already present
+        or the netmask does not coincide (misconfiguration errors).
+
+        :param interface: interface to add to the netconfig
+        :type interface: Interface object
+        :returns: whether the interface can be added
+        :rtype: bool
+        :raises: :py:class:`exceptions.IndexError` if interface is already present or incompatible
+        """
+        if self.has_interface(interface):
+            raise IndexError("Interface %s already present in the "
+                             "network %s" % (interface.ip, self.net_ip))
+        interface_net_ip = self._get_network_ip(interface.ip, self.mask_bit)
+        if interface_net_ip == self.net_ip and interface.params["netmask"] != self.netmask:
+            raise IndexError("Interface %s has different netmask %s from the "
+                             "network %s (%s)" % (interface.ip, interface.params["netmask"],
+                                                  self.net_ip, self.netmask))
+        return interface_net_ip == self.net_ip
+
     def validate(self):
         """
         Check for sanity of the netconfigs parameters.
@@ -298,28 +331,6 @@ class VMNetconfig(object):
                 raise exceptions.TestError("The interface with ip %s is not in the netconfig"
                                            " %s" % (ip, self.net_ip))
 
-    def can_add(self, interface):
-        """
-        Check if an interface can be added to the netconfig based on its
-        desired IP address and throw Exceptions if it is already present
-        or the netmask does not coincide (misconfiguration errors).
-
-        :param interface: interface to add to the netconfig
-        :type interface: Interface object
-        :returns: whether the interface can be added
-        :rtype: bool
-        :raises: :py:class:`exceptions.IndexError` if interface is already present or incompatible
-        """
-        if interface.ip in self.interfaces.keys():
-            raise IndexError("Interface %s already present in the "
-                             "network %s" % (interface.ip, self.net_ip))
-        interface_net_ip = self._get_network_ip(interface.ip, self.mask_bit)
-        if interface_net_ip == self.net_ip and interface.params["netmask"] != self.netmask:
-            raise IndexError("Interface %s has different netmask %s from the "
-                             "network %s (%s)" % (interface.ip, interface.params["netmask"],
-                                                  self.net_ip, self.netmask))
-        return interface_net_ip == self.net_ip
-
     def get_allocatable_address(self):
         """
         Return the next IP address in the pool of available IPs that
@@ -336,7 +347,7 @@ class VMNetconfig(object):
         net_ip = ipaddress.IPv4Address(str(self.net_ip))
         return str(ipaddress.IPv4Address(str(net_ip + new_address)))
 
-    def translate_address(self, interface, nat_ip):
+    def translate_address(self, ip, nat_ip):
         """
         Return the NAT translated IP of an interface or alternatively the IP
         of an interface masked by a desired network address.
@@ -347,7 +358,7 @@ class VMNetconfig(object):
         :returns: the translated IP of the interface
         :rtype: str
         """
-        source_ip = ipaddress.IPv4Address(str(interface.ip))
+        source_ip = ipaddress.IPv4Address(ip)
         source_part = int(source_ip) - int(ipaddress.IPv4Address(str(self.net_ip)))
         target_iface = ipaddress.ip_interface("%s/%s" % (nat_ip, self.mask_bit))
         target_part = int(target_iface.network.network_address)
