@@ -16,7 +16,7 @@ needs, etc.). It can be used to test Proxy, Port forwarding,
 VPN, NAT, etc.
 
 Each vm is a network node and can have one of few currently supported
-operating systems. For VPN/GRE functionality it is also required to have
+operating systems. For ease of defaults use it is recommended to have
 at least three nics, respectively named "lnic" for local isolated
 connection to the host, "inic" for (internet) connection to the other
 nodes, and "onic" for other connection to own LAN.
@@ -71,7 +71,7 @@ class VMNetwork(object):
         self.new_node = VMNode
         self.new_interface = VMInterface
         self.new_netconfig = VMNetconfig
-        self.new_vpnconn = VMTunnel
+        self.new_tunnel = VMTunnel
 
         # component instances
         self.nodes = {}
@@ -874,198 +874,148 @@ class VMNetwork(object):
         client_iface.netconfig.gateway = server_iface.ip
         self._reconfigure_vm_nic(client_nic, client_iface, client)
 
-    def configure_gre_tunnel_between_vms(self, vm1, vm2, ip1=None, ip2=None):
+    def configure_tunnel_between_vms(self, name, vm1, vm2,
+                                     local1=None, remote1=None, peer1=None, auth=None,
+                                     apply_extra_options=None):
         """
-        Configure a GRE connection (tunnel) between two vms.
+        Configure a tunnel between two vms.
 
+        :param str name: name of the tunnel
         :param vm1: left side vm of the tunnel
         :type vm1: VM object
         :param vm2: right side vm of the tunnel
         :type vm2: VM object
-        :param str ip1: IP of the left vm
-        :param str ip2: IP of the right vm
-
-        If `ip1` and/or `ip2` are provided, they will be used as remote IPs instead
-        of the default remote interface IPs. A typical use case where `ip1/ip2`
-        are needed is when one or both of the vms are NAT-ed and their default
-        (inic) IPs are not accessible from the outside.
+        :param local1: left local type as in tunnel constructor
+        :type local1: {str, str}
+        :param remote1: left remote type as in tunnel constructor
+        :type remote1: {str, str}
+        :param peer1: left peer type as in tunnel constructor
+        :type peer1: {str, str}
+        :param auth: authentication configuration as described in the tunnel constructor
+        :type auth: {str, str}
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, any}
         """
-        net1 = "%snet" % vm2.name
-        local1 = self.interfaces["%s.onic" % vm1.name]
-        remote1 = self.interfaces["%s.inic" % vm1.name]
-        net2 = "%snet" % vm1.name
-        local2 = self.interfaces["%s.onic" % vm2.name]
-        remote2 = self.interfaces["%s.inic" % vm2.name]
-
-        add_cmd = "ip tunnel add %s mode gre remote %s local %s ttl 255"
-        vm1.session.cmd(add_cmd % (net1, ip2 if ip2 is not None else remote2.ip, remote1.ip))
-        vm1.session.cmd("ip link set %s up" % net1)
-        vm1.session.cmd("ip addr add %s dev %s" % (local1.ip, net1))
-        vm1.session.cmd("ip route add %s/%s dev %s" % (local2.netconfig.net_ip,
-                                                       local2.netconfig.mask_bit,
-                                                       net1))
-        vm2.session.cmd(add_cmd % (net2, ip1 if ip1 is not None else remote1.ip, remote2.ip))
-        vm2.session.cmd("ip link set %s up" % net2)
-        vm2.session.cmd("ip addr add %s dev %s" % (local2.ip, net2))
-        vm2.session.cmd("ip route add %s/%s dev %s" % (local1.netconfig.net_ip,
-                                                       local1.netconfig.mask_bit,
-                                                       net2))
-
-        gre_protocol_id = 47
-        if ip1 is not None:
-            vm1.session.cmd("iptables -I INPUT -i eth1 -p %s -j ACCEPT" % gre_protocol_id)
-        vm1.session.cmd("iptables -I INPUT -i %snet -p icmp -j ACCEPT" % vm2.name)
-        vm1.session.cmd("iptables -I OUTPUT -o %snet -p icmp -j ACCEPT" % vm2.name)
-        if ip2 is not None:
-            vm2.session.cmd("iptables -I INPUT -i eth1 -p %s -j ACCEPT" % gre_protocol_id)
-        vm2.session.cmd("iptables -I INPUT -i %snet -p icmp -j ACCEPT" % vm1.name)
-        vm2.session.cmd("iptables -I OUTPUT -o %snet -p icmp -j ACCEPT" % vm1.name)
-
-    def configure_vpn_between_vms(self, vpn_name, vm1, vm2, left_variant=None, psk_variant=None):
-        """
-        Configure a VPN connection (tunnel) between two vms.
-
-        :param str vpn_name: name of the VPN connection
-        :param vm1: left side vm of the VPN tunnel
-        :type vm1: VM object
-        :param vm2: right side vm of the VPN tunnel
-        :type vm2: VM object
-        :param left_variant: left side configuration (right side is determined from it)
-        :type left_variant: (str, str, str)
-        :param psk_variant: PSK configuration in the case PSK is used
-        :type psk_variant: (str, str, str)
-        """
-        if left_variant is None:
-            left_variant = [self.params.get("lan_type", "nic"),
-                            self.params.get("remote_type", "custom"),
-                            self.params.get("peer_type", "ip")]
-        if psk_variant is None and self.params.get("psk", "") != "":
-            psk_variant = [self.params["psk"],
-                           self.params["own_id_type"],
-                           self.params["foreign_id_type"]]
-
         left_node = self.nodes[vm1.name]
         right_node = self.nodes[vm2.name]
-        self.tunnels[vpn_name] = self.new_vpnconn(vpn_name, left_node, right_node,
-                                                  self, left_variant, psk_variant)
-        self.tunnels[vpn_name].configure_between_endpoints(self, left_variant, psk_variant)
+        self.tunnels[name] = self.new_tunnel(name, left_node, right_node,
+                                             local1, remote1, peer1, auth)
+        self.tunnels[name].configure_between_endpoints(apply_extra_options)
 
-    def configure_vpn_on_vm(self, vpn_name, vm, apply_key_own=False,
-                            apply_key_foreign=False, apply_firewall_ruleset=False):
+    def configure_tunnel_on_vm(self, name, vm, apply_extra_options=None):
         """
-        Configure a VPN connection (tunnel) on a vm, assuming it is manually
+        Configure a tunnel on a vm, assuming it is manually
         or independently configured on the other end.
 
-        :param str vpn_name: name of the VPN connection
-        :param vm: vm where the VPN will be configured
+        :param str name: name of the tunnel
+        :param vm: vm where the tunnel will be configured
         :type vm: VM object
-        :param bool apply_key_own: whether to apply KEY_OWN configuration
-        :param bool apply_key_foreign: whether to apply KEY_FOREIGN configuration
-        :param bool apply_firewall_ruleset: whether to apply FIREWALL_RULESET configuration
-        :raises: :py:class:`exceptions.KeyError` if not all VPN parameters are present
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, any}
+        :raises: :py:class:`exceptions.KeyError` if not all tunnel parameters are present
 
-        Currently the method uses only existing VPN connections.
+        Currently the method uses only existing tunnels.
         """
-        if vpn_name not in self.tunnels:
-            raise KeyError("Currently, every VPN connection has to be created defining both"
+        if name not in self.tunnels:
+            raise KeyError("Currently, every tunnel has to be created defining both"
                            " ends and it can only then be configured on a single vm %s" % vm.name)
 
-        self.tunnels[vpn_name].configure_on_endpoint(vm, self, apply_key_own,
-                                                     apply_key_foreign, apply_firewall_ruleset)
+        node = self.nodes[vm.name]
+        self.tunnels[name].configure_on_endpoint(node, apply_extra_options)
 
-    def configure_roadwarrior_vpn_on_server(self, vpn_name, server, client, apply_key_own=False,
-                                            apply_key_foreign=False, apply_firewall_ruleset=False):
+    def configure_roadwarrior_vpn_on_server(self, name, server, client,
+                                            local1=None, remote1=None, auth=None,
+                                            apply_extra_options=None):
         """
         Configure a VPN connection (tunnel) on a vm to play the role of a VPN
         server for any individual clients to access it from the internet.
 
-        :param str vpn_name: name of the VPN connection
+        :param str name: name of the VPN connection
         :param server: vm which will be the VPN server for roadwarrior connections
         :type server: VM object
         :param client: vm which will be connecting individual device
         :type client: VM object
-        :param bool apply_key_own: whether to apply KEY_OWN configuration
-        :param bool apply_key_foreign: whether to apply KEY_FOREIGN configuration
-        :param bool apply_firewall_ruleset: whether to apply FIREWALL_RULESET configuration
+        :param local1: left local type as in tunnel constructor
+        :type local1: {str, str}
+        :param remote1: left remote type as in tunnel constructor
+        :type remote1: {str, str}
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, any}
 
         Regarding the client, only its parameters will be updated by this method.
         """
+        if local1 is None:
+            local1 = {"type": "nic", "nic": "onic"}
+        if remote1 is None:
+            remote1 = {"type": "modeconfig", "modeconfig_ip": "172.30.0.1"}
+        peer1 = {"type": "dynip", "nic": "inic"}
+
         left_node = self.nodes[server.name]
         right_node = self.nodes[client.name]
-        self.tunnels[vpn_name] = self.new_vpnconn(vpn_name, left_node, right_node, self,
-                                                  [self.params.get("lan_type", "nic"),
-                                                   self.params.get("remote_type", "modeconfig"),
-                                                   self.params.get("peer_type", "dynip")],
-                                                  roadwarrior=True)
+        self.tunnels[name] = self.new_tunnel(name, left_node, right_node,
+                                             local1, remote1, peer1, auth)
+        self.configure_tunnel_on_vm(name, server, apply_extra_options)
 
-        # some parameter modification for the road warrior connection
-        vpn_params = self.tunnels[vpn_name].params
-        # add all new vpn parameters to the already defined vm parameters
-        # and throw away unnecessary parameters from this function
-        params1 = vpn_params.object_params(client.name)
-        params2 = vpn_params.object_params(server.name)
-        params1.update(client.params)
-        params2.update(server.params)
-        client.params = params1
-        server.params = params2
-
-        self.configure_vpn_on_vm(vpn_name, server, apply_key_own,
-                                 apply_key_foreign, apply_firewall_ruleset)
-
-    def configure_vpn_route(self, vms, vpns, left_variant=None, psk_variant=None):
+    def configure_vpn_route(self, vms, vpns,
+                            remote1=None, peer1=None, auth=None,
+                            extra_apply_options=None):
         """
-        Build a set of vpn connections using vpn forwarding to gain access from
+        Build a set of VPN connections using VPN forwarding to gain access from
         one vm to another.
 
         :param vms: vms to participate in the VPN route
         :type vms: [VM object]
         :param vpns: VPNs over which the route will be constructed
         :type vpns: [str]
-        :param left_variant: left side configuration (right side is determined from it)
-        :type left_variant: (str, str, str)
-        :param psk_variant: PSK configuration in the case PSK is used
-        :type psk_variant: (str, str, str)
+        :param remote1: left remote type as in tunnel constructor
+        :type remote1: {str, str}
+        :param peer1: left peer type as in tunnel constructor
+        :type peer1: {str, str}
+        :param auth: authentication configuration as described in the tunnel constructor
+        :type auth: {str, str}
+        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
+        :type apply_extra_options: {str, any}
         :raises: :py:class:`exceptions.TestError` if #vpns < #vms - 1 or #vpns < 2 or #vms < 2
 
-        Infrastructure of point to point vpn connections must already exist.
+        Infrastructure of point to point VPN connections must already exist.
         """
-        if left_variant is None:
-            left_variant = [self.params.get("lan_type", "nic"),
-                            self.params.get("remote_type", "custom"),
-                            self.params.get("peer_type", "ip")]
-        if psk_variant is None and self.params.get("psk", "") != "":
-            psk_variant = [self.params["psk"],
-                           self.params["own_id_type"],
-                           self.params["foreign_id_type"]]
-
         if len(vpns) < 2 or len(vms) < 2 or len(vpns) < len(vms) - 1:
-            raise exceptions.TestError("Insufficient vpn infrastructure - unnecessary vpn forwarding")
+            raise exceptions.TestError("Insufficient VPN infrastructure - unnecessary VPN forwarding")
 
-        logging.info("Bulding vpn route %s", "-".join(vm.name for vm in vms))
+        logging.info("Building a VPN route %s", "-".join(vm.name for vm in vms))
         for i in range(len(vpns)):
-            fvpn = "%s_fwd" % vpns[i]
+            fvpn = "%sfwd" % vpns[i]
             if i == 0:
-                prev_net = vms[i + 1].params.object_params(vpns[i]).get("vpnconn_remote_net")
-                next_net = vms[i + 1].params.object_params(vpns[i + 1]).get("vpnconn_remote_net")
+                prev_net = vms[i+1].params.object_params(vpns[i]).get("vpnconn_remote_net")
+                prev_mask = vms[i+1].params.object_params(vpns[i]).get("vpnconn_remote_netmask")
+                next_net = vms[i+1].params.object_params(vpns[i+1]).get("vpnconn_remote_net")
+                next_mask = vms[i+1].params.object_params(vpns[i+1]).get("vpnconn_remote_netmask")
             elif i == len(vpns) - 1:
-                prev_net = vms[i].params.object_params(vpns[i - 1]).get("vpnconn_remote_net")
+                prev_net = vms[i].params.object_params(vpns[i-1]).get("vpnconn_remote_net")
+                prev_mask = vms[i].params.object_params(vpns[i-1]).get("vpnconn_remote_netmask")
                 next_net = vms[i].params.object_params(vpns[i]).get("vpnconn_remote_net")
+                next_mask = vms[i].params.object_params(vpns[i]).get("vpnconn_remote_netmask")
             else:
-                prev_net = vms[i - 1].params.object_params(vpns[i - 1]).get("vpnconn_remote_net")
-                next_net = vms[i + 1].params.object_params(vpns[i + 1]).get("vpnconn_remote_net")
-            logging.debug("Retrieved previous network %s and next network %s", prev_net, next_net)
+                prev_net = vms[i-1].params.object_params(vpns[i-1]).get("vpnconn_remote_net")
+                prev_mask = vms[i-1].params.object_params(vpns[i-1]).get("vpnconn_remote_netmask")
+                next_net = vms[i+1].params.object_params(vpns[i+1]).get("vpnconn_remote_net")
+                next_mask = vms[i+1].params.object_params(vpns[i+1]).get("vpnconn_remote_mask")
+            logging.debug("Retrieved previous network %s/%s and next network %s/%s",
+                          prev_net, prev_mask, next_net, next_mask)
 
-            vms[i].params["vpnconn_lan_type_%s" % fvpn] = "CUSTOM"
-            vms[i].params["vpnconn_lan_net_%s" % fvpn] = prev_net
+            local1 = {"type": "custom",
+                      "lnet": prev_net, "lmask": prev_mask,
+                      "rnet": next_net, "rmask": next_mask}
+
             vms[i].params["vpnconn_remote_net_%s" % fvpn] = next_net
-            vms[i + 1].params["vpnconn_lan_type_%s" % fvpn] = "CUSTOM"
-            vms[i + 1].params["vpnconn_lan_net_%s" % fvpn] = next_net
-            vms[i + 1].params["vpnconn_remote_net_%s" % fvpn] = prev_net
+            vms[i+1].params["vpnconn_remote_net_%s" % fvpn] = prev_net
 
-            self.configure_vpn_between_vms(fvpn, vms[i], vms[i + 1], left_variant, psk_variant)
+            self.configure_tunnel_between_vms(fvpn, vms[i], vms[i + 1],
+                                              local1, remote1, peer1, auth,
+                                              extra_apply_options)
 
     """VM network test methods"""
-    def get_vpn_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):
+    def get_tunnel_accessible_ip(self, src_vm, dst_vm, dst_nic="onic"):
         """
         Get an accessible IP from a vm to a vm given using heuristics about
         the tunnels and netconfigs of the entire vm network.
@@ -1081,11 +1031,6 @@ class VMNetwork(object):
             the source or destination vms are not connected by a tunnel
 
         This ip can then be used for ping, tcp tests, etc.
-
-        .. note:: Keep in mind that strict naming conventions of the vpn connections between
-            netconfigs are required for this to work. When you decide about the parameters of a
-            vm, you have to append them with '_vpnX.X' where the two X are the indices of the
-            netconfigs where the servers are located, sorted in ascending order.
         """
         dst_node = self.nodes[dst_vm.name]
         if dst_node.ephemeral:
@@ -1099,18 +1044,17 @@ class VMNetwork(object):
         node1, node2 = self.nodes[src_vm.name], self.nodes[dst_vm.name]
         for id, tunnel in self.tunnels.items():
             if tunnel.connects_nodes(node1, node2):
-                logging.debug("Found a vpn connection with id %s between %s and %s",
+                logging.debug("Found a tunnel with id %s between %s and %s",
                               id, src_vm.name, dst_vm.name)
-                vpn = tunnel
                 break
         else:
             raise exceptions.TestError("The source %s and destination %s are not connected by a tunnel" % (src_vm.name, dst_vm.name))
-        vpn_params = vpn.left_params if server_node == vpn.left else vpn.right_params
+        tunnel_params = tunnel.left_params if server_node == tunnel.left else tunnel.right_params
 
         # try to get translated ip (NAT) and if not get inner ip which is used
-        # in the default vpn configuration
+        # in the default tunnel configuration
         if self.nodes[dst_vm.name].ephemeral:
-            nat_ip_server = vpn_params.get("ip_nat")
+            nat_ip_server = tunnel_params.get("ip_nat")
             if nat_ip_server is not None:
                 logging.debug("Obtaining translated IP address of an ephemeral client %s",
                               dst_vm.name)
@@ -1120,7 +1064,7 @@ class VMNetwork(object):
                 nat_ip = dst_iface.ip
                 logging.debug("Retrieved original ip %s for %s", nat_ip, dst_vm.name)
         else:
-            nat_ip = vpn_params.get("ip_nat", dst_iface.ip)
+            nat_ip = tunnel_params.get("ip_nat", dst_iface.ip)
             logging.debug("Retrieved network translated ip %s for %s", nat_ip, dst_vm.name)
         return nat_ip
 
@@ -1160,9 +1104,9 @@ class VMNetwork(object):
         # TODO: we could also do some general routing and gateway search but this is
         # rather unnecessary with the current user requirements
 
-        # do a VPN search as the last resort (of what we have implemented so far)
-        logging.debug("No accessible IP found in local networks, falling back to VPN search")
-        return self.get_vpn_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
+        # do a tunnel search as the last resort (of what we have implemented so far)
+        logging.debug("No accessible IP found in local networks, falling back to tunnel search")
+        return self.get_tunnel_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
 
     def verify_vpn_in_log(self, src_vm, dst_vm, log_vm=None):
         """
@@ -1188,7 +1132,7 @@ class VMNetwork(object):
                 logging.debug("Found a vpn connection with id %s between %s and %s",
                               id, src_vm.name, dst_vm.name)
                 vpn = tunnel
-                left_index, right_index = id.lstrip("vpn").split(".")
+                left_index, right_index = re.match("^vpn(\d+)\.(\d+)\w*", id).group(1,2)
                 break
         else:
             raise exceptions.TestError("The source %s and destination %s are not connected by a tunnel" % (src_vm.name, dst_vm.name))

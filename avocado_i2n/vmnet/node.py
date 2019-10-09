@@ -117,17 +117,17 @@ class VMNode(object):
         vm_tuple = (self.name, len(self.remote_sessions))
         return "[node] name='%s', sessions='%s'" % vm_tuple
 
-    def in_netconfig(self, netconfig):
+    def check_interface(self, condition):
         """
-        Check whether one of node's interfaces already belongs to the netconfig.
+        Check whether one of node's interfaces satisfies a boolean condition.
 
-        :param interface: interface to check in the netconfig
-        :type interface: Netconfig object
-        :returns: the interface that is already present in the netconfig or None
+        :param condition: condition to try each interface on
+        :type condition: function
+        :returns: the first interface satisfying the provided criteria or None
         :rtype: Interface object or None
         """
         for interface in self.interfaces.values():
-            if netconfig.has_interface(interface):
+            if condition(interface):
                 return interface
         return None
 
