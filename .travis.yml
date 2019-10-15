@@ -22,6 +22,12 @@ services:
 cache:
   - pip
 
+addons:
+  apt:
+    packages:
+      # virtual screen
+      - arping
+
 branches:
   except:
     - tp-i2n
@@ -74,6 +80,12 @@ before_script:
 # run tests
 script:
   - make check
+  # Running will take too much time building the required vms but we can at least validate noop runs and the list of tests
+  - avocado vt-bootstrap --vt-skip-verify-download-assets --yes-to-all
+  - avocado manu setup=noop
+  - avocado list --paginator off --loaders cartesian_graph -- "only=tutorial1"
+  # TODO: provide noop-like variant to avoid setting up vms
+  # - avocado run --auto --loaders cartesian_graph -- "only=tutorial1"
   # Cleanup avocado(-vt) libs
   - rm -rf avocado-vt-libs
   - rm -rf avocado-libs
