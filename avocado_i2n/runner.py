@@ -249,10 +249,12 @@ class CartesianRunner(TestRunner):
             if install_params.get("configure_install", "stepmaker") == "unattended_install":
                 if ".Fedora." in test_object.params["name"] or ".CentOS." in test_object.params["name"]:
                     ovrwrt_str = param.re_str("unattended_install.cdrom.extra_cdrom_ks", param_str, tag, True)
+                elif ".Ubuntu." in test_object.params["name"] or ".Kali." in test_object.params["name"]:
+                    ovrwrt_str = param.re_str("unattended_install.cdrom.in_cdrom_ks", param_str, tag, True)
                 elif ".Windows." in test_object.params["name"]:
-                    ovrwrt_str = param.re_str("unattended_install.cdrom", param_str, tag, True)
+                    ovrwrt_str = param.re_str("unattended_install", param_str, tag, True)
                 else:
-                    raise NotImplementedError("Unattended install tests are only supported on Windows and Fedora/CentOS")
+                    raise NotImplementedError("Unattended install tests are not supported for variant %s" % test_object.params["name"])
                 ovrwrt_dict = {}
             else:
                 ovrwrt_dict = {"type": install_params.get("configure_install", "stepmaker")}
