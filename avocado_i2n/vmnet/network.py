@@ -725,12 +725,15 @@ class VMNetwork(object):
         return tuple([self.nodes[key].platform for key in new_clients])
 
     def _generate_clients_parameters(self, server_name, clients_num, nic="onic"):
+        server_interface = self.nodes[server_name].interfaces[nic]
+        mac_sections = server_interface.mac.split(":")
+        server_netconfig = server_interface.netconfig
+
         overwrite_dict = {}
         overwrite_dict["vms_%s" % server_name] = ""
 
         for i in range(1, clients_num+1):
             logging.debug("Adding client %i for %s", i, server_name)
-            server_interface = self.nodes[server_name].interfaces[nic]
 
             # main
             client = "%seph%i" % (server_name, i)
@@ -744,19 +747,20 @@ class VMNetwork(object):
             overwrite_dict["shell_prompt_%s" % client] = "^[\#\$]"
             overwrite_dict["isa_serials_%s" % client] = "serial1"
 
-            # networking
+            # network adapters
             client_nic = "%snic" % client
             overwrite_dict["nics_%s" % client] = client_nic
             overwrite_dict["nic_model_%s" % client] = "e1000"
 
-            client_mac_sub = server_interface.mac.split(":")[-2]
-            new_sub = str(i + 2)
-            if len(new_sub) < 2:
-                new_sub = "0" + new_sub
-            client_mac = server_interface.mac.replace(client_mac_sub, new_sub)
+            # unique mac generation
+            new_section = str(i)
+            if len(new_section) < 2:
+                new_section = "0" + new_section
+            client_mac = ":".join(mac_sections[:3] + [new_section] + mac_sections[-2:])
             overwrite_dict["mac_%s" % client_nic] = client_mac
 
-            client_netconfig = server_interface.netconfig
+            # networking configuration
+            client_netconfig = server_netconfig
             client_ip = client_netconfig.get_allocatable_address()
             overwrite_dict["ip_%s" % client_nic] = client_ip
             overwrite_dict["netmask_%s" % client_nic] = client_netconfig.netmask
