@@ -26,11 +26,11 @@ def params_from_cmd(config):
     config["available_vms"] = available_vms = param.all_vms()
     config["selected_vms"] = selected_vms = list(available_vms)
     # If the command line restrictions don't contain any of our primary restrictions
-    # (all|normal|gui|nongui|minimal|none), we add "only <default>" to the list where <default> is the
+    # (all|normal|minimal|none), we add "only <default>" to the list where <default> is the
     # primary restriction definition found in the configs. If the configs are also
     # not defining any default, we ultimately add "only all". You can have any futher
     # restrictions like "only=curl" only in the command line.
-    primary_tests_restrictions = ["all", "normal", "gui", "nongui", "minimal", "none"]
+    primary_tests_restrictions = ["all", "normal", "minimal", "none"]
     use_tests_default = True
     with_nontrivial_restrictions = False
     use_vms_default = {vm_name: True for vm_name in available_vms}
