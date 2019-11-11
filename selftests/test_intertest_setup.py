@@ -58,44 +58,7 @@ class IntertestSetupTest(unittest.TestCase):
         self.config["vm_strs"] = {}
         self.run_params = utils_params.Params()
 
-    def test_full(self):
-        self.run_params["vms"] = "vm1 vm2"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-        DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^root$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^root$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
-            {"shortname": "^internal.stateless.0preinstall.vm1", "vms": "^vm1$"},
-            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-7.*\.iso$"},
-            {"shortname": "^internal.stateless.0preinstall.vm2", "vms": "^vm2$"},
-            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
-            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "redeploy_only": "^no$"},
-            {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$", "redeploy_only": "^no$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "set_state": "^customize$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "set_state": "^customize$"},
-        ]
-        intertest_setup.full(self.config, self.run_params, tag="5")
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
-
-    # TODO: avoid direct calls to the avocado process module and use calls to the state setup instead
-    @mock.patch('avocado_i2n.intertest_setup.process')
-    def test_update(self, _mock_process):
-        self.run_params["vms"] = "vm1 vm2"
-        self.run_params["dry_run"] = "yes"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-        DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "get_state": "^install$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "get_state": "^install$"},
-            {"shortname": "^internal.permanent.customize.vm1", "vms": "vm1", "redeploy_only": "^no$"},
-            {"shortname": "^internal.permanent.customize.vm2", "vms": "vm2", "redeploy_only": "^no$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "set_state": "^customize$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "set_state": "^customize$"},
-        ]
-        intertest_setup.update(self.config, self.run_params, tag="2")
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
-
-    def test_graphfull_default(self):
+    def test_full_default(self):
         self.run_params["vms"] = "vm1 vm2"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
@@ -110,10 +73,10 @@ class IntertestSetupTest(unittest.TestCase):
             {"shortname": "^original.unattended_install", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
         ]
-        intertest_setup.graphfull(self.config, self.run_params, tag="1r")
+        intertest_setup.full(self.config, self.run_params, tag="1r")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_graphfull_custom(self):
+    def test_full_custom(self):
         self.run_params["vms"] = "vm1 vm2"
         self.run_params["state_vm1"] = "customize"
         self.run_params["state_vm2"] = "connect"
@@ -131,10 +94,10 @@ class IntertestSetupTest(unittest.TestCase):
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
             {"shortname": "^internal.permanent.connect.vm2", "vms": "^vm2$"},
         ]
-        intertest_setup.graphfull(self.config, self.run_params, tag="1r")
+        intertest_setup.full(self.config, self.run_params, tag="1r")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_graphfull_root(self):
+    def test_full_root(self):
         self.run_params["vms"] = "vm1 vm2"
         self.run_params["state_vm1"] = "customize"
         self.run_params["state_vm2"] = "root"
@@ -148,10 +111,10 @@ class IntertestSetupTest(unittest.TestCase):
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
         ]
-        intertest_setup.graphfull(self.config, self.run_params, tag="1r")
+        intertest_setup.full(self.config, self.run_params, tag="1r")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_graphupdate_default(self):
+    def test_update_default(self):
         self.run_params["vms"] = "vm1 vm2"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
@@ -164,10 +127,10 @@ class IntertestSetupTest(unittest.TestCase):
             {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^on_customize$"},
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
         ]
-        intertest_setup.graphupdate(self.config, self.run_params, tag="0")
+        intertest_setup.update(self.config, self.run_params, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_graphupdate_custom(self):
+    def test_update_custom(self):
         self.run_params["vms"] = "vm1 vm2"
         self.run_params["from_state"] = "install"
         self.run_params["to_state"] = "on_customize"
@@ -178,7 +141,7 @@ class IntertestSetupTest(unittest.TestCase):
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$", "get_state": "^install$"},
             {"shortname": "^internal.ephemeral.on_customize.vm2", "vms": "^vm2$", "get_state": "^customize$"},
         ]
-        intertest_setup.graphupdate(self.config, self.run_params, tag="0")
+        intertest_setup.update(self.config, self.run_params, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     @unittest.skip("Manual step not supported in sample test suite and will be partially deprecated")

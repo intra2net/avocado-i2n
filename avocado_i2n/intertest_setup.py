@@ -56,7 +56,6 @@ from avocado.core import output
 from avocado.core import data_dir
 from avocado.core import dispatcher
 from avocado.core.settings import settings
-from avocado.utils import process
 
 from . import params_parser as param
 from .cartgraph import TestGraph, TestNode
@@ -165,122 +164,8 @@ def unittest(config, run_params, tag=""):
     util_testrunner.run(util_unittests)
 
 
-def full(config, run_params, tag=""):
-    """
-    Crude method to fully setup a vm. Compared with the newer Cartesian
-    based method, this is not faster but could be safer in case of already
-    running vms and combinations with other manual steps.
-
-    :param config: command line arguments
-    :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
-    :param str tag: extra name identifier for the test to be run
-    """
-    clean(config, run_params, tag=tag + "mm")
-    create(config, run_params, tag=tag + "m")
-    install(config, run_params, tag=tag)
-    run_params["redeploy_only"] = "no"
-    deploy(config, run_params, tag=tag)
-    setup_str = config["param_str"]
-    config["param_str"] += param.ParsedDict({"set_state": "customize", "set_type": "off"}).parsable_form()
-    set(config, run_params, tag=tag)
-    config["param_str"] = setup_str
-
-
-def update(config, run_params, tag=""):
-    """
-    Crude method to clean up LVM volumes of the virtual machines.
-    The VMs will be reverted back to the "install" state and all
-    test files will be redeployed afterwards.
-
-    :param config: command line arguments
-    :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
-    :param str tag: extra name identifier for the test to be run
-    :raises: :py:class:`exceptions.ValueError` if vm is unknown
-
-    If the `dry_run` parameter is set to "yes", this will not actually
-    remove, but just show affected volumes.
-
-    .. note:: The code for this step was taken from an external python script
-        and could be replaced later on if the newer update step becomes faster.
-    """
-    lvscan_bin = '/usr/sbin/lvscan'
-    lvremove_bin = '/usr/sbin/lvremove'
-
-    vms = {}
-
-    vm_whitelist = ['vm1', 'vm2', 'vm3', 'vm4', 'vm5']
-    whitelist = ['thin_pool', 'LogVol', 'install', 'current_state']
-
-    def parse_active_vms():
-        lvscan_output = process.run(lvscan_bin).stdout_text
-        for line in lvscan_output.split('\n'):
-            prefix = os.environ['PREFIX'] if 'PREFIX' in os.environ else 'at'
-            match = re.match(" +ACTIVE +'(/dev/%s_(vm\d+)_ramdisk/(.*))' +" % prefix, line)
-            if match is None:
-                continue
-
-            fullpath = match.group(1)
-            vm = match.group(2)
-            volname = match.group(3)
-
-            if vm not in vm_whitelist:
-                logging.info("Ignoring volume %s from %s", volname, vm)
-                continue
-
-            logging.info('Found volume %s from %s', volname, vm)
-
-            if vm not in vms:
-                vms[vm] = [(volname, fullpath)]
-            else:
-                vms[vm].append((volname, fullpath))
-
-    def clean_volumes(dry_run):
-        for vm in vms:
-            for volume, fullpath in vms[vm]:
-                if volume in whitelist:
-                    continue
-
-                if dry_run:
-                    logging.info('Would remove volume %s from %s', volume, vm)
-                    continue
-
-                logging.info('Removing volume %s from %s', volume, vm)
-                try:
-                    output = process.run("%s --force %s" % (lvremove_bin, fullpath)).stdout_text
-                except Exception as e:
-                    output = str(e)
-                for line in output.split('\n'):
-                    logging.info(line)
-
-    new_whitelist = run_params.objects("vms")
-    for vmname in new_whitelist:
-        if vmname not in vm_whitelist:
-            raise ValueError('Unknown VM "{0}". Aborting'.format(vmname))
-
-    vm_whitelist = new_whitelist
-    logging.info('Working on VM %s only', ','.join(vm_whitelist))
-
-    parse_active_vms()
-    dry_run = True if run_params.get("dry_run", "no") == "yes" else False
-    clean_volumes(dry_run)
-
-    # now redeploy data
-    setup_str = config["param_str"]
-    config["param_str"] = setup_str + param.ParsedDict({"get_state": "install", "get_type": "off"}).parsable_form()
-    get(config, run_params, tag=tag + "m")
-    run_params["redeploy_only"] = "no"
-    deploy(config, run_params, tag=tag)
-    config["param_str"] = setup_str + param.ParsedDict({"set_state": "customize", "set_type": "off"}).parsable_form()
-    set(config, run_params, tag=tag)
-    config["param_str"] = setup_str
-
-
 @with_cartesian_graph
-def graphfull(config, run_params, tag=""):
+def full(config, run_params, tag=""):
     """
     Perform all the setup needed to achieve a certain state and save the state.
 
@@ -320,7 +205,7 @@ def graphfull(config, run_params, tag=""):
 
 
 @with_cartesian_graph
-def graphupdate(config, run_params, tag=""):
+def update(config, run_params, tag=""):
     """
     Update all states (run all tests) from the state defined as
     ``from_state=<state>`` to the state defined as ``to_state=<state>``.
