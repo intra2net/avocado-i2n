@@ -30,6 +30,7 @@ addons:
 
 branches:
   except:
+    - master-experimental
     - tp-i2n
 
 sudo: true
