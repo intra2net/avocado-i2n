@@ -798,7 +798,9 @@ class VMNetwork(object):
         """
         logging.info("Reconfiguring the %s of %s", nic, vm.name)
         if vm.params["os_type"] == "windows":
-            network = self.params.get("%s_wname" % nic, nic)
+            network = self.params.get("nic_wname", nic) + " " + str(int(nic[1:]) + 1)
+            # the first adapter number is omitted on windows
+            network = network.rstrip(" 1")
             netcmd = "netsh interface ip set address name=\"%s\" source=static %s %s %s 0"
             vm.session.cmd(netcmd % (network, interface.ip,
                                      interface.netconfig.netmask,
