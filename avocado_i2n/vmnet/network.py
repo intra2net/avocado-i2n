@@ -1228,6 +1228,7 @@ class VMNetwork(object):
                                                                           node1.name, interface1.ip)
                                 logging.debug("Pinging %s", direction_str)
                                 status, output = self.ping(node1.platform, node2.platform, address=interface2.ip)
+                                logging.debug("Pinging returned status %s and output:\n%s", status, output)
                                 failed = failed or status != 0
 
         if failed:
