@@ -143,8 +143,7 @@ def configure_unattended_kickstart(params):
 
     for i, nic in reversed(list(enumerate(vm_nics))):
         network_line = "network --device eth%i" % i
-        # TODO: attain full nic flixibility in the future
-        if nic == "inic":
+        if nic == params["internet_nic"]:
             network_line = "%s --bootproto=dhcp --activate" % network_line
         else:
             ip = vm_params.object_params(nic)["ip"]
@@ -204,8 +203,7 @@ def configure_unattended_sif(params):
                                 "AdapterSections = params.MS_TCPIP.Adapter%02d," % i,
                                 sif_string)
 
-        # TODO: attain full nic flixibility in the future
-        if nic == "inic":
+        if nic == params["internet_nic"]:
             sif_string = re.sub(";nic ip configurations here\n", ";nic ip configurations here\n"
                                 "[params.MS_TCPIP.Adapter%02d]\nDHCP = Yes\n"
                                 "SpecificTo = Adapter%02d\n" % (i, i),
@@ -241,10 +239,9 @@ def configure_unattended_xml(params):
     vm_nics = vm_params.objects("nics")
 
     for i, nic in reversed(list(enumerate(vm_nics))):
-        # TODO: attain full nic flixibility in the future
-        if nic == "inic":
+        if nic == params["internet_nic"]:
             logging.info("Only static IP configuration is included in the unattended xml "
-                         "file so the inic of %s (DHCP) will be skipped", params["main_vm"])
+                         "file so the internet nic of %s (DHCP) will be skipped", params["main_vm"])
         else:
             nic_params = vm_params.object_params(nic)
             ip = nic_params["ip"]
