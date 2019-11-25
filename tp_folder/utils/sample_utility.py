@@ -2,7 +2,7 @@
 
 SUMMARY
 ------------------------------------------------------
-Utility with functionality shared among the some tests.
+Utility with functionality shared among some tests.
 
 Copyright: Intra2net AG
 
