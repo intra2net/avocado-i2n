@@ -145,11 +145,11 @@ class VMTunnel(object):
         """
         logging.info("Preparing tunnel parameters for each of %s and %s", node1.name, node2.name)
         if local1 is None:
-            local1 = {"type": "nic", "nic": "onic"}
+            local1 = {"type": "nic", "nic": "lan_nic"}
         if remote1 is None:
-            remote1 = {"type": "custom", "nic": "onic"}
+            remote1 = {"type": "custom", "nic": "lan_nic"}
         if peer1 is None:
-            peer1 = {"type": "ip", "nic": "inic"}
+            peer1 = {"type": "ip", "nic": "internet_nic"}
         local2, remote2, peer2 = self._get_peer_variant(local1, remote1, peer1)
         params = utils_params.Params()
 
@@ -164,7 +164,7 @@ class VMTunnel(object):
         params["vpnconn_remote_type_%s_%s" % (name, node2.name)] = remote2["type"].upper()
 
         if local1["type"] == "nic":
-            netconfig1 = node1.interfaces[local1.get("nic", "onic")].netconfig
+            netconfig1 = node1.interfaces[node1.params[local1.get("nic", "lan_nic")]].netconfig
             params["vpnconn_lan_net_%s_%s" % (name, node1.name)] = netconfig1.net_ip
             params["vpnconn_lan_netmask_%s_%s" % (name, node1.name)] = netconfig1.netmask
             params["vpnconn_remote_net_%s_%s" % (name, node2.name)] = netconfig1.net_ip
@@ -190,7 +190,7 @@ class VMTunnel(object):
                 params["vpnconn_lan_net_%s_%s" % (name, node2.name)] = local1["rnet"]
                 params["vpnconn_lan_netmask_%s_%s" % (name, node2.name)] = local1["rmask"]
             else:
-                netconfig2 = node2.interfaces[remote1.get("nic", "onic")].netconfig
+                netconfig2 = node2.interfaces[node2.params[remote1.get("nic", "lan_nic")]].netconfig
                 params["vpnconn_lan_net_%s_%s" % (name, node2.name)] = netconfig2.net_ip
                 params["vpnconn_lan_netmask_%s_%s" % (name, node2.name)] = netconfig2.netmask
             params["vpnconn_remote_net_%s_%s" % (name, node1.name)] = netconfig2.net_ip
@@ -207,17 +207,17 @@ class VMTunnel(object):
         # road warrior parameters
         params["vpnconn_peer_type_%s_%s" % (name, node1.name)] = peer1["type"].upper()
         if peer1["type"] == "ip":
-            interface2 = node2.interfaces[peer1.get("nic", "inic")]
+            interface2 = node2.interfaces[node2.params[peer1.get("nic", "internet_nic")]]
             params["vpnconn_peer_ip_%s_%s" % (name, node1.name)] = interface2.ip
             params["vpnconn_activation_%s_%s" % (name, node1.name)] = "ALWAYS"
         elif peer1["type"] == "dynip":
-            interface2 = node2.interfaces[peer1.get("nic", "inic")]
+            interface2 = node2.interfaces[node2.params[peer1.get("nic", "internet_nic")]]
             params["vpnconn_activation_%s_%s" % (name, node1.name)] = "PASSIVE"
         else:
             raise ValueError("Invalid choice of left peer type '%s', must be one of"
                              " 'ip', 'dynip'" % peer1["type"])
         params["vpnconn_peer_type_%s_%s" % (name, node2.name)] = peer2["type"].upper()
-        interface1 = node1.interfaces[peer2.get("nic", "inic")]
+        interface1 = node1.interfaces[node1.params[peer2.get("nic", "internet_nic")]]
         params["vpnconn_peer_ip_%s_%s" % (name, node2.name)] = interface1.ip
         params["vpnconn_activation_%s_%s" % (name, node2.name)] = "ALWAYS"
 
