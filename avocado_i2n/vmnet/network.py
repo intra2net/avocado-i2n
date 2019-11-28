@@ -784,11 +784,10 @@ class VMNetwork(object):
         """
         raise NotImplementedError("Need implementation for some OS")
 
-    def _reconfigure_vm_nic(self, nic, interface, vm):
+    def _reconfigure_vm_nic(self, interface, vm):
         """
         Reconfigure the NIC of a vm.
 
-        :param str nic: nic name known by the vm operating system
         :param interface: network interface containing the new configuration
         :type interface: :py:class:`VMInterface`
         :param vm: vm whose nic will be reconfigured
@@ -796,8 +795,9 @@ class VMNetwork(object):
         :raises: :py:class:`exceptions.TestError` if the client is an Android device
         :raises: :py:class:`exceptions.NotImplementedError` if the client is not compatible
         """
-        logging.info("Reconfiguring the %s of %s", nic, vm.name)
+        logging.info("Reconfiguring the %s of %s", interface.name, vm.name)
         if vm.params["os_type"] == "windows":
+            nic = interface.name
             network = self.params.get("nic_wname", nic) + " " + str(int(nic[1:]) + 1)
             # the first adapter number is omitted on windows
             network = network.rstrip(" 1")
@@ -851,11 +851,7 @@ class VMNetwork(object):
             node = interface.node
             logging.info("Changing the ip of %s to %s", node.name, interface.ip)
 
-            # HACK: revise dictionaries to avoid having to do reverse lookup
-            for name, value in node.interfaces.items():
-                if value == interface:
-                    interface_nic = name
-            self._reconfigure_vm_nic(interface_nic, interface, node.platform)
+            self._reconfigure_vm_nic(interface, node.platform)
 
             # updating proto (higher level) params (test params -> vm params -> nic params)
             # TODO: need to update all relevant parameters or regenerate at once
@@ -882,7 +878,7 @@ class VMNetwork(object):
         client_iface = self.interfaces["%s.%s" % (client.name, self.nodes[client.name].params[client_nic])]
         server_iface = self.interfaces["%s.%s" % (server.name, self.nodes[server.name].params[server_nic])]
         client_iface.netconfig.gateway = server_iface.ip
-        self._reconfigure_vm_nic(client_nic, client_iface, client)
+        self._reconfigure_vm_nic(client_iface, client)
 
     def configure_tunnel_between_vms(self, name, vm1, vm2,
                                      local1=None, remote1=None, peer1=None, auth=None,
