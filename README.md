@@ -1,6 +1,8 @@
 # avocado-i2n
 *Plugins for avocado extending avocado-vt with automated vm state setup,
-inheritance, and traversal* &nbsp; ![CI status](https://travis-ci.org/intra2net/avocado-i2n.svg?branch=master) [![Documentation Status](https://readthedocs.org/projects/avocado-i2n/badge/?version=latest)](http://guibot.readthedocs.io/en/latest/?badge=latest)
+inheritance, and traversal*
+
+![CI status](https://travis-ci.org/intra2net/avocado-i2n.svg?branch=master) [![Documentation Status](https://readthedocs.org/projects/avocado-i2n/badge/?version=latest)](http://guibot.readthedocs.io/en/latest/?badge=latest) [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/intra2net/avocado-i2n.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/intra2net/avocado-i2n/context:python)
 
 This file provides a brief overview of the core concepts behind the current
 plugin and hopefully a compact explanation of how tests are being run.
