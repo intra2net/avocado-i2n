@@ -932,23 +932,19 @@ class VMNetwork(object):
         self.tunnels[name].configure_on_endpoint(node, apply_extra_options)
 
     def configure_roadwarrior_vpn_on_server(self, name, server, client,
-                                            local1=None, remote1=None, auth=None,
+                                            local1=None, remote1=None, peer1=None, auth=None,
                                             apply_extra_options=None):
         """
         Configure a VPN connection (tunnel) on a vm to play the role of a VPN
         server for any individual clients to access it from the internet.
 
-        :param str name: name of the VPN connection
+        Arguments are similar to the ones from :py:method:`configure_tunnel_between_vms`
+        with the exception of:
+
         :param server: vm which will be the VPN server for roadwarrior connections
         :type server: VM object
         :param client: vm which will be connecting individual device
         :type client: VM object
-        :param local1: left local type as in tunnel constructor
-        :type local1: {str, str}
-        :param remote1: left remote type as in tunnel constructor
-        :type remote1: {str, str}
-        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
-        :type apply_extra_options: {str, any}
 
         Regarding the client, only its parameters will be updated by this method.
         """
@@ -956,7 +952,11 @@ class VMNetwork(object):
             local1 = {"type": "nic", "nic": "lan_nic"}
         if remote1 is None:
             remote1 = {"type": "modeconfig", "modeconfig_ip": "172.30.0.1"}
-        peer1 = {"type": "dynip", "nic": "internet_nic"}
+        if peer1 is None:
+            peer1 = {"type": "dynip", "nic": "internet_nic"}
+        if peer1["type"] != "dynip":
+            raise exceptions.TestError("Only dynamic IP peer type is possible for"
+                                       "roadwarrior connections, not %s", peer1["type"])
 
         left_node = self.nodes[server.name]
         right_node = self.nodes[client.name]
@@ -971,18 +971,13 @@ class VMNetwork(object):
         Build a set of VPN connections using VPN forwarding to gain access from
         one vm to another.
 
+        Arguments are similar to the ones from :py:method:`configure_tunnel_between_vms`
+        with the exception of:
+
         :param vms: vms to participate in the VPN route
         :type vms: [VM object]
         :param vpns: VPNs over which the route will be constructed
         :type vpns: [str]
-        :param remote1: left remote type as in tunnel constructor
-        :type remote1: {str, str}
-        :param peer1: left peer type as in tunnel constructor
-        :type peer1: {str, str}
-        :param auth: authentication configuration as described in the tunnel constructor
-        :type auth: {str, str}
-        :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
-        :type apply_extra_options: {str, any}
         :raises: :py:class:`exceptions.TestError` if #vpns < #vms - 1 or #vpns < 2 or #vms < 2
 
         Infrastructure of point to point VPN connections must already exist.
