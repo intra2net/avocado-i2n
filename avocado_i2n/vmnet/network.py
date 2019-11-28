@@ -39,8 +39,7 @@ import collections
 
 from avocado.utils import process
 from avocado.core import exceptions
-from virttest import utils_net, utils_params
-import aexpect
+from virttest import utils_net
 
 from .interface import VMInterface
 from .node import VMNode

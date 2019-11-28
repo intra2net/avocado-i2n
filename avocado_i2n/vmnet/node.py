@@ -19,7 +19,6 @@ INTERFACE
 """
 
 import logging
-import sys
 
 import aexpect
 

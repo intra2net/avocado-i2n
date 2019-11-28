@@ -13,12 +13,9 @@ INTERFACE
 """
 
 import re
-import logging
 
 from avocado.core import test
 from avocado_vt.test import VirtTest
-
-from .. import params_parser as param
 
 
 class TestNode(object):

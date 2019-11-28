@@ -15,7 +15,6 @@ INTERFACE
 
 import logging
 import os
-import re
 import copy
 import shutil
 import collections
