@@ -123,7 +123,6 @@ def unset_root(run_params):
                                         "this is not a permanent test object, see the debug.")
                         raise exceptions.TestWarn("Permanent vm %s cannot be removed "
                                                   "automatically" % vm_name)
-                        return
             lv_utils.vg_ramdisk_cleanup(vm_params["ramdisk_sparse_filename"],
                                         os.path.join(vm_params["ramdisk_basedir"],
                                                      vm_params["vg_name"]),
