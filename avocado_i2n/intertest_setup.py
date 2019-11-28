@@ -287,7 +287,7 @@ def graphfull(config, run_params, tag=""):
 
         # overwrite any existing test objects
         vm_params["force_create"] = "yes"
-        create_graph = l.parse_object_trees(config["param_str"], param.re_str(vm_params.get("state", "customize_vm")),
+        create_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("state", "customize_vm")),
                                             {vm_name: config["vm_strs"][vm_name]},
                                             prefix=tag, object_names=vm_name, objectless=True)
         create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=False)
@@ -340,7 +340,7 @@ def graphupdate(config, run_params, tag=""):
         r.run_traversal(remove_graph, config["param_str"])
 
         logging.info("Updating all states before '%s'", vm_params.get("to_state", "customize_vm"))
-        update_graph = l.parse_object_trees(config["param_str"], param.re_str(vm_params.get("to_state", "customize_vm")),
+        update_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("to_state", "customize_vm")),
                                             {vm_name: config["vm_strs"][vm_name]}, prefix=tag,
                                             object_names=vm_name, objectless=True)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=False)
@@ -349,7 +349,7 @@ def graphupdate(config, run_params, tag=""):
 
         logging.info("Preserving all states before '%s'", vm_params.get("from_state", "customize_vm"))
         if vm_params.get("from_state", "install") != "root":
-            reuse_graph = l.parse_object_trees(config["param_str"], param.re_str(vm_params.get("from_state", "install")),
+            reuse_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("from_state", "install")),
                                                {vm_name: config["vm_strs"][vm_name]}, prefix=tag,
                                                object_names=vm_name, objectless=True, verbose=False)
             update_graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
@@ -434,7 +434,7 @@ def windows(config, run_params, tag=""):
         reparsable = vm.config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file,
-                                    ovrwrt_str=param.re_str("manage.start", config["param_str"], objectless=True),
+                                    ovrwrt_str=param.re_str("nonleaves..manage.start", config["param_str"]),
                                     ovrwrt_dict={"set_state": "windows_online"})
         config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
 
@@ -442,7 +442,7 @@ def windows(config, run_params, tag=""):
         reparsable = vm.config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file,
-                                    ovrwrt_str=param.re_str("windows_virtuser", config["param_str"], objectless=True),
+                                    ovrwrt_str=param.re_str("nonleaves..windows_virtuser", config["param_str"]),
                                     ovrwrt_dict={"skip_image_processing": "yes", "kill_vm": "no"})
         config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
 
@@ -452,7 +452,7 @@ def windows(config, run_params, tag=""):
             reparsable = vm.config.get_copy()
             reparsable.parse_next_batch(base_file="sets.cfg",
                                         ovrwrt_file=param.tests_ovrwrt_file,
-                                        ovrwrt_str=param.re_str("outlook_prep..ol%s" % year, config["param_str"], objectless=True),
+                                        ovrwrt_str=param.re_str("nonleaves..outlook_prep..ol%s" % year, config["param_str"]),
                                         ovrwrt_dict={"skip_image_processing": "yes", "kill_vm": "no"})
             config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
 
@@ -477,7 +477,7 @@ def develop(config, run_params, tag=""):
     vms = run_params["vms"]
     mode = run_params.get("devmode", "generator")
     setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("develop.%s" % mode) + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
+    setup_str = param.re_str("nonleaves..develop.%s" % mode) + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
     logging.info("Developing on virtual machines %s", vms)
@@ -502,9 +502,10 @@ def install(config, run_params, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     graph = TestGraph()
-    graph.nodes, graph.objects = config["graph"].l.parse_object_nodes(param.re_str("install"), config["vm_strs"],
-                                                                 prefix=tag, object_names=run_params.get("vms", ""),
-                                                                 objectless=True)
+    graph.nodes, graph.objects = config["graph"].l.parse_object_nodes(param.re_str("nonleaves..install"),
+                                                                      config["vm_strs"],
+                                                                      prefix=tag, object_names=run_params.get("vms", ""),
+                                                                      objectless=True)
     for vm_name in sorted(graph.test_objects.keys()):
         config["graph"].r.run_install_node(graph, vm_name, config["param_str"])
 
@@ -543,7 +544,7 @@ def deploy(config, run_params, tag=""):
                 ovrwrt_dict["get_state"] = ""
                 ovrwrt_dict["set_state"] = ""
             setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
-            ovrwrt_str = param.re_str("customize_vm", setup_str, objectless=True)
+            ovrwrt_str = param.re_str("nonleaves..customize_vm", setup_str)
             reparsable = vm.config.get_copy()
             reparsable.parse_next_batch(base_file="sets.cfg",
                                         ovrwrt_file=param.tests_ovrwrt_file,
@@ -571,8 +572,8 @@ def internal(config, run_params, tag=""):
                            "skip_image_processing": "yes", "kill_vm": "no"}
         else:
             ovrwrt_dict = {}
-        forced_setup = vm.params["node"]
-        ovrwrt_str = param.re_str(forced_setup, config["param_str"], objectless=True)
+        forced_setup = "nonleaves.." + vm.params["node"]
+        ovrwrt_str = param.re_str(forced_setup, config["param_str"])
         reparsable = vm.config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file,
@@ -616,7 +617,7 @@ def sysupdate(config, run_params, tag=""):
             else:
                 ovrwrt_dict = {}
             setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
-            ovrwrt_str = param.re_str("system_update", setup_str, objectless=True)
+            ovrwrt_str = param.re_str("nonleaves..system_update", setup_str)
             reparsable = vm.config.get_copy()
             reparsable.parse_next_batch(base_file="sets.cfg",
                                         ovrwrt_file=param.tests_ovrwrt_file,
@@ -646,7 +647,7 @@ def boot(config, run_params, tag=""):
     """
     vms = run_params["vms"]
     setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("manage.start") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
+    setup_str = param.re_str("nonleaves..manage.start") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one boot test variant from %s" % tests
     logging.info("Booting virtual machines %s", vms)
@@ -671,7 +672,7 @@ def download(config, run_params, tag=""):
     """
     vms = run_params["vms"]
     setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("manage.download") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
+    setup_str = param.re_str("nonleaves..manage.download") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one download test variant from %s" % tests
     logging.info("Downloading from virtual machines %s", vms)
@@ -696,7 +697,7 @@ def upload(config, run_params, tag=""):
     """
     vms = run_params["vms"]
     setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("manage.upload") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
+    setup_str = param.re_str("nonleaves..manage.upload") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one upload test variant from %s" % tests
     logging.info("Uploading to virtual machines %s", vms)
@@ -719,7 +720,7 @@ def shutdown(config, run_params, tag=""):
     """
     vms = run_params["vms"]
     setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("manage.stop") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
+    setup_str = param.re_str("nonleaves..manage.stop") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one shutdown test variant from %s" % tests
     logging.info("Shutting down virtual machines %s", vms)
@@ -743,7 +744,7 @@ def check(config, run_params, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = config["param_str"]
-    setup_str += param.re_str("manage.unchanged")
+    setup_str += param.re_str("nonleaves..manage.unchanged")
     setup_str += param.ParsedDict({"vm_action": "check",
                                    "skip_image_processing": "yes"}).parsable_form()
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"],
@@ -766,7 +767,7 @@ def pop(config, run_params, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = config["param_str"]
-    setup_str += param.re_str("manage.unchanged")
+    setup_str += param.re_str("nonleaves..manage.unchanged")
     setup_str += param.ParsedDict({"vm_action": "pop",
                                    "skip_image_processing": "yes"}).parsable_form()
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"],
@@ -788,7 +789,7 @@ def push(config, run_params, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = config["param_str"]
-    setup_str += param.re_str("manage.unchanged")
+    setup_str += param.re_str("nonleaves..manage.unchanged")
     setup_str += param.ParsedDict({"vm_action": "push",
                                    "skip_image_processing": "yes"}).parsable_form()
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"],
@@ -817,8 +818,8 @@ def get(config, run_params, tag=""):
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file,
-                                    ovrwrt_str=param.re_str("manage.unchanged",
-                                                            config["param_str"], objectless=True),
+                                    ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
+                                                            config["param_str"]),
                                     ovrwrt_dict={"vm_action": "get",
                                                  "skip_image_processing": "yes"})
         config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
@@ -843,8 +844,8 @@ def set(config, run_params, tag=""):
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file,
-                                    ovrwrt_str=param.re_str("manage.unchanged",
-                                                            config["param_str"], objectless=True),
+                                    ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
+                                                            config["param_str"]),
                                     ovrwrt_dict={"vm_action": "set",
                                                  "skip_image_processing": "yes"})
         config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
@@ -875,8 +876,8 @@ def unset(config, run_params, tag=""):
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file,
-                                    ovrwrt_str=param.re_str("manage.unchanged",
-                                                            setup_str, objectless=True),
+                                    ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
+                                                            setup_str),
                                     ovrwrt_dict={"vm_action": "unset",
                                                  "skip_image_processing": "yes"})
         config["graph"].r.run_test_node(TestNode(tag, reparsable, []))

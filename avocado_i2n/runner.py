@@ -206,7 +206,7 @@ class CartesianRunner(TestRunner):
                                    subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
         assert len(nodes) == 1, "There can only be one root for %s" % object_name
         test_node = nodes[0]
-        setup_str = param.re_str("manage.unchanged", param_str, tag, True)
+        setup_str = param.re_str("nonleaves..manage.unchanged", param_str, tag)
         setup_dict = {"vm_action": "set", "skip_image_processing": "yes"}
         # implementation of object creation needs a separate parser
         create_config = test_object.config.get_copy()
@@ -239,7 +239,7 @@ class CartesianRunner(TestRunner):
         install_config = test_object.config.get_copy()
         install_config.parse_next_batch(base_file="sets.cfg",
                                         ovrwrt_file=param.tests_ovrwrt_file,
-                                        ovrwrt_str=param.re_str("0preinstall", param_str, tag, True))
+                                        ovrwrt_str=param.re_str("nonleaves..0preinstall", param_str, tag))
         # some parameters from the install configuration have to be used for decision about install tests
         install_params = install_config.get_params()
         status = self.run_test_node(TestNode("0p", install_config, test_node.objects))
@@ -248,17 +248,17 @@ class CartesianRunner(TestRunner):
             logging.info("Installing virtual machine %s", test_object.name)
             if install_params.get("configure_install", "stepmaker") == "unattended_install":
                 if test_object.params["os_type"] == "windows":
-                    ovrwrt_str = param.re_str("unattended_install", param_str, tag, True)
+                    ovrwrt_str = param.re_str("nonleaves..unattended_install", param_str, tag)
                 elif install_params["unattended_file"].endswith(".preseed"):
-                    ovrwrt_str = param.re_str("unattended_install.cdrom.in_cdrom_ks", param_str, tag, True)
+                    ovrwrt_str = param.re_str("nonleaves..unattended_install.cdrom.in_cdrom_ks", param_str, tag)
                 elif install_params["unattended_file"].endswith(".ks"):
-                    ovrwrt_str = param.re_str("unattended_install.cdrom.extra_cdrom_ks", param_str, tag, True)
+                    ovrwrt_str = param.re_str("nonleaves..unattended_install.cdrom.extra_cdrom_ks", param_str, tag)
                 else:
                     raise NotImplementedError("Unattended install tests are not supported for variant %s" % test_object.params["name"])
                 ovrwrt_dict = {}
             else:
                 ovrwrt_dict = {"type": install_params.get("configure_install", "stepmaker")}
-                ovrwrt_str = param.re_str("install", param_str, tag, True)
+                ovrwrt_str = param.re_str("nonleaves..install", param_str, tag, True)
             install_config = test_object.config.get_copy()
             install_config.parse_next_batch(base_file="sets.cfg",
                                             ovrwrt_file=param.tests_ovrwrt_file,
@@ -343,8 +343,8 @@ class CartesianRunner(TestRunner):
                         forward_config = test_object.config.get_copy()
                         forward_config.parse_next_batch(base_file="sets.cfg",
                                                         ovrwrt_file=param.tests_ovrwrt_file,
-                                                        ovrwrt_str=param.re_str("manage.unchanged",
-                                                                                setup_str, "", True),
+                                                        ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
+                                                                                setup_str, ""),
                                                         ovrwrt_dict={"vm_action": "unset",
                                                                      "skip_image_processing": "yes"})
                         self.run_test_node(TestNode("c" + test_node.name, forward_config, [test_object]))

@@ -355,7 +355,7 @@ class CartesianLoader(VirtTestLoader):
                       "vms": " ".join(objects),
                       "main_vm": objects[0]}
         setup_str = param.ParsedDict(setup_dict).parsable_form() + param_str
-        nodes = self.parse_nodes(param.re_str("0scan", setup_str, objectless=True), graph)
+        nodes = self.parse_nodes(param.re_str("nonleaves..0scan", setup_str), graph)
         assert len(nodes) == 1, "There can only be one shared root"
         scan_node = TestNode("0s", nodes[0].config, [])
         scan_node.regenerate_params()
@@ -378,7 +378,7 @@ class CartesianLoader(VirtTestLoader):
         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
         test_object = objects[0]
         setup_dict = {"set_state": "root", "set_type": "offline"}
-        setup_str = param.re_str("0root", param_str, objectless=True)
+        setup_str = param.re_str("nonleaves..0root", param_str)
         config = test_object.config.get_copy()
         config.parse_next_batch(base_file="sets.cfg",
                                 ovrwrt_file=param.tests_ovrwrt_file,
@@ -405,7 +405,7 @@ class CartesianLoader(VirtTestLoader):
             if setup_restr == "0root":
                 parse_parents = self.parse_create_node(graph, test_object.name, param_str)
             else:
-                setup_str = param.re_str(setup_restr, param_str, objectless=True)
+                setup_str = param.re_str("nonleaves.." + setup_restr, param_str)
                 name = test_node.name + "a"
                 parse_parents = self.parse_nodes(setup_str, graph, prefix=name, object_name=test_object.name)
             parents = parse_parents
@@ -441,7 +441,7 @@ class CartesianLoader(VirtTestLoader):
         if setup_restr == "0root":
             new_parents = self.parse_create_node(graph, test_object.name, param_str)
         else:
-            setup_str = param.re_str(setup_restr, param_str, objectless=True)
+            setup_str = param.re_str("nonleaves.." + setup_restr, param_str)
             name = test_node.name + "a"
             new_parents = self.parse_nodes(setup_str, graph, prefix=name, object_name=test_object.name)
         for new_parent in new_parents:

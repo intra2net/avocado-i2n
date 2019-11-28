@@ -386,7 +386,7 @@ def main_vm():
     return rep.get_params(list_of_keys=["main_vm"]).get("main_vm")
 
 
-def re_str(variant, ovrwrt_str="", tag="", objectless=False):
+def re_str(variant, ovrwrt_str="", tag=""):
     """
     Add a variant restriction to the overwrite string, optionally
     adding a custom tag as well.
@@ -394,7 +394,6 @@ def re_str(variant, ovrwrt_str="", tag="", objectless=False):
     :param str variant: variant restriction
     :param str ovrwrt_str: string where the variant restriction will be added
     :param str tag: additional tag to the variant combination
-    :param bool objectless: whether the restricted test variants have specified any test objects
     :returns: restricted parameter string
     :rtype: str
     """
@@ -402,11 +401,7 @@ def re_str(variant, ovrwrt_str="", tag="", objectless=False):
         subtest_variant = "variants:\n    - %s:\n        only %s\n" % (tag, variant)
     else:
         subtest_variant = "only %s\n" % variant
-    if objectless:
-        setup_variant = "only nonleaves\n"
-    else:
-        setup_variant = ""
-    ovrwrt_str = subtest_variant + ovrwrt_str + setup_variant
+    ovrwrt_str = subtest_variant + ovrwrt_str
     return ovrwrt_str
 
 
