@@ -254,10 +254,10 @@ class TestGraph(object):
             state_name = "root" if state_name is None else state_name
             root_tests = self.get_nodes_by(param_key="set_state", param_val="^"+state_name+"$")
             root_tests = self.get_nodes_by(param_key="vms",
-                                           param_val="(^|\s)%s($|\s)" % object_name,
+                                           param_val="(?:^|\s)%s(?:$|\s)" % object_name,
                                            subset=root_tests)
         else:
-            root_tests = self.get_nodes_by(param_key="name", param_val="(\.|^)0scan(\.|^)")
+            root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)0scan(?:\.|$)")
         if len(root_tests) < 1:
             raise AssertionError("Could not retrieve state %s and flag all its children tests" % state_name)
         elif len(root_tests) > 1:
