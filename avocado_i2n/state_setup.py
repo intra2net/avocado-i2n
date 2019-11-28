@@ -146,7 +146,6 @@ def show_states(run_params, env):
     states = []
     for vm_name in run_params.objects("vms"):
         vm_params = run_params.object_params(vm_name)
-        vm = env.get_vm(vm_name)
 
         if vm_params.get("check_type", "offline") == "offline":
             logging.debug("Checking %s for available offline states", vm_name)

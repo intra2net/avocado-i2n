@@ -435,7 +435,6 @@ class VMNetwork(object):
             raise exceptions.TestError("The netconfig %s is blacklisted for host DNS service!" % interface.netconfig)
         else:
             netconfig = interface.netconfig
-            node = interface.node
 
         internal_netdst = netconfig.netdst
         external_netdst = netconfig.ext_netdst
@@ -1092,6 +1091,7 @@ class VMNetwork(object):
         else:
             dst_iface = self.interfaces["%s.%s" % (dst_vm.name, dst_node.params[dst_nic])]
             dst_vm_server = self.nodes[dst_vm.name].platform
+        logging.debug("Detected destination server is %s", dst_vm_server.name)
 
         # check if the source vm shares a network with a fixed destination nic
         src_node = self.nodes[src_vm.name]
@@ -1158,8 +1158,8 @@ class VMNetwork(object):
             if message != log_message:
                 raise exceptions.TestFail("Wrong message %s in addition to %s was found in log" % (message, log_message))
         logging.info("Ok, resetting the messages log at %s", log_vm.name)
-        log = log_vm.session.cmd("rm -f /var/log/messages")
-        log = log_vm.session.cmd("/etc/init.d/rsyslog restart")
+        log_vm.session.cmd("rm -f /var/log/messages")
+        log_vm.session.cmd("/etc/init.d/rsyslog restart")
 
     def ping(self, src_vm, dst_vm, dst_nic="lan_nic", address=None):
         """

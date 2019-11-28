@@ -391,13 +391,11 @@ class VMTunnel(object):
         vm = node.platform
         logging.info("Configuring tunnel %s on %s", self.name, node.name)
         if node == self.left:
-            other = self.right
             params1 = self.left_params
             params2 = self.right_params
             interface1, interface2 = self.left_iface, self.right_iface
             netconfig1, netconfig2 = self.left_net, self.right_net
         elif node == self.right:
-            other = self.left
             params1 = self.right_params
             params2 = self.left_params
             interface1, interface2 = self.right_iface, self.left_iface
