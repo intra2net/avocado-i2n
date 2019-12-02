@@ -33,7 +33,7 @@
 
 Summary: Avocado I2N Plugin
 Name: avocado-plugins-i2n
-Version: 72.0
+Version: 73.0
 Release: 0%{?gitrel}%{?dist}
 License: GPLv2
 Group: Development/Tools
@@ -86,6 +86,10 @@ graph structure.
 %{python3_sitelib}/avocado_framework_plugins_i2n*
 
 %changelog
+* Mon Dec 2 2019 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 73.0-0
+- Improved defaults and configurable nic roles for the vmnet subpackage
+- Fixes from LGTM automated reviews
+
 * Sun Sep 29 2019 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 72.0-0
 - Extention and interface unification of all vmnet test methods
 - Full refactoring and documentation of the vmnet tunnel module
