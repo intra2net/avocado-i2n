@@ -81,6 +81,7 @@ before_script:
 # run tests
 script:
   - make check
+  - codecov
   # Running will take too much time building the required vms but we can at least validate noop runs and the list of tests
   - avocado vt-bootstrap --vt-skip-verify-download-assets --yes-to-all
   - avocado manu setup=noop

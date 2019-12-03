@@ -1,4 +1,5 @@
 PYTHON=$(shell which python3 2>/dev/null)
+COVERAGE=$(shell which coverage3 2>/dev/null)
 PYTHON_DEVELOP_ARGS=$(shell if ($(PYTHON) setup.py develop --help 2>/dev/null | grep -q '\-\-user'); then echo "--user"; else echo ""; fi)
 DESTDIR=/
 PROJECT=avocado
@@ -15,7 +16,8 @@ all:
 	@echo
 
 check:
-	$(PYTHON) -m unittest discover -v selftests
+	$(COVERAGE) run -m unittest discover -v selftests
+	$(COVERAGE) report -m
 
 install:
 	$(PYTHON) setup.py install --root $(DESTDIR)
