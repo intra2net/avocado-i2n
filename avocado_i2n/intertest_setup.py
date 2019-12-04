@@ -164,7 +164,7 @@ def full(config, run_params, tag=""):
     run_params["redeploy_only"] = "no"
     deploy(config, run_params, tag=tag)
     setup_str = config["param_str"]
-    config["param_str"] += param.ParsedDict({"set_state": "customize_vm", "set_type": "offline"}).parsable_form()
+    config["param_str"] += param.ParsedDict({"set_state": "customize", "set_type": "offline"}).parsable_form()
     set(config, run_params, tag=tag)
     config["param_str"] = setup_str
 
@@ -255,7 +255,7 @@ def update(config, run_params, tag=""):
     get(config, run_params, tag=tag + "m")
     run_params["redeploy_only"] = "no"
     deploy(config, run_params, tag=tag)
-    config["param_str"] = setup_str + param.ParsedDict({"set_state": "customize_vm", "set_type": "offline"}).parsable_form()
+    config["param_str"] = setup_str + param.ParsedDict({"set_state": "customize", "set_type": "offline"}).parsable_form()
     set(config, run_params, tag=tag)
     config["param_str"] = setup_str
 
@@ -279,15 +279,15 @@ def graphfull(config, run_params, tag=""):
     clean(config, run_params, tag=tag + "mm")
     for vm_name in run_params.objects("vms"):
         vm_params = run_params.object_params(vm_name)
-        logging.info("Creating the full state '%s' of %s", vm_params.get("state", "customize_vm"), vm_name)
-        if vm_params.get("state", "customize_vm") == "root":
+        logging.info("Creating the full state '%s' of %s", vm_params.get("state", "customize"), vm_name)
+        if vm_params.get("state", "customize") == "root":
             vm_params["vms"] = vm_name
             create(config, vm_params, tag=tag)
             continue
 
         # overwrite any existing test objects
         vm_params["force_create"] = "yes"
-        create_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("state", "customize_vm")),
+        create_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("state", "customize")),
                                             {vm_name: config["vm_strs"][vm_name]},
                                             prefix=tag, object_names=vm_name, objectless=True)
         create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=False)
@@ -321,33 +321,33 @@ def graphupdate(config, run_params, tag=""):
     l, r = config["graph"].l, config["graph"].r
     for vm_name in run_params.objects("vms"):
         vm_params = run_params.object_params(vm_name)
-        logging.info("Updating state '%s' of %s", vm_params.get("to_state", "customize_vm"), vm_name)
+        logging.info("Updating state '%s' of %s", vm_params.get("to_state", "customize"), vm_name)
 
-        if vm_params.get("to_state", "customize_vm") == "root":
+        if vm_params.get("to_state", "customize") == "root":
             logging.warning("The root state of %s cannot be updated - use 'setup=full' instead.", vm_name)
             continue
 
         logging.info("Tracing and removing all old states depending on the updated '%s'...",
-                     vm_params.get("to_state", "customize_vm"))
+                     vm_params.get("to_state", "customize"))
         # remove all test nodes depending on the updated node if present (unset mode is "ignore otherwise")
         remove_graph = l.parse_object_trees(config["param_str"] + param.ParsedDict({"unset_mode": "fi"}).parsable_form(),
                                             param.re_str(vm_params.get("remove_set", "all")), config["vm_strs"],
                                             prefix=tag, object_names=vm_name, objectless=False, verbose=False)
         remove_graph.flag_children(flag_type="run", flag=False)
         remove_graph.flag_children(flag_type="clean", flag=False)
-        remove_graph.flag_children(vm_params.get("to_state", "customize_vm"), vm_name,
+        remove_graph.flag_children(vm_params.get("to_state", "customize"), vm_name,
                                    flag_type="clean", flag=True, skip_roots=True)
         r.run_traversal(remove_graph, config["param_str"])
 
-        logging.info("Updating all states before '%s'", vm_params.get("to_state", "customize_vm"))
-        update_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("to_state", "customize_vm")),
+        logging.info("Updating all states before '%s'", vm_params.get("to_state", "customize"))
+        update_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("to_state", "customize")),
                                             {vm_name: config["vm_strs"][vm_name]}, prefix=tag,
                                             object_names=vm_name, objectless=True)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=False)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=True,
                                               skip_object_roots=True, skip_shared_root=True)
 
-        logging.info("Preserving all states before '%s'", vm_params.get("from_state", "customize_vm"))
+        logging.info("Preserving all states before '%s'", vm_params.get("from_state", "customize"))
         if vm_params.get("from_state", "install") != "root":
             reuse_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("from_state", "install")),
                                                {vm_name: config["vm_strs"][vm_name]}, prefix=tag,
@@ -515,7 +515,7 @@ def deploy(config, run_params, tag=""):
     """
     Deploy customized data and utilities to the guest vms,
     to one or to more of their states, either temporary (``stateless=no``)
-    or taking a respective 'customize_vm' snapshot.
+    or taking a respective 'customize' snapshot.
 
     :param config: command line arguments
     :type config: {str, str}
@@ -544,7 +544,7 @@ def deploy(config, run_params, tag=""):
                 ovrwrt_dict["get_state"] = ""
                 ovrwrt_dict["set_state"] = ""
             setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
-            ovrwrt_str = param.re_str("nonleaves..customize_vm", setup_str)
+            ovrwrt_str = param.re_str("nonleaves..customize", setup_str)
             reparsable = vm.config.get_copy()
             reparsable.parse_next_batch(base_file="sets.cfg",
                                         ovrwrt_file=param.tests_ovrwrt_file,

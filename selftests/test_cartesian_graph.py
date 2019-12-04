@@ -120,8 +120,8 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
             {"shortname": "^internal.stateless.0preinstall.vm1", "vms": "^vm1$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 7
@@ -136,8 +136,8 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1$"},
             # cleanup is expected only if at least one of the states is reusable (here root+install)
-            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 4
@@ -147,12 +147,12 @@ class CartesianGraphTest(unittest.TestCase):
     def test_one_leaf_with_step_setup(self):
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
-        DummyStateCheck.present_states = ["install", "customize_vm"]
+        DummyStateCheck.present_states = ["install", "customize"]
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
-            {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 4
@@ -170,15 +170,15 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
             {"shortname": "^internal.stateless.0preinstall.vm1", "vms": "^vm1$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.permanent.set_provider.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.ephemeral.online_with_provider.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.connect.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.on_connect.vm1", "vms": "^vm1$"},
 
             {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
             {"shortname": "^internal.stateless.0preinstall.vm2", "vms": "^vm2$"},
             {"shortname": "^original.unattended_install.cdrom.in_cdrom_ks.default_install.aio_threads.vm2", "vms": "^vm2$"},
-            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$"},
-            {"shortname": "^internal.ephemeral.online_deploy.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.ephemeral.on_customize.vm2", "vms": "^vm2$"},
             {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * 13
@@ -188,13 +188,13 @@ class CartesianGraphTest(unittest.TestCase):
     def test_two_objects_with_setup(self):
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
-        DummyStateCheck.present_states = ["root", "install", "customize_vm"]
+        DummyStateCheck.present_states = ["root", "install", "customize"]
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1 vm2$"},
-            {"shortname": "^internal.permanent.set_provider.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.ephemeral.online_with_provider.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.ephemeral.online_deploy.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.permanent.connect.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.on_connect.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.on_customize.vm2", "vms": "^vm2$"},
             {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * 5
@@ -209,8 +209,8 @@ class CartesianGraphTest(unittest.TestCase):
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.permanent.customize_vm.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.ephemeral.online_deploy.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * 3
         DummyTestRunning.fail_switch[2] = True
@@ -219,7 +219,7 @@ class CartesianGraphTest(unittest.TestCase):
 
     def test_trees_difference_zero(self):
         self.config["tests_str"] = "only nonleaves\n"
-        self.config["tests_str"] += "only set_provider\n"
+        self.config["tests_str"] += "only connect\n"
         self.main_vm = "vm1"
         graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm, objectless=True)
         graph.flag_parent_intersection(graph, flag_type="run", flag=False)
@@ -229,7 +229,7 @@ class CartesianGraphTest(unittest.TestCase):
     def test_trees_difference(self):
         self.config["tests_str"] = "only nonleaves\n"
         tests_str1 = self.config["tests_str"]
-        tests_str1 += "only set_provider\n"
+        tests_str1 += "only connect\n"
         tests_str2 = self.config["tests_str"]
         tests_str2 += "only install\n"
         self.main_vm = "vm2"
@@ -238,8 +238,8 @@ class CartesianGraphTest(unittest.TestCase):
 
         graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.permanent.customize_vm.vm2", "vms": "^vm2$"},
-            {"shortname": "^internal.permanent.set_provider.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.permanent.connect.vm2", "vms": "^vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * 2
         self.runner.run_traversal(graph, self.config["param_str"])
