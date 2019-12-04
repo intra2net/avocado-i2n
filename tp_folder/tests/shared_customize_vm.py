@@ -65,7 +65,9 @@ def deploy_avocado(vm, params, test):
     vm.copy_files_to(source_avocado_path, destination_avocado_path, timeout=180)
 
 
-def deploy_data(vm, folder_name, params, custom_src_path="", timeout=60):
+def deploy_data(vm, folder_name, params,
+                custom_src_path="", custom_dst_name="",
+                timeout=60):
     """
     Deploy data to a vm.
 
@@ -74,7 +76,8 @@ def deploy_data(vm, folder_name, params, custom_src_path="", timeout=60):
     :param str folder_name: data folder name (default path is 'guest')
     :param params: deploy configuration
     :type params: {str, str}
-    :param str custom_src_path: custom data path to the data folder instead of 'guest'
+    :param str custom_src_path: custom path to the src data folder
+    :param str custom_dst_name: custom folder name of the dst data folder
     :param int timeout: copying timeout
     """
     wipe_data = params.get("wipe_data", "no")
@@ -84,6 +87,7 @@ def deploy_data(vm, folder_name, params, custom_src_path="", timeout=60):
         src_path = os.path.join(guest_path, folder_name)
     else:
         src_path = os.path.join(custom_src_path, folder_name)
+    folder_name = custom_dst_name if custom_dst_name else folder_name
     if wipe_data == "yes" and os_type == "windows":
         w_tmp_dir = tmp_dir.replace("/", "\\")
         w_folder_name = folder_name.replace("/", "\\")
@@ -95,7 +99,9 @@ def deploy_data(vm, folder_name, params, custom_src_path="", timeout=60):
     elif wipe_data == "yes" and os_type == "linux":
         dst_path = os.path.join(tmp_dir, folder_name)
         vm.session.cmd("rm -fr %s" % dst_path)
-    vm.copy_files_to(src_path, tmp_dir, timeout=timeout)
+    else:
+        dst_path = os.path.join(tmp_dir, folder_name) if custom_dst_name else tmp_dir
+    vm.copy_files_to(src_path, dst_path, timeout=timeout)
 
 
 def handle_ssh_authorized_keys(vm, params):
@@ -141,9 +147,8 @@ def run(test, params, env):
     tmp_dir = params.get("tmp_dir", "/tmp")
 
     # pre-deployment part
-    should_deploy_autotest = params.get("guest_avocado_enabled", "no")
-    if should_deploy_autotest == "yes":
-        if os.path.exists("source_avocado_path"):
+    if params.get_boolean("guest_avocado_enabled"):
+        if os.path.exists(source_avocado_path):
             deploy_avocado(vm, params, test)
         else:
             logging.warning("No source avocado path found and could be deployed")
@@ -163,7 +168,7 @@ def run(test, params, env):
         # careful about the splitting process - since we perform deleting need to validate here
         additional_deployment_path = additional_deployment_path.rstrip("/")
         deploy_data(vm, os.path.basename(additional_deployment_path), params,
-                    os.path.dirname(additional_deployment_path), 60)
+                    os.path.dirname(additional_deployment_path), "packages", 60)
     else:
         raise exceptions.TestError("Additional deployment path %s does not exist (current dir: "
                                    "%s)" % (additional_deployment_path, os.getcwd()))

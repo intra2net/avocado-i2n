@@ -132,7 +132,7 @@ def configure_unattended_kickstart(params):
     :param params: configuration to use
     :type params: {string, string}
 
-    .. note:: This approach is currently used for Fedora vms.
+    .. note:: This approach is currently used for RHEL-based vms.
     """
     error_context.context("Unattended kickstart file setup")
     logging.info("Preparing unattended file %s for %s",
@@ -160,6 +160,38 @@ def configure_unattended_kickstart(params):
     ks_string = ks_string.replace("#ROOTPW#", params["password"])
 
     file_from_string(params["unattended_file"], ks_string)
+    logging.info("Unattended file for %s ready to use", params["main_vm"])
+
+
+@error_context.context_aware
+def configure_unattended_preseed(params):
+    """
+    Configure the installation of a vm using a preseed file.
+
+    :param params: configuration to use
+    :type params: {string, string}
+
+    .. note:: This approach is currently used for Debian-based vms.
+    """
+    error_context.context("Unattended preseed file setup")
+    logging.info("Preparing unattended file %s for %s",
+                 params["unattended_file"], params["main_vm"])
+    ps_string = string_from_template(params["unattended_file"])
+    vm_params = params.object_params(params["main_vm"])
+    vm_nics = vm_params.objects("nics")
+
+    # TODO: set correct network line
+    for i, nic in reversed(list(enumerate(vm_nics))):
+        network_line = "network --device eth%i" % i
+        if nic != params["internet_nic"]:
+            ps_string = ps_string.replace("#NETIP#", vm_params.object_params(nic)["ip"])
+            ps_string = ps_string.replace("#NETMASK#", vm_params.object_params(nic)["netmask"])
+            ps_string = ps_string.replace("#GATEWAY#", vm_params.object_params(nic)["ip_provider"])
+
+    ps_string = ps_string.replace("#VMNAME#", params["main_vm"])
+    ps_string = ps_string.replace("#ROOTPW#", params["password"])
+
+    file_from_string(params["unattended_file"], ps_string)
     logging.info("Unattended file for %s ready to use", params["main_vm"])
 
 
@@ -302,6 +334,8 @@ def run(test, params, env):
     elif params.get("configure_install", "stepmaker") == "unattended_install":
         if params["unattended_file"].endswith(".ks"):
             configure_unattended_kickstart(params)
+        elif params["unattended_file"].endswith(".preseed"):
+            configure_unattended_preseed(params)
         elif params["unattended_file"].endswith(".sif"):
             configure_unattended_sif(params)
         elif params["unattended_file"].endswith(".xml"):
