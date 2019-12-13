@@ -41,7 +41,6 @@ TARBALL_DESTINATION = "/tmp"
 # HELPER FUNCTIONS
 ###############################################################################
 
-
 def extract_tarball(params, vm):
     """
     Here we extract our tarball with the file we want to run, checking
@@ -101,7 +100,7 @@ def run_extracted_script(params, vm):
     )
 
     vm.session.cmd("test -f " + scriptabspath)
-    vm.session.cmd(scriptabspath)
+    vm.session.cmd(scriptabspath + " " + vm.name)
 
 
 def check_files(params, vm):
