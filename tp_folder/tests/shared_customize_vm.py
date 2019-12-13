@@ -38,7 +38,7 @@ pass
 
 testsuite_top_path = settings.get_value('i2n.common', 'suite_path', default=None)
 guest_path = testsuite_top_path
-source_avocado_path = "/usr/lib/python3.6/site-packages/avocado/utils"
+source_avocado_path = "/usr/lib/python3.7/site-packages/avocado/utils"
 destination_avocado_path = "/tmp/utils/avocado"
 
 

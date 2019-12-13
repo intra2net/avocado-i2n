@@ -160,7 +160,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_two_objects_without_setup(self):
-        self.config["tests_str"] += "only tutorial3\n"
+        self.config["tests_str"] += "only tutorial3\nno remote\n"
         graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
         DummyStateCheck.present_states = []
         graph.scan_object_states(None)
@@ -186,7 +186,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_two_objects_with_setup(self):
-        self.config["tests_str"] += "only tutorial3\n"
+        self.config["tests_str"] += "only tutorial3\nno remote\n"
         graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
         DummyStateCheck.present_states = ["root", "install", "customize"]
         graph.scan_object_states(None)
