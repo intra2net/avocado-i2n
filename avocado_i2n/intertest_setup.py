@@ -164,7 +164,7 @@ def full(config, run_params, tag=""):
     run_params["redeploy_only"] = "no"
     deploy(config, run_params, tag=tag)
     setup_str = config["param_str"]
-    config["param_str"] += param.ParsedDict({"set_state": "customize", "set_type": "offline"}).parsable_form()
+    config["param_str"] += param.ParsedDict({"set_state": "customize", "set_type": "off"}).parsable_form()
     set(config, run_params, tag=tag)
     config["param_str"] = setup_str
 
@@ -251,11 +251,11 @@ def update(config, run_params, tag=""):
 
     # now redeploy data
     setup_str = config["param_str"]
-    config["param_str"] = setup_str + param.ParsedDict({"get_state": "install", "get_type": "offline"}).parsable_form()
+    config["param_str"] = setup_str + param.ParsedDict({"get_state": "install", "get_type": "off"}).parsable_form()
     get(config, run_params, tag=tag + "m")
     run_params["redeploy_only"] = "no"
     deploy(config, run_params, tag=tag)
-    config["param_str"] = setup_str + param.ParsedDict({"set_state": "customize", "set_type": "offline"}).parsable_form()
+    config["param_str"] = setup_str + param.ParsedDict({"set_state": "customize", "set_type": "off"}).parsable_form()
     set(config, run_params, tag=tag)
     config["param_str"] = setup_str
 
@@ -420,7 +420,7 @@ def windows(config, run_params, tag=""):
     :param str tag: extra name identifier for the test to be run
 
     If the vm is still located on top of ramdisk (it is still not
-    permanent) this setup is still possible in the form of online
+    permanent) this setup is still possible in the form of on
     state setup, however you may risk running out of memory.
     """
     vms = config["graph"].l.parse_objects(config["vm_strs"], run_params.get("vms", ""))
@@ -428,14 +428,14 @@ def windows(config, run_params, tag=""):
         logging.info("Performing extra setup for the permanent %s", vm.name)
 
         # consider this as a special kind of ephemeral test which concerns
-        # permanent objects (i.e. instead of transition from customize_vm to online
+        # permanent objects (i.e. instead of transition from customize to on
         # root, it is a transition from supposedly "permanentized" vm to the root)
-        logging.info("Booting %s for the first permanent online state", vm.name)
+        logging.info("Booting %s for the first permanent on state", vm.name)
         reparsable = vm.config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file,
                                     ovrwrt_str=param.re_str("nonleaves..manage.start", config["param_str"]),
-                                    ovrwrt_dict={"set_state": "windows_online"})
+                                    ovrwrt_dict={"set_state": "windows_on"})
         config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
 
         logging.info("Installing local virtuser at %s", vm.name)
@@ -894,7 +894,7 @@ def create(config, run_params, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = config["param_str"]
-    config["param_str"] += param.ParsedDict({"set_state": "root", "set_mode": "af", "set_type": "offline"}).parsable_form()
+    config["param_str"] += param.ParsedDict({"set_state": "root", "set_mode": "af", "set_type": "off"}).parsable_form()
     set(config, run_params, tag=tag)
     config["param_str"] = setup_str
 
@@ -910,6 +910,6 @@ def clean(config, run_params, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = config["param_str"]
-    config["param_str"] += param.ParsedDict({"unset_state": "root", "unset_mode": "fi", "unset_type": "offline"}).parsable_form()
+    config["param_str"] += param.ParsedDict({"unset_state": "root", "unset_mode": "fi", "unset_type": "off"}).parsable_form()
     unset(config, run_params, tag=tag)
     config["param_str"] = setup_str

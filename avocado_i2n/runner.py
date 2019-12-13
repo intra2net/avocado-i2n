@@ -290,7 +290,7 @@ class CartesianRunner(TestRunner):
             elif test_node.is_install_node() or test_node.is_create_node():
                 setup_str = param_str
                 if test_node.is_create_node():
-                    setup_str += param.ParsedDict({"set_state": "root", "set_type": "offline"}).parsable_form()
+                    setup_str += param.ParsedDict({"set_state": "root", "set_type": "off"}).parsable_form()
                     self.run_create_node(graph, test_node.params.get("vms", ""), setup_str)
                 elif test_node.is_install_node():
                     self.run_install_node(graph, test_node.params.get("vms", ""), setup_str)
@@ -333,7 +333,7 @@ class CartesianRunner(TestRunner):
                         # the unset manual step behaves differently now (all this extra complexity starts from
                         # the fact that it has different default value which is noninvasive
                         setup_str = param.ParsedDict({"unset_state": vm_params["set_state"],
-                                                      "unset_type": vm_params.get("set_type", "offline"),
+                                                      "unset_type": vm_params.get("set_type", "off"),
                                                       "unset_mode": vm_params.get("unset_mode", "ri")}).parsable_form()
                         setup_str += param_str
 

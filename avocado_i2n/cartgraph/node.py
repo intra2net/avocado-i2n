@@ -110,8 +110,8 @@ class TestNode(object):
         If the test node is ephemeral its `set_state` cannot be preserved for
         longer than one cycle, i.e. if the next test stops reverting to it.
 
-        Such test nodes are transitions from offline to online states and
-        must be repeated to reuse the online states that are their end states.
+        Such test nodes are transitions from off to on states and
+        must be repeated to reuse the on states that are their end states.
         """
         for test_object in self.objects:
             object_name = test_object.name
@@ -122,15 +122,15 @@ class TestNode(object):
             if object_state is None or object_state == "":
                 continue
 
-            # definition 1 (with non-root offline starting state)
-            if (object_params.get("get_type", "online") == "offline" and
+            # definition 1 (with non-root off starting state)
+            if (object_params.get("get_type", "on") == "off" and
                     object_params.get("get_state", "0root") != "0root" and
-                    object_params.get("set_type", "online") == "online"):
+                    object_params.get("set_type", "on") == "on"):
                 return True
 
             # definition 2 (with impermanent test object)
             if (not test_object.is_permanent() and
-                    object_params.get("set_type", "online") == "online"):
+                    object_params.get("set_type", "on") == "on"):
                 return True
 
         return False

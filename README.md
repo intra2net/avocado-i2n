@@ -115,30 +115,30 @@ giving the details but strongly recommending checking the source code of the
 Cartesian graph data structure for anyone that want to have fun with forward
 and backward DFS, the symmetrical pruning, and the reversing traversal path.
 
-### Offline and online states, durable and ephemeral tests
+### Offline and on states, durable and ephemeral tests
 The basic way to implement virtual machine states is LVM. However, since LVM
 requires the image to be inactive while reverting to the snapshot,
 this will introduce at least shutdown-boot performance penalty between each
 two tests. Actually, "live revert" is part of the future plans of LVM but
 right now its extra steps while switching test nodes might be even slower.
-Therefore, there is another type of states simply called here "online states"
-leaving the LVM an implementation of offline states. The online states
+Therefore, there is another type of states simply called here "on states"
+leaving the LVM an implementation of off states. The on states
 implementation lies in the QCOW2 image format and more specifically the
 QEMU-Monitor ability to take full and automatic virtual machine snapshots
 which will avoid these two steps - just freeze the vm state and eventually
 come back to it for another test that requires it. The QCOW2 format allows
 QEMU to take live snapshots of both the virtual machine and its image without
 a danger of saving image and ramdisk snapshots that are out of sync which is
-the case with another implementation of online states (still available as the
+the case with another implementation of on states (still available as the
 "ramfile" state type). During a run with an automated vm state setup, a special
 dependency scan test checks for state availability once and uses this
 information for further decisions on test scheduling, order, and skipping.
 
-Each online state is based on an offline state. The tests that produce online
-from offline states are thus ephemeral as changing the offline state would
-remove all online states and the test has to be repeated. Online states are
-however reusable within an offline state transition and as many branches of
-online states transitions can span multiple tests without touching the offline
+Each on state is based on an off state. The tests that produce on
+from off states are thus ephemeral as changing the off state would
+remove all on states and the test has to be repeated. Online states are
+however reusable within an off state transition and as many branches of
+on states transitions can span multiple tests without touching the off
 state. This is important in the test management as ephemeral tests provide
 states that can only be reused with protective scheduling.
 
@@ -418,7 +418,7 @@ have to append `_vmname` to it, e.g. `nic_vm2` identically to the vm
 restriction.
 
 ### Test debugging
-Through the use of online states, debugging was made a lot easier. In most
+Through the use of on states, debugging was made a lot easier. In most
 cases, if you run a single test and it fails, the vms will be left running
 after it and completely accessible for any type of debugging. The philosophy
 of this is that a vm state is cleaned up only when a new test is run and needs

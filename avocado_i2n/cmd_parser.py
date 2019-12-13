@@ -140,7 +140,7 @@ def params_from_cmd(config):
 
 def env_process_hooks():
     """
-    Add env processing hooks to handle online/offline state get/set operations
+    Add env processing hooks to handle on/off state get/set operations
     and vmnet networking setup and instance attachment to environment.
     """
     def get_network_state(test, params, env):
@@ -154,19 +154,19 @@ def env_process_hooks():
             get_network_state(test, params, env)
             fn(test, params, env)
         return wrapper
-    def online_state(fn):
+    def on_state(fn):
         def wrapper(test, params, env):
-            params["skip_types"] = "offline"
+            params["skip_types"] = "off"
             fn(params, env)
             del params["skip_types"]
         return wrapper
-    def offline_state(fn):
+    def off_state(fn):
         def wrapper(test, params, env):
-            params["skip_types"] = "online ramdisk"
+            params["skip_types"] = "on ramdisk"
             fn(params, env)
             del params["skip_types"]
         return wrapper
-    env_process.preprocess_vm_off_hook = offline_state(state_setup.get_state)
-    env_process.preprocess_vm_on_hook = network_state(online_state(state_setup.get_state))
-    env_process.postprocess_vm_on_hook = online_state(state_setup.set_state)
-    env_process.postprocess_vm_off_hook = offline_state(state_setup.set_state)
+    env_process.preprocess_vm_off_hook = off_state(state_setup.get_state)
+    env_process.preprocess_vm_on_hook = network_state(on_state(state_setup.get_state))
+    env_process.postprocess_vm_on_hook = on_state(state_setup.set_state)
+    env_process.postprocess_vm_off_hook = off_state(state_setup.set_state)
