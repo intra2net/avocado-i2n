@@ -33,7 +33,7 @@ except ImportError:
     OPS_AVAILABLE = False
 
 # custom imports
-pass
+from sample_utility import sleep
 
 
 ###############################################################################
@@ -186,6 +186,9 @@ def run(test, params, env):
     """
     vmnet = env.get_vmnet()
     vm, _ = vmnet.get_single_vm_with_session()
+
+    # call to a function shared among tests
+    sleep(3)
 
     # We use the kind parameter from the Cartesian configuration
     # to decide which test to run

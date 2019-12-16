@@ -15,16 +15,12 @@ INTERFACE
 import logging
 import time
 
-from avocado.utils import process
-from avocado.core.settings import settings
 
-from avocado_i2n import state_setup
-
-
-def sleep(self, n=10):
+def sleep(n=10):
     """
     Sleep for `n` seconds.
 
     :param int n: seconds to sleep
     """
+    logging.info("Sleeping for %s seconds", n)
     time.sleep(n)

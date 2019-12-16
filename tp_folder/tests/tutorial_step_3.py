@@ -37,7 +37,7 @@ except ImportError:
     DOOR_AVAILABLE = False
 
 # custom imports
-pass
+from sample_utility import sleep
 
 
 ###############################################################################
@@ -86,6 +86,9 @@ def run(test, params, env):
     server_vm = vms.server
     client_vm = vms.client
     vmnet.ping_all()
+
+    # call to a function shared among tests
+    sleep(3)
 
     error_context.context("misc commands on each vm")
     tmp_server = server_vm.session.cmd("ls " + server_vm.params["tmp_dir"])
