@@ -25,6 +25,12 @@ import subprocess
 
 # avocado imports
 from avocado.core import exceptions
+try:
+    from aexpect import session_ops
+    OPS_AVAILABLE = True
+except ImportError:
+    logging.warning("The session ops of an upgraded aexpect package are not available")
+    OPS_AVAILABLE = False
 
 # custom imports
 pass
@@ -99,7 +105,19 @@ def run_extracted_script(params, vm):
         scriptname
     )
 
+    # The easiest and most universal way to run a command on a vm is using its
+    # session (usually one but more available after additional logins)
     vm.session.cmd("test -f " + scriptabspath)
+    if OPS_AVAILABLE:
+        # We can also use the `session_ops` module, which contains some IO functions
+        # to be executed on a guest VM. This can be considered another way to remotely
+        # run operations on a guest.
+        if not session_ops.is_regular_file(vm.session, scriptabspath):
+            raise exceptions.TestError("Expected file %s to have been extracted, "
+                                       "but it doesn't exist." % scriptabspath)
+        else:
+            logging.info("The extracted script was also verified through session ops")
+
     vm.session.cmd(scriptabspath + " " + vm.name)
 
 
@@ -124,6 +142,10 @@ def check_files(params, vm):
         """Construct absolute path to file and test presence in fs verbosely."""
         fullpath = os.path.join(files_prefix, f)
         result = vm.session.cmd_status("! test -f " + fullpath)
+        # alternatively, use more python interface through session ops
+        if OPS_AVAILABLE:
+            result2 = session_ops.is_regular_file(vm.session, fullpath)
+            assert result == result2
         logging.info("  - Verifying the presence of file %s -> %s."
                      % (fullpath, result and "exists" or "nil"))
         return result
