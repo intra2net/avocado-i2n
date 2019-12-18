@@ -123,7 +123,6 @@ def run(test, params, env):
 
     # Get the VM Network object for this test
     vmnet = env.get_vmnet()
-    vmnet = env.get_vmnet()
     vmnet.start_all_sessions()
     vms = vmnet.get_vms()
     server_vm = vms.server

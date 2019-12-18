@@ -136,7 +136,7 @@ def check_files(params, vm):
 
     must_exist = params["must_exist"].split(" ")
     must_not_exist = params["must_not_exist"].split(" ")
-    files_prefix = params["test_prefix"]
+    files_prefix = params["files_prefix"]
 
     def aux(f):
         """Construct absolute path to file and test presence in fs verbosely."""

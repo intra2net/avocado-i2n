@@ -122,7 +122,7 @@ def run(test, params, env):
         else:
             guest_serialization = True
 
-        # The simplest remote execution we can perform through a single call to
+        # The simplest remote execution we can perform is through a single call to
         # a utility or module. Under the hood, this is similar to running a
         # python script on the vm with just a few lines importing the module or
         # utility and calling its desired function.
