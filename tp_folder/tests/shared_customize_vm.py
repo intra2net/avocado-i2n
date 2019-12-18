@@ -38,7 +38,7 @@ pass
 
 testsuite_top_path = settings.get_value('i2n.common', 'suite_path', default=None)
 guest_path = testsuite_top_path
-source_avocado_path = "/usr/lib/python3.6/site-packages/avocado/utils"
+source_avocado_path = "/usr/lib/python3.7/site-packages/avocado/utils"
 destination_avocado_path = "/tmp/utils/avocado"
 
 
@@ -141,7 +141,7 @@ def run(test, params, env):
     :param env: environment object
     """
     vmnet = env.get_vmnet()
-    vm, session = vmnet.get_single_vm_with_session()
+    vm, session, params = vmnet.get_single_vm_with_session_and_params()
     os_type = params.get("os_type", "linux")
     os_variant = params.get("os_variant", "ibs")
     tmp_dir = params.get("tmp_dir", "/tmp")

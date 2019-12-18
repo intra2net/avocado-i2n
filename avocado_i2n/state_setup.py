@@ -2,7 +2,7 @@
 
 SUMMARY
 ------------------------------------------------------
-Utility to manage offline and online virtual machine states.
+Utility to manage off and on virtual machine states.
 
 Copyright: Intra2net AG
 
@@ -22,16 +22,16 @@ from avocado.utils import process
 from avocado.utils import lv_utils
 
 
-#: keywords reserved for offline root states
-OFFLINE_ROOTS = ['root', '0root']
-#: keywords reserved for online root states
-ONLINE_ROOTS = ['boot', '0boot']
+#: keywords reserved for off root states
+OFF_ROOTS = ['root', '0root']
+#: keywords reserved for on root states
+ON_ROOTS = ['boot', '0boot']
 
 
 def set_root(run_params):
     """
     Create a ramdisk, virtual group, thin pool and logical volume
-    for each vm (all offline).
+    for each vm (all off).
 
     :param run_params: configuration parameters
     :type run_params: {str, str}
@@ -93,7 +93,7 @@ def set_root(run_params):
 def unset_root(run_params):
     """
     Remove the ramdisk, virtual group, thin pool and logical volume
-    of each vm (all offline).
+    of each vm (all off).
 
     :param run_params: configuration parameters
     :type run_params: {str, str}
@@ -146,10 +146,10 @@ def show_states(run_params, env):
     for vm_name in run_params.objects("vms"):
         vm_params = run_params.object_params(vm_name)
 
-        if vm_params.get("check_type", "offline") == "offline":
-            logging.debug("Checking %s for available offline states", vm_name)
+        if vm_params.get("check_type", "off") == "off":
+            logging.debug("Checking %s for available off states", vm_name)
             states = lv_utils.lv_list(vm_params["vg_name"])
-            logging.info("Detected offline states for %s: %s", vm_name, ", ".join(states))
+            logging.info("Detected off states for %s: %s", vm_name, ", ".join(states))
         else:
             if vm_params["check_type"] == "ramfile":
                 state_dir = vm_params.get("image_name", "")
@@ -161,11 +161,11 @@ def show_states(run_params, env):
                 vm_image = "%s.%s" % (vm_params["image_name"],
                                       vm_params.get("image_format", "qcow2"))
                 qemu_img = vm_params.get("qemu_img_binary", "/usr/bin/qemu-img")
-                online_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, vm_image)).decode()
+                on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, vm_image)).decode()
                 state_tuples = re.findall("\d+\s+([\w\.]+)\s+([\w\.]+)\s+\d{4}-\d\d-\d\d",
-                                          online_snapshots_dump)
+                                          on_snapshots_dump)
                 for state_tuple in state_tuples:
-                    logging.info("Detected online state '%s' of size %s",
+                    logging.info("Detected on state '%s' of size %s",
                                  state_tuple[0], state_tuple[1])
                     states.append(state_tuple[0])
     return states
@@ -185,7 +185,7 @@ def check_state(run_params, env,
     :param bool print_neg: whether to print that the state wasn't found
 
     If not state type is specified explicitly, we will search for all types
-    in order of performance (online->offline).
+    in order of performance (on->off).
 
     .. note:: Only one vm is generally expected in the received 'vms' parameter. If
         more than one are present, the setup for all will be evaluated through
@@ -204,18 +204,18 @@ def check_state(run_params, env,
         vm_params["vms"] = vm_name
         run_params["found_type_%s" % vm_name] = vm_params["check_type"]
         if vm_params["check_type"] == "any":
-            vm_params["check_type"] = "online"
-            run_params["found_type_%s" % vm_name] = "online"
+            vm_params["check_type"] = "on"
+            run_params["found_type_%s" % vm_name] = "on"
             if not _check_state(vm, vm_params, print_pos=print_pos, print_neg=print_neg):
                 vm_params["check_type"] = "ramfile"
                 run_params["found_type_%s" % vm_name] = "ramfile"
                 # BUG: currently "ramfile" is very error-prone so let's not mention it
                 if not _check_state(vm, vm_params, print_pos=True, print_neg=False):
-                    vm_params["check_type"] = "offline"
-                    run_params["found_type_%s" % vm_name] = "offline"
+                    vm_params["check_type"] = "off"
+                    run_params["found_type_%s" % vm_name] = "off"
                     if not _check_state(vm, vm_params, print_pos=print_pos, print_neg=print_neg):
                         # default type to treat in case of no result
-                        run_params["found_type_%s" % vm_name] = "online"
+                        run_params["found_type_%s" % vm_name] = "on"
                         exists = False
                         break
         elif not _check_state(vm, vm_params, print_pos=print_pos, print_neg=print_neg):
@@ -253,7 +253,7 @@ def get_state(run_params, env):
         # if too many or no matches default to most performant type
         vm_params["get_type"] = vm_params["found_type_%s" % vm_name]
         if state_exists:
-            # online/offline switch
+            # on/off switch
             if vm_params["get_type"] in run_params.get("skip_types", []):
                 logging.debug("Skip getting states of types %s" % ", ".join(run_params.objects("skip_types")))
                 continue
@@ -261,12 +261,12 @@ def get_state(run_params, env):
                 vm = env.create_vm(vm_params.get('vm_type'), vm_params.get('target'),
                                    vm_name, vm_params, None)
             # TODO: study better the environment pre/postprocessing details necessary for flawless
-            # vm destruction and creation to improve the online/offline switch
-            if vm_params["get_type"] == "offline":
+            # vm destruction and creation to improve the on/off switch
+            if vm_params["get_type"] == "off":
                 if vm.is_alive():
                     vm.destroy(gracefully=False)
             else:
-                # online states require manual update of the vm parameters
+                # on states require manual update of the vm parameters
                 vm.params = vm_params
                 if not vm.is_alive():
                     vm.create()
@@ -321,14 +321,14 @@ def set_state(run_params, env):
         state_exists = check_state(vm_params, env)
         # if too many or no matches default to most performant type
         vm_params["set_type"] = vm_params["found_type_%s" % vm_name]
-        # online/offline filter
+        # on/off filter
         if vm_params["set_type"] in run_params.get("skip_types", []):
             logging.debug("Skip setting states of types %s" % ", ".join(run_params.objects("skip_types")))
             continue
-        if vm_params["set_type"] == "offline":
+        if vm_params["set_type"] == "off":
             vm.destroy(gracefully=True)
-        # NOTE: setting an online state assumes that the vm is online just like
-        # setting an offline state assumes that the vm already exists
+        # NOTE: setting an on state assumes that the vm is on just like
+        # setting an off state assumes that the vm already exists
 
         action_if_exists = vm_params["set_mode"][0]
         action_if_doesnt_exist = vm_params["set_mode"][1]
@@ -340,13 +340,13 @@ def set_state(run_params, env):
             logging.info("Keeping the already existing snapshot untouched")
         elif state_exists and "f" == action_if_exists:
             logging.info("Overwriting the already existing snapshot")
-            if vm_params["set_state"] in OFFLINE_ROOTS and vm_params["set_type"] == "offline":
+            if vm_params["set_state"] in OFF_ROOTS and vm_params["set_type"] == "off":
                 unset_root(vm_params)
-            elif vm_params["set_type"] == "offline":
+            elif vm_params["set_type"] == "off":
                 vm_params["lv_snapshot_name"] = vm_params["set_state"]
                 lv_utils.lv_remove(vm_params["vg_name"], vm_params["lv_snapshot_name"])
             else:
-                logging.debug("Overwriting online snapshot simply by writing it again")
+                logging.debug("Overwriting on snapshot simply by writing it again")
             _set_state(vm, vm_params)
         elif state_exists:
             raise exceptions.TestError("Invalid policy %s: The end action on present state can be "
@@ -423,7 +423,7 @@ def push_state(run_params, env):
         vm_params = run_params.object_params(vm_name)
         vm_params["vms"] = vm_name
 
-        if vm_params["push_state"] in OFFLINE_ROOTS + ONLINE_ROOTS:
+        if vm_params["push_state"] in OFF_ROOTS + ON_ROOTS:
             # cannot be done with root states
             continue
 
@@ -447,7 +447,7 @@ def pop_state(run_params, env):
         vm_params = run_params.object_params(vm_name)
         vm_params["vms"] = vm_name
 
-        if vm_params["pop_state"] in OFFLINE_ROOTS + ONLINE_ROOTS:
+        if vm_params["pop_state"] in OFF_ROOTS + ON_ROOTS:
             # cannot be done with root states
             continue
 
@@ -463,15 +463,15 @@ def pop_state(run_params, env):
 
 def _check_state(vm, vm_params, print_pos=False, print_neg=False):
     """
-    Check for an online/offline state of a vm object.
+    Check for an on/off state of a vm object.
 
-    We use LVM for offline snapshots and QCOW2 for online snapshots.
+    We use LVM for off snapshots and QCOW2 for on snapshots.
     """
     vm_name = vm_params["vms"]
-    if vm_params["check_type"] == "offline":
+    if vm_params["check_type"] == "off":
         vm_params["lv_snapshot_name"] = vm_params["check_state"]
-        if vm_params.get("check_state", "root") in OFFLINE_ROOTS:
-            logging.debug("Checking whether %s exists (root offline state requested)", vm_name)
+        if vm_params.get("check_state", "root") in OFF_ROOTS:
+            logging.debug("Checking whether %s exists (root off state requested)", vm_name)
             if vm_params.get("image_format", "qcow2") != "raw":
                 logging.debug("Checking using %s image", vm_params.get("image_format", "qcow2"))
                 condition = os.path.exists("%s.%s" % (vm_params["image_name"],
@@ -490,28 +490,28 @@ def _check_state(vm, vm_params, print_pos=False, print_neg=False):
                     logging.info("The required virtual machine %s exists", vm_name)
                 return True
         else:
-            logging.debug("Checking %s for offline state '%s'", vm_name, vm_params["check_state"])
+            logging.debug("Checking %s for off state '%s'", vm_name, vm_params["check_state"])
             if not lv_utils.lv_check(vm_params["vg_name"], vm_params["lv_snapshot_name"]):
                 if print_neg:
-                    logging.info("Offline snapshot '%s' of %s doesn't exist",
+                    logging.info("Off snapshot '%s' of %s doesn't exist",
                                  vm_params["check_state"], vm_name)
                 return False
             else:
                 if print_pos:
-                    logging.info("Offline snapshot '%s' of %s exists",
+                    logging.info("Off snapshot '%s' of %s exists",
                                  vm_params["check_state"], vm_name)
                 return True
     else:
-        if vm_params.get("check_state", "boot") in ONLINE_ROOTS:
-            logging.debug("Checking whether %s is online (root online state requested)", vm_name)
+        if vm_params.get("check_state", "boot") in ON_ROOTS:
+            logging.debug("Checking whether %s is on (root on state requested)", vm_name)
             try:
                 state_exists = vm.is_alive()
             except ValueError:
                 state_exists = False
             if state_exists and print_pos:
-                logging.info("The required virtual machine %s is online", vm_name)
+                logging.info("The required virtual machine %s is on", vm_name)
             elif not state_exists and print_neg:
-                logging.info("The required virtual machine %s is offline", vm_name)
+                logging.info("The required virtual machine %s is off", vm_name)
             return state_exists
         else:
             if vm_params["check_type"] == "ramfile":
@@ -530,7 +530,7 @@ def _check_state(vm, vm_params, print_pos=False, print_neg=False):
                                      vm_params["check_state"], vm_name)
                     return True
             else:
-                logging.debug("Checking %s for online state '%s'",
+                logging.debug("Checking %s for on state '%s'",
                               vm_name, vm_params["check_state"])
 
                 vm_image = "%s.%s" % (vm_params["image_name"],
@@ -538,37 +538,37 @@ def _check_state(vm, vm_params, print_pos=False, print_neg=False):
                 if not os.path.exists(vm_image):
                     return False
                 qemu_img = vm_params.get("qemu_img_binary", "/usr/bin/qemu-img")
-                online_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, vm_image)).decode()
-                logging.debug("Listed online states:\n%s", online_snapshots_dump)
+                on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, vm_image)).decode()
+                logging.debug("Listed on states:\n%s", on_snapshots_dump)
                 state_tuples = re.findall("\d+\s+([\w\.]+)\s+([\w\.]+)\s+\d{4}-\d\d-\d\d",
-                                          online_snapshots_dump)
+                                          on_snapshots_dump)
                 for state_tuple in state_tuples:
-                    logging.debug("Detected online state '%s' of size %s",
+                    logging.debug("Detected on state '%s' of size %s",
                                   state_tuple[0], state_tuple[1])
                     if state_tuple[0] == vm_params["check_state"]:
                         if print_pos:
-                            logging.info("Online snapshot '%s' of %s exists",
+                            logging.info("On snapshot '%s' of %s exists",
                                          vm_params["check_state"], vm_name)
                         return True
-                # at this point we didn't find the online state in the listed ones
+                # at this point we didn't find the on state in the listed ones
                 if print_neg:
-                    logging.info("Online snapshot '%s' of %s doesn't exist",
+                    logging.info("On snapshot '%s' of %s doesn't exist",
                                  vm_params["check_state"], vm_name)
                 return False
 
 
 def _get_state(vm, vm_params):
     """
-    Get to an online/offline state of a vm object.
+    Get to an on/off state of a vm object.
 
-    We use LVM for offline snapshots and QCOW2 for online snapshots.
+    We use LVM for off snapshots and QCOW2 for on snapshots.
     """
     vm_name = vm_params["vms"]
-    if vm_params["get_state"] in OFFLINE_ROOTS + ONLINE_ROOTS:
-        # reusing root states (offline root and online boot) is analogical to not doing anything
+    if vm_params["get_state"] in OFF_ROOTS + ON_ROOTS:
+        # reusing root states (off root and on boot) is analogical to not doing anything
         return
 
-    if vm_params["get_type"] == "offline":
+    if vm_params["get_type"] == "off":
         vm_params["lv_snapshot_name"] = vm_params["get_state"]
         if vm_params.get("image_raw_device", "yes") == "no":
             mount_loc = os.path.dirname(vm_params["image_name"])
@@ -594,9 +594,9 @@ def _get_state(vm, vm_params):
                                   vm_params["lv_pointer_name"],
                                   mount_loc)
     else:
-        logging.info("Reusing online state '%s' of %s", vm_params["get_state"], vm_name)
+        logging.info("Reusing on state '%s' of %s", vm_params["get_state"], vm_name)
         vm.pause()
-        # NOTE: second online type is available and still supported but not recommended
+        # NOTE: second on type is available and still supported but not recommended
         if vm_params["get_type"] != "ramfile":
             vm.loadvm(vm_params["get_state"])
         else:
@@ -610,29 +610,29 @@ def _get_state(vm, vm_params):
 
 def _set_state(vm, vm_params):
     """
-    Set an online/offline state of a vm object.
+    Set an on/off state of a vm object.
 
-    We use LVM for offline snapshots and QCOW2 for online snapshots.
+    We use LVM for off snapshots and QCOW2 for on snapshots.
     """
     vm_name = vm_params["vms"]
-    if vm_params["set_state"] in OFFLINE_ROOTS:
+    if vm_params["set_state"] in OFF_ROOTS:
         # vm_params["vms"] = vm_name
         vm_params["main_vm"] = vm_name
         set_root(vm_params)
-    elif vm_params["set_type"] == "offline":
+    elif vm_params["set_type"] == "off":
         vm_params["lv_snapshot_name"] = vm_params["set_state"]
         logging.info("Taking a snapshot '%s' of %s", vm_params["set_state"], vm_name)
         lv_utils.lv_take_snapshot(vm_params["vg_name"],
                                   vm_params["lv_pointer_name"],
                                   vm_params["lv_snapshot_name"])
-    elif vm_params["set_state"] in ONLINE_ROOTS:
+    elif vm_params["set_state"] in ON_ROOTS:
         # set boot state
         if vm is None or not vm.is_alive():
             vm.create()
     else:
-        logging.info("Setting online state '%s' of %s", vm_params["set_state"], vm_name)
+        logging.info("Setting on state '%s' of %s", vm_params["set_state"], vm_name)
         vm.pause()
-        # NOTE: second online type is available and still supported but not recommended
+        # NOTE: second on type is available and still supported but not recommended
         if vm_params["set_type"] != "ramfile":
             vm.savevm(vm_params["set_state"])
         else:
@@ -650,32 +650,32 @@ def _set_state(vm, vm_params):
 
 def _unset_state(vm, vm_params):
     """
-    Unset an online/offline state of a vm object.
+    Unset an on/off state of a vm object.
 
-    We use LVM for offline snapshots and QCOW2 for online snapshots.
+    We use LVM for off snapshots and QCOW2 for on snapshots.
     """
     vm_name = vm_params["vms"]
-    if vm_params["unset_state"] in OFFLINE_ROOTS:
-        # offline switch to protect from online leftover state
+    if vm_params["unset_state"] in OFF_ROOTS:
+        # off switch to protect from on leftover state
         if vm is not None and vm.is_alive():
             vm.destroy(gracefully=False)
         # vm_params["vms"] = vm_name
         vm_params["main_vm"] = vm_name
         unset_root(vm_params)
-    elif vm_params["unset_type"] == "offline":
+    elif vm_params["unset_type"] == "off":
         lv_pointer = vm_params["lv_pointer_name"]
         if vm_params["unset_state"] == lv_pointer:
-            raise ValueError("Cannot unset built-in offline state '%s'" % lv_pointer)
+            raise ValueError("Cannot unset built-in off state '%s'" % lv_pointer)
         vm_params["lv_snapshot_name"] = vm_params["unset_state"]
         logging.info("Removing snapshot %s of %s", vm_params["lv_snapshot_name"], vm_name)
         lv_utils.lv_remove(vm_params["vg_name"], vm_params["lv_snapshot_name"])
-    elif vm_params["unset_state"] in ONLINE_ROOTS:
+    elif vm_params["unset_state"] in ON_ROOTS:
         if vm is not None and vm.is_alive():
             vm.destroy(gracefully=False)
     else:
-        logging.info("Removing online state '%s' of %s", vm_params["unset_state"], vm_name)
+        logging.info("Removing on state '%s' of %s", vm_params["unset_state"], vm_name)
         vm.pause()
-        # NOTE: second online type is available and still supported but not recommended
+        # NOTE: second on type is available and still supported but not recommended
         if vm_params["unset_type"] != "ramfile":
             # NOTE: this was supposed to be implemented in the Qemu VM object but
             # it is not unlike savevm and loadvm, perhaps due to command availability

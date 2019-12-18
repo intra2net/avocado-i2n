@@ -10,7 +10,7 @@ Copyright: Intra2net AG
 CONTENTS
 ------------------------------------------------------
 Compared to :py:mod:`testsuite.host.tests.shared_set_provider`,
-this test ends in an online state.
+this test ends in an on state where the vm is online.
 
 
 INTERFACE

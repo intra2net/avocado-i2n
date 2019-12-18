@@ -53,9 +53,9 @@ class StateSetupTest(unittest.TestCase):
             return self.exist_switch
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_show_states_offline(self, mock_lv_utils):
+    def test_show_states_off(self, mock_lv_utils):
         self.run_params["vms"] = "vm1"
-        self.run_params["check_type_vm1"] = "offline"
+        self.run_params["check_type_vm1"] = "off"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"
         self._create_mock_vms()
 
@@ -69,9 +69,9 @@ class StateSetupTest(unittest.TestCase):
         self.assertNotIn("root", states)
 
     @mock.patch('avocado_i2n.state_setup.process')
-    def test_show_states_online(self, mock_process):
+    def test_show_states_on(self, mock_process):
         self.run_params["vms"] = "vm1"
-        self.run_params["check_type_vm1"] = "online"
+        self.run_params["check_type_vm1"] = "on"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
         self._create_mock_vms()
@@ -96,10 +96,10 @@ class StateSetupTest(unittest.TestCase):
         self.assertNotIn("boot", states)
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_check_offline(self, mock_lv_utils):
+    def test_check_off(self, mock_lv_utils):
         self.run_params["vms"] = "vm1"
         self.run_params["check_state_vm1"] = "launch"
-        self.run_params["check_type_vm1"] = "offline"
+        self.run_params["check_type_vm1"] = "off"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"
         self._create_mock_vms()
 
@@ -116,10 +116,10 @@ class StateSetupTest(unittest.TestCase):
         self.assertFalse(exists)
 
     @mock.patch('avocado_i2n.state_setup.process')
-    def test_check_online(self, mock_process):
+    def test_check_on(self, mock_process):
         self.run_params["vms"] = "vm1"
         self.run_params["check_state_vm1"] = "launch"
-        self.run_params["check_type_vm1"] = "online"
+        self.run_params["check_type_vm1"] = "on"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
         self._create_mock_vms()
@@ -137,10 +137,10 @@ class StateSetupTest(unittest.TestCase):
         self.assertTrue(exists)
 
     @mock.patch('avocado_i2n.state_setup.process')
-    def test_check_online_dot(self, mock_process):
+    def test_check_on_dot(self, mock_process):
         self.run_params["vms"] = "vm1"
         self.run_params["check_state_vm1"] = "with.dot"
-        self.run_params["check_type_vm1"] = "online"
+        self.run_params["check_type_vm1"] = "on"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
         self._create_mock_vms()
@@ -201,10 +201,10 @@ class StateSetupTest(unittest.TestCase):
         self.assertFalse(exists)
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_get_offline_aa(self, mock_lv_utils):
+    def test_get_off_aa(self, mock_lv_utils):
         self.run_params["vms"] = "vm1"
         self.run_params["get_state_vm1"] = "launch"
-        self.run_params["get_type_vm1"] = "offline"
+        self.run_params["get_type_vm1"] = "off"
         self.run_params["get_mode_vm1"] = "aa"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"
         self._create_mock_vms()
@@ -215,7 +215,7 @@ class StateSetupTest(unittest.TestCase):
         with self.assertRaises(exceptions.TestAbortError):
             state_setup.get_state(self.run_params, self.env)
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
-        # test online/offline switch as well
+        # test on/off switch as well
         self.mock_vms["vm1"].is_alive.assert_called_once_with()
 
         mock_lv_utils.reset_mock()
@@ -225,10 +225,10 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_get_offline_rx(self, mock_lv_utils):
+    def test_get_off_rx(self, mock_lv_utils):
         self.run_params["vms"] = "vm2"
         self.run_params["get_state_vm2"] = "launch"
-        self.run_params["get_type_vm2"] = "offline"
+        self.run_params["get_type_vm2"] = "off"
         self.run_params["get_mode_vm2"] = "rx"
         self.run_params["lv_name"] = "LogVol"
         self.run_params["lv_pointer_name"] = "current_state"
@@ -238,7 +238,7 @@ class StateSetupTest(unittest.TestCase):
         self._create_mock_vms()
 
         mock_lv_utils.reset_mock()
-        # test online/offline switch as well
+        # test on/off switch as well
         mock_lv_utils.lv_check.return_value = True
         self.mock_vms["vm2"].is_alive.return_value = False
         state_setup.get_state(self.run_params, self.env)
@@ -254,10 +254,10 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm2", "launch")
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_get_offline_ii(self, mock_lv_utils):
+    def test_get_off_ii(self, mock_lv_utils):
         self.run_params["vms"] = "vm4"
         self.run_params["get_state_vm4"] = "launch"
-        self.run_params["get_type_vm4"] = "offline"
+        self.run_params["get_type_vm4"] = "off"
         self.run_params["get_mode_vm4"] = "ii"
         self.run_params["vg_name_vm4"] = "ramdisk_vm4"
         self._create_mock_vms()
@@ -275,10 +275,10 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm4", "launch")
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_get_offline_xx(self, mock_lv_utils):
+    def test_get_off_xx(self, mock_lv_utils):
         self.run_params["vms"] = "vm3"
         self.run_params["get_state_vm3"] = "launch"
-        self.run_params["get_type_vm3"] = "offline"
+        self.run_params["get_type_vm3"] = "off"
         self.run_params["get_mode_vm3"] = "xx"
         self.run_params["vg_name_vm3"] = "ramdisk_vm3"
         self._create_mock_vms()
@@ -301,7 +301,7 @@ class StateSetupTest(unittest.TestCase):
     def test_get_type_switch(self, mock_lv_utils):
         self.run_params["vms"] = "vm4"
         self.run_params["get_state_vm4"] = "launch"
-        self.run_params["get_type_vm4"] = "offline"
+        self.run_params["get_type_vm4"] = "off"
         self.run_params["get_mode_vm4"] = "ii"
         self.run_params["vg_name_vm4"] = "ramdisk_vm4"
         self._create_mock_vms()
@@ -324,10 +324,10 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm4"].is_alive.assert_called_once_with()
 
     @mock.patch('avocado_i2n.state_setup.process')
-    def test_get_online_rx(self, mock_process):
+    def test_get_on_rx(self, mock_process):
         self.run_params["vms"] = "vm2"
         self.run_params["get_state_vm2"] = "launch"
-        self.run_params["get_type_vm2"] = "online"
+        self.run_params["get_type_vm2"] = "on"
         self.run_params["get_mode_vm2"] = "rx"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm2"] = "/vm2/image"
@@ -351,9 +351,9 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["image_name_vm2"] = "/vm2/image"
         self._create_mock_vms()
 
-        # if >= 1 states prefer online
+        # if >= 1 states prefer on
         mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
-        # this time the online switch asks so confirm for it as well
+        # this time the on switch asks so confirm for it as well
         self.mock_vms["vm2"].is_alive.return_value = True
         state_setup.get_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm2/image.qcow2 -U")
@@ -375,10 +375,10 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["image_raw_device_vm2"] = "no"
         self._create_mock_vms()
 
-        # if only offline state choose it
+        # if only off state choose it
         mock_process.system_output.return_value = b"NOT HERE"
         mock_lv_utils.lv_check.return_value = True
-        # this time the offline switch asks so confirm for it as well
+        # this time the off switch asks so confirm for it as well
         self.mock_vms["vm2"].is_alive.return_value = False
         state_setup.get_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm2/image.qcow2 -U")
@@ -399,7 +399,7 @@ class StateSetupTest(unittest.TestCase):
         # self.run_params["image_raw_device_vm2"] = "no"
         self._create_mock_vms()
 
-        # if no states prefer online
+        # if no states prefer on
         mock_process.system_output.return_value = b"NOT HERE"
         mock_lv_utils.lv_check.return_value = False
         state_setup.get_state(self.run_params, self.env)
@@ -407,12 +407,12 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm2", "launch")
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_set_offline_aa(self, mock_lv_utils):
+    def test_set_off_aa(self, mock_lv_utils):
         self.run_params["vms"] = "vm2"
         self.run_params["set_state_vm2"] = "launch"
-        self.run_params["set_type_vm2"] = "offline"
+        self.run_params["set_type_vm2"] = "off"
         self.run_params["set_mode_vm2"] = "aa"
-        self.run_params["skip_types"] = "online"
+        self.run_params["skip_types"] = "on"
         self.run_params["vg_name_vm2"] = "ramdisk_vm2"
         self._create_mock_vms()
 
@@ -433,12 +433,12 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm2"].destroy.assert_called_once_with(gracefully=True)
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_set_offline_rx(self, mock_lv_utils):
+    def test_set_off_rx(self, mock_lv_utils):
         self.run_params["vms"] = "vm3"
         self.run_params["set_state_vm3"] = "launch"
-        self.run_params["set_type_vm3"] = "offline"
+        self.run_params["set_type_vm3"] = "off"
         self.run_params["set_mode_vm3"] = "rx"
-        self.run_params["skip_types"] = "online"
+        self.run_params["skip_types"] = "on"
         self.run_params["vg_name_vm3"] = "ramdisk_vm3"
         self._create_mock_vms()
 
@@ -458,12 +458,12 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm3"].destroy.assert_called_once_with(gracefully=True)
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_set_offline_ff(self, mock_lv_utils):
+    def test_set_off_ff(self, mock_lv_utils):
         self.run_params["vms"] = "vm4"
         self.run_params["set_state_vm4"] = "launch"
-        self.run_params["set_type_vm4"] = "offline"
+        self.run_params["set_type_vm4"] = "off"
         self.run_params["set_mode_vm4"] = "ff"
-        self.run_params["skip_types"] = "online"
+        self.run_params["skip_types"] = "on"
         self.run_params["vg_name_vm4"] = "ramdisk_vm4"
         self.run_params["lv_name"] = "LogVol"
         self.run_params["lv_pointer_name"] = "current_state"
@@ -487,12 +487,12 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm4', 'current_state', 'launch')
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_set_offline_xx(self, mock_lv_utils):
+    def test_set_off_xx(self, mock_lv_utils):
         self.run_params["vms"] = "vm1"
         self.run_params["set_state_vm1"] = "launch"
-        self.run_params["set_type_vm1"] = "offline"
+        self.run_params["set_type_vm1"] = "off"
         self.run_params["set_mode_vm1"] = "xx"
-        self.run_params["skip_types"] = "online"
+        self.run_params["skip_types"] = "on"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"
         self._create_mock_vms()
 
@@ -513,18 +513,18 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
 
     @mock.patch('avocado_i2n.state_setup.process')
-    def test_set_online_ff(self, mock_process):
+    def test_set_on_ff(self, mock_process):
         self.run_params["vms"] = "vm4"
         self.run_params["set_state_vm4"] = "launch"
-        self.run_params["set_type_vm4"] = "online"
+        self.run_params["set_type_vm4"] = "on"
         self.run_params["set_mode_vm4"] = "ff"
-        self.run_params["skip_types"] = "offline"
+        self.run_params["skip_types"] = "off"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
         self._create_mock_vms()
 
-        # NOTE: setting an online state assumes that the vm is online just like
-        # setting an offline state assumes that the vm already exists
+        # NOTE: setting an on state assumes that the vm is on just like
+        # setting an off state assumes that the vm already exists
         mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
         state_setup.set_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm4/image.qcow2 -U")
@@ -541,7 +541,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["image_name_vm4"] = "/vm4/image"
         self._create_mock_vms()
 
-        # if no skipping and too many states prefer online
+        # if no skipping and too many states prefer on
         mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
         state_setup.set_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm4/image.qcow2 -U")
@@ -561,7 +561,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["lv_pointer_name"] = "current_state"
         self._create_mock_vms()
 
-        # if no skipping with only offline state available
+        # if no skipping with only off state available
         mock_process.system_output.return_value = b"NOT HERE"
         mock_lv_utils.lv_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
@@ -585,7 +585,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["lv_pointer_name"] = "current_state"
         self._create_mock_vms()
 
-        # if no skipping and no states prefer online
+        # if no skipping and no states prefer on
         mock_process.system_output.return_value = b"NOT HERE"
         mock_lv_utils.lv_check.return_value = False
         state_setup.set_state(self.run_params, self.env)
@@ -595,27 +595,27 @@ class StateSetupTest(unittest.TestCase):
 
     @mock.patch('avocado_i2n.state_setup.process')
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_set_any_all_skip_online(self, mock_lv_utils, mock_process):
+    def test_set_any_all_skip_on(self, mock_lv_utils, mock_process):
         self.run_params["vms"] = "vm4"
         self.run_params["set_state_vm4"] = "launch"
         self.run_params["set_mode_vm4"] = "ff"
-        self.run_params["skip_types"] = "online"
+        self.run_params["skip_types"] = "on"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
         self._create_mock_vms()
 
-        # skip setting the state since online is available but we skip online by parameters
+        # skip setting the state since on is available but we skip on by parameters
         mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
         state_setup.set_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm4/image.qcow2 -U")
 
     @mock.patch('avocado_i2n.state_setup.process')
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_set_any_fallback_skip_online(self, mock_lv_utils, mock_process):
+    def test_set_any_fallback_skip_on(self, mock_lv_utils, mock_process):
         self.run_params["vms"] = "vm4"
         self.run_params["set_state_vm4"] = "launch"
         self.run_params["set_mode_vm4"] = "ff"
-        self.run_params["skip_types"] = "online"
+        self.run_params["skip_types"] = "on"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
         self.run_params["vg_name_vm4"] = "ramdisk_vm4"
@@ -623,7 +623,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["lv_pointer_name"] = "current_state"
         self._create_mock_vms()
 
-        # set the state since only offline is available and we skip online by parameters
+        # set the state since only off is available and we skip on by parameters
         mock_process.system_output.return_value = b"NOT HERE"
         mock_lv_utils.lv_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
@@ -635,11 +635,11 @@ class StateSetupTest(unittest.TestCase):
 
     @mock.patch('avocado_i2n.state_setup.process')
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_set_any_fallback_skip_offline(self, mock_lv_utils, mock_process):
+    def test_set_any_fallback_skip_off(self, mock_lv_utils, mock_process):
         self.run_params["vms"] = "vm4"
         self.run_params["set_state_vm4"] = "launch"
         self.run_params["set_mode_vm4"] = "ff"
-        self.run_params["skip_types"] = "offline"
+        self.run_params["skip_types"] = "off"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
         self.run_params["vg_name_vm4"] = "ramdisk_vm4"
@@ -647,7 +647,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["lv_pointer_name"] = "current_state"
         self._create_mock_vms()
 
-        # skip setting the state since only offline is available but we skip offline by parameters
+        # skip setting the state since only off is available but we skip off by parameters
         mock_process.system_output.return_value = b"NOT HERE"
         mock_lv_utils.lv_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
@@ -655,10 +655,10 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm4", "launch")
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_unset_offline_ra(self, mock_lv_utils):
+    def test_unset_off_ra(self, mock_lv_utils):
         self.run_params["vms"] = "vm1"
         self.run_params["unset_state_vm1"] = "launch"
-        self.run_params["unset_type_vm1"] = "offline"
+        self.run_params["unset_type_vm1"] = "off"
         self.run_params["unset_mode_vm1"] = "ra"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"
         self._create_mock_vms()
@@ -675,10 +675,10 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_unset_offline_fi(self, mock_lv_utils):
+    def test_unset_off_fi(self, mock_lv_utils):
         self.run_params["vms"] = "vm4"
         self.run_params["unset_state_vm4"] = "launch"
-        self.run_params["unset_type_vm4"] = "offline"
+        self.run_params["unset_type_vm4"] = "off"
         self.run_params["unset_mode_vm4"] = "fi"
         self.run_params["vg_name_vm4"] = "ramdisk_vm4"
         self.run_params["lv_pointer_name"] = "current_state"
@@ -696,10 +696,10 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm4", "launch")
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_unset_offline_xx(self, mock_lv_utils):
+    def test_unset_off_xx(self, mock_lv_utils):
         self.run_params["vms"] = "vm3"
         self.run_params["unset_state_vm3"] = "launch"
-        self.run_params["unset_type_vm3"] = "offline"
+        self.run_params["unset_type_vm3"] = "off"
         self.run_params["unset_mode_vm3"] = "xx"
         self.run_params["vg_name_vm3"] = "ramdisk_vm3"
         self._create_mock_vms()
@@ -717,10 +717,10 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm3", "launch")
 
     @mock.patch('avocado_i2n.state_setup.process')
-    def test_unset_online_fi(self, mock_process):
+    def test_unset_on_fi(self, mock_process):
         self.run_params["vms"] = "vm4"
         self.run_params["unset_state_vm4"] = "launch"
-        self.run_params["unset_type_vm4"] = "online"
+        self.run_params["unset_type_vm4"] = "on"
         self.run_params["unset_mode_vm4"] = "fi"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
@@ -742,7 +742,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["image_name_vm1"] = "/vm1/image"
         self._create_mock_vms()
 
-        # if >= 1 states prefer online
+        # if >= 1 states prefer on
         mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
         self.mock_vms["vm1"].monitor.send_args_cmd.return_value = ""
         state_setup.unset_state(self.run_params, self.env)
@@ -761,7 +761,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["lv_pointer_name"] = "current_state"
         self._create_mock_vms()
 
-        # if only offline state choose it
+        # if only off state choose it
         mock_process.system_output.return_value = b"NOT HERE"
         mock_lv_utils.lv_check.return_value = True
         state_setup.unset_state(self.run_params, self.env)
@@ -773,7 +773,7 @@ class StateSetupTest(unittest.TestCase):
     def test_unset_keep_pointer(self, mock_lv_utils):
         self.run_params["vms"] = "vm1"
         self.run_params["unset_state_vm1"] = "current_state"
-        self.run_params["unset_type_vm1"] = "offline"
+        self.run_params["unset_type_vm1"] = "off"
         self.run_params["unset_mode_vm1"] = "fi"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
@@ -781,7 +781,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["lv_pointer_name"] = "current_state"
         self._create_mock_vms()
 
-        # if only offline state choose it
+        # if only off state choose it
         mock_lv_utils.lv_check.return_value = True
         with self.assertRaises(ValueError):
             state_setup.unset_state(self.run_params, self.env)
@@ -809,7 +809,7 @@ class StateSetupTest(unittest.TestCase):
     def test_check_root(self, mock_lv_utils):
         self.run_params["vms"] = "vm1"
         self.run_params["check_state_vm1"] = "root"
-        self.run_params["check_type_vm1"] = "offline"
+        self.run_params["check_type_vm1"] = "off"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"
         self.run_params["lv_name_vm1"] = "LogVol"
         self.run_params["image_name_vm1"] = "/vm1/image"
@@ -835,7 +835,7 @@ class StateSetupTest(unittest.TestCase):
     def test_check_boot(self):
         self.run_params["vms"] = "vm1"
         self.run_params["check_state_vm1"] = "boot"
-        self.run_params["check_type_vm1"] = "online"
+        self.run_params["check_type_vm1"] = "on"
         self._create_mock_vms()
 
         self.mock_vms["vm1"].reset_mock()
@@ -925,9 +925,9 @@ class StateSetupTest(unittest.TestCase):
     def test_push(self, mock_lv_utils, _mock_process):
         self.run_params["vms"] = "vm4"
         self.run_params["push_state_vm4"] = "launch"
-        self.run_params["push_type_vm4"] = "offline"
+        self.run_params["push_type_vm4"] = "off"
         self.run_params["push_mode_vm4"] = "ff"
-        self.run_params["skip_types"] = "online"
+        self.run_params["skip_types"] = "on"
         self.run_params["lv_pointer_name"] = "current_state"
         self.run_params["vg_name_vm4"] = "ramdisk_vm4"
         self._create_mock_vms()
@@ -947,10 +947,10 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.assert_not_called()
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
-    def test_pop_offline(self, mock_lv_utils):
+    def test_pop_off(self, mock_lv_utils):
         self.run_params["vms"] = "vm1"
         self.run_params["pop_state_vm1"] = "launch"
-        self.run_params["pop_type_vm1"] = "offline"
+        self.run_params["pop_type_vm1"] = "off"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"
         self.run_params["lv_name"] = "LogVol"
         self.run_params["lv_pointer_name"] = "current_state"
@@ -978,10 +978,10 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.assert_not_called()
 
     @mock.patch('avocado_i2n.state_setup.process')
-    def test_pop_online(self, mock_process):
+    def test_pop_on(self, mock_process):
         self.run_params["vms"] = "vm1"
         self.run_params["pop_state_vm1"] = "launch"
-        self.run_params["pop_type_vm1"] = "online"
+        self.run_params["pop_type_vm1"] = "on"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
         self._create_mock_vms()
@@ -1003,7 +1003,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1 vm2"
         self.run_params["check_state"] = "launch"
         self.run_params["check_state_vm2"] = "launcher"
-        self.run_params["check_type"] = "offline"
+        self.run_params["check_type"] = "off"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"
         self.run_params["vg_name_vm2"] = "ramdisk_vm2"
         self._create_mock_vms()
@@ -1030,8 +1030,8 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["get_state"] = "launch2"
         self.run_params["get_state_vm1"] = "launch1"
         self.run_params["get_state_vm3"] = "launch3"
-        self.run_params["get_type"] = "offline"
-        self.run_params["get_type_vm3"] = "online"
+        self.run_params["get_type"] = "off"
+        self.run_params["get_type_vm3"] = "on"
         self.run_params["get_mode_vm1"] = "rx"
         self.run_params["get_mode_vm2"] = "ii"
         self.run_params["get_mode_vm3"] = "aa"
@@ -1047,7 +1047,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["image_raw_device"] = "no"
         self._create_mock_vms()
 
-        # test online/offline switch as well
+        # test on/off switch as well
         def lv_check_side_effect(_vgname, lvname):
             return True if lvname == "launch1" else False if lvname == "launch2" else False
         mock_lv_utils.lv_check.side_effect = lv_check_side_effect
@@ -1072,7 +1072,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["set_state_vm2"] = "launch2"
         self.run_params["set_state_vm3"] = "root"
         self.run_params["set_state_vm4"] = "launch4"
-        self.run_params["set_type"] = "offline"
+        self.run_params["set_type"] = "off"
         self.run_params["set_mode_vm2"] = "rx"
         self.run_params["set_mode_vm3"] = "ff"
         self.run_params["set_mode_vm4"] = "aa"
@@ -1090,7 +1090,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["use_tmpfs"] = "yes"
         self.run_params["ramdisk_basedir"] = "/tmp"
         self.run_params["ramdisk_vg_size"] = "40000"
-        self.run_params["skip_types"] = "online"
+        self.run_params["skip_types"] = "on"
         self._create_mock_vms()
         self.exist_switch = False
 
@@ -1118,7 +1118,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1 vm4"
         self.run_params["unset_state_vm1"] = "root"
         self.run_params["unset_state_vm4"] = "launch4"
-        self.run_params["unset_type"] = "offline"
+        self.run_params["unset_type"] = "off"
         self.run_params["unset_mode_vm1"] = "ra"
         self.run_params["unset_mode_vm4"] = "fi"
         self.run_params["lv_name"] = "LogVol"

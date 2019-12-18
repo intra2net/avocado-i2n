@@ -139,6 +139,19 @@ class VMNetwork(object):
             self.start_all_sessions()
         return (node.platform, node.last_session)
 
+    def get_single_vm_with_session_and_params(self):
+        """
+        Get the only vm in the network and its only session
+        as well as configuration (to replace the test configuration).
+
+        :returns: vm, its last session, and its params
+        :rtype: (VM object, Session object, Params object)
+        """
+        node = self._get_single_node()
+        if node.last_session is None:
+            self.start_all_sessions()
+        return (node.platform, node.last_session, node.params)
+
     def get_ordered_vms(self, vm_num=None):
         """
         Get all N (``=vm_num``) vms in the network ordered by their name.

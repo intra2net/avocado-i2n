@@ -201,12 +201,12 @@ class TestGraph(object):
                         # NOTE: If you are running only tests that are descendants of this ephemeral test,
                         # it won't be lost throughout the run so you might as well reuse it if available
                         # before the test run commences. However, be warned that this is user responsibility.
-                        # TODO: If the states are online but not on a permanent test object,
+                        # TODO: If the states are on but not on a permanent test object,
                         # we rely on the ephemeral tests. However, be warned that there is
-                        # no guarantee the ephemeral test concept (i.e. offline to online
+                        # no guarantee the ephemeral test concept (i.e. off to on
                         # state transition) will guard all possible topologies of the Cartesian graph.
-                        # This works well for simple enough cases with no online states descending from
-                        # other online states unless we have a permanent object.
+                        # This works well for simple enough cases with no on states descending from
+                        # other on states unless we have a permanent object.
                         logging.warning("The state %s of %s is ephemeral but will be forcibly reused",
                                         object_state, object_name)
                     else:
@@ -226,7 +226,7 @@ class TestGraph(object):
                 # ultimate consideration of whether the state is actually present
                 object_params["vms"] = object_name
                 object_params["check_state"] = object_state
-                object_params["check_type"] = object_params.get("set_type", "online")
+                object_params["check_type"] = object_params.get("set_type", "on")
                 is_state_detected = state_setup.check_state(object_params, env,
                                                             print_pos=True, print_neg=True)
                 # the object state has to be defined to reach this stage

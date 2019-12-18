@@ -52,8 +52,8 @@ class TestObject(object):
         If the test object is permanent, it can only be created manually
         (possibly through the use of manual setup steps).
 
-        Online states on permanent test object are treated differently than
-        online states on normal test object since they are preserved through
+        On states on permanent test object are treated differently than
+        on states on normal test object since they are preserved through
         test runs and even host shutdowns.
         """
         return self.params.get("permanent_vm", "no") == "yes"
