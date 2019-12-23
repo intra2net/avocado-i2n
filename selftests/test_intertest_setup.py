@@ -144,16 +144,6 @@ class IntertestSetupTest(unittest.TestCase):
         intertest_setup.update(self.config, self.run_params, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_develop(self):
-        self.run_params["vms"] = "vm1 vm2"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-
-        DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.manual.develop.generator.vm1", "vms": "^vm1 vm2$"},
-        ]
-        intertest_setup.develop(self.config, self.run_params, tag="0")
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
-
     def test_install(self):
         self.run_params["vms"] = "vm1 vm2"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
@@ -290,6 +280,16 @@ class IntertestSetupTest(unittest.TestCase):
                 del DummyTestRunning.asserted_tests[0]["set_state"]
             setup_func = getattr(intertest_setup, state_action)
             setup_func(self.config, self.run_params, "5m")
+
+    def test_develop(self):
+        self.run_params["vms"] = "vm1 vm2"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
+
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.manual.develop.generator.vm1", "vms": "^vm1 vm2$"},
+        ]
+        intertest_setup.develop(self.config, self.run_params, tag="0")
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
 
 if __name__ == '__main__':
