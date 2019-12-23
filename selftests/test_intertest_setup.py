@@ -227,16 +227,6 @@ class IntertestSetupTest(unittest.TestCase):
         intertest_setup.internal(self.config, self.run_params, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_sysupdate(self):
-        self.run_params["vms"] = "vm1 vm2"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-        DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.permanent.system_update.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.permanent.system_update.vm2", "vms": "^vm2$"},
-        ]
-        intertest_setup.sysupdate(self.config, self.run_params, tag="ut")
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
-
     def test_boot(self):
         self.run_params["vms"] = "vm1 vm2"
         self.config["param_str"] += "vms=vm1 vm2\n"

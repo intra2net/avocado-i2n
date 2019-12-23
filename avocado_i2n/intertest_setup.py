@@ -452,50 +452,6 @@ def internal(config, run_params, tag=""):
         config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
 
 
-@with_cartesian_graph
-def sysupdate(config, run_params, tag=""):
-    """
-    Update an updatable system and reset its install state.
-
-    :param config: command line arguments
-    :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
-    :param str tag: extra name identifier for the test to be run
-
-    "Updatable" here means that the system is compatible with a "system_update"
-    test defined for a vm with this system as its guest OS configuration.
-    """
-    vms = config["graph"].l.parse_objects(config["vm_strs"], run_params.get("vms", ""))
-    for vm in vms:
-
-        states = vm.params.objects("states")
-        if len(states) == 0:
-            states = ["current_state"]
-            stateless = vm.params.get("stateless", "yes") == "yes"
-        else:
-            stateless = False
-
-        for i, state in enumerate(states):
-            setup_str = ""
-            if state != "current_state":
-                setup_str = config["param_str"] + param.ParsedDict({"get_state": state, "set_state": state}).parsable_form()
-
-            if stateless:
-                ovrwrt_dict = {"get_state": "", "set_state": "",
-                               "skip_image_processing": "yes", "kill_vm": "no"}
-            else:
-                ovrwrt_dict = {}
-            setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
-            ovrwrt_str = param.re_str("nonleaves..system_update", setup_str)
-            reparsable = vm.config.get_copy()
-            reparsable.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file,
-                                        ovrwrt_str=ovrwrt_str,
-                                        ovrwrt_dict=ovrwrt_dict)
-            config["graph"].r.run_test_node(TestNode(setup_tag, reparsable, []))
-
-
 ############################################################
 # VM management manual user steps
 ############################################################
