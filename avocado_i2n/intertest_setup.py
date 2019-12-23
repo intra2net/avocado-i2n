@@ -328,55 +328,6 @@ def list(config, run_params, tag=""):
 
 
 @with_cartesian_graph
-def windows(config, run_params, tag=""):
-    """
-    Perform all extra setup needed for the windows permanent vms.
-
-    :param config: command line arguments
-    :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
-    :param str tag: extra name identifier for the test to be run
-
-    If the vm is still located on top of ramdisk (it is still not
-    permanent) this setup is still possible in the form of on
-    state setup, however you may risk running out of memory.
-    """
-    vms = config["graph"].l.parse_objects(config["vm_strs"], run_params.get("vms", ""))
-    for vm in vms:
-        logging.info("Performing extra setup for the permanent %s", vm.name)
-
-        # consider this as a special kind of ephemeral test which concerns
-        # permanent objects (i.e. instead of transition from customize to on
-        # root, it is a transition from supposedly "permanentized" vm to the root)
-        logging.info("Booting %s for the first permanent on state", vm.name)
-        reparsable = vm.config.get_copy()
-        reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
-                                    ovrwrt_str=param.re_str("nonleaves..manage.start", config["param_str"]),
-                                    ovrwrt_dict={"set_state": "windows_on"})
-        config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
-
-        logging.info("Installing local virtuser at %s", vm.name)
-        reparsable = vm.config.get_copy()
-        reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
-                                    ovrwrt_str=param.re_str("nonleaves..windows_virtuser", config["param_str"]),
-                                    ovrwrt_dict={"skip_image_processing": "yes", "kill_vm": "no"})
-        config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
-
-        if run_params.get("with_outlook", "no") != "no":
-            logging.info("Installing Outlook at %s", vm.name)
-            year = run_params["with_outlook"]
-            reparsable = vm.config.get_copy()
-            reparsable.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file,
-                                        ovrwrt_str=param.re_str("nonleaves..outlook_prep..ol%s" % year, config["param_str"]),
-                                        ovrwrt_dict={"skip_image_processing": "yes", "kill_vm": "no"})
-            config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
-
-
-@with_cartesian_graph
 def develop(config, run_params, tag=""):
     """
     Run manual tests specialized at development speedup.

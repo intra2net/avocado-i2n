@@ -144,29 +144,6 @@ class IntertestSetupTest(unittest.TestCase):
         intertest_setup.update(self.config, self.run_params, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    @unittest.skip("Manual step not supported in sample test suite and will be partially deprecated")
-    def test_windows(self):
-        self.run_params["with_outlook"] = "no"
-        self.run_params["vms"] = "vm2"
-        self.config["vm_strs"] = {"vm2": "only Win10\n"}
-
-        DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.stateless.manage.start.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "set_state": "^windows_online$"},
-            {"shortname": "^internal.permanent.windows_virtuser.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "get_state": "^customize$", "set_state": "^windows_virtuser$"},
-        ]
-        intertest_setup.windows(self.config, self.run_params, tag="ut")
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
-
-        self.run_params["with_outlook"] = "2013"
-
-        DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.stateless.manage.start.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "set_state": "^windows_online$"},
-            {"shortname": "^internal.permanent.windows_virtuser.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "get_state": "^customize$", "set_state": "^windows_virtuser$"},
-            {"shortname": "^internal.manual.outlook_prep.ol2013.vm2.smp2.Win10.x86_64$", "vms": "^vm2$", "get_state": "^windows_online$", "set_state": "^outlook_prep$"},
-        ]
-        intertest_setup.windows(self.config, self.run_params, tag="ut")
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
-
     def test_develop(self):
         self.run_params["vms"] = "vm1 vm2"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
