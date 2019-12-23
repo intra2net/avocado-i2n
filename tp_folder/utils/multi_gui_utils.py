@@ -51,8 +51,7 @@ class GUITestGenerator(QtGui.QWidget):
         self.vmnet, self.path = vmnet, vmnet.test.logdir
         self.test, self.params, self.env = vmnet.test, vmnet.params, vmnet.env
         testsuite_top_path = settings.get_value('i2n.common', 'suite_path', default=None)
-        guest_path = os.path.join(testsuite_top_path, "guest")
-        self.image_root = os.path.join(guest_path, "data", "shared_visual")
+        self.image_root = os.path.join(testsuite_top_path, "data", "visual")
         if self.params.get("store_permanently", "no") == "yes":
             self.path = self.image_root
             logging.info("Storing all captured screens and executed code permanently in %s",
@@ -230,7 +229,7 @@ class GUITestGenerator(QtGui.QWidget):
         self.button_pause.setEnabled(True)
 
     def store(self):
-        """Store the state of the current vm as an online state."""
+        """Store the state of the current vm as an on state."""
         self.button_state.setText("Storing")
         self.disable()
 
@@ -245,7 +244,7 @@ class GUITestGenerator(QtGui.QWidget):
         self.worker.start()
 
     def retrieve(self):
-        """Retrieve a state of the current vm as an online state."""
+        """Retrieve a state of the current vm as an on state."""
         self.button_state.setText("Retrieving")
         self.disable()
 
@@ -258,7 +257,7 @@ class GUITestGenerator(QtGui.QWidget):
         self.worker.start()
 
     def remove(self):
-        """Remove a state of the current vm as an online state."""
+        """Remove a state of the current vm as an on state."""
         self.button_state.setText("Removing")
         self.disable()
 
@@ -333,7 +332,7 @@ class StoreThread(QtCore.QThread):
         """Run the thread."""
         self.gui.vm.params["vms"] = self.gui.vm.name
         self.gui.vm.params["set_state"] = self.gui.line_state.text()
-        self.gui.vm.params["set_type"] = "online"
+        self.gui.vm.params["set_type"] = "on"
         self.gui.vm.params["set_mode"] = "ff"
         state_setup.set_state(self.gui.vm.params, self.gui.vmnet.env)
 
@@ -356,7 +355,7 @@ class RetrieveThread(QtCore.QThread):
         self.gui.vm.params["vms"] = self.gui.vm.name
         for item in self.gui.list_view.selectedItems():
             self.gui.vm.params["get_state"] = item.text()
-            self.gui.vm.params["get_type"] = "online"
+            self.gui.vm.params["get_type"] = "on"
             self.gui.vm.params["get_mode"] = "ri"
             state_setup.get_state(self.gui.vm.params, self.gui.vmnet.env)
 
@@ -379,7 +378,7 @@ class RemoveThread(QtCore.QThread):
         self.gui.vm.params["vms"] = self.gui.vm.name
         for item in self.gui.list_view.selectedItems():
             self.gui.vm.params["unset_state"] = item.text()
-            self.gui.vm.params["unset_type"] = "online"
+            self.gui.vm.params["unset_type"] = "on"
             self.gui.vm.params["unset_mode"] = "fi"
             state_setup.unset_state(self.gui.vm.params, self.gui.vmnet.env)
             self.gui.list_view.takeItem(self.gui.list_view.row(item))
@@ -442,11 +441,11 @@ class SwitchThread(QtCore.QThread):
     def run(self):
         """Run the thread."""
         vmname = str(re.match("^(\w+) :\d+", self.gui.combo_box.currentText()).group(1))
-        self.gui.vm = self.gui.vmnet.vmnodes[vmname].platform
+        self.gui.vm = self.gui.vmnet.nodes[vmname].platform
 
         # refresh the detected states
         self.gui.vm.params["vms"] = vmname
-        self.gui.vm.params["check_type"] = "online"
+        self.gui.vm.params["check_type"] = "on"
         states = state_setup.show_states(self.gui.vm.params, self.gui.vmnet.env)
         self.gui.list_view.clear()
         self.gui.list_view.addItems(states)

@@ -2,20 +2,23 @@
 
 SUMMARY
 ------------------------------------------------------
-Create a GUI test directly on top of a running vm.
+Create a GUI (or even non-GUI) test directly on top of a running vm.
 
 Copyright: Intra2net AG
 
 
 CONTENTS
 ------------------------------------------------------
-The following test generates a GUI panel to control a vm.
+The following test generates a GUI panel to control a vm or
+a set of vms.
 
 At the present it must be used in conjunction with a normal
 VNC client from which to interact with the vm's GUI.
 
 The panel can be used to pause, resume and capture a vm as
 well as for other neat purposes.
+
+.. seealso:: Extra guide on GUI test development in the wiki.
 
 
 INTERFACE
