@@ -49,6 +49,7 @@ import os
 import re
 import logging
 import contextlib
+import importlib
 from collections import namedtuple
 
 from avocado.core import job
@@ -61,6 +62,31 @@ from . import params_parser as param
 from .cartgraph import TestGraph, TestNode
 from .loader import CartesianLoader
 from .runner import CartesianRunner
+
+
+#: list of all available manual steps or simply semi-automation tools
+__all__ = ["noop", "unittest", "full", "update", "run", "list",
+           "develop", "install", "deploy", "internal",
+           "boot", "download", "upload", "shutdown",
+           "check", "pop", "push", "get", "set", "unset", "create", "clean"]
+root_path = settings.get_value('i2n.common', 'suite_path', default=None)
+tools_path = os.path.join(root_path, "tools")
+sys.path.append(tools_path)
+for tool in os.listdir(tools_path):
+    if tool.endswith(".py") and not tool.endswith("_unittest.py"):
+        module_name = tool.replace(".py", "")
+        logging.debug("Loading tools in %s", module_name)
+        module = importlib.import_module(module_name)
+
+        if "__all__" not in module.__dict__:
+            logging.warning("Detected tool module doesn't contain publicly defined tools")
+            continue
+
+        names = module.__dict__["__all__"]
+        globals().update({k: getattr(module, k) for k in names})
+        __all__ += module.__all__
+
+        logging.info("Loaded custom tools: %s", ", ".join(module.__all__))
 
 
 @contextlib.contextmanager
@@ -152,10 +178,15 @@ def unittest(config, run_params, tag=""):
     util_unittests = unittest.TestSuite()
     util_testrunner = unittest.TextTestRunner(stream=sys.stdout, verbosity=2)
 
-    root_path = settings.get_value('i2n.common', 'suite_path', default=None)
-
     subtests_filter = run_params.get("ut_filter", "*_unittest.py")
+
     subtests_path = os.path.join(root_path, "utils")
+    subtests_suite = unittest.defaultTestLoader.discover(subtests_path,
+                                                         pattern=subtests_filter,
+                                                         top_level_dir=subtests_path)
+    util_unittests.addTest(subtests_suite)
+
+    subtests_path = os.path.join(root_path, "tools")
     subtests_suite = unittest.defaultTestLoader.discover(subtests_path,
                                                          pattern=subtests_filter,
                                                          top_level_dir=subtests_path)
