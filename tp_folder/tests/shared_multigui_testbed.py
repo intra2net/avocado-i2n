@@ -34,7 +34,7 @@ import random
 from PyQt4 import QtGui, QtCore
 
 # custom imports
-from multi_gui_utils import GUITestGenerator
+from multi_gui_utils import GUITestGenerator, Windows, Linux
 
 
 ###############################################################################
@@ -106,7 +106,6 @@ class StressTestMouseGrid(QtCore.QThread):
 
     def run(self):
         """Run the stress test."""
-        # TODO: reduce import dependencies only to the visual/horde/groupware objects
         from guibot.guibot.location import Location
         l = Location(0, 0)
         for i in range(0, 500/self.step):
@@ -143,7 +142,6 @@ class StressTestMouseHit(QtCore.QThread):
 
     def run(self):
         """Run the stress test."""
-        # TODO: reduce import dependencies only to the visual/horde/groupware objects
         from guibot.guibot.location import Location
         l = Location(100, 100)
         for i in range(self.trials):
@@ -203,9 +201,9 @@ class StressTestCustom(QtCore.QThread):
 
     Window to use: **paint, editor, etc.**
 
-    Tested functionality: **mouse, keyboard, etc.**
+    Tested functionality: **mouse, keyboard, GUI control, etc.**
     """
-    def __init__(self, gui):
+    def __init__(self, gui, visual_os="windows"):
         """
         Construct the stress test.
 
@@ -214,6 +212,7 @@ class StressTestCustom(QtCore.QThread):
         """
         QtCore.QThread.__init__(self)
         self.gui = gui
+        self.visual_os = visual_os
 
     def run(self):
         """
@@ -223,16 +222,20 @@ class StressTestCustom(QtCore.QThread):
         500 times waiting for a failure to do so. It can be customized
         or changed to any other desired behavior.
         """
-        import visual_objects as vo
-        windows = self.gui.screen.get_local_instance_of(vo.Windows, self.gui.image_root)
-        windows.version("winxp")
+        if self.visual_os == "windows":
+            os_type = Windows
+        elif self.visual_os == "linux":
+            os_type = Linux
+        else:
+            raise ValueError("Inappropriate choice of OS for custom stress test")
+        os = os_type(self.gui.image_root, dc=self.gui.user.dc_backend)
         # NOTE: this could be moved to the arguments but is kept here
         # to simplify the example stress test
         n = 500
         for i in range(n):
             logging.info("Attempt %i\%i", i, n)
-            windows.start_menu_option()
-            windows.press_keys(windows.ESC)
+            os.start_menu_option()
+            os.press_keys(os.ESC)
             if self.gui.interrupted:
                 return
         logging.info("No errors")

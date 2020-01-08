@@ -26,7 +26,11 @@ from avocado.utils import process
 from avocado.core.settings import settings
 
 from avocado_i2n import state_setup
-import visual_objects as vo
+
+# virtual user backend has to be available in order to use these tools at all
+from guibot.guibot import GuiBot
+from guibot.config import GlobalConfig
+from guibot.desktopcontrol import VNCDoToolDesktopControl
 
 
 class GUITestGenerator(QtGui.QWidget):
@@ -118,9 +122,8 @@ class GUITestGenerator(QtGui.QWidget):
                 paragraphs = code.replace('\n', '\u2029')
         else:
             paragraphs = str("gui.user.type_text(\"hello world\")\u2029"
-                             "windows = get_vo(\"windows\")\u2029"
-                             "firefox = get_vo(\"firefox\", windows)\u2029"
-                             "firefox.open()")
+                             "linux = get_vo(\"linux\")\u2029"
+                             "linux.start_menu_option(\"firefox\")\u2029")
         self.text_edit.setPlainText(paragraphs)
         cursor = self.text_edit.textCursor()
         cursor.setPosition(0)
@@ -408,15 +411,13 @@ class RunThread(QtCore.QThread):
 
         # some shortcuts on the editor side
         gui = self.gui
-        other_vos = {"linux": vo.Linux, "windows": vo.Windows,
-                     "android": vo.Android, "firefox": vo.Firefox,
-                     "iexplorer": vo.InternetExplorer, "intranator": vo.Intranator,
-                     "horde": vo.Horde, "outlook": vo.Outlook}
+        other_vos = {"linux": Linux, "windows": Windows}
+        assert gui.user is not None, "Virtual user should be initialized"
 
         def get_vo(voname, *args, **kwargs):
             if voname in other_vos.keys():
-                return self.gui.screen.get_local_instance_of(
-                    other_vos[voname], self.gui.image_root, *args, **kwargs)
+                return other_vos[voname](gui.image_root, *args,
+                                         dc=gui.user.dc_backend, **kwargs)
             else:
                 return gui.user
 
@@ -451,9 +452,88 @@ class SwitchThread(QtCore.QThread):
         self.gui.list_view.addItems(states)
 
         # each platform supports different logging verbosity
-        vo.set_logging(self.gui.vm.params.get("vu_logging_level", 20), self.gui.path)
-        vo.set_shared_configuration(self.gui.vm.params.get("smooth_mouse_motion", "no") == "yes")
+        lvl = self.gui.vm.params.get_numeric("vu_logging_level", 20)
+        logging.getLogger("guibot").setLevel(lvl)
+        GlobalConfig.image_logging_level = lvl
+        GlobalConfig.image_logging_destination = os.path.join(self.gui.path, "imglogs")
 
-        self.gui.screen = vo.initiate_vm_screen(self.gui.vm, 'vncdotool')
-        self.gui.user = self.gui.screen.get_local_instance_of(vo.VisualObject, self.gui.image_root)
+        # initialize a desktop control backend for the selected vm
+        dc = VNCDoToolDesktopControl(synchronize=False)
+        # starting from 5900, i.e. :0 == 5900
+        dc.params["vncdotool"]["vnc_port"] = self.gui.vm.vnc_port - 5900
+        dc.params["vncdotool"]["vnc_delay"] = 0.02
+        dc.synchronize_backend()
+        logging.debug("Initiating vnc server screen for vm %s on port %s (%s)",
+                      self.gui.vm.name, dc.params["vncdotool"]["vnc_port"],
+                      self.gui.vm.vnc_port)
+        self.gui.user = VisualObject(self.gui.image_root, dc=dc)
         self.gui.user.add_path(self.gui.path)
+
+
+class VisualObject(GuiBot):
+    """
+    Visual objects contain logic for manipulation of visual
+    information.
+    """
+
+    def image_root(self, r=None):
+        """
+        Image root location where the images for the visual
+        object will be searched for.
+        """
+        if r is None:
+            return self._image_root
+        else:
+            self._image_root = r
+
+    def __init__(self, imgroot, dc=None, cv=None):
+        """
+        Construct a visual object with optional custom backends.
+
+        :param str imgroot: the image root location for the object
+        :param dc: desktop control backend
+        :type dc: DesktopControl object
+        :param cv: computer vision backend
+        :type cv: Finder object
+        """
+        super(VisualObject, self).__init__(dc=dc, cv=cv)
+        self._image_root = imgroot
+        self.add_path(self._image_root)
+
+
+class Linux(VisualObject):
+    """
+    Visual object to handle Linux OS related
+    operations on the GUI.
+    """
+
+    def start_menu_option(self, option="admin"):
+        """
+        Open an option in the start menu, opening the start
+        menu if necessary.
+
+        :param str option: option in the start menu
+        """
+        logging.info("Looking for '%s' in the start menu", option)
+        self.press_keys([self.ALT, self.F2])
+        self.type_text(option)
+        self.press_keys(self.ENTER)
+
+
+class Windows(VisualObject):
+    """
+    Visual object to handle Windows OS related
+    operations on the GUI.
+    """
+
+    def start_menu_option(self, option="admin"):
+        """
+        Open an option in the start menu, opening the start
+        menu if necessary.
+
+        :param str option: option in the start menu
+        """
+        logging.info("Looking for '%s' in the start menu", option)
+        self.click("win10-start-button")
+        self.type_text(option)
+        self.press_keys(self.ENTER)
