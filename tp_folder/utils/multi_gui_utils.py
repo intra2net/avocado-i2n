@@ -423,7 +423,10 @@ class RunThread(QtCore.QThread):
 
         with open(control_file) as control_handle:
             code = compile(control_handle.read(), control_file, 'exec')
-            exec(code)
+            try:
+                exec(code)
+            except Exception as e:
+                logging.warning("Error during GUI code execution:\n%s", e)
 
 
 class SwitchThread(QtCore.QThread):
