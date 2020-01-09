@@ -76,7 +76,11 @@ for tool in os.listdir(tools_path):
     if tool.endswith(".py") and not tool.endswith("_unittest.py"):
         module_name = tool.replace(".py", "")
         logging.debug("Loading tools in %s", module_name)
-        module = importlib.import_module(module_name)
+        try:
+            module = importlib.import_module(module_name)
+        except Exception as error:
+            logging.error("Could not load tool %s: %s", module_name, error)
+            continue
 
         if "__all__" not in module.__dict__:
             logging.warning("Detected tool module doesn't contain publicly defined tools")
