@@ -62,4 +62,4 @@ class Auto(CLI):
 
         loader.register_plugin(CartesianLoader)
         if config.get("auto") and config["auto"]:
-            config["test_runner"] = CartesianRunner
+            config["test_runner"] = "traverser"

@@ -82,7 +82,9 @@ class CartesianGraphTest(unittest.TestCase):
         self.job = mock.MagicMock()
         self.job.logdir = "."
         self.result = mock.MagicMock()
-        self.runner = CartesianRunner(job=self.job, result=self.result)
+        self.runner = CartesianRunner()
+        self.runner.job = self.job
+        self.runner.result = self.result
 
     def tearDown(self):
         shutil.rmtree("./graph_parse", ignore_errors=True)

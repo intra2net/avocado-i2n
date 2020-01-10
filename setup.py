@@ -45,5 +45,8 @@ setup(name='avocado-framework-plugins-i2n',
           'avocado.plugins.cli.cmd': [
               'manu = avocado_i2n.manu:Manu',
               ],
+          'avocado.plugins.runner': [
+              'traverser = avocado_i2n.runner:CartesianRunner',
+              ],
           },
       )

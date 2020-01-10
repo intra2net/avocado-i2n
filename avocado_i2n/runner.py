@@ -32,7 +32,7 @@ import logging
 import signal
 from multiprocessing import SimpleQueue
 
-from avocado.core.runner import TestRunner
+from avocado.plugins.runner import TestRunner
 from virttest import utils_misc
 
 from . import params_parser as param
@@ -41,6 +41,9 @@ from .cartgraph import TestGraph, TestNode
 
 class CartesianRunner(TestRunner):
     """Test runner for Cartesian graph traversal."""
+
+    name = 'traverser'
+    description = 'Runs tests through a Cartesian graph traversal'
 
     """running functionality"""
     def run_test_node(self, node):
@@ -55,7 +58,10 @@ class CartesianRunner(TestRunner):
         This is a simple wrapper to provide some default arguments
         for simplicity of invocation.
         """
-        return self.run_test(node.get_test_factory(self.job), SimpleQueue(), set())
+        # TODO: in the future we better inherit from the Runner interface in
+        # avocado.core.plugin_interfaces and implement our own test node running
+        # like most of the other runners do
+        return self.run_test(self.job, self.result, node.get_test_factory(self.job), SimpleQueue(), set())
 
     def run_traversal(self, graph, param_str):
         """
@@ -142,7 +148,7 @@ class CartesianRunner(TestRunner):
                 step += 1
                 graph.visualize(traverse_dir, step)
 
-    def run_suite(self, test_suite, _variant, _timeout=0,
+    def run_suite(self, job, result, test_suite, _variants, _timeout=0,
                   _replay_map=None, _execution_order=None):
         """
         Run one or more tests and report with test result.
@@ -160,6 +166,8 @@ class CartesianRunner(TestRunner):
         :returns: a set with types of test failures
         :rtype: :py:class:`set`
         """
+        self.job, self.result = job, result
+
         graph = self._graph_from_suite(test_suite)
         summary = set()
         if self.job.sysinfo is not None:

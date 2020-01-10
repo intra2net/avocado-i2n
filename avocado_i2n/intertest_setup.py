@@ -107,7 +107,11 @@ def with_cartesian_graph(fn):
         with new_job(config) as job:
 
             loader = CartesianLoader(config, {"logdir": job.logdir})
-            runner = CartesianRunner(job, job.result)
+            runner = CartesianRunner()
+            # TODO: need to decide what is more reusable between jobs and graphs
+            # e.g. by providing job and result in a direct traversal call
+            runner.job = job
+            runner.result = job.result
             CartesianGraph = namedtuple('CartesianGraph', 'l r')
             config["graph"] = CartesianGraph(l=loader, r=runner)
 
@@ -394,7 +398,7 @@ def run(config, run_params, tag=""):
     # essentially we imitate the auto plugin to make the tool plugin a superset
     # loader = config["graph"].l
     job = config["graph"].r.job
-    job.config["test_runner"] = CartesianRunner
+    job.config["test_runner"] = "traverser"
     job.config["sysinfo"] = 'on'
     job.config["html_job_result"] = 'on'
     job.run()
