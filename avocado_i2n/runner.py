@@ -281,7 +281,7 @@ class CartesianRunner(TestRunner):
                 ovrwrt_dict = {}
             else:
                 ovrwrt_dict = {"type": install_params.get("configure_install", "stepmaker")}
-                ovrwrt_str = param.re_str("nonleaves..install", param_str, tag, True)
+                ovrwrt_str = param.re_str("nonleaves..install", param_str, tag)
             install_config = test_object.config.get_copy()
             install_config.parse_next_batch(base_file="sets.cfg",
                                             ovrwrt_file=param.tests_ovrwrt_file,
