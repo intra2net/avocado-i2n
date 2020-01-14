@@ -1029,7 +1029,10 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1 vm2 vm3"
         self.run_params["get_state"] = "launch2"
         self.run_params["get_state_vm1"] = "launch1"
-        self.run_params["get_state_vm3"] = "launch3"
+        # TODO: restore allowing digits in the state name once the upstream Qemu
+        # handles the bug reported at https://bugs.launchpad.net/qemu/+bug/1859989
+        #self.run_params["get_state_vm3"] = "launch3"
+        self.run_params["get_state_vm3"] = "launchX"
         self.run_params["get_type"] = "off"
         self.run_params["get_type_vm3"] = "on"
         self.run_params["get_mode_vm1"] = "rx"
@@ -1051,7 +1054,7 @@ class StateSetupTest(unittest.TestCase):
         def lv_check_side_effect(_vgname, lvname):
             return True if lvname == "launch1" else False if lvname == "launch2" else False
         mock_lv_utils.lv_check.side_effect = lv_check_side_effect
-        mock_process.system_output.return_value = b"1         launch3   338M 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"1         launchX   338M 2014-05-16 12:13:45   00:00:34.079"
         self.mock_vms["vm1"].is_alive.return_value = False
         self.mock_vms["vm3"].is_alive.return_value = True
 

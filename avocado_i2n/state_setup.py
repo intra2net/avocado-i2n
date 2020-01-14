@@ -41,6 +41,11 @@ from avocado.utils import lv_utils
 OFF_ROOTS = ['root', '0root']
 #: keywords reserved for on root states
 ON_ROOTS = ['boot', '0boot']
+# TODO: use "\d+\s+([\w\.]+)\s*([\w\. ]+)\s+\d{4}-\d\d-\d\d" to restore allowing
+# digits in the state name once the upstream Qemu handles the reported bug:
+# https://bugs.launchpad.net/qemu/+bug/1859989
+#: qemu states regex
+QEMU_STATES_REGEX = re.compile("\d+\s+([a-zA-Z_\.]+)\s*([\w\. ]+)\s+\d{4}-\d\d-\d\d")
 
 
 def set_root(run_params):
@@ -177,8 +182,7 @@ def show_states(run_params, env):
                                       vm_params.get("image_format", "qcow2"))
                 qemu_img = vm_params.get("qemu_img_binary", "/usr/bin/qemu-img")
                 on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, vm_image)).decode()
-                state_tuples = re.findall("\d+\s+([\w\.]+)\s+([\w\.]+)\s+\d{4}-\d\d-\d\d",
-                                          on_snapshots_dump)
+                state_tuples = re.findall(QEMU_STATES_REGEX, on_snapshots_dump)
                 for state_tuple in state_tuples:
                     logging.info("Detected on state '%s' of size %s",
                                  state_tuple[0], state_tuple[1])
@@ -555,8 +559,7 @@ def _check_state(vm, vm_params, print_pos=False, print_neg=False):
                 qemu_img = vm_params.get("qemu_img_binary", "/usr/bin/qemu-img")
                 on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, vm_image)).decode()
                 logging.debug("Listed on states:\n%s", on_snapshots_dump)
-                state_tuples = re.findall("\d+\s+([\w\.]+)\s+([\w\.]+)\s+\d{4}-\d\d-\d\d",
-                                          on_snapshots_dump)
+                state_tuples = re.findall(QEMU_STATES_REGEX, on_snapshots_dump)
                 for state_tuple in state_tuples:
                     logging.debug("Detected on state '%s' of size %s",
                                   state_tuple[0], state_tuple[1])
