@@ -379,7 +379,6 @@ def graphupdate(config, run_params, tag=""):
         r.run_traversal(update_graph, setup_str)
 
 
-@with_cartesian_graph
 def run(config, run_params, tag=""):
     """
     Run a set of tests without any automated setup.
@@ -392,16 +391,32 @@ def run(config, run_params, tag=""):
 
     This is equivalent to but more powerful than the runner plugin.
     """
-    # NOTE: each host control file expects already incremented count in the beginning
-    # this prefix is preferential to setup chains with a single "run" step since this is usually the case
+    # NOTE: each run expects already incremented count in the beginning but this prefix
+    # is preferential to setup chains with a single "run" step since this is usually the case
     config["prefix"] = tag + "n" if len(re.findall("run", run_params["setup"])) > 1 else ""
+    config["test_runner"] = "traverser"
+
+    config["sysinfo"] = config.get("sysinfo", "on")
+    config["html_job_result"] = config.get("html_job_result", "on")
+    config["json_job_result"] = config.get("json_job_result", "on")
+    config["xunit_job_result"] = config.get("xunit_job_result", "on")
+    config["tap_job_result"] = config.get("tap_job_result", "on")
+
     # essentially we imitate the auto plugin to make the tool plugin a superset
-    # loader = config["graph"].l
-    job = config["graph"].r.job
-    job.config["test_runner"] = "traverser"
-    job.config["sysinfo"] = 'on'
-    job.config["html_job_result"] = 'on'
-    job.run()
+    with new_job(config) as job:
+
+        loader = CartesianLoader(config, {"logdir": job.logdir})
+        runner = CartesianRunner()
+        # TODO: need to decide what is more reusable between jobs and graphs
+        # e.g. by providing job and result in a direct traversal call
+        runner.job = job
+        runner.result = job.result
+        CartesianGraph = namedtuple('CartesianGraph', 'l r')
+        config["graph"] = CartesianGraph(l=loader, r=runner)
+
+        job.run()
+
+        config["graph"] = None
 
 
 def list(config, run_params, tag=""):
