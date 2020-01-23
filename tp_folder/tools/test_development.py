@@ -32,67 +32,11 @@ from avocado_i2n import params_parser as param
 from avocado_i2n.cartgraph import TestGraph, TestNode
 from avocado_i2n.loader import CartesianLoader
 from avocado_i2n.runner import CartesianRunner
+from avocado_i2n.intertest_setup import with_cartesian_graph
 
 
 #: list of all available manual steps or simply semi-automation tools
 __all__ = ["develop"]
-
-
-@contextlib.contextmanager
-def new_job(config):
-    """
-    Produce a new job object and thus a job.
-
-    :param config: command line arguments
-    :type config: {str, str}
-    """
-    with job.Job(config) as job_instance:
-
-        pre_post_dispatcher = dispatcher.JobPrePostDispatcher()
-        try:
-            # run job pre plugins
-            output.log_plugin_failures(pre_post_dispatcher.load_failures)
-            pre_post_dispatcher.map_method('pre', job_instance)
-
-            # second initiation stage (as a test runner)
-            yield job_instance
-
-        finally:
-            # run job post plugins
-            pre_post_dispatcher.map_method('post', job_instance)
-
-    result_dispatcher = dispatcher.ResultDispatcher()
-    if result_dispatcher.extensions:
-        result_dispatcher.map_method('render',
-                                     job_instance.result,
-                                     job_instance)
-
-
-def with_cartesian_graph(fn):
-    """
-    Run a given function with a job-enabled loader-runner hybrid graph.
-
-    :param fn: function to run with a job
-    :type fn: function
-    :returns: same function with job resource included
-    :rtype: function
-    """
-    def wrapper(config, run_params, tag=""):
-        with new_job(config) as job:
-
-            loader = CartesianLoader(config, {"logdir": job.logdir})
-            runner = CartesianRunner()
-            # TODO: need to decide what is more reusable between jobs and graphs
-            # e.g. by providing job and result in a direct traversal call
-            runner.job = job
-            runner.result = job.result
-            CartesianGraph = namedtuple('CartesianGraph', 'l r')
-            config["graph"] = CartesianGraph(l=loader, r=runner)
-
-            fn(config, run_params, tag=tag)
-
-            config["graph"] = None
-    return wrapper
 
 
 ############################################################

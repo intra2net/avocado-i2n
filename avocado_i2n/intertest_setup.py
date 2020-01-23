@@ -69,28 +69,34 @@ __all__ = ["noop", "unittest", "full", "update", "run", "list",
            "install", "deploy", "internal",
            "boot", "download", "upload", "shutdown",
            "check", "pop", "push", "get", "set", "unset", "create", "clean"]
-root_path = settings.get_value('i2n.common', 'suite_path', default=None)
-tools_path = os.path.join(root_path, "tools")
-sys.path.append(tools_path)
-for tool in os.listdir(tools_path):
-    if tool.endswith(".py") and not tool.endswith("_unittest.py"):
-        module_name = tool.replace(".py", "")
-        logging.debug("Loading tools in %s", module_name)
-        try:
-            module = importlib.import_module(module_name)
-        except Exception as error:
-            logging.error("Could not load tool %s: %s", module_name, error)
-            continue
 
-        if "__all__" not in module.__dict__:
-            logging.warning("Detected tool module doesn't contain publicly defined tools")
-            continue
 
-        names = module.__dict__["__all__"]
-        globals().update({k: getattr(module, k) for k in names})
-        __all__ += module.__all__
+def load_addons_tools():
+    """Load all custom manual steps defined in the test suite tools folder."""
+    root_path = settings.get_value('i2n.common', 'suite_path', default=None)
+    tools_path = os.path.join(root_path, "tools")
+    sys.path.append(tools_path)
+    # we have no other choice to avoid loading at intertest import
+    global __all__
+    for tool in os.listdir(tools_path):
+        if tool.endswith(".py") and not tool.endswith("_unittest.py"):
+            module_name = tool.replace(".py", "")
+            logging.debug("Loading tools in %s", module_name)
+            try:
+                module = importlib.import_module(module_name)
+            except Exception as error:
+                logging.error("Could not load tool %s: %s", module_name, error)
+                continue
 
-        logging.info("Loaded custom tools: %s", ", ".join(module.__all__))
+            if "__all__" not in module.__dict__:
+                logging.warning("Detected tool module doesn't contain publicly defined tools")
+                continue
+
+            names = module.__dict__["__all__"]
+            globals().update({k: getattr(module, k) for k in names})
+            __all__ += module.__all__
+
+            logging.info("Loaded custom tools: %s", ", ".join(module.__all__))
 
 
 @contextlib.contextmanager
@@ -182,7 +188,8 @@ def unittest(config, run_params, tag=""):
     util_unittests = unittest.TestSuite()
     util_testrunner = unittest.TextTestRunner(stream=sys.stdout, verbosity=2)
 
-    subtests_filter = run_params.get("ut_filter", "*_unittest.py")
+    root_path = settings.get_value('i2n.common', 'suite_path', default=None)
+    subtests_filter = config["tests_params"].get("ut_filter", "*_unittest.py")
 
     subtests_path = os.path.join(root_path, "utils")
     subtests_suite = unittest.defaultTestLoader.discover(subtests_path,

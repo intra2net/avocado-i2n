@@ -50,6 +50,7 @@ class Manu(CLICmd):
         os.environ['LANG'] = 'en_US.UTF-8'
 
         cmd_parser.params_from_cmd(config)
+        intertest.load_addons_tools()
 
         run_config = param.Reparsable()
         run_config.parse_next_batch(base_file="guest-base.cfg",

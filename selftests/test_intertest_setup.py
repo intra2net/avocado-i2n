@@ -288,6 +288,7 @@ class IntertestSetupTest(unittest.TestCase):
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.manual.develop.generator.vm1", "vms": "^vm1 vm2$"},
         ]
+        intertest_setup.load_addons_tools()
         intertest_setup.develop(self.config, self.run_params, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
