@@ -45,14 +45,12 @@ __all__ = ["develop"]
 
 
 @with_cartesian_graph
-def develop(config, run_params, tag=""):
+def develop(config, tag=""):
     """
     Run manual tests specialized at development speedup.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
 
     Current modes that can be supplied from the command line
@@ -61,9 +59,9 @@ def develop(config, run_params, tag=""):
     As with all manual tests, providing setup and making sure
     that all the vms exist is a user's responsibility.
     """
-    vms = run_params["vms"]
-    mode = run_params.get("devmode", "generator")
-    setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
+    vms = " ".join(config["selected_vms"])
+    mode = config["tests_params"].get("devmode", "generator")
+    setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
     setup_str = param.re_str("nonleaves..develop.%s" % mode) + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests

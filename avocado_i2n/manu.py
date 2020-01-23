@@ -57,6 +57,6 @@ class Manu(CLICmd):
         for i, setup_step in enumerate(setup_chain):
             run_params["count"] = i
             setup_func = getattr(intertest, setup_step)
-            setup_func(config, run_params, "0m%s" % i)
+            setup_func(config, "0m%s" % i)
 
         log.info("Manual setup chain finished.")
