@@ -27,6 +27,7 @@ from avocado.core import job
 from avocado.core import output
 from avocado.core import data_dir
 from avocado.core import dispatcher
+from avocado.core.output import LOG_UI
 
 from avocado_i2n import params_parser as param
 from avocado_i2n.cartgraph import TestGraph, TestNode
@@ -59,11 +60,12 @@ def develop(config, tag=""):
     As with all manual tests, providing setup and making sure
     that all the vms exist is a user's responsibility.
     """
+    LOG_UI.info("Developing on virtual machines %s", ", ".join(config["selected_vms"]))
     vms = " ".join(config["selected_vms"])
     mode = config["tests_params"].get("devmode", "generator")
     setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
     setup_str = param.re_str("nonleaves..develop.%s" % mode) + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
-    logging.info("Developing on virtual machines %s", vms)
     config["graph"].r.run_test_node(TestNode(tag, tests[0].config, []))
+    LOG_UI.info("Development complete")
