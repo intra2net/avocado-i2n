@@ -2,7 +2,9 @@ avocado-i2n
 ===========
 
 *Plugins for avocado extending avocado-vt with automated vm state setup,
-inheritance, and traversal*   |CI status| |Documentation Status|
+inheritance, and traversal*
+
+|Build Status| |Documentation Status| |Language grade: Python| |codecov|
 
 This file provides a brief overview of the core concepts behind the
 current plugin and hopefully a compact explanation of how tests are
@@ -36,9 +38,9 @@ regardless of what tests are to be performed. This has serious
 disadvantages since enormous time is spent preparing for all
 possibilities if only a small and simple test is desired. In order to
 save setup penalty, a lot of smaller actual tests are put into larger
-ones (e.g. test for feature B while testing for feature A because the
+ones (e.g. test for feature B while testing for feature A because the
 setup of feature A is available and/or very similar to that of B). In
-this way the setup's benefits are available but are also artificially
+this way the setup’s benefits are available but are also artificially
 extended as the tests could be simpler and better isolated. Increasing
 isolation always has the cost of redundant setup. In this case, the
 setup that is automatically performed before a test is minimized only to
@@ -55,7 +57,7 @@ same previously saved state from multiple tests is then a way of saving
 time from all of them, essentially running another test only once to
 bring the object to this state and save it. This offers both better
 isolation and more reusable steps. The test creating the state is also a
-test since it tests the "more basic" steps of reaching this state. Tests
+test since it tests the “more basic” steps of reaching this state. Tests
 using the same state are then dependent on the first test and can be
 aborted if the first test fails. Test unique setup steps should thus be
 integrated into the tests while setup steps that are used by more than
@@ -115,7 +117,7 @@ machines is a leaf node.
    precious time lost by repeating test setup*
 
 While the structure might seem not that complex in the end, the
-algorithm used to optimize the setup, i.e. traverse that structure so
+algorithm used to optimize the setup, i.e. traverse that structure so
 that the number of repetitions of each setup tests are minimized is way
 more fun. Unfortunately, it is not possible to guarantee that a setup
 should be performed only once because of the sheer complexity of the
@@ -123,44 +125,43 @@ dependencies but practically it should be the case if you keep
 dependencies simple. A complication arises from the fact that some
 states might run out of memory to store the differences from the current
 object state and that some tests should play the role of setup tests but
-are rather short-lived, i.e. cannot be reused if they are not constantly
+are rather short-lived, i.e. cannot be reused if they are not constantly
 retrieved. For the sake of keeping this text compact, we will avoid
 giving the details but strongly recommending checking the source code of
 the Cartesian graph data structure for anyone that want to have fun with
 forward and backward DFS, the symmetrical pruning, and the reversing
 traversal path.
 
-Offline and online states, durable and ephemeral tests
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Offline and on states, durable and ephemeral tests
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The basic way to implement virtual machine states is LVM. However, since
 LVM requires the image to be inactive while reverting to the snapshot,
 this will introduce at least shutdown-boot performance penalty between
-each two tests. Actually, "live revert" is part of the future plans of
+each two tests. Actually, “live revert” is part of the future plans of
 LVM but right now its extra steps while switching test nodes might be
 even slower. Therefore, there is another type of states simply called
-here "online states" leaving the LVM an implementation of offline
-states. The online states implementation lies in the QCOW2 image format
-and more specifically the QEMU-Monitor ability to take full and
-automatic virtual machine snapshots which will avoid these two steps -
-just freeze the vm state and eventually come back to it for another test
-that requires it. The QCOW2 format allows QEMU to take live snapshots of
-both the virtual machine and its image without a danger of saving image
-and ramdisk snapshots that are out of sync which is the case with
-another implementation of online states (still available as the
-"ramfile" state type). During a run with an automated vm state setup, a
-special dependency scan test checks for state availability once and uses
-this information for further decisions on test scheduling, order, and
+here “on states” leaving the LVM an implementation of off states. The on
+states implementation lies in the QCOW2 image format and more
+specifically the QEMU-Monitor ability to take full and automatic virtual
+machine snapshots which will avoid these two steps - just freeze the vm
+state and eventually come back to it for another test that requires it.
+The QCOW2 format allows QEMU to take live snapshots of both the virtual
+machine and its image without a danger of saving image and ramdisk
+snapshots that are out of sync which is the case with another
+implementation of on states (still available as the “ramfile” state
+type). During a run with an automated vm state setup, a special
+dependency scan test checks for state availability once and uses this
+information for further decisions on test scheduling, order, and
 skipping.
 
-Each online state is based on an offline state. The tests that produce
-online from offline states are thus ephemeral as changing the offline
-state would remove all online states and the test has to be repeated.
-Online states are however reusable within an offline state transition
-and as many branches of online states transitions can span multiple
-tests without touching the offline state. This is important in the test
-management as ephemeral tests provide states that can only be reused
-with protective scheduling.
+Each on state is based on an off state. The tests that produce on from
+off states are thus ephemeral as changing the off state would remove all
+on states and the test has to be repeated. Online states are however
+reusable within an off state transition and as many branches of on
+states transitions can span multiple tests without touching the off
+state. This is important in the test management as ephemeral tests
+provide states that can only be reused with protective scheduling.
 
 How to install and run
 ----------------------
@@ -175,22 +176,22 @@ In order to list a test set from the sample test suite, do
 
 ::
 
-    avocado list --loaders cartesian_graph[ -- "K1=V1[ K2=V2[ ...]]"]
-    avocado list --loaders cartesian_graph -- "only=tutorial2 no=files"
+   avocado list --loaders cartesian_graph[ -- "K1=V1[ K2=V2[ ...]]"]
+   avocado list --loaders cartesian_graph -- "only=tutorial2 no=files"
 
 In order to run a test set from the sample test suite, do
 
 ::
 
-    avocado run --auto --loaders cartesian_graph[ -- "K1=V1[ K2=V2[ ...]]"]
-    avocado run --auto --loaders cartesian_graph -- "only=tutorial1 file_contents=testing"
+   avocado run --auto --loaders cartesian_graph[ -- "K1=V1[ K2=V2[ ...]]"]
+   avocado run --auto --loaders cartesian_graph -- "only=tutorial1 file_contents=testing"
 
 In order to run a manual step in the sample test suite, do
 
 ::
 
-    avocado manu[ "K1=V1[ K2=V2[ ...]]"]
-    avocado manu setup=full,update vms=vm1
+   avocado manu[ "K1=V1[ K2=V2[ ...]]"]
+   avocado manu setup=full,update vms=vm1
 
 where any further overwriting parameters can be provided on the command
 line.
@@ -203,9 +204,9 @@ plugin where the following statements are equivalent
 
 ::
 
-    avocado run --auto --loaders cartesian_graph -- "only=tutorial1 file_contents=testing"
-    avocado manu setup=run only=tutorial1 file_contents=testing
-    avocado manu only=tutorial1 file_contents=testing
+   avocado run --auto --loaders cartesian_graph -- "only=tutorial1 file_contents=testing"
+   avocado manu setup=run only=tutorial1 file_contents=testing
+   avocado manu only=tutorial1 file_contents=testing
 
 but using the manu plugin is preferrable because of its simpler syntax
 as well generalization to many other tools implemented as manual steps.
@@ -216,80 +217,74 @@ option *setup=run* unless explicitly stated at the command line.
 the available vms and ``sets.cfg`` for the tests which should be present
 in any test suite using the plugin (see sample test suite for details).
 The main parameters of interest there and on the command line are
-*setup* for manual test steps, *only\_vmX* for vm/object restrictions,
+*setup* for manual test steps, *only_vmX* for vm/object restrictions,
 and *only* for test/node restrictions.
 
 ::
 
-    OPTIONS:
-    [setup=setupchain]
-    [only_vmX=vmvariant]
-    [only=all|normal|minimal|...]
-    [get|set|unset_mode=XX]
+   OPTIONS:
+   [setup=setupchain]
+   [only_vmX=vmvariant]
+   [only=all|normal|minimal|...]
+   [get|set|unset_mode=XX]
 
 The *setup* parameter will be used in the case of tool mode (manu
-plugin) and the *get/set/unset\_mode* parameter is mostly used in the
+plugin) and the *get/set/unset_mode* parameter is mostly used in the
 case of test mode (auto plugin). The choice of types of setup (manual
 steps) is the following:
 
+-  *noop* - Simply load all plugins and do nothing (good for probing)
 -  *create* - Create a ramdisk, virtual group and logical volume for
    each virtual machine
 -  *install* - Prepare step files and install virtual machines
 -  *deploy* - Simply deploy changes on top of current state (will be
    lost after reverting to snapshot)
+-  *internal* - Run a custom setup node otherwise inaccessible and part
+   of the automated setup
 -  *boot* - Simply boot the registered virtual machines and run selected
    controls if any
--  *run* - Run selected tests (will use any provided or default
-   restrictions)
+-  *list* - List selected tests
+-  *run* - Run selected tests
 -  *download* - Download a set of files from the vm to the test results
    folder
--  *upload* - Upload a set of files to the vm's temporary folder
+-  *upload* - Upload a set of files to the vm’s temporary folder
 -  *unittest* - Run all unit tests available for the test suite
    utilities
 -  *update* - Redeploy tests on a vm, removing all descending states
--  *graphupdate* - New "update" step whereby in addition to the standard
-   case, all states between a reused and a desired one can be updated
 -  *shutdown* - Shutdown gracefully or kill living vms
 -  *clean* - Remove the logical volumes of all installed vms
 -  *full* - Create lvm image, install product, deploy tests and take a
    clean snapshot
--  *graphfull* - New "full" step whereby in addition to the standard
-   setup, any other setup necessary for a desired vm state will be
-   performed
--  *windows* - Extra setup needed for permanent vms (in the case of
-   Windows)
--  *develop* - Run a quasi-test (a mixture of utility and test) used for
-   developing actual tests
--  *sysupdate* - Perform a system level update using the update package
-   deployed as usual
 -  *check* - Check whether a given state (snapshot of saved setup)
    exists
--  *get* - Get a given state, i.e. revert to it keeping it for further
+-  *get* - Get a given state, i.e. revert to it keeping it for further
    reuse
 -  *set* - Set a given state, keeping it for further reuse
 -  *unset* - Unset a given state, making it unavailable for further
    reuse but freeing space
 -  *push* - Same like setting a given state
--  *pop* - Pop a given state, i.e. revert to it but making it
+-  *pop* - Pop a given state, i.e. revert to it but making it
    unavailable for further reuse
+-  *<tool>* - Run any custom compatible tool, located in the tools test
+   suite folder
 
 You can define a chain of setup steps, e.g.
 
 ::
 
-    avocado manu setup=install,boot,deploy,run only=all
+   avocado manu setup=install,boot,deploy,run only=all
 
 If you want to run tests at some point, you must include the *run* step
 somewhere in the chain. Each setup performed after the *run* plays the
 role of cleanup. You can run the tests multiple times with different
 setup steps in between by adding multiple *run* steps throughout the
 setup chain. As all other parameters, setup is not obligatory. If you
-don't use it on the command line a default value from your configs will
+don’t use it on the command line a default value from your configs will
 be selected. The additional but rarely used get, set, or unset mode
 governs setup availability and defines the overall existing (first char
 position) and missing (second char position) setup policy. The value
-consists of two lowercase letters, each dot is one of 'f' (force), 'i'
-(ignore), 'r' (reuse), 'a' (abort) and carries a special meaning
+consists of two lowercase letters, each dot is one of ‘f’ (force), ‘i’
+(ignore), ‘r’ (reuse), ‘a’ (abort) and carries a special meaning
 according to its position - the first position determines the action of
 choice if the setup is present and the second if the setup is missing.
 Here is a brief description of each possible policies and action
@@ -297,44 +292,47 @@ combinations:
 
 ::
 
-    ----------------------------------------
-    -            - existing - non-existing -
-    ----------------------------------------
-    - get_mode   - ari      - ai           -
-    ----------------------------------------
-    - set_mode   - arf      - af           -
-    ----------------------------------------
-    - unset_mode - rf       - ai           -
-    ----------------------------------------
+   ----------------------------------------
+   -            - existing - non-existing -
+   ----------------------------------------
+   - get_mode   - ari      - ai           -
+   ----------------------------------------
+   - set_mode   - arf      - af           -
+   ----------------------------------------
+   - unset_mode - rf       - ai           -
+   ----------------------------------------
 
--  get\_mode:
--  *a.* - Abort if a setup is present (get\_state)
--  *r.* - Reuse the present setup (get\_state)
--  *i.* - Ignore all existing setup (run without the get\_state)
--  *.a* - Abort if a setup is missing (get\_state)
--  *.i* - Ignore all missing setup (run without any setup although it
-   might be required)
+-  get_mode:
 
--  set\_mode:
--  *a.* - Abort if the set\_state is already present (to avoid
-   overwriting previous setup)
--  *r.* - Reuse the present set\_state (ignore the results from the test
-   that was run)
--  *f.* - Overwrite (recreate and save) all existing setup for children
-   (set\_state)
--  *.a* - Abort if the set\_state is missing (if for exampe the purpose
-   was overwriting)
--  *.f* - Create and save all missing setup for children (set\_state)
+   -  *a.* - Abort if a setup is present (get_state)
+   -  *r.* - Reuse the present setup (get_state)
+   -  *i.* - Ignore all existing setup (run without the get_state)
+   -  *.a* - Abort if a setup is missing (get_state)
+   -  *.i* - Ignore all missing setup (run without any setup although it
+      might be required)
 
--  unset\_mode:
--  *r.* - Reuse the present unset\_state for further test runs (don't
-   cleanup the state here called "old")
--  *f.* - Remove the present unset\_state (will be unavailable for
-   children in the next runs)
--  *.a* - Abort if the state for cleanup is missing (cannot be removed
-   since not there)
--  *.i* - Ignore if the state for cleanup is missing (cannot be removed
-   since not there)
+-  set_mode:
+
+   -  *a.* - Abort if the set_state is already present (to avoid
+      overwriting previous setup)
+   -  *r.* - Reuse the present set_state (ignore the results from the
+      test that was run)
+   -  *f.* - Overwrite (recreate and save) all existing setup for
+      children (set_state)
+   -  *.a* - Abort if the set_state is missing (if for exampe the
+      purpose was overwriting)
+   -  *.f* - Create and save all missing setup for children (set_state)
+
+-  unset_mode:
+
+   -  *r.* - Reuse the present unset_state for further test runs (don’t
+      cleanup the state here called “old”)
+   -  *f.* - Remove the present unset_state (will be unavailable for
+      children in the next runs)
+   -  *.a* - Abort if the state for cleanup is missing (cannot be
+      removed since not there)
+   -  *.i* - Ignore if the state for cleanup is missing (cannot be
+      removed since not there)
 
 A combination of defaults for all three policies would reuse all setup
 left from previous runs determined by the set of tests you want to run.
@@ -346,10 +344,10 @@ automated setup steps is the following:
 
 ::
 
-    avocado manu setup=full vms=vm1,vm2
-    avocado manu only=tutorial2..files
-    avocado manu setup=clean vms=vm1
-    avocado manu only=tutorial2..files
+   avocado manu setup=full vms=vm1,vm2
+   avocado manu only=tutorial2..files
+   avocado manu setup=clean vms=vm1
+   avocado manu only=tutorial2..files
 
 Assuming that line one and two will create two vms and then simply reuse
 the first one whcih is a dependency for the given tutorial test. The
@@ -358,12 +356,12 @@ entirely). The final line would then still require vm1 although only vm2
 is available. The setup for this test will start by bringing vm1 to the
 state which is required for the tutorial test ignoring and not modifying
 in any way the setup of vm2. If for instance the dependency of tutorial2
-is 'vm1\_ready' (defined as the parameter 'get\_state=vm1\_ready' in the
+is ‘vm1_ready’ (defined as the parameter ‘get_state=vm1_ready’ in the
 config for this subset), scanning for this state and its dependencies
-will detect that all dependencies are missing, i.e. the vm1 doesn't have
-the state and doesn't exist at all (also missing root state). The test
+will detect that all dependencies are missing, i.e. the vm1 doesn’t have
+the state and doesn’t exist at all (also missing root state). The test
 traversal would then look for the tests based on the state names since
-simple setup is used. Since vm1 doesn't exist, it will create it and
+simple setup is used. Since vm1 doesn’t exist, it will create it and
 bring it to that state automatically, also determining the *setup* steps
 automatically.
 
@@ -373,16 +371,16 @@ number of vms defined on the command line can only influence nonrun
 manual setup steps and is automatically determined during automatic
 setup. Generally, performing manual setup is also no longer necessary.
 You can easily distinguish among all manual and automated steps by
-looking at the test IDs. The manual steps contain "m" in their short
-names while automated steps contain "a". Cleanup tests contain "c" and
-"b" is reserved for duplicate tests due to multiple variants of their
+looking at the test IDs. The manual steps contain “m” in their short
+names while automated steps contain “a”. Cleanup tests contain “c” and
+“b” is reserved for duplicate tests due to multiple variants of their
 setup. If you include only one *run* the tests executed within the run
 step will not contain any letters but if you include multiple *run*
 steps, in order to guarantee we can distinguish among the tests, they
-will contain "n" (with "s" for the shared root test for scanning all
-test dependencies and also "r" for an object-specific root or creation,
-"p" and "q" for preinstall and install test nodes). The typical approach
-to do this test tagging is in order of test discovery, i.e. 0m1n1a2
+will contain “n” (with “s” for the shared root test for scanning all
+test dependencies and also “r” for an object-specific root or creation,
+“p” and “q” for preinstall and install test nodes). The typical approach
+to do this test tagging is in order of test discovery, i.e. 0m1n1a2
 stands for the test which is the second automated setup of the test
 which is the first test in a run step m1 and first run n1. These IDs are
 also used in all graphical descriptions of the Cartesian graph used for
@@ -393,7 +391,7 @@ guaranteed. Also, missing test numbers represent excluded tests due to
 guest variant restrictions (some tests run only on some OS, hardware, or
 vms in general).
 
-An *only* argument can have any number of ".", "..", and "," in between
+An *only* argument can have any number of “.”, “..”, and “,” in between
 variant names where the first stands for *immediately followed by*, the
 second for AND and the third for OR operations on test variants. Using
 multiple only arguments is equivalent to using AND among the different
@@ -401,15 +399,15 @@ only values. In this sense,
 
 ::
 
-    avocado manu only=aaa only=bbb
+   avocado manu only=aaa only=bbb
 
 is analogical to
 
 ::
 
-    avocado manu only=aaa..bbb
+   avocado manu only=aaa..bbb
 
-You can also use "no=aaa" to exclude variant "aaa" for which there is no
+You can also use “no=aaa” to exclude variant “aaa” for which there is no
 shortcut alternative, but you can also stack multiple *no* arguments
 similarly to the multiple *only* arguments. The *only* and *no*
 arguments together with the inline symbols above help run only a
@@ -417,85 +415,85 @@ selection of one or more tests. Most importantly
 
 ::
 
-    avocado manu [only=all|normal|minimal|...] only=TESTSUBVARIANT
+   avocado manu [only=all|normal|minimal|...] only=TESTSUBVARIANT
 
 is the same as using the *only* clause in the Cartesian configs (unlike
 the first *only* argument). Ultimately, all *only* parameters have the
 same effect but the first *only* has a default value which is
-represented as 'only=normal' to allow for overriding). The following are
+represented as ‘only=normal’ to allow for overriding). The following are
 examples of test selections
 
 ::
 
-    avocado manu only=minimal only=quicktest
-    avocado manu only=normal only=tutorial1
-    avocado manu only=normal only=tutorial2 only=names,files
-    avocado manu only=tutorial2..names,quicktest.tutorial2.files
+   avocado manu only=minimal only=quicktest
+   avocado manu only=normal only=tutorial1
+   avocado manu only=normal only=tutorial2 only=names,files
+   avocado manu only=tutorial2..names,quicktest.tutorial2.files
 
 For more details on the possible test subvariants once again check the
 ``groups.cfg`` or ``sets.cfg`` config files, the first one of which
 emphasizes on the current available test groups and the second on test
-sets, i.e. selections of these groups.
+sets, i.e. selections of these groups.
 
 Similarly to the test restrictions, you can restrict the variants of vms
 that are defined in ``objects.cfg``. The only difference is the way you
-specify this, namely by using *only\_vmX* instead of *only* where vmX is
+specify this, namely by using *only_vmX* instead of *only* where vmX is
 the name of the vm that you want to reconfigure. The following are
 examples of vm selection
 
 ::
 
-    avocado manu only_vm2=Win10
-    avocado manu only_vm1=CentOS only=tutorial1
+   avocado manu only_vm2=Win10
+   avocado manu only_vm1=CentOS only=tutorial1
 
 Any other parameter used by the tests can also be given like an optional
 argument. For example the parameter ``vms`` can be used to perform setup
 only on a single virtual machine. Thus, if you want to perform a full vm
-cleanup but you want to affect only virtual machine with the name 'vm2'
+cleanup but you want to affect only virtual machine with the name ‘vm2’
 you can simply type
 
 ::
 
-    avocado manu setup=clean vms=vm2
+   avocado manu setup=clean vms=vm2
 
-**Note**: Be careful with the vm parameter generator, i.e. if you want
+**Note**: Be careful with the vm parameter generator, i.e. if you want
 to define some parameters for a single virtual machine which should not
 be generated make sure to do so. Making any parameter specific is easy -
-you only have to append ``_vmname`` to it, e.g. ``nic_vm2`` identically
+you only have to append ``_vmname`` to it, e.g. ``nic_vm2`` identically
 to the vm restriction.
 
 Test debugging
 ~~~~~~~~~~~~~~
 
-Through the use of online states, debugging was made a lot easier. In
-most cases, if you run a single test and it fails, the vms will be left
+Through the use of on states, debugging was made a lot easier. In most
+cases, if you run a single test and it fails, the vms will be left
 running after it and completely accessible for any type of debugging.
 The philosophy of this is that a vm state is cleaned up only when a new
 test is run and needs the particular test object (vm). As a result, all
 cleanups are removed and merged with all setups which is the only thing
 we have to worry about throughout any test run or development. An
-exception of this, i.e. a vm which is not left running could be either
+exception of this, i.e. a vm which is not left running could be either
 if the vm is an ephemeral client or if it was forced to shut down by a
-*kill\_vm* parameter in the scope of the test. If more than one test is
-being run and the error occurred at an early test, the vm's state will
-be saved as 'last\_error' and can later on be accessed via
+*kill_vm* parameter in the scope of the test. If more than one test is
+being run and the error occurred at an early test, the vm’s state will
+be saved as ‘last_error’ and can later on be accessed via
 
 ::
 
-    avocado manu setup=get get_state=last_error vms=vm1
+   avocado manu setup=get get_state=last_error vms=vm1
 
-for the vms that were involved in the test (e.g. vm1).
+for the vms that were involved in the test (e.g. vm1).
 
 If more than one tests failed, in order to avoid running out of space,
 the state of the last error will be saved on top of the previous error.
 This means that you will only be able to quickly debug the last
 encountered error. A second limitation in the state debugging is that it
-doesn't support more complicated tests, i.e. tests with more complex
+doesn’t support more complicated tests, i.e. tests with more complex
 network topologies.
 
 **Note**: There is a large set of dumped data, including logs, files of
 importance for the particular tests, hardware info, etc. for every test
-in the test results. If the test involves work with the vm's GUI, some
+in the test results. If the test involves work with the vm’s GUI, some
 backends also provide additional image logging (see backend
 documentation for more info). You can make use of all these things in
 addition to any possible vm states at the time of the error. Graphical
@@ -517,7 +515,7 @@ Therefore, to run all available unit tests (for all utilities) use the
 
 ::
 
-    avocado manu setup=unittest
+   avocado manu setup=unittest
 
 This will validate all utilities or at least the ones that are more
 complex.
@@ -527,29 +525,29 @@ use of UNIX shell style pattern matching:
 
 ::
 
-    avocado manu setup=unittest ut_filter=*_helper_unittest.py
+   avocado manu setup=unittest ut_filter=*_helper_unittest.py
 
-This will run only the unit tests that end with '\_helper\_unittest.py'.
+This will run only the unit tests that end with ’_helper_unittest.py’.
 
 If you are developing your own unit test for a utility, you only need to
 follow the guide about unit testing in python and put your own test
 module next to the utility with the name ``<my-utility>_unittest.py``
-and it will be automatically discovered when you run the "unittest"
+and it will be automatically discovered when you run the “unittest”
 manual step.
 
 Internal nodes
 ~~~~~~~~~~~~~~
 
-If you want to run a test "out of the law" of automated setup, i.e. an
+If you want to run a test “out of the law” of automated setup, i.e. an
 internal test node instead of a regular (leaf) test, you can use the
 *internal* tool or manual step
 
 ::
 
-    avocado manu setup=internal node=set_provider vms=vm1
+   avocado manu setup=internal node=set_provider vms=vm1
 
 This will run an internal test (used by the Cartesian graph for
-automated setup) completely manually, i.e. without performing any
+automated setup) completely manually, i.e. without performing any
 automated setup or requiring any present state as well as setting any
 state. This implies that you can escape any automated setup/cleanup
 steps but are responsible for any setup/cleanup that is required by the
@@ -558,6 +556,11 @@ used for manual and semi-manual tests where part of the test is not
 legally or due to other external factors allowed to be executed by a
 machine.
 
-.. |CI status| image:: https://travis-ci.org/intra2net/avocado-i2n.svg?branch=master
+.. |Build Status| image:: https://travis-ci.org/intra2net/avocado-i2n.svg?branch=master
+   :target: https://travis-ci.org/intra2net/avocado-i2n
 .. |Documentation Status| image:: https://readthedocs.org/projects/avocado-i2n/badge/?version=latest
-   :target: http://guibot.readthedocs.io/en/latest/?badge=latest
+   :target: https://avocado-i2n.readthedocs.io/en/latest/?badge=latest
+.. |Language grade: Python| image:: https://img.shields.io/lgtm/grade/python/g/intra2net/avocado-i2n.svg?logo=lgtm&logoWidth=18
+   :target: https://lgtm.com/projects/g/intra2net/avocado-i2n/context:python
+.. |codecov| image:: https://codecov.io/gh/intra2net/avocado-i2n/branch/master/graph/badge.svg
+   :target: https://codecov.io/gh/intra2net/avocado-i2n
