@@ -234,7 +234,7 @@ class CartesianRunner(TestRunner):
         # implementation of object creation needs a separate parser
         create_config = test_object.config.get_copy()
         create_config.parse_next_batch(base_file="sets.cfg",
-                                       ovrwrt_file=param.tests_ovrwrt_file,
+                                       ovrwrt_file=param.tests_ovrwrt_file(),
                                        ovrwrt_str=setup_str,
                                        ovrwrt_dict=setup_dict)
         self.run_test_node(TestNode(test_node.name, create_config, test_node.objects))
@@ -261,7 +261,7 @@ class CartesianRunner(TestRunner):
         logging.info("Configuring installation for %s", test_object.name)
         install_config = test_object.config.get_copy()
         install_config.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file,
+                                        ovrwrt_file=param.tests_ovrwrt_file(),
                                         ovrwrt_str=param.re_str("nonleaves..0preinstall", param_str, tag))
         # some parameters from the install configuration have to be used for decision about install tests
         install_params = install_config.get_params()
@@ -284,7 +284,7 @@ class CartesianRunner(TestRunner):
                 ovrwrt_str = param.re_str("nonleaves..install", param_str, tag)
             install_config = test_object.config.get_copy()
             install_config.parse_next_batch(base_file="sets.cfg",
-                                            ovrwrt_file=param.tests_ovrwrt_file,
+                                            ovrwrt_file=param.tests_ovrwrt_file(),
                                             ovrwrt_str=ovrwrt_str,
                                             ovrwrt_dict=ovrwrt_dict)
             self.run_test_node(TestNode("0q", install_config, test_node.objects))
@@ -365,7 +365,7 @@ class CartesianRunner(TestRunner):
                         test_object = objects[0]
                         forward_config = test_object.config.get_copy()
                         forward_config.parse_next_batch(base_file="sets.cfg",
-                                                        ovrwrt_file=param.tests_ovrwrt_file,
+                                                        ovrwrt_file=param.tests_ovrwrt_file(),
                                                         ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
                                                                                 setup_str, ""),
                                                         ovrwrt_dict={"vm_action": "unset",

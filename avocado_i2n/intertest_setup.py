@@ -49,19 +49,55 @@ import os
 import re
 import logging
 import contextlib
+import importlib
 from collections import namedtuple
 
 from avocado.core import job
 from avocado.core import output
 from avocado.core import data_dir
 from avocado.core import dispatcher
+from avocado.core.output import LOG_UI
 from avocado.core.settings import settings
-from avocado.utils import process
 
 from . import params_parser as param
 from .cartgraph import TestGraph, TestNode
 from .loader import CartesianLoader
 from .runner import CartesianRunner
+
+
+#: list of all available manual steps or simply semi-automation tools
+__all__ = ["noop", "unittest", "full", "update", "run", "list",
+           "install", "deploy", "internal",
+           "boot", "download", "upload", "shutdown",
+           "check", "pop", "push", "get", "set", "unset", "create", "clean"]
+
+
+def load_addons_tools():
+    """Load all custom manual steps defined in the test suite tools folder."""
+    root_path = settings.get_value('i2n.common', 'suite_path', default=None)
+    tools_path = os.path.join(root_path, "tools")
+    sys.path.append(tools_path)
+    # we have no other choice to avoid loading at intertest import
+    global __all__
+    for tool in os.listdir(tools_path):
+        if tool.endswith(".py") and not tool.endswith("_unittest.py"):
+            module_name = tool.replace(".py", "")
+            logging.debug("Loading tools in %s", module_name)
+            try:
+                module = importlib.import_module(module_name)
+            except Exception as error:
+                logging.error("Could not load tool %s: %s", module_name, error)
+                continue
+
+            if "__all__" not in module.__dict__:
+                logging.warning("Detected tool module doesn't contain publicly defined tools")
+                continue
+
+            names = module.__dict__["__all__"]
+            globals().update({k: getattr(module, k) for k in names})
+            __all__ += module.__all__
+
+            logging.info("Loaded custom tools: %s", ", ".join(module.__all__))
 
 
 @contextlib.contextmanager
@@ -103,7 +139,7 @@ def with_cartesian_graph(fn):
     :returns: same function with job resource included
     :rtype: function
     """
-    def wrapper(config, run_params, tag=""):
+    def wrapper(config, tag=""):
         with new_job(config) as job:
 
             loader = CartesianLoader(config, {"logdir": job.logdir})
@@ -115,7 +151,7 @@ def with_cartesian_graph(fn):
             CartesianGraph = namedtuple('CartesianGraph', 'l r')
             config["graph"] = CartesianGraph(l=loader, r=runner)
 
-            fn(config, run_params, tag=tag)
+            fn(config, tag=tag)
 
             config["graph"] = None
     return wrapper
@@ -126,27 +162,23 @@ def with_cartesian_graph(fn):
 ############################################################
 
 
-def noop(config, run_params, tag=""):
+def noop(config, tag=""):
     """
     Empty setup step to invoke plugin without performing anything.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
-    pass
+    LOG_UI.info("NOOP")
 
 
-def unittest(config, run_params, tag=""):
+def unittest(config, tag=""):
     """
     Perform self testing for sanity and test result validation.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
     import unittest
@@ -154,9 +186,15 @@ def unittest(config, run_params, tag=""):
     util_testrunner = unittest.TextTestRunner(stream=sys.stdout, verbosity=2)
 
     root_path = settings.get_value('i2n.common', 'suite_path', default=None)
+    subtests_filter = config["tests_params"].get("ut_filter", "*_unittest.py")
 
-    subtests_filter = run_params.get("ut_filter", "*_unittest.py")
     subtests_path = os.path.join(root_path, "utils")
+    subtests_suite = unittest.defaultTestLoader.discover(subtests_path,
+                                                         pattern=subtests_filter,
+                                                         top_level_dir=subtests_path)
+    util_unittests.addTest(subtests_suite)
+
+    subtests_path = os.path.join(root_path, "tools")
     subtests_suite = unittest.defaultTestLoader.discover(subtests_path,
                                                          pattern=subtests_filter,
                                                          top_level_dir=subtests_path)
@@ -165,143 +203,32 @@ def unittest(config, run_params, tag=""):
     util_testrunner.run(util_unittests)
 
 
-def full(config, run_params, tag=""):
-    """
-    Crude method to fully setup a vm. Compared with the newer Cartesian
-    based method, this is not faster but could be safer in case of already
-    running vms and combinations with other manual steps.
-
-    :param config: command line arguments
-    :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
-    :param str tag: extra name identifier for the test to be run
-    """
-    clean(config, run_params, tag=tag + "mm")
-    create(config, run_params, tag=tag + "m")
-    install(config, run_params, tag=tag)
-    run_params["redeploy_only"] = "no"
-    deploy(config, run_params, tag=tag)
-    setup_str = config["param_str"]
-    config["param_str"] += param.ParsedDict({"set_state": "customize", "set_type": "off"}).parsable_form()
-    set(config, run_params, tag=tag)
-    config["param_str"] = setup_str
-
-
-def update(config, run_params, tag=""):
-    """
-    Crude method to clean up LVM volumes of the virtual machines.
-    The VMs will be reverted back to the "install" state and all
-    test files will be redeployed afterwards.
-
-    :param config: command line arguments
-    :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
-    :param str tag: extra name identifier for the test to be run
-    :raises: :py:class:`exceptions.ValueError` if vm is unknown
-
-    If the `dry_run` parameter is set to "yes", this will not actually
-    remove, but just show affected volumes.
-
-    .. note:: The code for this step was taken from an external python script
-        and could be replaced later on if the newer update step becomes faster.
-    """
-    lvscan_bin = '/usr/sbin/lvscan'
-    lvremove_bin = '/usr/sbin/lvremove'
-
-    vms = {}
-
-    vm_whitelist = ['vm1', 'vm2', 'vm3', 'vm4', 'vm5']
-    whitelist = ['thin_pool', 'LogVol', 'install', 'current_state']
-
-    def parse_active_vms():
-        lvscan_output = process.run(lvscan_bin).stdout_text
-        for line in lvscan_output.split('\n'):
-            prefix = os.environ['PREFIX'] if 'PREFIX' in os.environ else 'at'
-            match = re.match(" +ACTIVE +'(/dev/%s_(vm\d+)_ramdisk/(.*))' +" % prefix, line)
-            if match is None:
-                continue
-
-            fullpath = match.group(1)
-            vm = match.group(2)
-            volname = match.group(3)
-
-            if vm not in vm_whitelist:
-                logging.info("Ignoring volume %s from %s", volname, vm)
-                continue
-
-            logging.info('Found volume %s from %s', volname, vm)
-
-            if vm not in vms:
-                vms[vm] = [(volname, fullpath)]
-            else:
-                vms[vm].append((volname, fullpath))
-
-    def clean_volumes(dry_run):
-        for vm in vms:
-            for volume, fullpath in vms[vm]:
-                if volume in whitelist:
-                    continue
-
-                if dry_run:
-                    logging.info('Would remove volume %s from %s', volume, vm)
-                    continue
-
-                logging.info('Removing volume %s from %s', volume, vm)
-                try:
-                    output = process.run("%s --force %s" % (lvremove_bin, fullpath)).stdout_text
-                except Exception as e:
-                    output = str(e)
-                for line in output.split('\n'):
-                    logging.info(line)
-
-    new_whitelist = run_params.objects("vms")
-    for vmname in new_whitelist:
-        if vmname not in vm_whitelist:
-            raise ValueError('Unknown VM "{0}". Aborting'.format(vmname))
-
-    vm_whitelist = new_whitelist
-    logging.info('Working on VM %s only', ','.join(vm_whitelist))
-
-    parse_active_vms()
-    dry_run = True if run_params.get("dry_run", "no") == "yes" else False
-    clean_volumes(dry_run)
-
-    # now redeploy data
-    setup_str = config["param_str"]
-    config["param_str"] = setup_str + param.ParsedDict({"get_state": "install", "get_type": "off"}).parsable_form()
-    get(config, run_params, tag=tag + "m")
-    run_params["redeploy_only"] = "no"
-    deploy(config, run_params, tag=tag)
-    config["param_str"] = setup_str + param.ParsedDict({"set_state": "customize", "set_type": "off"}).parsable_form()
-    set(config, run_params, tag=tag)
-    config["param_str"] = setup_str
-
-
 @with_cartesian_graph
-def graphfull(config, run_params, tag=""):
+def full(config, tag=""):
     """
     Perform all the setup needed to achieve a certain state and save the state.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
 
     The state can be achieved all the way from the test object creation. The
     performed setup depends entirely on the state's dependencies which can
     be completely different than the regular create->install->deploy path.
     """
+    LOG_UI.info("Starting full setup for %s", ", ".join(config["selected_vms"]))
+
     l, r = config["graph"].l, config["graph"].r
-    clean(config, run_params, tag=tag + "mm")
-    for vm_name in run_params.objects("vms"):
-        vm_params = run_params.object_params(vm_name)
+    clean(config, tag=tag + "mm")
+    for vm_name in config["selected_vms"]:
+        vm_params = config["vms_params"].object_params(vm_name)
         logging.info("Creating the full state '%s' of %s", vm_params.get("state", "customize"), vm_name)
         if vm_params.get("state", "customize") == "root":
-            vm_params["vms"] = vm_name
-            create(config, vm_params, tag=tag)
+            # TODO: avoid using other tools and rely on pure graph root creation in the future
+            root_config = config.copy()
+            root_config["selected_vms"] = [vm_name]
+            root_config["vms_params"] = vm_params
+            create(root_config, tag=tag)
             continue
 
         # overwrite any existing test objects
@@ -318,17 +245,17 @@ def graphfull(config, run_params, tag=""):
                                                           "set_mode": "ff", "unset_mode": "ra"}).parsable_form()
         r.run_traversal(create_graph, setup_str)
 
+    LOG_UI.info("Finished full setup")
+
 
 @with_cartesian_graph
-def graphupdate(config, run_params, tag=""):
+def update(config, tag=""):
     """
     Update all states (run all tests) from the state defined as
     ``from_state=<state>`` to the state defined as ``to_state=<state>``.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
 
     Thus, a change in a state can be reflected in all the dependent states.
@@ -337,9 +264,11 @@ def graphupdate(config, run_params, tag=""):
         'from_state=install' to 'from_state=root'. You cannot update the root as this is
         analogical to running the full manual step.
     """
+    LOG_UI.info("Starting update setup for %s", ", ".join(config["selected_vms"]))
+
     l, r = config["graph"].l, config["graph"].r
-    for vm_name in run_params.objects("vms"):
-        vm_params = run_params.object_params(vm_name)
+    for vm_name in config["selected_vms"]:
+        vm_params = config["vms_params"].object_params(vm_name)
         logging.info("Updating state '%s' of %s", vm_params.get("to_state", "customize"), vm_name)
 
         if vm_params.get("to_state", "customize") == "root":
@@ -378,22 +307,22 @@ def graphupdate(config, run_params, tag=""):
         setup_str = config["param_str"] + param.ParsedDict({"get_mode": "ra", "set_mode": "fa", "unset_mode": "ra"}).parsable_form()
         r.run_traversal(update_graph, setup_str)
 
+    LOG_UI.info("Finished update setup")
 
-def run(config, run_params, tag=""):
+
+def run(config, tag=""):
     """
     Run a set of tests without any automated setup.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
 
     This is equivalent to but more powerful than the runner plugin.
     """
     # NOTE: each run expects already incremented count in the beginning but this prefix
     # is preferential to setup chains with a single "run" step since this is usually the case
-    config["prefix"] = tag + "n" if len(re.findall("run", run_params["setup"])) > 1 else ""
+    config["prefix"] = tag + "n" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
     config["test_runner"] = "traverser"
 
     config["sysinfo"] = config.get("sysinfo", "on")
@@ -419,103 +348,20 @@ def run(config, run_params, tag=""):
         config["graph"] = None
 
 
-def list(config, run_params, tag=""):
+def list(config, tag=""):
     """
     List a set of tests from the command line.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
 
     This is equivalent to but more powerful than the loader plugin.
     """
     loader = CartesianLoader(config, {"logdir": data_dir.get_base_dir()})
-    prefix = tag + "l" if len(re.findall("run", run_params["setup"])) > 1 else ""
+    prefix = tag + "l" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
     graph = loader.parse_object_trees(config["param_str"], config["tests_str"], config["vm_strs"], prefix=prefix)
     graph.visualize(data_dir.get_base_dir())
-
-
-############################################################
-# Custom manual user steps
-############################################################
-
-
-@with_cartesian_graph
-def windows(config, run_params, tag=""):
-    """
-    Perform all extra setup needed for the windows permanent vms.
-
-    :param config: command line arguments
-    :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
-    :param str tag: extra name identifier for the test to be run
-
-    If the vm is still located on top of ramdisk (it is still not
-    permanent) this setup is still possible in the form of on
-    state setup, however you may risk running out of memory.
-    """
-    vms = config["graph"].l.parse_objects(config["vm_strs"], run_params.get("vms", ""))
-    for vm in vms:
-        logging.info("Performing extra setup for the permanent %s", vm.name)
-
-        # consider this as a special kind of ephemeral test which concerns
-        # permanent objects (i.e. instead of transition from customize to on
-        # root, it is a transition from supposedly "permanentized" vm to the root)
-        logging.info("Booting %s for the first permanent on state", vm.name)
-        reparsable = vm.config.get_copy()
-        reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
-                                    ovrwrt_str=param.re_str("nonleaves..manage.start", config["param_str"]),
-                                    ovrwrt_dict={"set_state": "windows_on"})
-        config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
-
-        logging.info("Installing local virtuser at %s", vm.name)
-        reparsable = vm.config.get_copy()
-        reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
-                                    ovrwrt_str=param.re_str("nonleaves..windows_virtuser", config["param_str"]),
-                                    ovrwrt_dict={"skip_image_processing": "yes", "kill_vm": "no"})
-        config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
-
-        if run_params.get("with_outlook", "no") != "no":
-            logging.info("Installing Outlook at %s", vm.name)
-            year = run_params["with_outlook"]
-            reparsable = vm.config.get_copy()
-            reparsable.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file,
-                                        ovrwrt_str=param.re_str("nonleaves..outlook_prep..ol%s" % year, config["param_str"]),
-                                        ovrwrt_dict={"skip_image_processing": "yes", "kill_vm": "no"})
-            config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
-
-
-@with_cartesian_graph
-def develop(config, run_params, tag=""):
-    """
-    Run manual tests specialized at development speedup.
-
-    :param config: command line arguments
-    :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
-    :param str tag: extra name identifier for the test to be run
-
-    Current modes that can be supplied from the command line
-    can be found in the "develop" test set.
-
-    As with all manual tests, providing setup and making sure
-    that all the vms exist is a user's responsibility.
-    """
-    vms = run_params["vms"]
-    mode = run_params.get("devmode", "generator")
-    setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
-    setup_str = param.re_str("nonleaves..develop.%s" % mode) + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
-    tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
-    assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
-    logging.info("Developing on virtual machines %s", vms)
-    config["graph"].r.run_test_node(TestNode(tag, tests[0].config, []))
 
 
 ############################################################
@@ -524,40 +370,41 @@ def develop(config, run_params, tag=""):
 
 
 @with_cartesian_graph
-def install(config, run_params, tag=""):
+def install(config, tag=""):
     """
     Configure installation of each virtual machine and install it,
     taking the respective 'install' snapshot.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
+    LOG_UI.info("Installing %s", ", ".join(config["selected_vms"]))
     graph = TestGraph()
     graph.nodes, graph.objects = config["graph"].l.parse_object_nodes(param.re_str("nonleaves..install"),
                                                                       config["vm_strs"],
-                                                                      prefix=tag, object_names=run_params.get("vms", ""),
+                                                                      prefix=tag,
+                                                                      object_names=" ".join(config["selected_vms"]),
                                                                       objectless=True)
     for vm_name in sorted(graph.test_objects.keys()):
         config["graph"].r.run_install_node(graph, vm_name, config["param_str"])
+    LOG_UI.info("Finished installation")
 
 
 @with_cartesian_graph
-def deploy(config, run_params, tag=""):
+def deploy(config, tag=""):
     """
     Deploy customized data and utilities to the guest vms,
     to one or to more of their states, either temporary (``stateless=no``)
     or taking a respective 'customize' snapshot.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
-    vms = config["graph"].l.parse_objects(config["vm_strs"], run_params.get("vms", ""))
+    LOG_UI.info("Deploying data to %s", ", ".join(config["selected_vms"]))
+    vms = config["graph"].l.parse_objects(config["vm_strs"],
+                                          " ".join(config["selected_vms"]))
     for vm in vms:
 
         states = vm.params.objects("states")
@@ -573,7 +420,7 @@ def deploy(config, run_params, tag=""):
                 setup_str += param.ParsedDict({"get_state": state, "set_state": state,
                                                "get_type": "any", "set_type": "any"}).parsable_form()
             ovrwrt_dict = {"skip_image_processing": "yes", "kill_vm": "no",
-                           "redeploy_only": run_params.get("redeploy_only", "yes")}
+                           "redeploy_only": config["vms_params"].get("redeploy_only", "yes")}
             if stateless:
                 ovrwrt_dict["get_state"] = ""
                 ovrwrt_dict["set_state"] = ""
@@ -581,25 +428,27 @@ def deploy(config, run_params, tag=""):
             ovrwrt_str = param.re_str("nonleaves..customize", setup_str)
             reparsable = vm.config.get_copy()
             reparsable.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file,
+                                        ovrwrt_file=param.tests_ovrwrt_file(),
                                         ovrwrt_str=ovrwrt_str,
                                         ovrwrt_dict=ovrwrt_dict)
             config["graph"].r.run_test_node(TestNode(setup_tag, reparsable, []))
 
+    LOG_UI.info("Finished data deployment")
+
 
 @with_cartesian_graph
-def internal(config, run_params, tag=""):
+def internal(config, tag=""):
     """
     Run an internal test node, thus performing a particular automated
     setup on the desired vms.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
-    vms = config["graph"].l.parse_objects(config["vm_strs"], run_params.get("vms", ""))
+    LOG_UI.info("Performing internal setup on %s", ", ".join(config["selected_vms"]))
+    vms = config["graph"].l.parse_objects(config["vm_strs"],
+                                          " ".join(config["selected_vms"]))
     for vm in vms:
         if vm.params.get("stateless", "yes") == "yes":
             ovrwrt_dict = {"get_state": "", "set_state": "",
@@ -610,54 +459,11 @@ def internal(config, run_params, tag=""):
         ovrwrt_str = param.re_str(forced_setup, config["param_str"])
         reparsable = vm.config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=ovrwrt_str,
                                     ovrwrt_dict=ovrwrt_dict)
         config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
-
-
-@with_cartesian_graph
-def sysupdate(config, run_params, tag=""):
-    """
-    Update an updatable system and reset its install state.
-
-    :param config: command line arguments
-    :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
-    :param str tag: extra name identifier for the test to be run
-
-    "Updatable" here means that the system is compatible with a "system_update"
-    test defined for a vm with this system as its guest OS configuration.
-    """
-    vms = config["graph"].l.parse_objects(config["vm_strs"], run_params.get("vms", ""))
-    for vm in vms:
-
-        states = vm.params.objects("states")
-        if len(states) == 0:
-            states = ["current_state"]
-            stateless = vm.params.get("stateless", "yes") == "yes"
-        else:
-            stateless = False
-
-        for i, state in enumerate(states):
-            setup_str = ""
-            if state != "current_state":
-                setup_str = config["param_str"] + param.ParsedDict({"get_state": state, "set_state": state}).parsable_form()
-
-            if stateless:
-                ovrwrt_dict = {"get_state": "", "set_state": "",
-                               "skip_image_processing": "yes", "kill_vm": "no"}
-            else:
-                ovrwrt_dict = {}
-            setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
-            ovrwrt_str = param.re_str("nonleaves..system_update", setup_str)
-            reparsable = vm.config.get_copy()
-            reparsable.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file,
-                                        ovrwrt_str=ovrwrt_str,
-                                        ovrwrt_dict=ovrwrt_dict)
-            config["graph"].r.run_test_node(TestNode(setup_tag, reparsable, []))
+    LOG_UI.info("Finished internal setup")
 
 
 ############################################################
@@ -666,37 +472,34 @@ def sysupdate(config, run_params, tag=""):
 
 
 @with_cartesian_graph
-def boot(config, run_params, tag=""):
+def boot(config, tag=""):
     """
     Boot all given vms.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
 
     The boot test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
-    vms = run_params["vms"]
-    setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
+    LOG_UI.info("Booting virtual machines %s", ", ".join(config["selected_vms"]))
+    vms = " ".join(config["selected_vms"])
+    setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
     setup_str = param.re_str("nonleaves..manage.start") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one boot test variant from %s" % tests
-    logging.info("Booting virtual machines %s", vms)
     config["graph"].r.run_test_node(TestNode(tag, tests[0].config, []))
+    LOG_UI.info("Boot complete")
 
 
 @with_cartesian_graph
-def download(config, run_params, tag=""):
+def download(config, tag=""):
     """
     Download a set of files from the given vms.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
 
     The set of files is specified using a "files" parameter.
@@ -704,24 +507,23 @@ def download(config, run_params, tag=""):
     The download test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
-    vms = run_params["vms"]
-    setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
+    LOG_UI.info("Downloading from virtual machines %s", ", ".join(config["selected_vms"]))
+    vms = " ".join(config["selected_vms"])
+    setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
     setup_str = param.re_str("nonleaves..manage.download") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one download test variant from %s" % tests
-    logging.info("Downloading from virtual machines %s", vms)
     config["graph"].r.run_test_node(TestNode(tag, tests[0].config, []))
+    LOG_UI.info("Download complete")
 
 
 @with_cartesian_graph
-def upload(config, run_params, tag=""):
+def upload(config, tag=""):
     """
     Upload a set of files to the given vms.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
 
     The set of files is specified using a `files` parameter.
@@ -729,36 +531,36 @@ def upload(config, run_params, tag=""):
     The upload test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
-    vms = run_params["vms"]
-    setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
+    LOG_UI.info("Uploading to virtual machines %s", ", ".join(config["selected_vms"]))
+    vms = " ".join(config["selected_vms"])
+    setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
     setup_str = param.re_str("nonleaves..manage.upload") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one upload test variant from %s" % tests
-    logging.info("Uploading to virtual machines %s", vms)
     config["graph"].r.run_test_node(TestNode(tag, tests[0].config, []))
+    LOG_UI.info("Upload complete")
 
 
 @with_cartesian_graph
-def shutdown(config, run_params, tag=""):
+def shutdown(config, tag=""):
     """
     Shutdown gracefully or kill living vms.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
 
     The shutdown test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
-    vms = run_params["vms"]
-    setup_dict = {"vms": vms, "main_vm": run_params.objects("vms")[0]}
+    LOG_UI.info("Shutting down virtual machines %s", ", ".join(config["selected_vms"]))
+    vms = " ".join(config["selected_vms"])
+    setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
     setup_str = param.re_str("nonleaves..manage.stop") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one shutdown test variant from %s" % tests
-    logging.info("Shutting down virtual machines %s", vms)
     config["graph"].r.run_test_node(TestNode(tag, tests[0].config, []))
+    LOG_UI.info("Shutdown complete")
 
 
 ############################################################
@@ -767,183 +569,185 @@ def shutdown(config, run_params, tag=""):
 
 
 @with_cartesian_graph
-def check(config, run_params, tag=""):
+def check(config, tag=""):
     """
     Check whether a given state (setup snapshot) exists.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
+    LOG_UI.info("Starting state check for %s with params:\n%s",
+                ",".join(config["selected_vms"]), config["param_str"].rstrip())
     setup_str = config["param_str"]
     setup_str += param.re_str("nonleaves..manage.unchanged")
     setup_str += param.ParsedDict({"vm_action": "check",
                                    "skip_image_processing": "yes"}).parsable_form()
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"],
-                                               object_names=run_params["vms"],
+                                               object_names=" ".join(config["selected_vms"]),
                                                objectless=True, prefix=tag)
     for test in tests:
         config["graph"].r.run_test_node(TestNode(tag, test.config, []))
+    LOG_UI.info("Finished state check")
 
 
 @with_cartesian_graph
-def pop(config, run_params, tag=""):
+def pop(config, tag=""):
     """
     Get to a state/snapshot disregarding the current changes
     loosing the it afterwards.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
+    LOG_UI.info("Starting state pop for %s with params:\n%s",
+                ",".join(config["selected_vms"]), config["param_str"].rstrip())
     setup_str = config["param_str"]
     setup_str += param.re_str("nonleaves..manage.unchanged")
     setup_str += param.ParsedDict({"vm_action": "pop",
                                    "skip_image_processing": "yes"}).parsable_form()
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"],
-                                               object_names=run_params["vms"],
+                                               object_names=" ".join(config["selected_vms"]),
                                                objectless=True, prefix=tag)
     for test in tests:
         config["graph"].r.run_test_node(TestNode(tag, test.config, []))
+    LOG_UI.info("Finished state pop")
 
 
 @with_cartesian_graph
-def push(config, run_params, tag=""):
+def push(config, tag=""):
     """
     Wrapper for setting state/snapshot, same as :py:func:`set`.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
+    LOG_UI.info("Starting state push for %s with params:\n%s",
+                ",".join(config["selected_vms"]), config["param_str"].rstrip())
     setup_str = config["param_str"]
     setup_str += param.re_str("nonleaves..manage.unchanged")
     setup_str += param.ParsedDict({"vm_action": "push",
                                    "skip_image_processing": "yes"}).parsable_form()
     tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"],
-                                               object_names=run_params["vms"],
+                                               object_names=" ".join(config["selected_vms"]),
                                                objectless=True, prefix=tag)
     for test in tests:
         config["graph"].r.run_test_node(TestNode(tag, test.config, []))
+    LOG_UI.info("Finished state push")
 
 
 @with_cartesian_graph
-def get(config, run_params, tag=""):
+def get(config, tag=""):
     """
     Get to a state/snapshot disregarding the current changes.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
 
     This method could be implemented in identical way to the push/pop
     methods but we use different approach for illustration.
     """
-    for vm_name in run_params.objects("vms"):
+    LOG_UI.info("Starting state get for %s with params:\n%s",
+                ",".join(config["selected_vms"]), config["param_str"].rstrip())
+    for vm_name in config["selected_vms"]:
         test_object = config["graph"].l.parse_objects(config["vm_strs"], vm_name)
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
                                                             config["param_str"]),
                                     ovrwrt_dict={"vm_action": "get",
                                                  "skip_image_processing": "yes"})
         config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
+    LOG_UI.info("Finished state get")
 
 
 @with_cartesian_graph
-def set(config, run_params, tag=""):
+def set(config, tag=""):
     """
     Create a new state/snapshot from the current state/snapshot.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
 
     This method could be implemented in identical way to the push/pop
     methods but we use different approach for illustration.
     """
-    for vm_name in run_params.objects("vms"):
+    LOG_UI.info("Starting state set for %s with params:\n%s",
+                ",".join(config["selected_vms"]), config["param_str"].rstrip())
+    for vm_name in config["selected_vms"]:
         test_object = config["graph"].l.parse_objects(config["vm_strs"], vm_name)
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
                                                             config["param_str"]),
                                     ovrwrt_dict={"vm_action": "set",
                                                  "skip_image_processing": "yes"})
         config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
+    LOG_UI.info("Finished state set")
 
 
 @with_cartesian_graph
-def unset(config, run_params, tag=""):
+def unset(config, tag=""):
     """
     Remove a state/snapshot.
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
 
     This method could be implemented in identical way to the push/pop
     methods but we use different approach for illustration.
     """
+    LOG_UI.info("Starting state unset for %s with params:\n%s",
+                ",".join(config["selected_vms"]), config["param_str"].rstrip())
     # since the default unset_mode is passive (ri) we need a better
     # default value for that case but still modifiable by the user
     if "unset_mode" not in config["param_str"]:
         setup_str = config["param_str"] + param.ParsedDict({"unset_mode": "fi"}).parsable_form()
     else:
         setup_str = config["param_str"]
-    for vm_name in run_params.objects("vms"):
+    for vm_name in config["selected_vms"]:
         test_object = config["graph"].l.parse_objects(config["vm_strs"], vm_name)
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
                                                             setup_str),
                                     ovrwrt_dict={"vm_action": "unset",
                                                  "skip_image_processing": "yes"})
         config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
+    LOG_UI.info("Finished state unset")
 
 
-def create(config, run_params, tag=""):
+def create(config, tag=""):
     """
     Create a new test object (vm, root state).
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = config["param_str"]
     config["param_str"] += param.ParsedDict({"set_state": "root", "set_mode": "af", "set_type": "off"}).parsable_form()
-    set(config, run_params, tag=tag)
+    set(config, tag=tag)
     config["param_str"] = setup_str
 
 
-def clean(config, run_params, tag=""):
+def clean(config, tag=""):
     """
     Remove a test object (vm, root state).
 
-    :param config: command line arguments
+    :param config: command line arguments and run configuration
     :type config: {str, str}
-    :param run_params: parameters with minimal vm configuration
-    :type run_params: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = config["param_str"]
     config["param_str"] += param.ParsedDict({"unset_state": "root", "unset_mode": "fi", "unset_type": "off"}).parsable_form()
-    unset(config, run_params, tag=tag)
+    unset(config, tag=tag)
     config["param_str"] = setup_str

@@ -97,7 +97,7 @@ def params_from_cmd(config):
     # get minimal configurations and parse defaults if no command line arguments
     tests_config = param.Reparsable()
     tests_config.parse_next_batch(base_file="groups-base.cfg",
-                                  ovrwrt_file=param.tests_ovrwrt_file,
+                                  ovrwrt_file=param.tests_ovrwrt_file(),
                                   ovrwrt_str=param_str)
     tests_params = tests_config.get_params()
     tests_str += param_str
@@ -107,12 +107,13 @@ def params_from_cmd(config):
             raise ValueError("Invalid primary restriction 'only=%s'! It has to be one "
                              "of %s" % (default, ", ".join(primary_tests_restrictions)))
         tests_str += "only %s\n" % default
+    config["tests_params"] = tests_params
     config["tests_str"] = tests_str
     log.debug("Parsed tests string '%s'", tests_str)
 
     vms_config = param.Reparsable()
     vms_config.parse_next_batch(base_file="guest-base.cfg",
-                                ovrwrt_file=param.vms_ovrwrt_file,
+                                ovrwrt_file=param.vms_ovrwrt_file(),
                                 ovrwrt_str=param_str,
                                 ovrwrt_dict={"vms": " ".join(selected_vms)})
     vms_params = vms_config.get_params()
@@ -126,13 +127,14 @@ def params_from_cmd(config):
             if default is None:
                 raise ValueError("No default variant restriction found for %s!" % vm_name)
             vm_strs[vm_name] += "only %s\n" % default
+    config["vms_params"] = vms_params
     config["vm_strs"] = vm_strs
     log.debug("Parsed vm strings '%s'", vm_strs)
 
     # control against invoking internal tests
     control_config = param.Reparsable()
     control_config.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=tests_str)
     control_parser = control_config.get_parser()
     if with_nontrivial_restrictions:

@@ -2,9 +2,23 @@
 
 SUMMARY
 ------------------------------------------------------
-Run the steps necessary to do GUI test development.
+Create a GUI (or even non-GUI) test directly on top of a running vm.
 
 Copyright: Intra2net AG
+
+
+CONTENTS
+------------------------------------------------------
+The following test generates a GUI panel to control a vm or
+a set of vms.
+
+At the present it must be used in conjunction with a normal
+VNC client from which to interact with the vm's GUI.
+
+The panel can be used to pause, resume and capture a vm as
+well as for other neat purposes.
+
+.. seealso:: Extra guide on GUI test development in the wiki.
 
 
 INTERFACE
@@ -13,14 +27,11 @@ INTERFACE
 """
 
 import logging
-import time
-import os
-
-# avocado imports
-from avocado.core import exceptions
+import sys
+from PyQt4 import QtGui
 
 # custom imports
-pass
+from multi_gui_utils import GUITestGenerator
 
 
 ###############################################################################
@@ -35,7 +46,15 @@ def run(test, params, env):
     :param params: extended dictionary of parameters
     :param env: environment object
     """
-    vmnet = env.get_vmnet()
-    vm, session = vmnet.get_single_vm_with_session()
+    logging.info("Initiating the GUI test generator's GUI")
+    app = QtGui.QApplication([])
 
-    logging.info("Initializing GUI test development tools")
+    vmnet = env.get_vmnet()
+    mt = GUITestGenerator(vmnet)
+    mt.show()
+
+    logging.info("GUI test generator's GUI initiated")
+    # TODO: Once this is converted from pseudotest to an actual tool,
+    # we will be free to do this
+    #sys.exit(app.exec_())
+    app.exec_()

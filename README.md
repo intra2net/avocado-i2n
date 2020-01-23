@@ -205,31 +205,26 @@ The *setup* parameter will be used in the case of tool mode (manu plugin)
 and the *get/set/unset_mode* parameter is mostly used in the case of test mode
 (auto plugin). The choice of types of setup (manual steps) is the following:
 
+ - *noop* - Simply load all plugins and do nothing (good for probing)
  - *create* - Create a ramdisk, virtual group and logical volume for each
    virtual machine
  - *install* - Prepare step files and install virtual machines
  - *deploy* - Simply deploy changes on top of current state (will be lost
    after reverting to snapshot)
+ - *internal* - Run a custom setup node otherwise inaccessible and part of the
+   automated setup
  - *boot* - Simply boot the registered virtual machines and run selected
    controls if any
- - *run* - Run selected tests (will use any provided or default restrictions)
+ - *list* - List selected tests
+ - *run* - Run selected tests
  - *download* - Download a set of files from the vm to the test results folder
  - *upload* - Upload a set of files to the vm's temporary folder
  - *unittest* - Run all unit tests available for the test suite utilities
  - *update* - Redeploy tests on a vm, removing all descending states
- - *graphupdate* - New "update" step whereby in addition to the standard case,
-   all states between a reused and a desired one can be updated
  - *shutdown* - Shutdown gracefully or kill living vms
  - *clean* - Remove the logical volumes of all installed vms
  - *full* - Create lvm image, install product, deploy tests and take a clean
    snapshot
- - *graphfull* - New "full" step whereby in addition to the standard setup, any
-   other setup necessary for a desired vm state will be performed
- - *windows* - Extra setup needed for permanent vms (in the case of Windows)
- - *develop* - Run a quasi-test (a mixture of utility and test) used for
-   developing actual tests
- - *sysupdate* - Perform a system level update using the update package
-   deployed as usual
  - *check* - Check whether a given state (snapshot of saved setup) exists
  - *get* - Get a given state, i.e. revert to it keeping it for further reuse
  - *set* - Set a given state, keeping it for further reuse
@@ -238,6 +233,8 @@ and the *get/set/unset_mode* parameter is mostly used in the case of test mode
  - *push* - Same like setting a given state
  - *pop* - Pop a given state, i.e. revert to it but making it unavailable for
    further reuse
+ - *<tool>* - Run any custom compatible tool, located in the tools test suite
+   folder
 
 You can define a chain of setup steps, e.g.
 

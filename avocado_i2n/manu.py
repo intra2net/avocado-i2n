@@ -21,7 +21,6 @@ from avocado.core.output import LOG_JOB as log
 from avocado.core.plugin_interfaces import CLICmd
 
 from . import cmd_parser
-from . import params_parser as param
 from . import intertest_setup as intertest
 
 
@@ -50,19 +49,14 @@ class Manu(CLICmd):
         os.environ['LANG'] = 'en_US.UTF-8'
 
         cmd_parser.params_from_cmd(config)
+        intertest.load_addons_tools()
+        run_params = config["vms_params"]
 
-        run_config = param.Reparsable()
-        run_config.parse_next_batch(base_file="guest-base.cfg",
-                                    ovrwrt_file=param.vms_ovrwrt_file,
-                                    ovrwrt_str=config["param_str"],
-                                    ovrwrt_dict={"vms": " ".join(config["selected_vms"])})
-        run_params = run_config.get_params()
         # prepare a setup step or a chain of such
-        run_params["count"] = 0
-        setup_chain = run_params["setup"].split()
-        for setup_step in setup_chain:
+        setup_chain = run_params.objects("setup")
+        for i, setup_step in enumerate(setup_chain):
+            run_params["count"] = i
             setup_func = getattr(intertest, setup_step)
-            setup_func(config, run_params, "0m%s" % run_params["count"])
-            run_params["count"] += 1
+            setup_func(config, "0m%s" % i)
 
         log.info("Manual setup chain finished.")

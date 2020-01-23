@@ -58,19 +58,35 @@ class EmptyCartesianProduct(Exception):
 ###################################################################
 
 
-default_tp_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tp_folder"))
-custom_configs_dir = settings.get_value('i2n.common', 'suite_path', default=default_tp_folder)
-custom_configs_dir = os.path.join(custom_configs_dir, "configs")
-tests_ovrwrt_file = "avocado_overwrite_tests.cfg"
-vms_ovrwrt_file = "avocado_overwrite_vms.cfg"
-if not os.path.exists(os.path.join(os.environ['HOME'], tests_ovrwrt_file)):
-    logging.warning("Generating a file to use for overwriting the original test parameters")
-    shutil.copyfile(os.path.join(custom_configs_dir, "sets-overwrite.cfg"),
-                    os.path.join(os.environ['HOME'], tests_ovrwrt_file))
-if not os.path.exists(os.path.join(os.environ['HOME'], vms_ovrwrt_file)):
-    logging.warning("Generating a file to use for overwriting the original vm parameters")
-    shutil.copyfile(os.path.join(custom_configs_dir, "objects-overwrite.cfg"),
-                    os.path.join(os.environ['HOME'], vms_ovrwrt_file))
+def custom_configs_dir():
+    """Custom directory for all config files."""
+    default_tp_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tp_folder"))
+    suite_path = settings.get_value('i2n.common', 'suite_path', default=default_tp_folder)
+    return os.path.join(suite_path, "configs")
+
+
+_tests_ovrwrt_file = "avocado_overwrite_tests.cfg"
+def tests_ovrwrt_file():
+    """Overwrite config file for all tests (nodes)."""
+    ovrwrt_file = os.path.join(os.environ['HOME'], _tests_ovrwrt_file)
+    if not os.path.exists(ovrwrt_file):
+        logging.warning("Generating a file to use for overwriting the original test parameters")
+        shutil.copyfile(os.path.join(custom_configs_dir(),
+                                     "sets-overwrite.cfg"),
+                        ovrwrt_file)
+    return ovrwrt_file
+
+
+_vms_ovrwrt_file = "avocado_overwrite_vms.cfg"
+def vms_ovrwrt_file():
+    """Overwrite config file for all vms (objects)."""
+    ovrwrt_file = os.path.join(os.environ['HOME'], _vms_ovrwrt_file)
+    if not os.path.exists(ovrwrt_file):
+        logging.warning("Generating a file to use for overwriting the original vm parameters")
+        shutil.copyfile(os.path.join(custom_configs_dir(),
+                                     "objects-overwrite.cfg"),
+                        ovrwrt_file)
+    return ovrwrt_file
 
 
 ###################################################################
@@ -190,18 +206,19 @@ class Reparsable():
         """Initialize the parsable structure."""
         self.steps = []
 
-    def parse_next_file(self, pfile, overwrite=False):
+    def parse_next_file(self, pfile):
         """
         Add a file parsing step.
 
         :param str pfile: file to be parsed next
-        :param bool overwrite: whether the file is an overwrite (custom) or
-                               base file (i.e. in $HOME or test suite location)
+
+        If the parsable file has a relative form (not and absolute path), it
+        will be searched in the relative test suite config directory.
         """
-        if overwrite:
-            filename = os.path.join(os.environ['HOME'], pfile)
+        if os.path.isabs(pfile):
+            filename = pfile
         else:
-            filename = os.path.join(custom_configs_dir, pfile)
+            filename = os.path.join(custom_configs_dir(), pfile)
         self.steps.append(ParsedFile(filename))
 
     def parse_next_str(self, pstring):
@@ -253,7 +270,7 @@ class Reparsable():
         if base_dict:
             self.parse_next_dict(base_dict)
         if ovrwrt_file:
-            self.parse_next_file(ovrwrt_file, overwrite=True)
+            self.parse_next_file(ovrwrt_file)
         if ovrwrt_str:
             self.parse_next_str(ovrwrt_str)
         if ovrwrt_dict:
