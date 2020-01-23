@@ -233,7 +233,7 @@ and the *get/set/unset_mode* parameter is mostly used in the case of test mode
  - *push* - Same like setting a given state
  - *pop* - Pop a given state, i.e. revert to it but making it unavailable for
    further reuse
- - *<tool>* - Run any custom compatible tool, located in the tools test suite
+ - *\<tool>* - Run any custom compatible tool, located in the tools test suite
    folder
 
 You can define a chain of setup steps, e.g.
