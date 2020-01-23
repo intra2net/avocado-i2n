@@ -54,7 +54,7 @@ class Manu(CLICmd):
 
         run_config = param.Reparsable()
         run_config.parse_next_batch(base_file="guest-base.cfg",
-                                    ovrwrt_file=param.vms_ovrwrt_file,
+                                    ovrwrt_file=param.vms_ovrwrt_file(),
                                     ovrwrt_str=config["param_str"],
                                     ovrwrt_dict={"vms": " ".join(config["selected_vms"])})
         run_params = run_config.get_params()

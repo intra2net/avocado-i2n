@@ -97,7 +97,7 @@ def params_from_cmd(config):
     # get minimal configurations and parse defaults if no command line arguments
     tests_config = param.Reparsable()
     tests_config.parse_next_batch(base_file="groups-base.cfg",
-                                  ovrwrt_file=param.tests_ovrwrt_file,
+                                  ovrwrt_file=param.tests_ovrwrt_file(),
                                   ovrwrt_str=param_str)
     tests_params = tests_config.get_params()
     tests_str += param_str
@@ -112,7 +112,7 @@ def params_from_cmd(config):
 
     vms_config = param.Reparsable()
     vms_config.parse_next_batch(base_file="guest-base.cfg",
-                                ovrwrt_file=param.vms_ovrwrt_file,
+                                ovrwrt_file=param.vms_ovrwrt_file(),
                                 ovrwrt_str=param_str,
                                 ovrwrt_dict={"vms": " ".join(selected_vms)})
     vms_params = vms_config.get_params()
@@ -132,7 +132,7 @@ def params_from_cmd(config):
     # control against invoking internal tests
     control_config = param.Reparsable()
     control_config.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=tests_str)
     control_parser = control_config.get_parser()
     if with_nontrivial_restrictions:

@@ -427,7 +427,7 @@ def deploy(config, run_params, tag=""):
             ovrwrt_str = param.re_str("nonleaves..customize", setup_str)
             reparsable = vm.config.get_copy()
             reparsable.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file,
+                                        ovrwrt_file=param.tests_ovrwrt_file(),
                                         ovrwrt_str=ovrwrt_str,
                                         ovrwrt_dict=ovrwrt_dict)
             config["graph"].r.run_test_node(TestNode(setup_tag, reparsable, []))
@@ -456,7 +456,7 @@ def internal(config, run_params, tag=""):
         ovrwrt_str = param.re_str(forced_setup, config["param_str"])
         reparsable = vm.config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=ovrwrt_str,
                                     ovrwrt_dict=ovrwrt_dict)
         config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
@@ -653,7 +653,7 @@ def get(config, run_params, tag=""):
         test_object = config["graph"].l.parse_objects(config["vm_strs"], vm_name)
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
                                                             config["param_str"]),
                                     ovrwrt_dict={"vm_action": "get",
@@ -679,7 +679,7 @@ def set(config, run_params, tag=""):
         test_object = config["graph"].l.parse_objects(config["vm_strs"], vm_name)
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
                                                             config["param_str"]),
                                     ovrwrt_dict={"vm_action": "set",
@@ -711,7 +711,7 @@ def unset(config, run_params, tag=""):
         test_object = config["graph"].l.parse_objects(config["vm_strs"], vm_name)
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
                                                             setup_str),
                                     ovrwrt_dict={"vm_action": "unset",

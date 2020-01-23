@@ -87,7 +87,7 @@ class CartesianLoader(VirtTestLoader):
             config.parse_next_batch(base_file="objects.cfg",
                                     base_str=param.vm_str(vm_name, object_strs),
                                     base_dict={"main_vm": vm_name},
-                                    ovrwrt_file=param.vms_ovrwrt_file)
+                                    ovrwrt_file=param.vms_ovrwrt_file())
 
             test_object = TestObject(vm_name, config)
             test_object.regenerate_params(verbose=verbose)
@@ -167,9 +167,9 @@ class CartesianLoader(VirtTestLoader):
             config.parse_next_batch(base_file="objects.cfg",
                                     base_str=param.vm_str(d["vms"], objstrs),
                                     base_dict={"main_vm": main_object.name},
-                                    ovrwrt_file=param.vms_ovrwrt_file)
+                                    ovrwrt_file=param.vms_ovrwrt_file())
             config.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file,
+                                    ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=param.re_str(d["name"], nodes_str))
 
             test_node = TestNode(name, config, objects)
@@ -396,7 +396,7 @@ class CartesianLoader(VirtTestLoader):
         setup_str = param.re_str("nonleaves..0root", param_str)
         config = test_object.config.get_copy()
         config.parse_next_batch(base_file="sets.cfg",
-                                ovrwrt_file=param.tests_ovrwrt_file,
+                                ovrwrt_file=param.tests_ovrwrt_file(),
                                 ovrwrt_str=setup_str,
                                 ovrwrt_dict=setup_dict)
         create_node = TestNode("0r", config, [test_object])
