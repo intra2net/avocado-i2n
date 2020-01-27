@@ -20,8 +20,8 @@ import re
 from avocado.core.output import LOG_JOB as log
 from avocado.core.plugin_interfaces import CLICmd
 
-from . import cmd_parser
-from . import intertest_setup as intertest
+from .. import cmd_parser
+from .. import intertest_setup as intertest
 
 
 class Manu(CLICmd):
