@@ -72,8 +72,6 @@ install:
   - pip install -e .
   # TODO: local (editable) pip installation does not take care of the config files of both av-vt and av-i2n
   - cp avocado_i2n/conf.d/i2n.conf avocado-libs/avocado/etc/avocado/conf.d/i2n.conf
-  # TODO: install the sample test provider in a location that does not require sudo
-  - sudo bash install_tp.sh
 
 before_script:
   - sleep 3  # give some time to start
