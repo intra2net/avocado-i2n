@@ -216,9 +216,10 @@ def full(config, tag=""):
     performed setup depends entirely on the state's dependencies which can
     be completely different than the regular create->install->deploy path.
     """
-    LOG_UI.info("Starting full setup for %s", ", ".join(config["selected_vms"]))
-
     l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Starting full setup for %s (%s)",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
+
     clean(config, tag=tag + "mm")
     for vm_name in config["selected_vms"]:
         vm_params = config["vms_params"].object_params(vm_name)
@@ -264,9 +265,10 @@ def update(config, tag=""):
         'from_state=install' to 'from_state=root'. You cannot update the root as this is
         analogical to running the full manual step.
     """
-    LOG_UI.info("Starting update setup for %s", ", ".join(config["selected_vms"]))
-
     l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Starting update setup for %s (%s)",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
+
     for vm_name in config["selected_vms"]:
         vm_params = config["vms_params"].object_params(vm_name)
         logging.info("Updating state '%s' of %s", vm_params.get("to_state", "customize"), vm_name)
@@ -379,15 +381,17 @@ def install(config, tag=""):
     :type config: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
-    LOG_UI.info("Installing %s", ", ".join(config["selected_vms"]))
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Installing %s (%s)",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
     graph = TestGraph()
-    graph.nodes, graph.objects = config["graph"].l.parse_object_nodes(param.re_str("nonleaves..install"),
-                                                                      config["vm_strs"],
-                                                                      prefix=tag,
-                                                                      object_names=" ".join(config["selected_vms"]),
-                                                                      objectless=True)
+    graph.nodes, graph.objects = l.parse_object_nodes(param.re_str("nonleaves..install"),
+                                                      config["vm_strs"],
+                                                      prefix=tag,
+                                                      object_names=" ".join(config["selected_vms"]),
+                                                      objectless=True)
     for vm_name in sorted(graph.test_objects.keys()):
-        config["graph"].r.run_install_node(graph, vm_name, config["param_str"])
+        r.run_install_node(graph, vm_name, config["param_str"])
     LOG_UI.info("Finished installation")
 
 
@@ -402,9 +406,10 @@ def deploy(config, tag=""):
     :type config: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
-    LOG_UI.info("Deploying data to %s", ", ".join(config["selected_vms"]))
-    vms = config["graph"].l.parse_objects(config["vm_strs"],
-                                          " ".join(config["selected_vms"]))
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Deploying data to %s (%s)",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
+    vms = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
     for vm in vms:
 
         states = vm.params.objects("states")
@@ -431,7 +436,7 @@ def deploy(config, tag=""):
                                         ovrwrt_file=param.tests_ovrwrt_file(),
                                         ovrwrt_str=ovrwrt_str,
                                         ovrwrt_dict=ovrwrt_dict)
-            config["graph"].r.run_test_node(TestNode(setup_tag, reparsable, []))
+            r.run_test_node(TestNode(setup_tag, reparsable, []))
 
     LOG_UI.info("Finished data deployment")
 
@@ -446,9 +451,10 @@ def internal(config, tag=""):
     :type config: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
-    LOG_UI.info("Performing internal setup on %s", ", ".join(config["selected_vms"]))
-    vms = config["graph"].l.parse_objects(config["vm_strs"],
-                                          " ".join(config["selected_vms"]))
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Performing internal setup on %s (%s)",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
+    vms = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
     for vm in vms:
         if vm.params.get("stateless", "yes") == "yes":
             ovrwrt_dict = {"get_state": "", "set_state": "",
@@ -462,7 +468,7 @@ def internal(config, tag=""):
                                     ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=ovrwrt_str,
                                     ovrwrt_dict=ovrwrt_dict)
-        config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
+        r.run_test_node(TestNode(tag, reparsable, []))
     LOG_UI.info("Finished internal setup")
 
 
@@ -483,13 +489,15 @@ def boot(config, tag=""):
     The boot test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
-    LOG_UI.info("Booting virtual machines %s", ", ".join(config["selected_vms"]))
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Booting virtual machines %s (%s)",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
     vms = " ".join(config["selected_vms"])
     setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
     setup_str = param.re_str("nonleaves..manage.start") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
-    tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
+    tests, _ = l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one boot test variant from %s" % tests
-    config["graph"].r.run_test_node(TestNode(tag, tests[0].config, []))
+    r.run_test_node(TestNode(tag, tests[0].config, []))
     LOG_UI.info("Boot complete")
 
 
@@ -507,13 +515,15 @@ def download(config, tag=""):
     The download test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
-    LOG_UI.info("Downloading from virtual machines %s", ", ".join(config["selected_vms"]))
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Downloading from virtual machines %s (%s)",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
     vms = " ".join(config["selected_vms"])
     setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
     setup_str = param.re_str("nonleaves..manage.download") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
-    tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
+    tests, _ = l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one download test variant from %s" % tests
-    config["graph"].r.run_test_node(TestNode(tag, tests[0].config, []))
+    r.run_test_node(TestNode(tag, tests[0].config, []))
     LOG_UI.info("Download complete")
 
 
@@ -531,13 +541,15 @@ def upload(config, tag=""):
     The upload test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
-    LOG_UI.info("Uploading to virtual machines %s", ", ".join(config["selected_vms"]))
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Uploading to virtual machines %s",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
     vms = " ".join(config["selected_vms"])
     setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
     setup_str = param.re_str("nonleaves..manage.upload") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
-    tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
+    tests, _ = l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one upload test variant from %s" % tests
-    config["graph"].r.run_test_node(TestNode(tag, tests[0].config, []))
+    r.run_test_node(TestNode(tag, tests[0].config, []))
     LOG_UI.info("Upload complete")
 
 
@@ -553,13 +565,15 @@ def shutdown(config, tag=""):
     The shutdown test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
-    LOG_UI.info("Shutting down virtual machines %s", ", ".join(config["selected_vms"]))
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Shutting down virtual machines %s",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
     vms = " ".join(config["selected_vms"])
     setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
     setup_str = param.re_str("nonleaves..manage.stop") + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
-    tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
+    tests, _ = l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one shutdown test variant from %s" % tests
-    config["graph"].r.run_test_node(TestNode(tag, tests[0].config, []))
+    r.run_test_node(TestNode(tag, tests[0].config, []))
     LOG_UI.info("Shutdown complete")
 
 
@@ -577,17 +591,19 @@ def check(config, tag=""):
     :type config: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
-    LOG_UI.info("Starting state check for %s with params:\n%s",
-                ",".join(config["selected_vms"]), config["param_str"].rstrip())
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Starting state check for %s with job %s and params:\n%s",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
+                config["param_str"].rstrip())
     setup_str = config["param_str"]
     setup_str += param.re_str("nonleaves..manage.unchanged")
     setup_str += param.ParsedDict({"vm_action": "check",
                                    "skip_image_processing": "yes"}).parsable_form()
-    tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"],
-                                               object_names=" ".join(config["selected_vms"]),
-                                               objectless=True, prefix=tag)
+    tests, _ = l.parse_object_nodes(setup_str, config["vm_strs"],
+                                    object_names=" ".join(config["selected_vms"]),
+                                    objectless=True, prefix=tag)
     for test in tests:
-        config["graph"].r.run_test_node(TestNode(tag, test.config, []))
+        r.run_test_node(TestNode(tag, test.config, []))
     LOG_UI.info("Finished state check")
 
 
@@ -601,17 +617,19 @@ def pop(config, tag=""):
     :type config: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
-    LOG_UI.info("Starting state pop for %s with params:\n%s",
-                ",".join(config["selected_vms"]), config["param_str"].rstrip())
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Starting state pop for %s with job %s and params:\n%s",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
+                config["param_str"].rstrip())
     setup_str = config["param_str"]
     setup_str += param.re_str("nonleaves..manage.unchanged")
     setup_str += param.ParsedDict({"vm_action": "pop",
                                    "skip_image_processing": "yes"}).parsable_form()
-    tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"],
-                                               object_names=" ".join(config["selected_vms"]),
-                                               objectless=True, prefix=tag)
+    tests, _ = l.parse_object_nodes(setup_str, config["vm_strs"],
+                                    object_names=" ".join(config["selected_vms"]),
+                                    objectless=True, prefix=tag)
     for test in tests:
-        config["graph"].r.run_test_node(TestNode(tag, test.config, []))
+        r.run_test_node(TestNode(tag, test.config, []))
     LOG_UI.info("Finished state pop")
 
 
@@ -624,17 +642,19 @@ def push(config, tag=""):
     :type config: {str, str}
     :param str tag: extra name identifier for the test to be run
     """
-    LOG_UI.info("Starting state push for %s with params:\n%s",
-                ",".join(config["selected_vms"]), config["param_str"].rstrip())
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Starting state push for %s with job %s and params:\n%s",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
+                config["param_str"].rstrip())
     setup_str = config["param_str"]
     setup_str += param.re_str("nonleaves..manage.unchanged")
     setup_str += param.ParsedDict({"vm_action": "push",
                                    "skip_image_processing": "yes"}).parsable_form()
-    tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"],
-                                               object_names=" ".join(config["selected_vms"]),
-                                               objectless=True, prefix=tag)
+    tests, _ = l.parse_object_nodes(setup_str, config["vm_strs"],
+                                    object_names=" ".join(config["selected_vms"]),
+                                    objectless=True, prefix=tag)
     for test in tests:
-        config["graph"].r.run_test_node(TestNode(tag, test.config, []))
+        r.run_test_node(TestNode(tag, test.config, []))
     LOG_UI.info("Finished state push")
 
 
@@ -650,10 +670,12 @@ def get(config, tag=""):
     This method could be implemented in identical way to the push/pop
     methods but we use different approach for illustration.
     """
-    LOG_UI.info("Starting state get for %s with params:\n%s",
-                ",".join(config["selected_vms"]), config["param_str"].rstrip())
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Starting state get for %s with job %s and params:\n%s",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
+                config["param_str"].rstrip())
     for vm_name in config["selected_vms"]:
-        test_object = config["graph"].l.parse_objects(config["vm_strs"], vm_name)
+        test_object = l.parse_objects(config["vm_strs"], vm_name)
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file(),
@@ -661,7 +683,7 @@ def get(config, tag=""):
                                                             config["param_str"]),
                                     ovrwrt_dict={"vm_action": "get",
                                                  "skip_image_processing": "yes"})
-        config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
+        r.run_test_node(TestNode(tag, reparsable, []))
     LOG_UI.info("Finished state get")
 
 
@@ -677,10 +699,12 @@ def set(config, tag=""):
     This method could be implemented in identical way to the push/pop
     methods but we use different approach for illustration.
     """
-    LOG_UI.info("Starting state set for %s with params:\n%s",
-                ",".join(config["selected_vms"]), config["param_str"].rstrip())
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Starting state set for %s with job %s and params:\n%s",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
+                config["param_str"].rstrip())
     for vm_name in config["selected_vms"]:
-        test_object = config["graph"].l.parse_objects(config["vm_strs"], vm_name)
+        test_object = l.parse_objects(config["vm_strs"], vm_name)
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file(),
@@ -688,7 +712,7 @@ def set(config, tag=""):
                                                             config["param_str"]),
                                     ovrwrt_dict={"vm_action": "set",
                                                  "skip_image_processing": "yes"})
-        config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
+        r.run_test_node(TestNode(tag, reparsable, []))
     LOG_UI.info("Finished state set")
 
 
@@ -704,8 +728,10 @@ def unset(config, tag=""):
     This method could be implemented in identical way to the push/pop
     methods but we use different approach for illustration.
     """
-    LOG_UI.info("Starting state unset for %s with params:\n%s",
-                ",".join(config["selected_vms"]), config["param_str"].rstrip())
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Starting state unset for %s with job %s and params:\n%s",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
+                config["param_str"].rstrip())
     # since the default unset_mode is passive (ri) we need a better
     # default value for that case but still modifiable by the user
     if "unset_mode" not in config["param_str"]:
@@ -713,7 +739,7 @@ def unset(config, tag=""):
     else:
         setup_str = config["param_str"]
     for vm_name in config["selected_vms"]:
-        test_object = config["graph"].l.parse_objects(config["vm_strs"], vm_name)
+        test_object = l.parse_objects(config["vm_strs"], vm_name)
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file(),
@@ -721,7 +747,7 @@ def unset(config, tag=""):
                                                             setup_str),
                                     ovrwrt_dict={"vm_action": "unset",
                                                  "skip_image_processing": "yes"})
-        config["graph"].r.run_test_node(TestNode(tag, reparsable, []))
+        r.run_test_node(TestNode(tag, reparsable, []))
     LOG_UI.info("Finished state unset")
 
 

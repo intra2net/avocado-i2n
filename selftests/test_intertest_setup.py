@@ -38,7 +38,9 @@ class DummyTestRunning(object):
 @contextlib.contextmanager
 def new_job(config):
     # jobless run delegation - simply pass to another mock function
-    yield mock.MagicMock()
+    job = mock.MagicMock()
+    job.logdir = "/some/path"
+    yield job
 
 
 def mock_run_test_node(_self, node):

@@ -19,6 +19,7 @@ INTERFACE
 
 """
 
+import os
 import logging
 import contextlib
 from collections import namedtuple
@@ -60,12 +61,14 @@ def develop(config, tag=""):
     As with all manual tests, providing setup and making sure
     that all the vms exist is a user's responsibility.
     """
-    LOG_UI.info("Developing on virtual machines %s", ", ".join(config["selected_vms"]))
+    l, r = config["graph"].l, config["graph"].r
+    LOG_UI.info("Developing on virtual machines %s (%s)",
+                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
     vms = " ".join(config["selected_vms"])
     mode = config["tests_params"].get("devmode", "generator")
     setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
     setup_str = param.re_str("nonleaves..develop.%s" % mode) + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
-    tests, _ = config["graph"].l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
+    tests, _ = l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
-    config["graph"].r.run_test_node(TestNode(tag, tests[0].config, []))
+    r.run_test_node(TestNode(tag, tests[0].config, []))
     LOG_UI.info("Development complete")
