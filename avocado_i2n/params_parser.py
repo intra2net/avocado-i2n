@@ -58,10 +58,10 @@ class EmptyCartesianProduct(Exception):
 ###################################################################
 
 
+_devel_tp_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tp_folder"))
+suite_path = settings.get_value('i2n.common', 'suite_path', default=_devel_tp_folder)
 def custom_configs_dir():
     """Custom directory for all config files."""
-    default_tp_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tp_folder"))
-    suite_path = settings.get_value('i2n.common', 'suite_path', default=default_tp_folder)
     return os.path.join(suite_path, "configs")
 
 

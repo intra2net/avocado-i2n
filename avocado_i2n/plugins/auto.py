@@ -21,9 +21,9 @@ from avocado.core.loader import loader
 from avocado.core.output import LOG_JOB as log
 from avocado.core.plugin_interfaces import CLI
 
-from . import cmd_parser
-from .loader import CartesianLoader
-from .runner import CartesianRunner
+from .. import cmd_parser
+from ..loader import CartesianLoader
+from ..runner import CartesianRunner
 
 
 class Auto(CLI):
