@@ -18,7 +18,6 @@ import os
 import re
 
 from avocado.core.output import LOG_JOB as log
-from avocado.core.settings import settings
 from virttest import env_process
 
 from . import params_parser as param
@@ -34,8 +33,7 @@ def params_from_cmd(config):
     :param config: command line arguments
     :type config: {str, str}
     """
-    root_path = settings.get_value('i2n.common', 'suite_path', default=None)
-    sys.path.insert(1, os.path.join(root_path, "utils"))
+    sys.path.insert(1, os.path.join(param.suite_path, "utils"))
 
     # validate typed vm names and possible vm specific restrictions
     config["available_vms"] = available_vms = param.all_vms()
