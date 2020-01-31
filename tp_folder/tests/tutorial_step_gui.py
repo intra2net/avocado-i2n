@@ -45,7 +45,7 @@ def get_image_root():
     """
     try:
         from avocado.core.settings import settings
-        testsuite_top_path = settings.get_value('i2n.common', 'suite_path', default=None)
+        testsuite_top_path = settings.get_value('i2n.common', 'suite_path', default="..")
         image_root = os.path.join(testsuite_top_path, "data", "visual")
     except ImportError:
         image_root = os.path.join("/tmp", "data", "visual")

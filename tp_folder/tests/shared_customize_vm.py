@@ -36,7 +36,7 @@ pass
 # DEFINITIONS
 ###############################################################################
 
-testsuite_top_path = settings.get_value('i2n.common', 'suite_path', default=None)
+testsuite_top_path = settings.get_value('i2n.common', 'suite_path', default="..")
 guest_path = testsuite_top_path
 source_avocado_path = "/usr/lib/python3.7/site-packages/avocado/utils"
 destination_avocado_path = "/tmp/utils/avocado"
