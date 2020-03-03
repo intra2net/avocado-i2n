@@ -48,7 +48,7 @@ destination_avocado_path = "/tmp/utils/avocado"
 
 def deploy_avocado(vm, params, test):
     """
-    Deploy the Autotest package to a vm.
+    Deploy the avocado package to a vm.
 
     :param vm: vm to deploy to (must be compatible)
     :type vm: VM object
@@ -182,5 +182,5 @@ def run(test, params, env):
     if os_type == "linux" and params.get("redeploy_only", "no") == "no":
         handle_ssh_authorized_keys(vm, params)
 
-    logging.info("Customized tests setup on VM autotest finished")
+    logging.info("Customized tests setup on VM finished")
     session.close()
