@@ -33,7 +33,7 @@
 
 Summary: Avocado I2N Plugin
 Name: avocado-plugins-i2n
-Version: 75.0
+Version: 76.0
 Release: 0%{?gitrel}%{?dist}
 License: GPLv2
 Group: Development/Tools
@@ -89,6 +89,10 @@ graph structure.
 %{_datadir}/avocado-plugin-i2n/tp_folder/*
 
 %changelog
+* Wed Mar 4 2020 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 76.0-0
+- Default sample test suite installation with develop mode accessibility
+- Dropped requirements to use Intra2net avocado forks in order to run the plugin
+
 * Fri Jan 24 2020 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 75.0-0
 - Default and custom manual steps as tools or add-ons of the "manu" plugin
 - Sample tool for GUI test development and virtual user backend stress testing
