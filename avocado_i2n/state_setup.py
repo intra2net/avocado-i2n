@@ -141,8 +141,8 @@ def unset_root(run_params):
                     except OSError as ex:
                         logging.warning("No permanent vm can be removed automatically. If "
                                         "this is not a permanent test object, see the debug.")
-                        raise exceptions.TestWarn("Permanent vm %s cannot be removed "
-                                                  "automatically" % vm_name)
+                        raise exceptions.TestWarn("Permanent vm %s was detected but cannot be "
+                                                  "removed automatically" % vm_name)
             lv_utils.vg_ramdisk_cleanup(vm_params["ramdisk_sparse_filename"],
                                         os.path.join(vm_params["ramdisk_basedir"],
                                                      vm_params["vg_name"]),
