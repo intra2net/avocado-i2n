@@ -212,7 +212,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
         self.mock_vms["vm1"].is_alive.return_value = False
-        with self.assertRaises(exceptions.TestAbortError):
+        with self.assertRaises(exceptions.TestSkipError):
             state_setup.get_state(self.run_params, self.env)
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
         # test on/off switch as well
@@ -220,7 +220,7 @@ class StateSetupTest(unittest.TestCase):
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
-        with self.assertRaises(exceptions.TestAbortError):
+        with self.assertRaises(exceptions.TestSkipError):
             state_setup.get_state(self.run_params, self.env)
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
 
@@ -419,7 +419,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         self.mock_vms["vm2"].reset_mock()
         mock_lv_utils.lv_check.return_value = True
-        with self.assertRaises(exceptions.TestAbortError):
+        with self.assertRaises(exceptions.TestSkipError):
             state_setup.set_state(self.run_params, self.env)
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm2", "launch")
         self.mock_vms["vm2"].destroy.assert_called_once_with(gracefully=True)
@@ -427,7 +427,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         self.mock_vms["vm2"].reset_mock()
         mock_lv_utils.lv_check.return_value = False
-        with self.assertRaises(exceptions.TestAbortError):
+        with self.assertRaises(exceptions.TestSkipError):
             state_setup.set_state(self.run_params, self.env)
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm2", "launch")
         self.mock_vms["vm2"].destroy.assert_called_once_with(gracefully=True)
@@ -670,7 +670,7 @@ class StateSetupTest(unittest.TestCase):
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
-        with self.assertRaises(exceptions.TestAbortError):
+        with self.assertRaises(exceptions.TestSkipError):
             state_setup.unset_state(self.run_params, self.env)
         mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
 
@@ -1058,7 +1058,7 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].is_alive.return_value = False
         self.mock_vms["vm3"].is_alive.return_value = True
 
-        with self.assertRaises(exceptions.TestAbortError):
+        with self.assertRaises(exceptions.TestSkipError):
             state_setup.get_state(self.run_params, self.env)
 
         expected = [mock.call("ramdisk_vm1", "launch1"), mock.call("ramdisk_vm2", "launch2")]
@@ -1102,7 +1102,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.side_effect = lv_check_side_effect
         mock_lv_utils.vg_check.return_value = False
 
-        with self.assertRaises(exceptions.TestAbortError):
+        with self.assertRaises(exceptions.TestSkipError):
             state_setup.set_state(self.run_params, self.env)
 
         expected = [mock.call("ramdisk_vm2", "launch2"), mock.call("ramdisk_vm3", "LogVol"), mock.call("ramdisk_vm4", "launch4")]

@@ -252,7 +252,7 @@ def get_state(run_params, env):
     :type run_params: {str, str}
     :param env: test environment
     :type env: Env object
-    :raises: :py:class:`exceptions.TestAbortError` if the retrieved state doesn't exist,
+    :raises: :py:class:`exceptions.TestSkipError` if the retrieved state doesn't exist,
         the vm is unavailable from the env, or snapshot exists in passive mode (abort)
     :raises: :py:class:`exceptions.TestError` if invalid policy was used
     """
@@ -294,8 +294,8 @@ def get_state(run_params, env):
         action_if_doesnt_exist = vm_params["get_mode"][1]
         if not state_exists and "a" == action_if_doesnt_exist:
             logging.info("Aborting because of missing snapshot for setup")
-            raise exceptions.TestAbortError("Snapshot '%s' of %s doesn't exist. Aborting "
-                                            "due to passive mode." % (vm_params["get_state"], vm_name))
+            raise exceptions.TestSkipError("Snapshot '%s' of %s doesn't exist. Aborting "
+                                           "due to passive mode." % (vm_params["get_state"], vm_name))
         elif not state_exists and "i" == action_if_doesnt_exist:
             logging.warn("Ignoring missing snapshot for setup")
         elif not state_exists:
@@ -303,8 +303,8 @@ def get_state(run_params, env):
                                        "either of 'abort', 'ignore'." % vm_params["get_mode"])
         elif state_exists and "a" == action_if_exists:
             logging.info("Aborting because of unwanted snapshot for setup")
-            raise exceptions.TestAbortError("Snapshot '%s' of %s already exists. Aborting "
-                                            "due to passive mode." % (vm_params["get_state"], vm_name))
+            raise exceptions.TestSkipError("Snapshot '%s' of %s already exists. Aborting "
+                                           "due to passive mode." % (vm_params["get_state"], vm_name))
         elif state_exists and "r" == action_if_exists:
             _get_state(vm, vm_params)
         elif state_exists and "i" == action_if_exists:
@@ -322,7 +322,7 @@ def set_state(run_params, env):
     :type run_params: {str, str}
     :param env: test environment
     :type env: Env object
-    :raises: :py:class:`exceptions.TestAbortError` if unexpected/missing snapshot in passive mode (abort)
+    :raises: :py:class:`exceptions.TestSkipError` if unexpected/missing snapshot in passive mode (abort)
     :raises: :py:class:`exceptions.TestError` if invalid policy was used
     """
     for vm_name in run_params.objects("vms"):
@@ -353,8 +353,8 @@ def set_state(run_params, env):
         action_if_doesnt_exist = vm_params["set_mode"][1]
         if state_exists and "a" == action_if_exists:
             logging.info("Aborting because of unwanted snapshot for later cleanup")
-            raise exceptions.TestAbortError("Snapshot '%s' of %s already exists. Aborting "
-                                            "due to passive mode." % (vm_params["set_state"], vm_name))
+            raise exceptions.TestSkipError("Snapshot '%s' of %s already exists. Aborting "
+                                           "due to passive mode." % (vm_params["set_state"], vm_name))
         elif state_exists and "r" == action_if_exists:
             logging.info("Keeping the already existing snapshot untouched")
         elif state_exists and "f" == action_if_exists:
@@ -372,8 +372,8 @@ def set_state(run_params, env):
                                        "either of 'abort', 'reuse', 'force'." % vm_params["set_mode"])
         elif not state_exists and "a" == action_if_doesnt_exist:
             logging.info("Aborting because of missing snapshot for later cleanup")
-            raise exceptions.TestAbortError("Snapshot '%s' of %s doesn't exist. Aborting "
-                                            "due to passive mode." % (vm_params["set_state"], vm_name))
+            raise exceptions.TestSkipError("Snapshot '%s' of %s doesn't exist. Aborting "
+                                           "due to passive mode." % (vm_params["set_state"], vm_name))
         elif not state_exists and "f" == action_if_doesnt_exist:
             _set_state(vm, vm_params)
         elif not state_exists:
@@ -389,7 +389,7 @@ def unset_state(run_params, env):
     :type run_params: {str, str}
     :param env: test environment
     :type env: Env object
-    :raises: :py:class:`exceptions.TestAbortError` if missing snapshot in passive mode (abort)
+    :raises: :py:class:`exceptions.TestSkipError` if missing snapshot in passive mode (abort)
     :raises: :py:class:`exceptions.TestError` if invalid policy was used
     """
     for vm_name in run_params.objects("vms"):
@@ -413,8 +413,8 @@ def unset_state(run_params, env):
         action_if_doesnt_exist = vm_params["unset_mode"][1]
         if not state_exists and "a" == action_if_doesnt_exist:
             logging.info("Aborting because of missing snapshot for final cleanup")
-            raise exceptions.TestAbortError("Snapshot '%s' of %s doesn't exist. Aborting "
-                                            "due to passive mode." % (vm_params["unset_state"], vm_name))
+            raise exceptions.TestSkipError("Snapshot '%s' of %s doesn't exist. Aborting "
+                                           "due to passive mode." % (vm_params["unset_state"], vm_name))
         elif not state_exists and "i" == action_if_doesnt_exist:
             logging.warn("Ignoring missing snapshot for final cleanup (will not be removed)")
         elif not state_exists:
