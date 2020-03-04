@@ -1136,7 +1136,7 @@ class VMNetwork(object):
         logging.debug("No accessible IP found in local networks, falling back to tunnel search")
         return self.get_tunnel_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
 
-    def verify_vpn_in_log(self, src_vm, dst_vm, log_vm=None):
+    def verify_vpn_in_log(self, src_vm, dst_vm, log_vm=None, require_blocked=False):
         """
         Search for the appropriate message in the vpn log file.
 
@@ -1146,6 +1146,7 @@ class VMNetwork(object):
         :type dst_vm: VM object
         :param log_vm: vm where all packets are logged
         :type log_vm: VM object
+        :param bool require_blocked: whether to expect access message or deny message
         :raises: :py:class:`exceptions.TestError` if the source or destination vms are not on the network
         :raises: :py:class:`exceptions.TestFail` if the VPN packets were not logged properly
 
@@ -1178,10 +1179,16 @@ class VMNetwork(object):
 
         logging.info("Checking log of %s for the firewall rule tag %s ", log_vm.name, log_message)
         log = log_vm.session.cmd("cat /var/log/messages")
-        if log_message not in log:
-            raise exceptions.TestFail("No message with %s was found in log" % log_message)
-        if deny_message in log:
-            raise exceptions.TestFail("The deny message %s was found in log" % deny_message)
+        if require_blocked:
+            if re.match(log_message + "\s", log) is not None:
+                raise exceptions.TestFail("The access message %s was found in log" % log_message)
+            if deny_message not in log:
+                raise exceptions.TestFail("The deny message %s was not found in log" % deny_message)
+        else:
+            if log_message not in log:
+                raise exceptions.TestFail("The access message %s was not found in log" % log_message)
+            if deny_message in log:
+                raise exceptions.TestFail("The deny message %s was found in log" % deny_message)
         for message in re.findall("VPN_%i\.\d+" % log_index, log):
             if message != log_message:
                 raise exceptions.TestFail("Wrong message %s in addition to %s was found in log" % (message, log_message))
@@ -1383,10 +1390,10 @@ class VMNetwork(object):
                                                  address=address, port=port, protocol=protocol)
         if require_blocked:
             if status == 0 and "HTML" in output:
-                raise exceptions.TestFail("HTTPS connection to %s failed with the following outputs:\n%s" % (port, output))
+                raise exceptions.TestFail("HTTPS connection to %s succeeded with the following outputs:\n%s" % (port, output))
         else:
             if status != 0 and "HTML" not in output:
-                raise exceptions.TestFail("HTTPS connection to %s succeeded with the following outputs:\n%s" % (port, output))
+                raise exceptions.TestFail("HTTPS connection to %s failed with the following outputs:\n%s" % (port, output))
 
     def ssh_connectivity(self, src_vm, dst_vm, dst_nic="lan_nic",
                          address=None, port=22, protocol="SSH"):
