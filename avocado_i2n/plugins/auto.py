@@ -13,9 +13,7 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
-import sys
 import os
-import re
 
 from avocado.core.loader import loader
 from avocado.core.output import LOG_JOB as log
