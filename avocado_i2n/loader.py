@@ -286,7 +286,7 @@ class CartesianLoader(VirtTestLoader):
             for test_object in test_node.objects:
                 logging.debug("Parsing dependencies of %s for object %s", test_node.params["shortname"], test_object.name)
                 object_params = test_node.params.object_params(test_object.name)
-                if object_params.get("get_state", "") == "":
+                if object_params.get("get", object_params.get("get_state", "")) == "":
                     continue
 
                 # get and parse parents
@@ -405,34 +405,6 @@ class CartesianLoader(VirtTestLoader):
         return [create_node]
 
     """internals - get/parse, duplicates"""
-    def _get_and_parse_parent(self, graph, test_node, test_object, param_str, setup_restr):
-        """
-        Perform a fast and simple check for a single parent node and
-        generate it if it wasn't found during the check.
-
-        .. note:: This method is a legacy method which works faster but
-            *only* if the given test node has exactly *one* parent (per object).
-        """
-        get_parents = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
-                                         subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
-        parents = get_parents
-        if len(get_parents) == 0:
-            if setup_restr == "0root":
-                parse_parents = self.parse_create_node(graph, test_object.name, param_str)
-            else:
-                setup_str = param.re_str("nonleaves.." + setup_restr, param_str)
-                name = test_node.name + "a"
-                parse_parents = self.parse_nodes(setup_str, graph, prefix=name, object_name=test_object.name)
-            parents = parse_parents
-        else:
-            parse_parents = []
-        # NOTE: it is possible that exactly one of multiple parents is already parsed and we don't
-        # detect the node actually requiring more but again, this is legacy method and has its drawbacks
-        assert len(parents) <= 1, ("Test %s has multiple setups:\n%s\nSpecify 'get_parse=advanced' to "
-                                   "support this." % (test_node.params["shortname"],
-                                                      "\n".join([p.params["shortname"] for p in parents])))
-        return get_parents, parse_parents
-
     def _parse_and_get_parents(self, graph, test_node, test_object, param_str):
         """
         Generate (if necessary) all parent test nodes for a given test
@@ -445,17 +417,14 @@ class CartesianLoader(VirtTestLoader):
         logging.debug("Parsing Cartesian setup of %s through restriction %s",
                       test_node.params["shortname"], setup_restr)
 
-        # NOTE: in general everything should be parsed in the full functionality way
-        # but for performance reasons, we will switch it off when we have the extra
-        # knowledge that the current test node uses simple setup
-        if object_params.get("get") is None and object_params.get("get_parse", "simple") == "simple":
-            return self._get_and_parse_parent(graph, test_node, test_object, param_str, setup_restr)
-        elif object_params.get("get_parse", "advanced") != "advanced":
-            raise ValueError("The setup parsing mode must be one of: 'simple', 'advanced'")
-
         if setup_restr == "0root":
             new_parents = self.parse_create_node(graph, test_object.name, param_str)
         else:
+            # speedup for handling already parsed unique parent cases
+            get_parent = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
+                                             subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
+            if len(get_parent) == 1:
+                return get_parent, []
             setup_str = param.re_str("nonleaves.." + setup_restr, param_str)
             name = test_node.name + "a"
             new_parents = self.parse_nodes(setup_str, graph, prefix=name, object_name=test_object.name)
