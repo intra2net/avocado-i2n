@@ -230,7 +230,10 @@ class CartesianRunner(TestRunner):
         assert len(nodes) == 1, "There can only be one root for %s" % object_name
         test_node = nodes[0]
 
-        self.run_test_node(test_node)
+        if test_object.is_permanent():
+            logging.info("Reached a permanent object root for %s", test_object.name)
+        else:
+            self.run_test_node(test_node)
 
     def run_install_node(self, graph, object_name, param_str, tag=""):
         """

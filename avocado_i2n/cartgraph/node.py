@@ -150,13 +150,6 @@ class TestNode(object):
 
         return False
 
-    def is_manual(self):
-        """
-        If the test node is manual, its execution is disallowed and considered
-        responsibility of the user.
-        """
-        return ".manual." in self.params["name"]
-
     def is_setup_ready(self):
         """
         All dependencies of the test were run or there were none, so it can

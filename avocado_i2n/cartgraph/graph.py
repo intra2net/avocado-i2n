@@ -196,8 +196,6 @@ class TestGraph(object):
         """
         for test_node in self.nodes:
             test_node.should_run = True
-            if test_node.is_manual():
-                test_node.should_run = False
 
             for test_object in test_node.objects:
                 object_name = test_object.name
@@ -229,14 +227,6 @@ class TestGraph(object):
                                      object_state, object_name)
                         # test should be run regardless of further checks
                         continue
-
-                # manual tests can only be run by the user and are his/her responsibility
-                if test_node.is_manual():
-                    # the set state has to be defined for all manual test objects
-                    logging.info("The state %s of %s is expected to be manually provided",
-                                 object_state, object_name)
-                    # test should not be run regardless of further checks
-                    continue
 
                 # ultimate consideration of whether the state is actually present
                 object_params["vms"] = object_name
