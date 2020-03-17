@@ -51,7 +51,7 @@ def get_dir(system_path=None, virtual_path=None):
 
 def get_data_files():
     def add_files(level=[]):
-        installed_location = ['usr', 'share', 'avocado-plugin-i2n']
+        installed_location = ['usr', 'share', 'avocado-plugins-i2n']
         installed_location += level
         level_str = '/'.join(level)
         if level_str:

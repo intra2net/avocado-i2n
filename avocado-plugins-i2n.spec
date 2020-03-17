@@ -86,7 +86,7 @@ graph structure.
 %doc README.md LICENSE
 %{python3_sitelib}/avocado_i2n*
 %{python3_sitelib}/avocado_framework_plugin_i2n*
-%{_datadir}/avocado-plugin-i2n/tp_folder/*
+%{_datadir}/avocado-plugins-i2n/tp_folder/*
 
 %changelog
 * Wed Mar 4 2020 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 76.0-0
