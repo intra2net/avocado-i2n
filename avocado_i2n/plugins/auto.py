@@ -50,12 +50,13 @@ class Auto(CLI):
         Take care of command line overwriting, parameter preparation,
         setup and cleanup chains, and paths/utilities for all host controls.
         """
-        if config.get("references"):
+        if config.get("run.references") or config.get("list.references"):
+            refs = config.get("run.references") if config.get("run.references") else config.get("list.references")
             # graph generated tests are not 1-to-1 mapped to test references which is the
             # original invocation notion but N-to-1 and generated from just one test reference
-            assert len(config["references"]) == 1, "Cartesian graph run supports maximally one test reference"
+            assert len(refs) == 1, "Cartesian graph run supports maximally one test reference"
             # test references (here called test restrictions) are mixed with run (overwrite) parameters
-            config["params"] = config["references"][0].split()
+            config["params"] = refs[0].split()
         elif not config.get("params"):
             config["params"] = []
         cmd_parser.params_from_cmd(config)
