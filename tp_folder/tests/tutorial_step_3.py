@@ -33,7 +33,7 @@ except ImportError:
     logging.warning("The remote door of an upgraded aexpect package is not available")
     import types
     door = types.ModuleType('door')
-    door.running_remotely = None
+    door.running_remotely = lambda x: x
     DOOR_AVAILABLE = False
 
 # custom imports
