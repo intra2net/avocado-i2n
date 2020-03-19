@@ -373,13 +373,25 @@ class CartesianRunner(TestRunner):
                     vm_params = test_node.params.object_params(vm_name)
                     # avoid running any test unless the user really requires cleanup
                     if vm_params.get("unset_mode", "ri")[0] == "f" and vm_params.get("set_state"):
+
+                        setup_str = param_str
                         # NOTE: we are forcing the unset_mode to be the one defined for the test node because
                         # the unset manual step behaves differently now (all this extra complexity starts from
                         # the fact that it has different default value which is noninvasive
-                        setup_str = param.ParsedDict({"unset_state": vm_params["set_state"],
-                                                      "unset_type": vm_params.get("set_type", "off"),
-                                                      "unset_mode": vm_params.get("unset_mode", "ri")}).parsable_form()
-                        setup_str += param_str
+                        setup_dict = {"unset_state": vm_params["set_state"],
+                                      "unset_type": vm_params.get("set_type", "off"),
+                                      "unset_mode": vm_params.get("unset_mode", "ri")}
+                        setup_dict["vm_action"] = "unset"
+                        # TODO: find more flexible way to pass identical test node parameters for cleanup
+                        setup_dict["images_" + vm_name] = vm_params["images"]
+                        for image in vm_params.objects("images"):
+                            image_params = vm_params.object_params(image)
+                            setup_dict["image_name_" + image] = image_params["image_name"]
+                            setup_dict["image_format_" + image] = image_params["image_format"]
+                            # if any extra images were created these have to be removed now
+                            if image_params.get_boolean("create_image", False):
+                                setup_dict["remove_image_" + image] = "yes"
+                                setup_dict["skip_image_processing"] = "no"
 
                         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+vm_name+"$")
                         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (vm_name, objects)
@@ -389,8 +401,7 @@ class CartesianRunner(TestRunner):
                                                         ovrwrt_file=param.tests_ovrwrt_file(),
                                                         ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
                                                                                 setup_str, ""),
-                                                        ovrwrt_dict={"vm_action": "unset",
-                                                                     "skip_image_processing": "yes"})
+                                                        ovrwrt_dict=setup_dict)
                         self.run_test_node(TestNode("c" + test_node.name, forward_config, [test_object]))
 
         else:
