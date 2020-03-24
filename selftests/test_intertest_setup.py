@@ -304,7 +304,7 @@ class IntertestSetupTest(unittest.TestCase):
             setup_func = getattr(intertest_setup, state_action)
             setup_func(self.config, "5m")
 
-    def test_develop(self):
+    def test_develop_tool(self):
         self.config["selected_vms"] = ["vm1", "vm2"]
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
 
@@ -313,6 +313,23 @@ class IntertestSetupTest(unittest.TestCase):
         ]
         intertest_setup.load_addons_tools()
         intertest_setup.develop(self.config, tag="0")
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
+    def test_permanent_vm_tool(self):
+        self.config["selected_vms"] = ["vm3"]
+        self.config["vm_strs"] = {"vm3": "only Ubuntu\n"}
+
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.0root.vm3", "vms": "^vm3$", "set_state": "^root$", "set_type": "^on$"},
+            {"shortname": "^internal.stateless.0preinstall.vm3", "vms": "^vm3$"},
+            {"shortname": "^original.unattended_install.*vm3", "vms": "^vm3$", "cdrom_cd1": ".*ubuntu-14.04.*\.iso$"},
+            {"shortname": "^internal.stateless.manage.start.vm3", "vms": "^vm3$", "set_state": "^install$", "get_type": "^on$", "set_type": "^on$"},
+            {"shortname": "^internal.permanent.customize.vm3", "vms": "^vm3$", "get_type": "^on$", "set_type": "^on$"},
+            {"shortname": "^internal.stateless.manage.start.vm3", "vms": "^vm3$", "set_state": "^ready$", "get_type": "^on$", "set_type": "^on$"},
+        ]
+        intertest_setup.load_addons_tools()
+        intertest_setup.full(self.config, tag="0")
+        intertest_setup.permubuntu(self.config, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
 
