@@ -260,32 +260,53 @@ class CartesianRunner(TestRunner):
         logging.info("Configuring installation for %s", test_object.name)
         # parameters and the status from the install configuration determine the install test
         install_params = test_node.params.copy()
-        test_node.params.update({"set_state": "", "set_type": "", "skip_image_processing": "yes"})
+        test_node.params.update({"set_state": "", "skip_image_processing": "yes"})
         status = self.run_test_node(test_node)
 
         # TODO: status is broken and is always true
-        if status:
-            logging.info("Installing virtual machine %s", test_object.name)
-            if install_params.get("configure_install", "stepmaker") == "unattended_install":
-                if test_object.params["os_type"] == "windows":
-                    ovrwrt_str = param.re_str("nonleaves..unattended_install", param_str, tag)
-                elif install_params["unattended_file"].endswith(".preseed"):
-                    ovrwrt_str = param.re_str("nonleaves..unattended_install.cdrom.in_cdrom_ks", param_str, tag)
-                elif install_params["unattended_file"].endswith(".ks"):
-                    ovrwrt_str = param.re_str("nonleaves..unattended_install.cdrom.extra_cdrom_ks", param_str, tag)
-                else:
-                    raise NotImplementedError("Unattended install tests are not supported for variant %s" % test_object.params["name"])
-                ovrwrt_dict = {}
+        if not status:
+            return
+
+        logging.info("Installing virtual machine %s", test_object.name)
+        if install_params.get("configure_install", "stepmaker") == "unattended_install":
+            if test_object.params["os_type"] == "windows":
+                ovrwrt_str = param.re_str("nonleaves..unattended_install", param_str, tag)
+            elif install_params["unattended_file"].endswith(".preseed"):
+                ovrwrt_str = param.re_str("nonleaves..unattended_install.cdrom.in_cdrom_ks", param_str, tag)
+            elif install_params["unattended_file"].endswith(".ks"):
+                ovrwrt_str = param.re_str("nonleaves..unattended_install.cdrom.extra_cdrom_ks", param_str, tag)
             else:
-                ovrwrt_dict = {"type": install_params.get("configure_install", "stepmaker")}
-                ovrwrt_str = param.re_str("nonleaves..install", param_str, tag)
-            ovrwrt_dict.update({"set_state": "install", "set_type": "off", "skip_image_processing": "no"})
-            install_config = test_object.config.get_copy()
-            install_config.parse_next_batch(base_file="sets.cfg",
-                                            ovrwrt_file=param.tests_ovrwrt_file(),
-                                            ovrwrt_str=ovrwrt_str,
-                                            ovrwrt_dict=ovrwrt_dict)
-            self.run_test_node(TestNode("0q", install_config, test_node.objects))
+                raise NotImplementedError("Unattended install tests are not supported for variant %s" % test_object.params["name"])
+            ovrwrt_dict = {}
+        else:
+            ovrwrt_dict = {"type": install_params.get("configure_install", "stepmaker")}
+            ovrwrt_str = param.re_str("nonleaves..install", param_str, tag)
+
+        if install_params["set_type"] == "off":
+            ovrwrt_dict.update({"set_state": install_params["set_state"],
+                                "set_type": install_params["set_type"]})
+        install_config = test_object.config.get_copy()
+        install_config.parse_next_batch(base_file="sets.cfg",
+                                        ovrwrt_file=param.tests_ovrwrt_file(),
+                                        ovrwrt_str=ovrwrt_str,
+                                        ovrwrt_dict=ovrwrt_dict)
+        status = self.run_test_node(TestNode("0q", install_config, test_node.objects))
+
+        # TODO: status is broken and is always true
+        if not status:
+            return
+
+        if install_params["set_type"] == "on":
+            ovrwrt_dict = {"set_state": install_params["set_state"],
+                           "set_type": install_params["set_type"],
+                           "skip_image_processing": "yes"}
+            ovrwrt_str = param.re_str("nonleaves..manage.start", param_str, tag)
+            postinstall_config = test_object.config.get_copy()
+            postinstall_config.parse_next_batch(base_file="sets.cfg",
+                                                ovrwrt_file=param.tests_ovrwrt_file(),
+                                                ovrwrt_str=ovrwrt_str,
+                                                ovrwrt_dict=ovrwrt_dict)
+            self.run_test_node(TestNode("0qq", postinstall_config, test_node.objects))
 
     """internals"""
     def _traverse_test_node(self, graph, test_node, param_str):

@@ -137,14 +137,8 @@ class TestNode(object):
             if object_state is None or object_state == "":
                 continue
 
-            # definition 1 (with non-root off starting state)
+            # any off-on state transition marks the test as ephemeral
             if (object_params.get("get_type", "on") == "off" and
-                    object_params.get("get_state", "0root") != "0root" and
-                    object_params.get("set_type", "on") == "on"):
-                return True
-
-            # definition 2 (with impermanent test object)
-            if (not test_object.is_permanent() and
                     object_params.get("set_type", "on") == "on"):
                 return True
 

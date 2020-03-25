@@ -756,7 +756,7 @@ def create(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = config["param_str"]
-    config["param_str"] += param.ParsedDict({"set_state": "root", "set_mode": "af", "set_type": "off"}).parsable_form()
+    config["param_str"] += param.ParsedDict({"set_state": "root", "set_mode": "af"}).parsable_form()
     set(config, tag=tag)
     config["param_str"] = setup_str
 
@@ -770,6 +770,6 @@ def clean(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = config["param_str"]
-    config["param_str"] += param.ParsedDict({"unset_state": "root", "unset_mode": "fa", "unset_type": "off"}).parsable_form()
+    config["param_str"] += param.ParsedDict({"unset_state": "root", "unset_mode": "fa"}).parsable_form()
     unset(config, tag=tag)
     config["param_str"] = setup_str

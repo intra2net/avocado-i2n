@@ -369,6 +369,7 @@ class CartesianLoader(VirtTestLoader):
         """
         objects = sorted(graph.test_objects.keys())
         setup_dict = {"abort_on_error": "yes", "set_state_on_error": "",
+                      "skip_image_processing": "yes",
                       "vms": " ".join(objects),
                       "main_vm": objects[0]}
         setup_str = param.ParsedDict(setup_dict).parsable_form() + param_str
@@ -396,7 +397,7 @@ class CartesianLoader(VirtTestLoader):
         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
         test_object = objects[0]
-        setup_dict = {"set_state": "root", "set_type": "off",
+        setup_dict = {"set_state": "root",
                       "vm_action": "set", "skip_image_processing": "yes"}
         setup_str = param.re_str("nonleaves..0root", param_str)
         config = test_object.config.get_copy()
