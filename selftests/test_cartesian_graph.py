@@ -119,7 +119,7 @@ class CartesianGraphTest(unittest.TestCase):
         graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.0root.vm1", "vms": "^vm1$", "set_state": "^root$"},
             {"shortname": "^internal.stateless.0preinstall.vm1", "vms": "^vm1$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
@@ -153,7 +153,7 @@ class CartesianGraphTest(unittest.TestCase):
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.0root.vm1", "vms": "^vm1$", "set_state": "^root$"},
             {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
@@ -169,14 +169,14 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1 vm2$"},
 
-            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.0root.vm1", "vms": "^vm1$", "set_state": "^root$"},
             {"shortname": "^internal.stateless.0preinstall.vm1", "vms": "^vm1$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.permanent.connect.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.ephemeral.on_connect.vm1", "vms": "^vm1$"},
 
-            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "set_state": "^root$"},
+            {"shortname": "^internal.stateless.0root.vm2", "vms": "^vm2$", "set_state": "^root$"},
             {"shortname": "^internal.stateless.0preinstall.vm2", "vms": "^vm2$"},
             {"shortname": "^original.unattended_install.cdrom.in_cdrom_ks.default_install.aio_threads.vm2", "vms": "^vm2$"},
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},

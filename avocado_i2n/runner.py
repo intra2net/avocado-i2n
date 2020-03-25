@@ -229,15 +229,8 @@ class CartesianRunner(TestRunner):
                                    subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
         assert len(nodes) == 1, "There can only be one root for %s" % object_name
         test_node = nodes[0]
-        setup_str = param.re_str("nonleaves..manage.unchanged", param_str, tag)
-        setup_dict = {"vm_action": "set", "skip_image_processing": "yes"}
-        # implementation of object creation needs a separate parser
-        create_config = test_object.config.get_copy()
-        create_config.parse_next_batch(base_file="sets.cfg",
-                                       ovrwrt_file=param.tests_ovrwrt_file(),
-                                       ovrwrt_str=setup_str,
-                                       ovrwrt_dict=setup_dict)
-        self.run_test_node(TestNode(test_node.name, create_config, test_node.objects))
+
+        self.run_test_node(test_node)
 
     def run_install_node(self, graph, object_name, param_str, tag=""):
         """
@@ -303,20 +296,16 @@ class CartesianRunner(TestRunner):
                                   test_node.params["shortname"], test_object.name, test_object.current_state)
                     test_node.should_run = True
                     break
-
         if test_node.should_run:
+
+            # the primary setup nodes need special treatment
             if test_node.is_scan_node():
                 logging.debug("Test run started from the shared root")
                 self.run_scan_node(graph, param_str)
-
-            # the primary setup nodes need special treatment
-            elif test_node.is_install_node() or test_node.is_create_node():
-                setup_str = param_str
-                if test_node.is_create_node():
-                    setup_str += param.ParsedDict({"set_state": "root", "set_type": "off"}).parsable_form()
-                    self.run_create_node(graph, test_node.params.get("vms", ""), setup_str)
-                elif test_node.is_install_node():
-                    self.run_install_node(graph, test_node.params.get("vms", ""), setup_str)
+            elif test_node.is_create_node():
+                self.run_create_node(graph, test_node.params.get("vms", ""), param_str)
+            elif test_node.is_install_node():
+                self.run_install_node(graph, test_node.params.get("vms", ""), param_str)
 
             # re-runnable tests need unique variant names
             elif test_node.is_ephemeral():
