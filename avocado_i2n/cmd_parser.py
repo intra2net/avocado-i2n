@@ -177,7 +177,7 @@ def env_process_hooks():
         return wrapper
     def off_state(fn):
         def wrapper(test, params, env):
-            params["skip_types"] = "on ramdisk"
+            params["skip_types"] = "on"
             fn(params, env)
             del params["skip_types"]
         return wrapper
