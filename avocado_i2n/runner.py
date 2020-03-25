@@ -246,20 +246,18 @@ class CartesianRunner(TestRunner):
         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
         test_object = objects[0]
-        nodes = graph.get_nodes_by("name", "(\.|^)(install|unattended_install)(\.|$)",
+        nodes = graph.get_nodes_by("name", "(\.|^)0preinstall(\.|$)",
                                    subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
         assert len(nodes) == 1, "There can only be one root for %s" % object_name
         test_node = nodes[0]
 
         logging.info("Configuring installation for %s", test_object.name)
-        install_config = test_object.config.get_copy()
-        install_config.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file(),
-                                        ovrwrt_str=param.re_str("nonleaves..0preinstall", param_str, tag))
-        # some parameters from the install configuration have to be used for decision about install tests
-        install_params = install_config.get_params()
-        status = self.run_test_node(TestNode("0p", install_config, test_node.objects))
+        # parameters and the status from the install configuration determine the install test
+        install_params = test_node.params.copy()
+        test_node.params.update({"set_state": "", "set_type": "", "skip_image_processing": "yes"})
+        status = self.run_test_node(test_node)
 
+        # TODO: status is broken and is always true
         if status:
             logging.info("Installing virtual machine %s", test_object.name)
             if install_params.get("configure_install", "stepmaker") == "unattended_install":
@@ -275,6 +273,7 @@ class CartesianRunner(TestRunner):
             else:
                 ovrwrt_dict = {"type": install_params.get("configure_install", "stepmaker")}
                 ovrwrt_str = param.re_str("nonleaves..install", param_str, tag)
+            ovrwrt_dict.update({"set_state": "install", "set_type": "off", "skip_image_processing": "no"})
             install_config = test_object.config.get_copy()
             install_config.parse_next_batch(base_file="sets.cfg",
                                             ovrwrt_file=param.tests_ovrwrt_file(),

@@ -110,7 +110,7 @@ class TestNode(object):
 
     def is_install_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return len(self.objects) == 1 and self.params.get("set_state") == "install"
+        return self.name == "0p" and len(self.objects) == 1
 
     def is_shared_root(self):
         """Check if the test node is the root of all test nodes for all test objects."""
