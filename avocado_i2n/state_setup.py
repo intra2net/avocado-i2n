@@ -35,6 +35,7 @@ import glob
 from avocado.core import exceptions
 from avocado.utils import process
 from avocado.utils import lv_utils
+from virttest import env_process
 
 
 class StateBackend():
@@ -105,6 +106,32 @@ class StateBackend():
         raise NotImplementedError("Cannot use abstract state backend")
 
     @staticmethod
+    def check_root(params, object=None):
+        """
+        Check whether a root state or essentially the object exists.
+
+        :param params: configuration parameters
+        :type params: {str, str}
+        :param object: object whose states are manipulated
+        :type object: VM object or None
+        :returns: whether the object (root state) is exists
+        :rtype: bool
+        """
+        vm_name = params["vms"]
+        check_opts = params.get_dict("check_opts")
+        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
+        logging.debug("Checking whether %s exists (root state requested)", vm_name)
+        image_format = params.get("image_format", "qcow2")
+        logging.debug("Checking using %s image", image_format)
+        image_format = "" if image_format == "raw" else "." + image_format
+        condition = os.path.exists(params["image_name"] + image_format)
+        if condition and print_pos:
+            logging.info("The required virtual machine %s exists", vm_name)
+        if not condition and print_neg:
+            logging.info("The required virtual machine %s doesn't exist", vm_name)
+        return condition
+
+    @staticmethod
     def get_root(params, object=None):
         """
         Get a root state or essentially due to pre-existence do nothing.
@@ -114,7 +141,7 @@ class StateBackend():
         :param object: object whose states are manipulated
         :type object: VM object or None
         """
-        raise NotImplementedError("Cannot use abstract state backend")
+        pass
 
     @staticmethod
     def set_root(params, object=None):
@@ -126,7 +153,11 @@ class StateBackend():
         :param object: object whose states are manipulated
         :type object: VM object or None
         """
-        raise NotImplementedError("Cannot use abstract state backend")
+        vm_name = params["vms"]
+        image_name = params["image_name"]
+        logging.info("Creating image for %s", vm_name)
+        params.update({"create_image": "yes", "force_create_image": "yes"})
+        env_process.preprocess_image(None, params, image_name)
 
     @staticmethod
     def unset_root(params, object=None):
@@ -138,7 +169,11 @@ class StateBackend():
         :param object: object whose states are manipulated
         :type object: VM object or None
         """
-        raise NotImplementedError("Cannot use abstract state backend")
+        vm_name = params["vms"]
+        image_name = params["image_name"]
+        logging.info("Removing image for %s", vm_name)
+        params.update({"remove_image": "yes"})
+        env_process.postprocess_image(None, params, image_name)
 
 
 class LVMBackend(StateBackend):
@@ -164,37 +199,13 @@ class LVMBackend(StateBackend):
         check_opts = params.get_dict("check_opts")
         print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
         params["lv_snapshot_name"] = params["check_state"]
-        if params["check_state"] in ROOTS:
-            logging.debug("Checking whether %s exists (root off state requested)", vm_name)
-            if params.get("image_format", "qcow2") != "raw":
-                logging.debug("Checking using %s image", params.get("image_format", "qcow2"))
-                condition = os.path.exists("%s.%s" % (params["image_name"],
-                                                      params.get("image_format", "qcow2")))
-            else:
-                logging.debug("Checking using raw image")
-                condition = os.path.exists(params["image_name"])
-            if not condition and params.get("vg_name") is not None:
-                condition = lv_utils.lv_check(params["vg_name"], params["lv_name"])
-            if not condition:
-                if print_neg:
-                    logging.info("The required virtual machine %s doesn't exist", vm_name)
-                return False
-            else:
-                if print_pos:
-                    logging.info("The required virtual machine %s exists", vm_name)
-                return True
-        else:
-            logging.debug("Checking %s for off state '%s'", vm_name, params["check_state"])
-            if not lv_utils.lv_check(params["vg_name"], params["lv_snapshot_name"]):
-                if print_neg:
-                    logging.info("Off snapshot '%s' of %s doesn't exist",
-                                 params["check_state"], vm_name)
-                return False
-            else:
-                if print_pos:
-                    logging.info("Off snapshot '%s' of %s exists",
-                                 params["check_state"], vm_name)
-                return True
+        logging.debug("Checking %s for off state '%s'", vm_name, params["check_state"])
+        condition = lv_utils.lv_check(params["vg_name"], params["lv_snapshot_name"])
+        if condition and print_pos:
+            logging.info("Off snapshot '%s' of %s exists", params["check_state"], vm_name)
+        if not condition and print_neg:
+            logging.info("Off snapshot '%s' of %s doesn't exist", params["check_state"], vm_name)
+        return condition
 
     @staticmethod
     def get(params, object=None):
@@ -261,53 +272,36 @@ class LVMBackend(StateBackend):
         lv_utils.lv_remove(params["vg_name"], params["lv_snapshot_name"])
 
     @staticmethod
-    def get_root(params, object=None):
+    def check_root(params, object=None):
         """
-        Get a root state or essentially due to pre-existence do nothing.
+        Check whether a root state or essentially the object exists.
 
         All arguments match the base class.
         """
-        pass
+        vm_name = params["vms"]
+        check_opts = params.get_dict("check_opts")
+        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
+        logging.debug("Checking whether %s exists (root off state requested)", vm_name)
+        condition = lv_utils.lv_check(params["vg_name"], params["lv_name"])
+        if condition and print_pos:
+            logging.info("The required virtual machine %s exists", vm_name)
+        if not condition and print_neg:
+            logging.info("The required virtual machine %s doesn't exist", vm_name)
+        return condition
 
     @staticmethod
     def set_root(params, object=None):
         """
         Set a root state to provide object existence.
 
-        All arguments match the base class and in addition:
-
-        :raises: :py:class:`exceptions.TestError` if the root state already exists
+        All arguments match the base class.
 
         Create a ramdisk, virtual group, thin pool and logical volume
         for each object (all off).
         """
         vm_name = params["vms"]
-
-        if lv_utils.vg_check(params["vg_name"]):
-            if params.get("force_create", "no") == "yes":
-                logging.info("Removing the previously created %s", vm_name)
-                if params.get("image_raw_device", "yes") == "no":
-                    mount_loc = os.path.dirname(params["image_name"])
-                    # mount to avoid not-mounted errors
-                    try:
-                        lv_utils.lv_mount(params["vg_name"],
-                                          params["lv_pointer_name"],
-                                          mount_loc)
-                    except lv_utils.LVException:
-                        pass
-                    lv_utils.lv_umount(params["vg_name"],
-                                       params["lv_pointer_name"])
-                logging.debug("Removing previous volume group of %s", vm_name)
-                lv_utils.vg_ramdisk_cleanup(params["ramdisk_sparse_filename"],
-                                            os.path.join(params["ramdisk_basedir"],
-                                                         params["vg_name"]),
-                                            params["vg_name"],
-                                            None,
-                                            params["use_tmpfs"] == "yes")
-            else:
-                raise exceptions.TestError("The root state of %s already exists" % vm_name)
-
-        logging.info("Preparing original logical volume for %s", vm_name)
+        image_name = params["image_name"]
+        logging.info("Creating original logical volume for %s", vm_name)
         lv_utils.vg_ramdisk(None,
                             params["vg_name"],
                             params["ramdisk_vg_size"],
@@ -325,27 +319,31 @@ class LVMBackend(StateBackend):
                                   params["lv_name"],
                                   params["lv_pointer_name"])
         if params.get("image_raw_device", "yes") == "no":
-            mount_loc = os.path.dirname(params["image_name"])
+            mount_loc = os.path.dirname(image_name)
             if not os.path.exists(mount_loc):
                 os.mkdir(mount_loc)
             lv_utils.lv_mount(params["vg_name"], params["lv_pointer_name"],
                               mount_loc, create_filesystem="ext4")
+            super(LVMBackend, LVMBackend).set_root(params, object)
 
     @staticmethod
     def unset_root(params, object=None):
         """
         Unset a root state to prevent object existence.
 
-        All arguments match the base class.
+        All arguments match the base class and in addition:
+
+        :raises: :py:class:`exceptions.TestWarn` if permanent vm was detected
 
         Remove the ramdisk, virtual group, thin pool and logical volume
         of each object (all off).
         """
         vm_name = params["vms"]
-        logging.info("Removing vm %s with its images", vm_name)
+        image_name = params["image_name"]
+        logging.info("Removing original logical volume for %s", vm_name)
         try:
             if params.get("image_raw_device", "yes") == "no":
-                mount_loc = os.path.dirname(params["image_name"])
+                mount_loc = os.path.dirname(image_name)
                 if lv_utils.vg_check(params["vg_name"]):
                     # mount to avoid not-mounted errors
                     try:
@@ -474,33 +472,20 @@ class QCOW2Backend(StateBackend):
         vm.resume(timeout=3)
 
     @staticmethod
-    def get_root(params, object=None):
+    def check_root(params, object=None):
         """
-        Get a root state or essentially due to pre-existence do nothing.
+        Check whether a root state or essentially the object exists.
 
-        All arguments match the base class.
-        """
-        pass
+        All arguments match the base class and in addition:
 
-    @staticmethod
-    def set_root(params, object=None):
+        :raises: :py:class:`ValueError` if the used image format is either
+                 unspecified or not the required QCOW2
         """
-        Set a root state to provide object existence.
-
-        All arguments match the base class.
-        """
-        vm, vm_name = object, params["vms"]
-        params.update({"create_image": "yes", "skip_image_processing": "no"})
-
-    @staticmethod
-    def unset_root(params, object=None):
-        """
-        Unset a root state to prevent object existence.
-
-        All arguments match the base class.
-        """
-        vm, vm_name = object, params["vms"]
-        params.update({"remove_image": "yes", "skip_image_processing": "no"})
+        if params.get("image_format") is None:
+            raise ValueError("Unspecified image format - must be qcow2")
+        if params["image_format"] != "qcow2":
+            raise ValueError("Incompatible image format %s - must be qcow2" % params["image_format"])
+        return super(QCOW2Backend, QCOW2Backend).check_root(params, object)
 
 
 class RamfileBackend(StateBackend):
@@ -536,16 +521,12 @@ class RamfileBackend(StateBackend):
         state_dir = os.path.dirname(state_dir)
         state_file = os.path.join(state_dir, params["check_state"])
         state_file = "%s.state" % state_file
-        if not os.path.exists(state_file):
-            if print_neg:
-                logging.info("Ramfile snapshot '%s' of %s doesn't exist",
-                             params["check_state"], vm_name)
-            return False
-        else:
-            if print_pos:
-                logging.info("Ramfile snapshot '%s' of %s exists",
-                             params["check_state"], vm_name)
-            return True
+        condition = os.path.exists(state_file)
+        if condition and print_pos:
+            logging.info("Ramfile snapshot '%s' of %s exists", params["check_state"], vm_name)
+        if not condition and print_neg:
+            logging.info("Ramfile snapshot '%s' of %s doesn't exist", params["check_state"], vm_name)
+        return condition
 
     @staticmethod
     def get(params, object=None):
@@ -602,35 +583,6 @@ class RamfileBackend(StateBackend):
         os.unlink(state_file)
         vm.resume(timeout=3)
 
-    @staticmethod
-    def get_root(params, object=None):
-        """
-        Get a root state or essentially due to pre-existence do nothing.
-
-        All arguments match the base class.
-        """
-        pass
-
-    @staticmethod
-    def set_root(params, object=None):
-        """
-        Set a root state to provide object existence.
-
-        All arguments match the base class.
-        """
-        vm, vm_name = object, params["vms"]
-        params.update({"create_image": "yes", "skip_image_processing": "no"})
-
-    @staticmethod
-    def unset_root(params, object=None):
-        """
-        Unset a root state to prevent object existence.
-
-        All arguments match the base class.
-        """
-        vm, vm_name = object, params["vms"]
-        params.update({"remove_image": "yes", "skip_image_processing": "no"})
-
 
 #: off state implementation to use
 off = LVMBackend
@@ -662,7 +614,9 @@ def enforce_check(vm_params, vm=None):
     vm_params["check_opts"] = vm_params.get("check_opts", "print_pos=no print_neg=no")
     check_opts = vm_params.get_dict("check_opts")
     print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
-    if vm_params.get("check_state", "boot") in BOOTS:
+    if vm_params["check_state"] in ROOTS:
+        return backend.check_root(vm_params, vm)
+    elif vm_params["check_state"] in BOOTS:
         vm_name = vm_params["vms"]
         logging.debug("Checking whether %s is on (boot state requested)", vm_name)
         try:

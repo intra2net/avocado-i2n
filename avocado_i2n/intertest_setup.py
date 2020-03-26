@@ -231,7 +231,6 @@ def full(config, tag=""):
             continue
 
         # overwrite any existing test objects
-        vm_params["force_create"] = "yes"
         create_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("state", "customize")),
                                             {vm_name: config["vm_strs"][vm_name]},
                                             prefix=tag, object_names=vm_name, objectless=True)
@@ -240,8 +239,7 @@ def full(config, tag=""):
 
         # NOTE: this makes sure that any present states are overwritten and no created
         # states are removed, skipping any state restoring for better performance
-        setup_str = config["param_str"] + param.ParsedDict({"force_create": "yes", "get_mode": "ia",
-                                                          "set_mode": "ff", "unset_mode": "ra"}).parsable_form()
+        setup_str = config["param_str"] + param.ParsedDict({"get_mode": "ia", "set_mode": "ff", "unset_mode": "ra"}).parsable_form()
         r.run_traversal(create_graph, setup_str)
 
     LOG_UI.info("Finished full setup")
