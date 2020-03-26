@@ -242,8 +242,9 @@ class TestGraph(object):
                 object_params["vms"] = object_name
                 object_params["check_state"] = object_state
                 object_params["check_type"] = object_params.get("set_type", "on")
-                is_state_detected = state_setup.check_state(object_params, env,
-                                                            print_pos=True, print_neg=True)
+                object_params["check_opts"] = object_params.get("check_opts",
+                                                                "print_pos=yes print_neg=yes")
+                is_state_detected = state_setup.check_state(object_params, env)
                 # the object state has to be defined to reach this stage
                 if is_state_detected:
                     test_node.should_run = False

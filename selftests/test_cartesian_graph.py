@@ -45,7 +45,7 @@ class DummyStateCheck(object):
 
     present_states = []
 
-    def __init__(self, params, env, print_pos=True, print_neg=True):
+    def __init__(self, params, env):
         if params.get("check_state") in self.present_states:
             self.result = True
         else:
@@ -56,8 +56,8 @@ def mock_run_test_node(_self, node):
     return DummyTestRunning(node).result()
 
 
-def mock_check_state(params, env, print_pos=True, print_neg=True):
-    return DummyStateCheck(params, env, print_pos=True, print_neg=True).result
+def mock_check_state(params, env):
+    return DummyStateCheck(params, env).result
 
 
 @mock.patch('avocado_i2n.cartgraph.graph.state_setup.check_state', mock_check_state)

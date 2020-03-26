@@ -63,6 +63,8 @@ class StateBackend():
         :type params: {str, str}
         :param object: object whose states are manipulated
         :type object: VM object or None
+        :returns: whether the state is exists
+        :rtype: bool
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
@@ -159,6 +161,8 @@ class LVMBackend(StateBackend):
         All arguments match the base class.
         """
         vm_name = params["vms"]
+        check_opts = params.get_dict("check_opts")
+        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
         params["lv_snapshot_name"] = params["check_state"]
         if params["check_state"] in ROOTS:
             logging.debug("Checking whether %s exists (root off state requested)", vm_name)
@@ -400,9 +404,9 @@ class QCOW2Backend(StateBackend):
         All arguments match the base class.
         """
         vm_name = params["vms"]
-        logging.debug("Checking %s for on state '%s'",
-                      vm_name, params["check_state"])
-
+        check_opts = params.get_dict("check_opts")
+        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
+        logging.debug("Checking %s for on state '%s'", vm_name, params["check_state"])
         vm_image = "%s.%s" % (params["image_name"],
                               params.get("image_format", "qcow2"))
         if not os.path.exists(vm_image):
@@ -526,6 +530,8 @@ class RamfileBackend(StateBackend):
         All arguments match the base class.
         """
         vm, vm_name = object, params["vms"]
+        check_opts = params.get_dict("check_opts")
+        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
         state_dir = params.get("image_name", "")
         state_dir = os.path.dirname(state_dir)
         state_file = os.path.join(state_dir, params["check_state"])
@@ -641,7 +647,7 @@ BOOTS = ['boot', '0boot']
 QEMU_STATES_REGEX = re.compile("\d+\s+([a-zA-Z_\.]+)\s*([\w\. ]+)\s+\d{4}-\d\d-\d\d")
 
 
-def enforce_check(vm_params, vm=None, print_pos=False, print_neg=False):
+def enforce_check(vm_params, vm=None):
     """
     Check for an on/off state of a vm object without any policy conditions.
 
@@ -649,8 +655,13 @@ def enforce_check(vm_params, vm=None, print_pos=False, print_neg=False):
     :type vm_params: {str, str}
     :param vm: object whose states are manipulated
     :type vm: VM object or None
+    :returns: whether the state is exists
+    :rtype: bool
     """
     backend = off if vm_params["check_type"] == "off" else on
+    vm_params["check_opts"] = vm_params.get("check_opts", "print_pos=no print_neg=no")
+    check_opts = vm_params.get_dict("check_opts")
+    print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
     if vm_params.get("check_state", "boot") in BOOTS:
         vm_name = vm_params["vms"]
         logging.debug("Checking whether %s is on (boot state requested)", vm_name)
@@ -664,7 +675,7 @@ def enforce_check(vm_params, vm=None, print_pos=False, print_neg=False):
             logging.info("The required virtual machine %s is off", vm_name)
         return state_exists
     else:
-        backend.check(vm_params, vm)
+        return backend.check(vm_params, vm)
 
 
 def enforce_get(vm_params, vm=None):
@@ -752,8 +763,7 @@ def show_states(run_params, env):
     return states
 
 
-def check_state(run_params, env,
-                print_pos=False, print_neg=False):
+def check_state(run_params, env):
     """
     Check whether a given state exits.
 
@@ -761,8 +771,6 @@ def check_state(run_params, env,
     :type run_params: {str, str}
     :param env: test environment
     :type env: Env object
-    :param bool print_pos: whether to print that the state was found
-    :param bool print_neg: whether to print that the state wasn't found
     :returns: whether the given state exists
     :rtype: bool
 
@@ -782,21 +790,22 @@ def check_state(run_params, env,
             continue
         # NOTE: there is no concept of "check_mode" here
         vm_params["check_type"] = vm_params.get("check_type", "any")
+        vm_params["check_opts"] = vm_params.get("check_opts", "print_pos=no print_neg=no")
 
         vm_params["vms"] = vm_name
         run_params["found_type_%s" % vm_name] = vm_params["check_type"]
         if vm_params["check_type"] == "any":
             vm_params["check_type"] = "on"
             run_params["found_type_%s" % vm_name] = "on"
-            if not enforce_check(vm_params, vm, print_pos=print_pos, print_neg=print_neg):
+            if not enforce_check(vm_params, vm):
                 vm_params["check_type"] = "off"
                 run_params["found_type_%s" % vm_name] = "off"
-                if not enforce_check(vm_params, vm, print_pos=print_pos, print_neg=print_neg):
+                if not enforce_check(vm_params, vm):
                     # default type to treat in case of no result
                     run_params["found_type_%s" % vm_name] = "on"
                     exists = False
                     break
-        elif not enforce_check(vm_params, vm, print_pos=print_pos, print_neg=print_neg):
+        elif not enforce_check(vm_params, vm):
             exists = False
             break
 
@@ -827,7 +836,8 @@ def get_state(run_params, env):
         vm_params["vms"] = vm_name
         vm_params["check_type"] = vm_params["get_type"]
         vm_params["check_state"] = vm_params["get_state"]
-        state_exists = check_state(vm_params, env, print_neg=True)
+        vm_params["check_opts"] = "print_pos=no print_neg=yes"
+        state_exists = check_state(vm_params, env)
         # if too many or no matches default to most performant type
         vm_params["get_type"] = vm_params["found_type_%s" % vm_name]
         if state_exists:
@@ -964,7 +974,8 @@ def unset_state(run_params, env):
         vm_params["vms"] = vm_name
         vm_params["check_type"] = vm_params["unset_type"]
         vm_params["check_state"] = vm_params["unset_state"]
-        state_exists = check_state(vm_params, env, print_neg=True)
+        vm_params["check_opts"] = "print_pos=no print_neg=yes"
+        state_exists = check_state(vm_params, env)
         # if too many or no matches default to most performant type
         vm_params["unset_type"] = vm_params["found_type_%s" % vm_name]
         # NOTE: no custom handling needed here
