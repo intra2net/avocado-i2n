@@ -206,9 +206,11 @@ class CartesianRunner(TestRunner):
         nodes = graph.get_nodes_by(param_key="name", param_val="(\.|^)0scan(\.|^)")
         assert len(nodes) == 1, "There can only be one shared root"
         test_node = nodes[0]
-        self.run_test_node(test_node)
+        status = self.run_test_node(test_node)
 
-        graph.load_setup_list(self.job.logdir)
+        # TODO: status is broken and is always true
+        if status:
+            graph.load_setup_list(self.job.logdir)
         for node in graph.nodes:
             self.result.cancelled += 1 if not node.should_run else 0
 
@@ -231,7 +233,8 @@ class CartesianRunner(TestRunner):
         test_node = nodes[0]
 
         if test_object.is_permanent():
-            logging.info("Reached a permanent object root for %s", test_object.name)
+            raise AssertionError("Reached a permanent object root for %s due to incorrect setup"
+                                 % test_object.name)
         else:
             self.run_test_node(test_node)
 

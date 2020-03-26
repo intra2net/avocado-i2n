@@ -193,6 +193,7 @@ class TestGraph(object):
 
         :param env: environment related to the test
         :type env: Env object
+        :raises: :py:class:`AssertionError` if a permanent (manual) vms doesn't exist
         """
         for test_node in self.nodes:
             test_node.should_run = True
@@ -238,6 +239,10 @@ class TestGraph(object):
                 # the object state has to be defined to reach this stage
                 if is_state_detected:
                     test_node.should_run = False
+                elif object_state == "root" and test_object.is_permanent():
+                    # abort traversal
+                    self.flag_children(flag=False)
+                    raise AssertionError("Missing permanent vm %s" % object_name)
 
     def flag_children(self, state_name=None, object_name=None, flag_type="run", flag=True,
                       skip_roots=False):
