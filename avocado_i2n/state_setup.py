@@ -578,7 +578,7 @@ class RamfileBackend(StateBackend):
         vm.pause()
         state_dir = params.get("image_name", "")
         state_dir = os.path.dirname(state_dir)
-        state_file = os.path.join(state_dir, params["set_state"])
+        state_file = os.path.join(state_dir, params["unset_state"])
         state_file = "%s.state" % state_file
         os.unlink(state_file)
         vm.resume(timeout=3)
@@ -820,7 +820,7 @@ def get_state(run_params, env):
             raise exceptions.TestSkipError("Snapshot '%s' of %s doesn't exist. Aborting "
                                            "due to passive mode." % (vm_params["get_state"], vm_name))
         elif not state_exists and "i" == action_if_doesnt_exist:
-            logging.warn("Ignoring missing snapshot for setup")
+            logging.warning("Ignoring missing snapshot for setup")
         elif not state_exists:
             raise exceptions.TestError("Invalid policy %s: The start action on missing state can be "
                                        "either of 'abort', 'ignore'." % vm_params["get_mode"])
@@ -831,7 +831,7 @@ def get_state(run_params, env):
         elif state_exists and "r" == action_if_exists:
             enforce_get(vm_params, vm)
         elif state_exists and "i" == action_if_exists:
-            logging.warn("Ignoring present snapshot for setup")
+            logging.warning("Ignoring present snapshot for setup")
         elif state_exists:
             raise exceptions.TestError("Invalid policy %s: The start action on present state can be "
                                        "either of 'abort', 'reuse', 'ignore'." % vm_params["get_mode"])
@@ -941,7 +941,7 @@ def unset_state(run_params, env):
             raise exceptions.TestSkipError("Snapshot '%s' of %s doesn't exist. Aborting "
                                            "due to passive mode." % (vm_params["unset_state"], vm_name))
         elif not state_exists and "i" == action_if_doesnt_exist:
-            logging.warn("Ignoring missing snapshot for final cleanup (will not be removed)")
+            logging.warning("Ignoring missing snapshot for final cleanup (will not be removed)")
         elif not state_exists:
             raise exceptions.TestError("Invalid policy %s: The unset action on missing state can be "
                                        "either of 'abort', 'ignore'." % vm_params["unset_mode"])

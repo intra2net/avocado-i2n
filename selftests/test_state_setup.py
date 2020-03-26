@@ -37,6 +37,9 @@ class StateSetupTest(unittest.TestCase):
 
         self.exist_switch = True
 
+        state_setup.off = state_setup.LVMBackend
+        state_setup.on = state_setup.QCOW2Backend
+
     def _get_mock_vm(self, vm_name):
         return self.mock_vms[vm_name]
 
@@ -47,11 +50,7 @@ class StateSetupTest(unittest.TestCase):
             self.mock_vms[vm_name].params = self.run_params.object_params(vm_name)
 
     def _file_exists(self, filepath):
-        # ignore ramdisk states which are too prone to errors
-        if filepath.endswith(".state"):
-            return False
-        else:
-            return self.exist_switch
+        return self.exist_switch
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
     def test_show_states_off(self, mock_lv_utils):
@@ -82,7 +81,7 @@ class StateSetupTest(unittest.TestCase):
         states = state_setup.show_states(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
 
-        self.assertEquals(len(states), 0)
+        self.assertEqual(len(states), 0)
 
         mock_process.reset_mock()
         mock_process.system_output.return_value = (b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
@@ -90,10 +89,37 @@ class StateSetupTest(unittest.TestCase):
         states = state_setup.show_states(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
  
-        self.assertEquals(len(states), 2)
+        self.assertEqual(len(states), 2)
         self.assertIn("launch", states)
         self.assertIn("with.dot", states)
         self.assertNotIn("launch2", states)
+        self.assertNotIn("boot", states)
+
+    @mock.patch('avocado_i2n.state_setup.glob')
+    def test_show_states_on_ramfile(self, mock_glob):
+        self.run_params["vms"] = "vm1"
+        self.run_params["check_type_vm1"] = "on"
+        self.run_params["qemu_img_binary"] = "qemu-img"
+        self.run_params["image_name_vm1"] = "/vm1/image"
+        self._create_mock_vms()
+        state_setup.on = state_setup.RamfileBackend
+
+        mock_glob.reset_mock()
+        mock_glob.glob.return_value = []
+        states = state_setup.show_states(self.run_params, self.env)
+        mock_glob.glob.assert_called_once_with("/vm1/*.state")
+
+        self.assertEqual(len(states), 0)
+
+        mock_glob.reset_mock()
+        mock_glob.glob.return_value = ["/vm1/launch.state", "/vm1/with.dot.state"]
+        states = state_setup.show_states(self.run_params, self.env)
+        mock_glob.glob.assert_called_once_with("/vm1/*.state")
+
+        self.assertEqual(len(states), 2)
+        self.assertIn("/vm1/launch.state", states)
+        self.assertIn("/vm1/with.dot.state", states)
+        self.assertNotIn("/vm1/launch2", states)
         self.assertNotIn("boot", states)
 
     @mock.patch('avocado_i2n.state_setup.lv_utils')
@@ -135,6 +161,33 @@ class StateSetupTest(unittest.TestCase):
         mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
         exists = state_setup.check_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
+        self.assertTrue(exists)
+
+    @mock.patch('avocado_i2n.state_setup.os')
+    def test_check_on_ramfile(self, mock_os):
+        self.run_params["vms"] = "vm1"
+        self.run_params["check_state_vm1"] = "launch"
+        self.run_params["check_type_vm1"] = "on"
+        self.run_params["image_name_vm1"] = "/vm1/image"
+        self._create_mock_vms()
+        state_setup.on = state_setup.RamfileBackend
+
+        # restore some unmocked parts of the os module
+        mock_os.path.dirname = os.path.dirname
+        mock_os.path.join = os.path.join
+        # we cannot use the exist switch because we also want to assert calls
+        # mock_os.path.exists = self._file_exists
+
+        mock_os.reset_mock()
+        mock_os.path.exists.return_value = False
+        exists = state_setup.check_state(self.run_params, self.env)
+        mock_os.path.exists.assert_called_once_with("/vm1/launch.state")
+        self.assertFalse(exists)
+
+        mock_os.reset_mock()
+        mock_os.path.exists.return_value = True
+        exists = state_setup.check_state(self.run_params, self.env)
+        mock_os.path.exists.assert_called_once_with("/vm1/launch.state")
         self.assertTrue(exists)
 
     @mock.patch('avocado_i2n.state_setup.process')
@@ -342,6 +395,27 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm2"].is_alive.assert_called_once_with()
         self.mock_vms["vm2"].loadvm.assert_called_once_with('launch')
 
+    @mock.patch('avocado_i2n.state_setup.os')
+    def test_get_on_ramfile(self, mock_os):
+        self.run_params["vms"] = "vm2"
+        self.run_params["get_state_vm2"] = "launch"
+        self.run_params["get_type_vm2"] = "on"
+        self.run_params["get_mode_vm2"] = "rx"
+        self.run_params["image_name_vm2"] = "/vm2/image"
+        self._create_mock_vms()
+        state_setup.on = state_setup.RamfileBackend
+
+        # restore some unmocked parts of the os module
+        mock_os.path.dirname = os.path.dirname
+        mock_os.path.join = os.path.join
+        # we cannot use the exist switch because we also want to assert calls
+        # mock_os.path.exists = self._file_exists
+
+        mock_os.reset_mock()
+        mock_os.path.exists.return_value = True
+        state_setup.get_state(self.run_params, self.env)
+        self.mock_vms["vm2"].restore_from_file.assert_called_once_with("/vm2/launch.state")
+
     @mock.patch('avocado_i2n.state_setup.process')
     @mock.patch('avocado_i2n.state_setup.lv_utils')
     def test_get_any_all_rx(self, mock_lv_utils, mock_process):
@@ -530,6 +604,28 @@ class StateSetupTest(unittest.TestCase):
         state_setup.set_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm4/image.qcow2 -U")
         self.mock_vms["vm4"].savevm.assert_called_once_with('launch')
+
+    @mock.patch('avocado_i2n.state_setup.os')
+    def test_set_on_ramfile(self, mock_os):
+        self.run_params["vms"] = "vm4"
+        self.run_params["set_state_vm4"] = "launch"
+        self.run_params["set_type_vm4"] = "on"
+        self.run_params["set_mode_vm4"] = "ff"
+        self.run_params["skip_types"] = "off"
+        self.run_params["image_name_vm4"] = "/vm4/image"
+        self._create_mock_vms()
+        state_setup.on = state_setup.RamfileBackend
+
+        # restore some unmocked parts of the os module
+        mock_os.path.dirname = os.path.dirname
+        mock_os.path.join = os.path.join
+        # we cannot use the exist switch because we also want to assert calls
+        # mock_os.path.exists = self._file_exists
+
+        mock_os.reset_mock()
+        mock_os.path.exists.return_value = True
+        state_setup.set_state(self.run_params, self.env)
+        self.mock_vms["vm4"].save_to_file.assert_called_once_with("/vm4/launch.state")
 
     @mock.patch('avocado_i2n.state_setup.process')
     @mock.patch('avocado_i2n.state_setup.lv_utils')
@@ -733,6 +829,27 @@ class StateSetupTest(unittest.TestCase):
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm4/image.qcow2 -U")
         self.mock_vms["vm4"].monitor.send_args_cmd.assert_called_once_with("delvm id=launch")
 
+    @mock.patch('avocado_i2n.state_setup.os')
+    def test_unset_on_ramfile(self, mock_os):
+        self.run_params["vms"] = "vm4"
+        self.run_params["unset_state_vm4"] = "launch"
+        self.run_params["unset_type_vm4"] = "on"
+        self.run_params["unset_mode_vm4"] = "fi"
+        self.run_params["image_name_vm4"] = "/vm4/image"
+        self._create_mock_vms()
+        state_setup.on = state_setup.RamfileBackend
+
+        # restore some unmocked parts of the os module
+        mock_os.path.dirname = os.path.dirname
+        mock_os.path.join = os.path.join
+        # we cannot use the exist switch because we also want to assert calls
+        # mock_os.path.exists = self._file_exists
+
+        mock_os.reset_mock()
+        mock_os.path.exists.return_value = True
+        state_setup.unset_state(self.run_params, self.env)
+        mock_os.unlink.assert_called_once_with("/vm4/launch.state")
+
     @mock.patch('avocado_i2n.state_setup.process')
     @mock.patch('avocado_i2n.state_setup.lv_utils')
     def test_unset_any_all_fi(self, _mock_lv_utils, mock_process):
@@ -843,6 +960,25 @@ class StateSetupTest(unittest.TestCase):
         exists = state_setup.check_state(self.run_params, self.env)
         self.assertFalse(exists)
 
+    def test_check_root_on_ramfile(self):
+        self.run_params["vms"] = "vm1"
+        self.run_params["check_state_vm1"] = "root"
+        self.run_params["check_type_vm1"] = "on"
+        self.run_params["image_name_vm1"] = "/vm1/image"
+        self._create_mock_vms()
+        state_setup.on = state_setup.RamfileBackend
+
+        self.exist_switch = True
+        for image_format in ["qcow2", "raw", "something-else"]:
+            self.run_params["image_format"] = image_format
+            exists = state_setup.check_state(self.run_params, self.env)
+            self.assertTrue(exists)
+
+        self.exist_switch = False
+        self.run_params["image_format"] = "img"
+        exists = state_setup.check_state(self.run_params, self.env)
+        self.assertFalse(exists)
+
     def test_check_boot(self):
         self.run_params["vms"] = "vm1"
         self.run_params["check_state_vm1"] = "boot"
@@ -876,6 +1012,15 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["check_state_vm2"] = "root"
         self.run_params["check_type_vm2"] = "on"
         self._create_mock_vms()
+
+        state_setup.get_state(self.run_params, self.env)
+
+    def test_get_root_on_ramfile(self):
+        self.run_params["vms"] = "vm2"
+        self.run_params["check_state_vm2"] = "root"
+        self.run_params["check_type_vm2"] = "on"
+        self._create_mock_vms()
+        state_setup.on = state_setup.RamfileBackend
 
         state_setup.get_state(self.run_params, self.env)
 
@@ -936,6 +1081,17 @@ class StateSetupTest(unittest.TestCase):
 
         state_setup.set_state(self.run_params, self.env)
 
+    def test_set_root_on_ramfile(self):
+        self.run_params["vms"] = "vm2"
+        self.run_params["set_state_vm2"] = "root"
+        self.run_params["set_type_vm2"] = "on"
+        self.run_params["image_name_vm2"] = "/vm2/image"
+        self.run_params["image_format"] = "qcow2"
+        self._create_mock_vms()
+        state_setup.on = state_setup.RamfileBackend
+
+        state_setup.set_state(self.run_params, self.env)
+
     @mock.patch('avocado_i2n.state_setup.lv_utils')
     def test_unset_root_off(self, mock_lv_utils):
         self.run_params["vms"] = "vm3"
@@ -972,6 +1128,17 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["image_name_vm3"] = "/vm3/image"
         self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
+
+        state_setup.unset_state(self.run_params, self.env)
+
+    def test_unset_root_on_ramfile(self):
+        self.run_params["vms"] = "vm3"
+        self.run_params["unset_state_vm3"] = "root"
+        self.run_params["unset_type_vm3"] = "on"
+        self.run_params["image_name_vm3"] = "/vm3/image"
+        self.run_params["image_format"] = "qcow2"
+        self._create_mock_vms()
+        state_setup.on = state_setup.RamfileBackend
 
         state_setup.unset_state(self.run_params, self.env)
 
