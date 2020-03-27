@@ -73,7 +73,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.config = {}
         self.config["param_str"] = ""
         self.config["tests_str"] = "only all\n"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
 
         self.prefix = ""
         self.main_vm = ""
@@ -209,16 +209,14 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.permanent.connect.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.ephemeral.on_connect.vm1", "vms": "^vm1$"},
 
             {"shortname": "^internal.stateless.0root.vm2", "vms": "^vm2$"},
             {"shortname": "^internal.stateless.0preinstall.vm2", "vms": "^vm2$"},
             {"shortname": "^original.unattended_install.cdrom.in_cdrom_ks.default_install.aio_threads.vm2", "vms": "^vm2$"},
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
-            {"shortname": "^internal.ephemeral.on_customize.vm2", "vms": "^vm2$"},
             {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 13
+        DummyTestRunning.fail_switch = [False] * 11
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -230,11 +228,29 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1 vm2$"},
             {"shortname": "^internal.permanent.connect.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.ephemeral.on_connect.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.ephemeral.on_customize.vm2", "vms": "^vm2$"},
             {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 5
+        DummyTestRunning.fail_switch = [False] * 3
+        self.runner.run_traversal(graph, self.config["param_str"])
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
+    def test_with_permanent_object_and_switch(self):
+        self.config["tests_str"] += "only tutorial_get\n"
+        graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
+        DummyStateCheck.present_states = ["root"]
+        graph.scan_object_states(None)
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1 vm3$"},
+
+            {"shortname": "^internal.stateless.0preinstall.vm1", "vms": "^vm1$"},
+            {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.connect.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.stateless.manage.start.vm1", "vms": "^vm1$", "get_state": "^connect", "set_state": "^connect$", "get_type": "^off$", "set_type": "^on$"},
+
+            {"shortname": "^all.tutorial_get", "vms": "^vm1 vm3$"},
+        ]
+        DummyTestRunning.fail_switch = [False] * 7
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 

@@ -143,11 +143,11 @@ class IntertestSetupTest(unittest.TestCase):
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^on_customize$"},
             {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^linux_virtuser$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^on_connect$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^connect$"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^connect$", "unset_type": "^on"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^connect", "unset_type": "^off"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^windows_virtuser$"},
-            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^on_customize$"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^customize$"},
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
         ]
         intertest_setup.update(self.config, tag="0")
