@@ -317,6 +317,7 @@ class CartesianLoader(VirtTestLoader):
                 used_objects.append(test_object)
                 used_roots.append(object_roots[0])
         graph.objects[:] = used_objects
+        assert len(used_objects) > 0, "The parsed test nodes don't seem to use any vm objects"
         root_for_all = self.parse_scan_node(graph, param_str)
         for root_for_object in used_roots:
             root_for_object.setup_nodes.append(root_for_all)

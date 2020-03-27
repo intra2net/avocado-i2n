@@ -254,6 +254,19 @@ class CartesianGraphTest(unittest.TestCase):
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
+    def test_without_permanent_object(self):
+        self.config["tests_str"] += "only tutorial_get\n"
+        graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm)
+        DummyStateCheck.present_states = []
+        with self.assertRaises(AssertionError):
+            graph.scan_object_states(None)
+        graph.load_setup_list.side_effect = FileNotFoundError("scan failed")
+        DummyTestRunning.asserted_tests = [
+        ]
+        DummyTestRunning.fail_switch = [False] * 0
+        self.runner.run_traversal(graph, self.config["param_str"])
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
     def test_abort_run(self):
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_str"] += "abort_on_error=yes\n"

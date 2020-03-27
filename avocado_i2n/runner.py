@@ -83,7 +83,7 @@ class CartesianRunner(TestRunner):
         the number of internal test nodes is minimized for achieving this goal.
         """
         shared_roots = graph.get_nodes_by("name", "(\.|^)0scan(\.|^)")
-        assert len(shared_roots) == 1, "There can be only exactly one root node"
+        assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
         root = shared_roots[0]
 
         if logging.getLogger('graph').level <= logging.DEBUG:
@@ -210,7 +210,13 @@ class CartesianRunner(TestRunner):
 
         # TODO: status is broken and is always true
         if status:
-            graph.load_setup_list(self.job.logdir)
+            try:
+                graph.load_setup_list(self.job.logdir)
+            except FileNotFoundError as e:
+                logging.error("Could not parse scanned available setup, aborting as it "
+                              "might be dangerous to overwrite existing undetected such")
+                graph.flag_children(flag=False)
+
         for node in graph.nodes:
             self.result.cancelled += 1 if not node.should_run else 0
 
@@ -254,7 +260,7 @@ class CartesianRunner(TestRunner):
         test_object = objects[0]
         nodes = graph.get_nodes_by("name", "(\.|^)0preinstall(\.|$)",
                                    subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
-        assert len(nodes) == 1, "There can only be one root for %s" % object_name
+        assert len(nodes) == 1, "There can only be one install node for %s" % object_name
         test_node = nodes[0]
 
         logging.info("Configuring installation for %s", test_object.name)
