@@ -1,79 +1,57 @@
 language: python
 python:
-    - 3.4
-    - 3.5
-    - 3.6
-    - 3.7
-    - pypy3
+- 3.4
+- 3.5
+- 3.6
+- 3.7
+- pypy3
 env:
-    - INSTALL_VARIANT=pip
+- INSTALL_VARIANT=pip
 matrix:
   include:
-    # TODO: add RPM and DEB docker building and testing
-    #- python: 3.6
-    #  env: INSTALL_VARIANT=rpm
-    #- python: 3.6
-    #  env: INSTALL_VARIANT=deb
   allow_failures:
-    - python: pypy3
-
-services:
-  - docker
-# docker images are not cached by travis due to vm recreation for each build
+  - python: pypy3
 cache:
-  - pip
-
+- pip
 addons:
   apt:
     packages:
-      # virtual screen
-      - arping
-
+    - arping
 branches:
   except:
-    - master-experimental
-    - tp-i2n
-
+  - master-experimental
+  - tp-i2n
 sudo: true
-
-# install any dependencies and build package
 install:
-  # Clone-install Avocado
-  - pip install Sphinx==1.3b1
-  - pip install -r requirements_pip.txt
-  - git clone --depth 1 https://github.com/avocado-framework/aexpect.git aexpect-libs
-  - cd aexpect-libs
-  - pip install -e .
-  - cd ..
-  - git clone --depth 1 https://github.com/avocado-framework/avocado.git avocado-libs
-  - cd avocado-libs
-  - pip install -e .
-  - cd ..
-  # Clone-install Avocado-vt
-  - git clone --depth 1 https://github.com/avocado-framework/avocado-vt.git avocado-vt-libs
-  - cd avocado-vt-libs
-  - pip install -e .
-  - cd ..
-  - pip install -e .
-
+# Clone-install Avocado
+- pip install Sphinx==1.3b1
+- pip install -r requirements_pip.txt
+- git clone --depth 1 https://github.com/avocado-framework/aexpect.git aexpect-libs
+- cd aexpect-libs
+- pip install -e .
+- cd ..
+- git clone --depth 1 https://github.com/avocado-framework/avocado.git avocado-libs
+- cd avocado-libs
+- pip install -e .
+- cd ..
+# Clone-install Avocado-vt
+- git clone --depth 1 https://github.com/avocado-framework/avocado-vt.git avocado-vt-libs
+- cd avocado-vt-libs
+- pip install -e .
+- cd ..
+- pip install -e .
 before_script:
-  - sleep 3  # give some time to start
-  - if [[ $TRAVIS_PYTHON_VERSION != '3.4' ]]; then export EXTRA_PYTHON_VERSION=1; fi
-
-# run tests
+- sleep 3
+- if [[ $TRAVIS_PYTHON_VERSION != '3.4' ]]; then export EXTRA_PYTHON_VERSION=1; fi
 script:
-  - make check
-  - codecov
-  # Running will take too much time building the required vms but we can at least validate noop runs and the list of tests
-  - avocado vt-bootstrap --vt-skip-verify-download-assets --yes-to-all
-  - avocado manu setup=noop
-  - avocado list --loaders cartesian_graph -- "only=tutorial1"
-  # TODO: provide noop-like variant to avoid setting up vms
-  # - avocado run --auto --loaders cartesian_graph -- "only=tutorial1"
-  # Cleanup avocado(-vt) libs
-  - rm -rf avocado-vt-libs
-  - rm -rf avocado-libs
-
-# use this to disable email notifications (e.g. while testing configuration)
-#notifications:
-#email: false
+- make check
+- codecov
+# Running will take too much time building the required vms but we can at least validate noop runs and the list of tests
+- avocado vt-bootstrap --vt-skip-verify-download-assets --yes-to-all
+- avocado manu setup=noop
+- avocado list --loaders cartesian_graph -- "only=tutorial1"
+# TODO: provide noop-like variant to avoid setting up vms
+# - avocado run --auto --loaders cartesian_graph -- "only=tutorial1"
+# Cleanup avocado(-vt) libs
+- rm -rf avocado-vt-libs
+- rm -rf avocado-libs
