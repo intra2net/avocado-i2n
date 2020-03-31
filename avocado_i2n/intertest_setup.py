@@ -218,7 +218,6 @@ def full(config, tag=""):
     LOG_UI.info("Starting full setup for %s (%s)",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
 
-    clean(config, tag=tag + "mm")
     for vm_name in config["selected_vms"]:
         vm_params = config["vms_params"].object_params(vm_name)
         logging.info("Creating the full state '%s' of %s", vm_params.get("state", "customize"), vm_name)
