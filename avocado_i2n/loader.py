@@ -57,6 +57,27 @@ class CartesianLoader(VirtTestLoader):
         self.config = vars(self.args)
 
     """parsing functionality"""
+    def parse_node_from_object(self, test_object, setup_str, setup_dict, prefix=""):
+        """
+        Get the original install test node for the given object.
+
+        :param str object_name: name of the test object whose configuration is reused
+        :param str setup_str: string block of parameters to be used as overwrite string
+        :param setup_dict: extra parameters to be used as overwrite dictionary
+        :type setup_dict: {str, str}
+        :param str prefix: extra name identifier for the test to be run
+        :returns: parsed test node for the object
+        :rtype: :py:class:`TestNode`
+        """
+        config = test_object.config.get_copy()
+        config.parse_next_batch(base_file="sets.cfg",
+                                ovrwrt_file=param.tests_ovrwrt_file(),
+                                ovrwrt_str=setup_str,
+                                ovrwrt_dict=setup_dict)
+        test_node = TestNode(prefix, config, [test_object])
+        test_node.regenerate_params()
+        return test_node
+
     def parse_objects(self, object_strs=None, object_names="", verbose=False):
         """
         Parse all available test objects and their configurations or
@@ -393,7 +414,7 @@ class CartesianLoader(VirtTestLoader):
 
         :param graph: test graph to parse root node from
         :type graph: :py:class:`TestGraph`
-        :param str object_name: name of the test object whose configuration is reused if node if objectless
+        :param str object_name: name of the test object whose configuration is reused if node is objectless
         :param str param_str: block of command line parameters
         :param str prefix: extra name identifier for the test to be run
         :returns: parsed object root node
@@ -408,13 +429,7 @@ class CartesianLoader(VirtTestLoader):
         setup_dict = {"set_state": "root",
                       "vm_action": "set", "skip_image_processing": "yes"}
         setup_str = param.re_str("nonleaves..0root", param_str)
-        config = test_object.config.get_copy()
-        config.parse_next_batch(base_file="sets.cfg",
-                                ovrwrt_file=param.tests_ovrwrt_file(),
-                                ovrwrt_str=setup_str,
-                                ovrwrt_dict=setup_dict)
-        create_node = TestNode(prefix + "0r", config, [test_object])
-        create_node.regenerate_params()
+        create_node = self.parse_node_from_object(test_object, setup_str, setup_dict, prefix=prefix+"0r")
         logging.debug("Reached %s root %s", object_name, create_node.params["shortname"])
         return create_node
 
@@ -424,7 +439,7 @@ class CartesianLoader(VirtTestLoader):
 
         :param graph: test graph to parse root node from
         :type graph: :py:class:`TestGraph`
-        :param str object_name: name of the test object whose configuration is reused if node if objectless
+        :param str object_name: name of the test object whose configuration is reused if node is objectless
         :param str param_str: block of command line parameters
         :param str prefix: extra name identifier for the test to be run
         :returns: original parsed object install node
@@ -435,13 +450,7 @@ class CartesianLoader(VirtTestLoader):
         test_object = objects[0]
         setup_dict = {"get": "0root", "set_state": "install"}
         setup_str = param.re_str("nonleaves..0preinstall", param_str)
-        config = test_object.config.get_copy()
-        config.parse_next_batch(base_file="sets.cfg",
-                                ovrwrt_file=param.tests_ovrwrt_file(),
-                                ovrwrt_str=setup_str,
-                                ovrwrt_dict=setup_dict)
-        install_node = TestNode(prefix + "0p", config, [test_object])
-        install_node.regenerate_params()
+        install_node = self.parse_node_from_object(test_object, setup_str, setup_dict, prefix=prefix+"0p")
         logging.debug("Reached %s install configured by %s", object_name, install_node.params["shortname"])
         return install_node
 

@@ -424,12 +424,8 @@ def deploy(config, tag=""):
                 ovrwrt_dict["set_state"] = ""
             setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
             ovrwrt_str = param.re_str("nonleaves..customize", setup_str)
-            reparsable = vm.config.get_copy()
-            reparsable.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file(),
-                                        ovrwrt_str=ovrwrt_str,
-                                        ovrwrt_dict=ovrwrt_dict)
-            r.run_test_node(TestNode(setup_tag, reparsable, []))
+            test_node = l.parse_node_from_object(vm, ovrwrt_str, ovrwrt_dict, prefix=setup_tag)
+            r.run_test_node(test_node)
 
     LOG_UI.info("Finished data deployment")
 
@@ -456,12 +452,8 @@ def internal(config, tag=""):
             ovrwrt_dict = {}
         forced_setup = "nonleaves.." + vm.params["node"]
         ovrwrt_str = param.re_str(forced_setup, config["param_str"])
-        reparsable = vm.config.get_copy()
-        reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file(),
-                                    ovrwrt_str=ovrwrt_str,
-                                    ovrwrt_dict=ovrwrt_dict)
-        r.run_test_node(TestNode(tag, reparsable, []))
+        test_node = l.parse_node_from_object(vm, ovrwrt_str, ovrwrt_dict, prefix=tag)
+        r.run_test_node(test_node)
     LOG_UI.info("Finished internal setup")
 
 
@@ -668,15 +660,11 @@ def get(config, tag=""):
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
                 config["param_str"].rstrip())
     for vm_name in config["selected_vms"]:
-        test_object = l.parse_objects(config["vm_strs"], vm_name)
-        reparsable = test_object[0].config.get_copy()
-        reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file(),
-                                    ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
-                                                            config["param_str"]),
-                                    ovrwrt_dict={"vm_action": "get",
-                                                 "skip_image_processing": "yes"})
-        r.run_test_node(TestNode(tag, reparsable, []))
+        objects = l.parse_objects(config["vm_strs"], vm_name)
+        setup_str = param.re_str("nonleaves..manage.unchanged", config["param_str"])
+        setup_dict = {"vm_action": "get", "skip_image_processing": "yes"}
+        test_node = l.parse_node_from_object(objects[0], setup_str, setup_dict, prefix=tag)
+        r.run_test_node(test_node)
     LOG_UI.info("Finished state get")
 
 
@@ -710,15 +698,11 @@ def set(config, tag=""):
                 setup_str += param.ParsedDict({"set_type": node.params["set_type"]}).parsable_form()
             else:
                 pass  # will use default set type
-        test_object = l.parse_objects(config["vm_strs"], vm_name)
-        reparsable = test_object[0].config.get_copy()
-        reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file(),
-                                    ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
-                                                            setup_str),
-                                    ovrwrt_dict={"vm_action": "set",
-                                                 "skip_image_processing": "yes"})
-        r.run_test_node(TestNode(tag, reparsable, []))
+        objects = l.parse_objects(config["vm_strs"], vm_name)
+        setup_str = param.re_str("nonleaves..manage.unchanged", config["param_str"])
+        setup_dict = {"vm_action": "set", "skip_image_processing": "yes"}
+        test_node = l.parse_node_from_object(objects[0], setup_str, setup_dict, prefix=tag)
+        r.run_test_node(test_node)
     LOG_UI.info("Finished state set")
 
 
@@ -757,15 +741,11 @@ def unset(config, tag=""):
                 setup_str += param.ParsedDict({"unset_type": node.params["set_type"]}).parsable_form()
             else:
                 pass  # will use default unset type
-        test_object = l.parse_objects(config["vm_strs"], vm_name)
-        reparsable = test_object[0].config.get_copy()
-        reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file(),
-                                    ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
-                                                            setup_str),
-                                    ovrwrt_dict={"vm_action": "unset",
-                                                 "skip_image_processing": "yes"})
-        r.run_test_node(TestNode(tag, reparsable, []))
+        objects = l.parse_objects(config["vm_strs"], vm_name)
+        setup_str = param.re_str("nonleaves..manage.unchanged", setup_str)
+        setup_dict = {"vm_action": "unset", "skip_image_processing": "yes"}
+        test_node = l.parse_node_from_object(objects[0], setup_str, setup_dict, prefix=tag)
+        r.run_test_node(test_node)
     LOG_UI.info("Finished state unset")
 
 
