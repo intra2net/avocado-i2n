@@ -356,13 +356,14 @@ class CartesianLoader(VirtTestLoader):
         return test_suite
 
     """custom nodes"""
-    def parse_scan_node(self, graph, param_str):
+    def parse_scan_node(self, graph, param_str, prefix=""):
         """
         Get the first test node for all objects.
 
         :param graph: test graph to parse root node from
         :type graph: :py:class:`TestGraph`
         :param str param_str: block of command line parameters
+        :param str prefix: extra name identifier for the test to be run
         :returns: parsed shared root node
         :rtype: :py:class:`TestNode`
 
@@ -376,12 +377,12 @@ class CartesianLoader(VirtTestLoader):
         setup_str = param.ParsedDict(setup_dict).parsable_form() + param_str
         nodes = self.parse_nodes(param.re_str("nonleaves..0scan", setup_str), graph)
         assert len(nodes) == 1, "There can only be one shared root"
-        scan_node = TestNode("0s", nodes[0].config, [])
+        scan_node = TestNode(prefix + "0s", nodes[0].config, [])
         scan_node.regenerate_params()
         logging.debug("Reached shared root %s", scan_node.params["shortname"])
         return scan_node
 
-    def parse_create_node(self, graph, object_name, param_str):
+    def parse_create_node(self, graph, object_name, param_str, prefix=""):
         """
         Get the first test node for the given object.
 
@@ -389,6 +390,7 @@ class CartesianLoader(VirtTestLoader):
         :type graph: :py:class:`TestGraph`
         :param str object_name: name of the test object whose configuration is reused if node if objectless
         :param str param_str: block of command line parameters
+        :param str prefix: extra name identifier for the test to be run
         :returns: parsed object root node
         :rtype: :py:class:`TestNode`
 
@@ -406,12 +408,12 @@ class CartesianLoader(VirtTestLoader):
                                 ovrwrt_file=param.tests_ovrwrt_file(),
                                 ovrwrt_str=setup_str,
                                 ovrwrt_dict=setup_dict)
-        create_node = TestNode("0r", config, [test_object])
+        create_node = TestNode(prefix + "0r", config, [test_object])
         create_node.regenerate_params()
         logging.debug("Reached %s root %s", object_name, create_node.params["shortname"])
         return create_node
 
-    def parse_install_node(self, graph, object_name, param_str):
+    def parse_install_node(self, graph, object_name, param_str, prefix=""):
         """
         Get the original install test node for the given object.
 
@@ -419,6 +421,7 @@ class CartesianLoader(VirtTestLoader):
         :type graph: :py:class:`TestGraph`
         :param str object_name: name of the test object whose configuration is reused if node if objectless
         :param str param_str: block of command line parameters
+        :param str prefix: extra name identifier for the test to be run
         :returns: original parsed object install node
         :rtype: :py:class:`TestNode`
         """
@@ -432,7 +435,7 @@ class CartesianLoader(VirtTestLoader):
                                 ovrwrt_file=param.tests_ovrwrt_file(),
                                 ovrwrt_str=setup_str,
                                 ovrwrt_dict=setup_dict)
-        install_node = TestNode("0p", config, [test_object])
+        install_node = TestNode(prefix + "0p", config, [test_object])
         install_node.regenerate_params()
         logging.debug("Reached %s install configured by %s", object_name, install_node.params["shortname"])
         return install_node

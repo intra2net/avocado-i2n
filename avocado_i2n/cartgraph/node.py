@@ -102,15 +102,15 @@ class TestNode(object):
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
-        return self.name == "0s" and len(self.objects) == 0
+        return self.name.endswith("0s") and len(self.objects) == 0
 
     def is_create_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.name == "0r" and len(self.objects) == 1
+        return self.name.endswith("0r") and len(self.objects) == 1
 
     def is_install_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.name == "0p" and len(self.objects) == 1
+        return self.name.endswith("0p") and len(self.objects) == 1
 
     def is_shared_root(self):
         """Check if the test node is the root of all test nodes for all test objects."""

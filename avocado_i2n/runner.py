@@ -189,14 +189,13 @@ class CartesianRunner(TestRunner):
         return summary
 
     """custom nodes"""
-    def run_scan_node(self, graph, param_str, tag=""):
+    def run_scan_node(self, graph, param_str):
         """
         Run the set of tests necessary for starting test traversal.
 
         :param graph: test graph to run scan node from
         :type graph: :py:class:`TestGraph`
         :param str param_str: block of command line parameters
-        :param str tag: extra name identifier for the test to be run
         """
         # HACK: pass the constructed graph to the test using static attribute hack
         # since there is absolutely no sane way to pass through the cloud of imports
@@ -220,7 +219,7 @@ class CartesianRunner(TestRunner):
         for node in graph.nodes:
             self.result.cancelled += 1 if not node.should_run else 0
 
-    def run_create_node(self, graph, object_name, param_str, tag=""):
+    def run_create_node(self, graph, object_name, param_str):
         """
         Run the set of tests necessary for creating a given test object.
 
@@ -228,7 +227,6 @@ class CartesianRunner(TestRunner):
         :type graph: :py:class:`TestGraph`
         :param str object_name: name of the test object to be created
         :param str param_str: block of command line parameters
-        :param str tag: extra name identifier for the test to be run
         """
         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
@@ -244,7 +242,7 @@ class CartesianRunner(TestRunner):
         else:
             self.run_test_node(test_node)
 
-    def run_install_node(self, graph, object_name, param_str, tag=""):
+    def run_install_node(self, graph, object_name, param_str):
         """
         Run the set of tests necessary for installing a given test object.
 
@@ -252,7 +250,6 @@ class CartesianRunner(TestRunner):
         :type graph: :py:class:`TestGraph`
         :param str object_name: name of the test object to be installed
         :param str param_str: block of command line parameters
-        :param str tag: extra name identifier for the test to be run
         :raises: :py:class:`NotImplementedError` if using incompatible installation variant
         """
         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
@@ -276,17 +273,17 @@ class CartesianRunner(TestRunner):
         logging.info("Installing virtual machine %s", test_object.name)
         if install_params.get("configure_install", "stepmaker") == "unattended_install":
             if test_object.params["os_type"] == "windows":
-                ovrwrt_str = param.re_str("nonleaves..unattended_install", param_str, tag)
+                ovrwrt_str = param.re_str("nonleaves..unattended_install", param_str)
             elif install_params["unattended_file"].endswith(".preseed"):
-                ovrwrt_str = param.re_str("nonleaves..unattended_install.cdrom.in_cdrom_ks", param_str, tag)
+                ovrwrt_str = param.re_str("nonleaves..unattended_install.cdrom.in_cdrom_ks", param_str)
             elif install_params["unattended_file"].endswith(".ks"):
-                ovrwrt_str = param.re_str("nonleaves..unattended_install.cdrom.extra_cdrom_ks", param_str, tag)
+                ovrwrt_str = param.re_str("nonleaves..unattended_install.cdrom.extra_cdrom_ks", param_str)
             else:
                 raise NotImplementedError("Unattended install tests are not supported for variant %s" % test_object.params["name"])
             ovrwrt_dict = {}
         else:
             ovrwrt_dict = {"type": install_params.get("configure_install", "stepmaker")}
-            ovrwrt_str = param.re_str("nonleaves..install", param_str, tag)
+            ovrwrt_str = param.re_str("nonleaves..install", param_str)
 
         if install_params["set_type"] == "off":
             ovrwrt_dict.update({"set_state": install_params["set_state"],
@@ -306,7 +303,7 @@ class CartesianRunner(TestRunner):
             ovrwrt_dict = {"set_state": install_params["set_state"],
                            "set_type": install_params["set_type"],
                            "skip_image_processing": "yes"}
-            ovrwrt_str = param.re_str("nonleaves..manage.start", param_str, tag)
+            ovrwrt_str = param.re_str("nonleaves..manage.start", param_str)
             postinstall_config = test_object.config.get_copy()
             postinstall_config.parse_next_batch(base_file="sets.cfg",
                                                 ovrwrt_file=param.tests_ovrwrt_file(),
