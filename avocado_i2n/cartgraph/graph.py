@@ -244,14 +244,14 @@ class TestGraph(object):
                     self.flag_children(flag=False)
                     raise AssertionError("Missing permanent vm %s" % object_name)
 
-    def flag_children(self, state_name=None, object_name=None, flag_type="run", flag=True,
+    def flag_children(self, node_name=None, object_name=None, flag_type="run", flag=True,
                       skip_roots=False):
         """
-        Set the run/clean flag for all children of a node, whose `set_state`
-        parameter is specified by the `state_name` argument.
+        Set the run/clean flag for all children of a parent node of a given name
+        or the entire graph.
 
-        :param state_name: state which is set by the parent node or root if None
-        :type state_name: str or None
+        :param node_name: name of the parent node or root if None
+        :type node_name: str or None
         :param object_name: test object whose state is set or shared root if None
         :type object_name: str or None
         :param str flag_type: 'run' or 'clean' categorization of the children
@@ -262,17 +262,17 @@ class TestGraph(object):
         activity = ("" if flag else "not ") + ("running" if flag_type == "run" else "cleanup")
         logging.debug("Selecting test nodes for %s", activity)
         if object_name is not None:
-            state_name = "root" if state_name is None else state_name
-            root_tests = self.get_nodes_by(param_key="set_state", param_val="^"+state_name+"$")
+            node_name = "root" if node_name is None else node_name
+            root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)"+node_name+"(?:\.|$)")
             root_tests = self.get_nodes_by(param_key="vms",
                                            param_val="(?:^|\s)%s(?:$|\s)" % object_name,
                                            subset=root_tests)
         else:
             root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)0scan(?:\.|$)")
         if len(root_tests) < 1:
-            raise AssertionError("Could not retrieve state %s and flag all its children tests" % state_name)
+            raise AssertionError("Could not retrieve node %s and flag all its children tests" % node_name)
         elif len(root_tests) > 1:
-            raise AssertionError("Could not identify state %s and flag all its children tests" % state_name)
+            raise AssertionError("Could not identify node %s and flag all its children tests" % node_name)
         else:
             test_node = root_tests[0]
 

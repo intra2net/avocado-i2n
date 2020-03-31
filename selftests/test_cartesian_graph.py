@@ -289,6 +289,9 @@ class CartesianGraphTest(unittest.TestCase):
         self.main_vm = "vm1"
         graph = self.loader.parse_object_trees(self.config["param_str"], self.config["tests_str"], self.config["vm_strs"], self.prefix, self.main_vm, objectless=True)
         graph.flag_parent_intersection(graph, flag_type="run", flag=False)
+        DummyTestRunning.asserted_tests = [
+        ]
+        DummyTestRunning.fail_switch = [False] * 0
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -297,7 +300,7 @@ class CartesianGraphTest(unittest.TestCase):
         tests_str1 = self.config["tests_str"]
         tests_str1 += "only connect\n"
         tests_str2 = self.config["tests_str"]
-        tests_str2 += "only install\n"
+        tests_str2 += "only 0preinstall\n"
         self.main_vm = "vm2"
         graph = self.loader.parse_object_trees(self.config["param_str"], tests_str1, self.config["vm_strs"], self.prefix, self.main_vm, objectless=True)
         reuse_graph = self.loader.parse_object_trees(self.config["param_str"], tests_str2, self.config["vm_strs"], self.prefix, self.main_vm, objectless=True)
