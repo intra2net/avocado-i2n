@@ -116,6 +116,11 @@ class CartesianLoader(VirtTestLoader):
         main_object = None
         test_nodes = []
 
+        if "0root" in nodes_str :
+            return [self.parse_create_node(graph, object_name, prefix=prefix)]
+        elif "0preinstall" in nodes_str:
+            return [self.parse_install_node(graph, object_name, prefix=prefix)]
+
         # prepare initial parser as starting configuration and get through tests
         early_config = param.Reparsable()
         early_config.parse_next_file("sets.cfg")
@@ -356,7 +361,7 @@ class CartesianLoader(VirtTestLoader):
         return test_suite
 
     """custom nodes"""
-    def parse_scan_node(self, graph, param_str, prefix=""):
+    def parse_scan_node(self, graph, param_str="", prefix=""):
         """
         Get the first test node for all objects.
 
@@ -382,7 +387,7 @@ class CartesianLoader(VirtTestLoader):
         logging.debug("Reached shared root %s", scan_node.params["shortname"])
         return scan_node
 
-    def parse_create_node(self, graph, object_name, param_str, prefix=""):
+    def parse_create_node(self, graph, object_name, param_str="", prefix=""):
         """
         Get the first test node for the given object.
 
@@ -413,7 +418,7 @@ class CartesianLoader(VirtTestLoader):
         logging.debug("Reached %s root %s", object_name, create_node.params["shortname"])
         return create_node
 
-    def parse_install_node(self, graph, object_name, param_str, prefix=""):
+    def parse_install_node(self, graph, object_name, param_str="", prefix=""):
         """
         Get the original install test node for the given object.
 

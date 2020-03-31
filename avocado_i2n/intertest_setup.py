@@ -221,19 +221,13 @@ def full(config, tag=""):
     for vm_name in config["selected_vms"]:
         vm_params = config["vms_params"].object_params(vm_name)
         logging.info("Creating the full state '%s' of %s", vm_params.get("state", "customize"), vm_name)
-        if vm_params.get("state", "customize") in ["root", "install"]:
-            create_graph = TestGraph()
-            create_graph.objects = l.parse_objects(config["vm_strs"], vm_name)
-            create_graph.nodes.append(l.parse_create_node(create_graph, vm_name, config["param_str"], prefix=tag))
-            r.run_create_node(create_graph, vm_name, config["param_str"])
-            if vm_params.get("state", "customize") == "root":
-                continue
-            create_graph.nodes.append(l.parse_install_node(create_graph, vm_name, config["param_str"], prefix=tag))
-            r.run_install_node(create_graph, vm_name, config["param_str"])
-            continue
+
+        state = vm_params.get("state", "customize")
+        state = "0root" if state == "root" else state
+        state = "0preinstall" if state == "install" else state
 
         # overwrite any existing test objects
-        create_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("state", "customize")),
+        create_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + state),
                                             {vm_name: config["vm_strs"][vm_name]},
                                             prefix=tag, object_names=vm_name, objectless=True)
         create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=False)
@@ -271,33 +265,35 @@ def update(config, tag=""):
         vm_params = config["vms_params"].object_params(vm_name)
         logging.info("Updating state '%s' of %s", vm_params.get("to_state", "customize"), vm_name)
 
-        if vm_params.get("to_state", "customize") == "root":
+        from_state = vm_params.get("from_state", "install")
+        to_state = vm_params.get("to_state", "customize")
+        if to_state == "root":
             logging.warning("The root state of %s cannot be updated - use 'setup=full' instead.", vm_name)
             continue
 
-        logging.info("Tracing and removing all old states depending on the updated '%s'...",
-                     vm_params.get("to_state", "customize"))
+        logging.info("Tracing and removing all old states depending on the updated '%s'...", to_state)
+        to_state = "0preinstall" if to_state == "install" else to_state
         # remove all test nodes depending on the updated node if present (unset mode is "ignore otherwise")
         remove_graph = l.parse_object_trees(config["param_str"] + param.ParsedDict({"unset_mode": "fi"}).parsable_form(),
                                             param.re_str(vm_params.get("remove_set", "all")), config["vm_strs"],
                                             prefix=tag, object_names=vm_name, objectless=False, verbose=False)
         remove_graph.flag_children(flag_type="run", flag=False)
         remove_graph.flag_children(flag_type="clean", flag=False)
-        remove_graph.flag_children(vm_params.get("to_state", "customize"), vm_name,
-                                   flag_type="clean", flag=True, skip_roots=True)
+        remove_graph.flag_children(to_state, vm_name, flag_type="clean", flag=True, skip_roots=True)
         r.run_traversal(remove_graph, config["param_str"])
 
-        logging.info("Updating all states before '%s'", vm_params.get("to_state", "customize"))
-        update_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("to_state", "customize")),
+        logging.info("Updating all states before '%s'", to_state)
+        update_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + to_state),
                                             {vm_name: config["vm_strs"][vm_name]}, prefix=tag,
                                             object_names=vm_name, objectless=True)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=False)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=True,
                                               skip_object_roots=True, skip_shared_root=True)
 
-        logging.info("Preserving all states before '%s'", vm_params.get("from_state", "customize"))
-        if vm_params.get("from_state", "install") != "root":
-            reuse_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("from_state", "install")),
+        logging.info("Preserving all states before '%s'", from_state)
+        from_state = "0preinstall" if from_state == "install" else from_state
+        if from_state != "root":
+            reuse_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + from_state),
                                                {vm_name: config["vm_strs"][vm_name]}, prefix=tag,
                                                object_names=vm_name, objectless=True, verbose=False)
             update_graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
