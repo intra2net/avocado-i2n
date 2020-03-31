@@ -25,6 +25,8 @@ class StateSetupTest(unittest.TestCase):
 
     def setUp(self):
         self.run_params = utils_params.Params()
+        # TODO: implement separate setup for each unit test type to reuse more parameters
+        self.run_params["images"] = "image1"
 
         self.env = mock.MagicMock(name='env')
         self.env.get_vm = mock.MagicMock(side_effect=self._get_mock_vm)
@@ -149,6 +151,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["check_type_vm1"] = "on"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         mock_process.reset_mock()
@@ -197,6 +200,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["check_type_vm1"] = "on"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         mock_process.system_output.return_value = b"1         with.dot   33.5G 2014-05-16 12:13:45   00:00:34.079"
@@ -211,6 +215,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["check_state_vm1"] = "launch"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
@@ -226,6 +231,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         mock_process.system_output.return_value = b"NOT HERE"
@@ -242,6 +248,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["check_state_vm1"] = "launch"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
+        self.run_params["image_format"] = "qcow2"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"
         self._create_mock_vms()
 
@@ -385,6 +392,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["get_mode_vm2"] = "rx"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm2"] = "/vm2/image"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
@@ -424,6 +432,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["get_mode_vm2"] = "rx"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm2"] = "/vm2/image"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         # if >= 1 states prefer on
@@ -448,6 +457,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["vg_name_vm2"] = "ramdisk_vm2"
         self.run_params["image_name_vm2"] = "/vm2/image"
         self.run_params["image_raw_device_vm2"] = "no"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         # if only off state choose it
@@ -471,6 +481,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["vg_name_vm2"] = "ramdisk_vm2"
         self.run_params["image_name_vm2"] = "/vm2/image"
+        self.run_params["image_format"] = "qcow2"
         # self.run_params["image_raw_device_vm2"] = "no"
         self._create_mock_vms()
 
@@ -596,6 +607,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["skip_types"] = "off"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         # NOTE: setting an on state assumes that the vm is on just like
@@ -636,6 +648,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["skip_types"] = ""
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         # if no skipping and too many states prefer on
@@ -653,6 +666,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["skip_types"] = ""
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
+        self.run_params["image_format"] = "qcow2"
         self.run_params["vg_name_vm4"] = "ramdisk_vm4"
         self.run_params["lv_name"] = "LogVol"
         self.run_params["lv_pointer_name"] = "current_state"
@@ -677,6 +691,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["skip_types"] = ""
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
+        self.run_params["image_format"] = "qcow2"
         self.run_params["vg_name_vm4"] = "ramdisk_vm4"
         self.run_params["lv_name"] = "LogVol"
         self.run_params["lv_pointer_name"] = "current_state"
@@ -699,6 +714,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["skip_types"] = "on"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         # skip setting the state since on is available but we skip on by parameters
@@ -715,6 +731,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["skip_types"] = "on"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
+        self.run_params["image_format"] = "qcow2"
         self.run_params["vg_name_vm4"] = "ramdisk_vm4"
         self.run_params["lv_name"] = "LogVol"
         self.run_params["lv_pointer_name"] = "current_state"
@@ -739,6 +756,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["skip_types"] = "off"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
+        self.run_params["image_format"] = "qcow2"
         self.run_params["vg_name_vm4"] = "ramdisk_vm4"
         self.run_params["lv_name"] = "LogVol"
         self.run_params["lv_pointer_name"] = "current_state"
@@ -821,6 +839,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["unset_mode_vm4"] = "fi"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm4"] = "/vm4/image"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
@@ -858,6 +877,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["unset_mode_vm1"] = "fi"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         # if >= 1 states prefer on
@@ -877,6 +897,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["image_name_vm1"] = "/vm1/image"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"
         self.run_params["lv_pointer_name"] = "current_state"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         # if only off state choose it
@@ -914,6 +935,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         # if no states cannot do anything
@@ -948,7 +970,9 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1"
         self.run_params["check_state_vm1"] = "root"
         self.run_params["check_type_vm1"] = "on"
-        self.run_params["image_name_vm1"] = "/vm1/image"
+        self.run_params["images_vm1"] = "image1 image2"
+        self.run_params["image_name_image1_vm1"] = "/vm1/image1"
+        self.run_params["image_name_image2_vm1"] = "/vm1/image2"
         self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
@@ -964,7 +988,9 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["vms"] = "vm1"
         self.run_params["check_state_vm1"] = "root"
         self.run_params["check_type_vm1"] = "on"
-        self.run_params["image_name_vm1"] = "/vm1/image"
+        self.run_params["images_vm1"] = "image1 image2"
+        self.run_params["image_name_image1_vm1"] = "/vm1/image1"
+        self.run_params["image_name_image2_vm1"] = "/vm1/image2"
         self._create_mock_vms()
         state_setup.on = state_setup.RamfileBackend
 
@@ -1206,6 +1232,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["pop_type_vm1"] = "on"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm1"] = "/vm1/image"
+        self.run_params["image_format"] = "qcow2"
         self._create_mock_vms()
 
         mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
@@ -1262,6 +1289,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["get_mode_vm3"] = "aa"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["image_name_vm3"] = "/vm3/image"
+        self.run_params["image_format"] = "qcow2"
         self.run_params["lv_name"] = "LogVol"
         self.run_params["lv_pointer_name"] = "current_state"
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"

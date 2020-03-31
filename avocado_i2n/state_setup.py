@@ -121,14 +121,20 @@ class StateBackend():
         check_opts = params.get_dict("check_opts")
         print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
         logging.debug("Checking whether %s exists (root state requested)", vm_name)
-        image_format = params.get("image_format", "qcow2")
-        logging.debug("Checking using %s image", image_format)
-        image_format = "" if image_format == "raw" else "." + image_format
-        condition = os.path.exists(params["image_name"] + image_format)
-        if condition and print_pos:
-            logging.info("The required virtual machine %s exists", vm_name)
-        if not condition and print_neg:
-            logging.info("The required virtual machine %s doesn't exist", vm_name)
+        condition = True
+        for image in params.objects("images"):
+            image_params = params.object_params(image)
+            image_name = image_params["image_name"]
+            image_format = image_params.get("image_format", "qcow2")
+            logging.debug("Checking for %s image %s", image_format, image_name)
+            image_format = "" if image_format == "raw" else "." + image_format
+            condition = os.path.exists(image_name + image_format)
+            if condition and print_pos:
+                logging.info("The required virtual machine %s exists", vm_name)
+            if not condition and print_neg:
+                logging.info("The required virtual machine %s doesn't exist", vm_name)
+            if not condition:
+                break
         return condition
 
     @staticmethod
@@ -154,10 +160,12 @@ class StateBackend():
         :type object: VM object or None
         """
         vm_name = params["vms"]
-        image_name = params["image_name"]
-        logging.info("Creating image for %s", vm_name)
-        params.update({"create_image": "yes", "force_create_image": "yes"})
-        env_process.preprocess_image(None, params, image_name)
+        for image in params.objects("images"):
+            image_params = params.object_params(image)
+            image_name = image_params["image_name"]
+            logging.info("Creating image %s for %s", image_name, vm_name)
+            image_params.update({"create_image": "yes", "force_create_image": "yes"})
+            env_process.preprocess_image(None, image_params, image_name)
 
     @staticmethod
     def unset_root(params, object=None):
@@ -170,14 +178,45 @@ class StateBackend():
         :type object: VM object or None
         """
         vm_name = params["vms"]
-        image_name = params["image_name"]
-        logging.info("Removing image for %s", vm_name)
-        params.update({"remove_image": "yes"})
-        env_process.postprocess_image(None, params, image_name)
+        for image in params.objects("images"):
+            image_params = params.object_params(image)
+            image_name = image_params["image_name"]
+            logging.info("Removing image %s for %s", image_name, vm_name)
+            image_params.update({"remove_image": "yes"})
+            env_process.postprocess_image(None, image_params, image_name)
 
 
 class LVMBackend(StateBackend):
     """Backend manipulating off states as logical volumes."""
+
+    @staticmethod
+    def _get_images_mount_loc(params):
+        """
+        Get the path to the mount location for the logical volume.
+
+        :param params: configuration parameters
+        :type params: {str, str}
+        :returns: mount location for the logical volume or empty string if a
+                  raw image device is used
+        :rtype: str
+        """
+        if params.get_boolean("image_raw_device", True):
+            return ""
+        mount_loc = None
+        assert "images" in params.keys(), "Need 'images' definition for mounting"
+        for image in params.objects("images"):
+            image_params = params.object_params(image)
+            image_name = image_params["image_name"]
+            if mount_loc is None:
+                mount_loc = os.path.dirname(image_name)
+            elif mount_loc != os.path.dirname(image_name):
+                # it would be best to assert this but let's be more permissive
+                # to allow for stranger configuration hoping that the user knows
+                # what they are doing
+                logging.warning("Not all vm images are located in the same logical"
+                                " volume mount directory - choosing the first one"
+                                " as the actual mount location")
+        return mount_loc
 
     @staticmethod
     def show(params, object=None):
@@ -215,9 +254,9 @@ class LVMBackend(StateBackend):
         All arguments match the base class.
         """
         vm_name = params["vms"]
+        mount_loc = LVMBackend._get_images_mount_loc(params)
         params["lv_snapshot_name"] = params["get_state"]
-        if params.get("image_raw_device", "yes") == "no":
-            mount_loc = os.path.dirname(params["image_name"])
+        if mount_loc:
             # mount to avoid not-mounted errors
             try:
                 lv_utils.lv_mount(params["vg_name"],
@@ -234,8 +273,7 @@ class LVMBackend(StateBackend):
                                       params["lv_snapshot_name"],
                                       params["lv_pointer_name"])
         finally:
-            if params.get("image_raw_device", "yes") == "no":
-                mount_loc = os.path.dirname(params["image_name"])
+            if mount_loc:
                 lv_utils.lv_mount(params["vg_name"],
                                   params["lv_pointer_name"],
                                   mount_loc)
@@ -300,7 +338,7 @@ class LVMBackend(StateBackend):
         for each object (all off).
         """
         vm_name = params["vms"]
-        image_name = params["image_name"]
+        mount_loc = LVMBackend._get_images_mount_loc(params)
         logging.info("Creating original logical volume for %s", vm_name)
         lv_utils.vg_ramdisk(None,
                             params["vg_name"],
@@ -318,8 +356,7 @@ class LVMBackend(StateBackend):
         lv_utils.lv_take_snapshot(params["vg_name"],
                                   params["lv_name"],
                                   params["lv_pointer_name"])
-        if params.get("image_raw_device", "yes") == "no":
-            mount_loc = os.path.dirname(image_name)
+        if mount_loc:
             if not os.path.exists(mount_loc):
                 os.mkdir(mount_loc)
             lv_utils.lv_mount(params["vg_name"], params["lv_pointer_name"],
@@ -339,11 +376,10 @@ class LVMBackend(StateBackend):
         of each object (all off).
         """
         vm_name = params["vms"]
-        image_name = params["image_name"]
+        mount_loc = LVMBackend._get_images_mount_loc(params)
         logging.info("Removing original logical volume for %s", vm_name)
         try:
-            if params.get("image_raw_device", "yes") == "no":
-                mount_loc = os.path.dirname(image_name)
+            if mount_loc:
                 if lv_utils.vg_check(params["vg_name"]):
                     # mount to avoid not-mounted errors
                     try:
@@ -382,16 +418,20 @@ class QCOW2Backend(StateBackend):
 
         All arguments match the base class.
         """
-        vm_image = "%s.%s" % (params["image_name"],
-                              params.get("image_format", "qcow2"))
-        qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
-        on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, vm_image)).decode()
-        state_tuples = re.findall(QEMU_STATES_REGEX, on_snapshots_dump)
         states = []
-        for state_tuple in state_tuples:
-            logging.info("Detected on state '%s' of size %s",
-                         state_tuple[0], state_tuple[1])
-            states.append(state_tuple[0])
+        qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
+        for image in params.objects("images"):
+            image_params = params.object_params(image)
+            image_name = image_params["image_name"]
+            image_format = image_params.get("image_format", "qcow2")
+            logging.debug("Showing snapshots for %s image %s", image_format, image_name)
+            image_format = "" if image_format == "raw" else "." + image_format
+            image_path = image_name + image_format
+            on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, image_path)).decode()
+            state_tuples = re.findall(QEMU_STATES_REGEX, on_snapshots_dump)
+            for state_tuple in state_tuples:
+                logging.info("Detected on state '%s' of size %s", state_tuple[0], state_tuple[1])
+                states.append(state_tuple[0])
         return states
 
     @staticmethod
@@ -405,18 +445,11 @@ class QCOW2Backend(StateBackend):
         check_opts = params.get_dict("check_opts")
         print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
         logging.debug("Checking %s for on state '%s'", vm_name, params["check_state"])
-        vm_image = "%s.%s" % (params["image_name"],
-                              params.get("image_format", "qcow2"))
-        if not os.path.exists(vm_image):
+        if not QCOW2Backend.check_root(params, object):
             return False
-        qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
-        on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, vm_image)).decode()
-        logging.debug("Listed on states:\n%s", on_snapshots_dump)
-        state_tuples = re.findall(QEMU_STATES_REGEX, on_snapshots_dump)
-        for state_tuple in state_tuples:
-            logging.debug("Detected on state '%s' of size %s",
-                          state_tuple[0], state_tuple[1])
-            if state_tuple[0] == params["check_state"]:
+        states = QCOW2Backend.show(params, object)
+        for state in states:
+            if state == params["check_state"]:
                 if print_pos:
                     logging.info("On snapshot '%s' of %s exists",
                                  params["check_state"], vm_name)
@@ -481,10 +514,13 @@ class QCOW2Backend(StateBackend):
         :raises: :py:class:`ValueError` if the used image format is either
                  unspecified or not the required QCOW2
         """
-        if params.get("image_format") is None:
-            raise ValueError("Unspecified image format - must be qcow2")
-        if params["image_format"] != "qcow2":
-            raise ValueError("Incompatible image format %s - must be qcow2" % params["image_format"])
+        for image in params.objects("images"):
+            image_params = params.object_params(image)
+            if image_params.get("image_format") is None:
+                raise ValueError("Unspecified image format for %s - must be qcow2" % image)
+            if image_params["image_format"] != "qcow2":
+                raise ValueError("Incompatible image format %s for %s - must be qcow2"
+                                 % (params["image_format"], image))
         return super(QCOW2Backend, QCOW2Backend).check_root(params, object)
 
 
@@ -496,14 +532,35 @@ class RamfileBackend(StateBackend):
     """
 
     @staticmethod
+    def _get_state_dir(params):
+        """
+        Get the path to the ramfile dumps directory.
+
+        :param params: configuration parameters
+        :type params: {str, str}
+        :returns: validated to be the same directory to dump ramfile states
+        :rtype: str
+        """
+        state_dir = None
+        assert "images" in params.keys(), "Need 'images' definition for state directory"
+        for image in params.objects("images"):
+            image_params = params.object_params(image)
+            image_name = image_params["image_name"]
+            if state_dir is None:
+                state_dir = os.path.dirname(image_name)
+            else:
+                assert state_dir == os.path.dirname(image_name), "All vm images "\
+                    "must be located in the same statefile dump directory"
+        return state_dir
+
+    @staticmethod
     def show(params, object=None):
         """
         Return a list of available states of a specific type.
 
         All arguments match the base class.
         """
-        state_dir = params.get("image_name", "")
-        state_dir = os.path.dirname(state_dir)
+        state_dir = RamfileBackend._get_state_dir(params)
         state_path = os.path.join(state_dir, "*.state")
         return glob.glob(state_path)
 
@@ -517,10 +574,8 @@ class RamfileBackend(StateBackend):
         vm, vm_name = object, params["vms"]
         check_opts = params.get_dict("check_opts")
         print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
-        state_dir = params.get("image_name", "")
-        state_dir = os.path.dirname(state_dir)
-        state_file = os.path.join(state_dir, params["check_state"])
-        state_file = "%s.state" % state_file
+        state_dir = RamfileBackend._get_state_dir(params)
+        state_file = os.path.join(state_dir, params["check_state"] + ".state")
         condition = os.path.exists(state_file)
         if condition and print_pos:
             logging.info("Ramfile snapshot '%s' of %s exists", params["check_state"], vm_name)
@@ -538,10 +593,8 @@ class RamfileBackend(StateBackend):
         vm, vm_name = object, params["vms"]
         logging.info("Reusing on state '%s' of %s", params["get_state"], vm_name)
         vm.pause()
-        state_dir = params.get("image_name", "")
-        state_dir = os.path.dirname(state_dir)
-        state_file = os.path.join(state_dir, params["get_state"])
-        state_file = "%s.state" % state_file
+        state_dir = RamfileBackend._get_state_dir(params)
+        state_file = os.path.join(state_dir, params["check_state"] + ".state")
         vm.restore_from_file(state_file)
         vm.resume(timeout=3)
 
@@ -555,10 +608,8 @@ class RamfileBackend(StateBackend):
         vm, vm_name = object, params["vms"]
         logging.info("Setting on state '%s' of %s", params["set_state"], vm_name)
         vm.pause()
-        state_dir = params.get("image_name", "")
-        state_dir = os.path.dirname(state_dir)
-        state_file = os.path.join(state_dir, params["set_state"])
-        state_file = "%s.state" % state_file
+        state_dir = RamfileBackend._get_state_dir(params)
+        state_file = os.path.join(state_dir, params["check_state"] + ".state")
         vm.save_to_file(state_file)
         # BUG: because the built-in functionality uses system_reset
         # which leads to unclean file systems in some cases it is
@@ -576,10 +627,8 @@ class RamfileBackend(StateBackend):
         vm, vm_name = object, params["vms"]
         logging.info("Removing on state '%s' of %s", params["unset_state"], vm_name)
         vm.pause()
-        state_dir = params.get("image_name", "")
-        state_dir = os.path.dirname(state_dir)
-        state_file = os.path.join(state_dir, params["unset_state"])
-        state_file = "%s.state" % state_file
+        state_dir = RamfileBackend._get_state_dir(params)
+        state_file = os.path.join(state_dir, params["check_state"] + ".state")
         os.unlink(state_file)
         vm.resume(timeout=3)
 
