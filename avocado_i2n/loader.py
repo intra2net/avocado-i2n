@@ -41,6 +41,7 @@ class CartesianLoader(VirtTestLoader):
     """Test loader for Cartesian graph parsing."""
 
     name = 'cartesian_graph'
+    description = 'Loads tests by Cartesian graph parsing'
 
     def __init__(self, config=None, extra_params=None):
         """
@@ -150,29 +151,8 @@ class CartesianLoader(VirtTestLoader):
             name = prefix + str(i+1)
             objects, objstrs = [], {}
 
-            # decide about test objects participating in the test node
-            if d.get("vms") is None and object_name != "":
-                # case of singleton test
-                d["vms"] = object_name
-                d["main_vm"] = object_name
-            elif d.get("vms") is None and object_name == "":
-                # case of default singleton test
-                d["main_vm"] = d.get("main_vm", param.main_vm())
-                d["vms"] = d["main_vm"]
-            elif object_name != "":
-                # case of specified object (dependency) as well as node
-                d["main_vm"] = d.get("main_vm", param.main_vm())
-                fixed_vms = d["vms"].split(" ")
-                assert object_name in fixed_vms, "Predefined test object %s for test node '%s' not among:"\
-                                                 " %s" % (object_name, d["shortname"], d["vms"])
-            else:
-                # case of leaf node
-                d["main_vm"] = d.get("main_vm", param.main_vm())
-                fixed_vms = d["vms"].split(" ")
-                assert d["main_vm"] in fixed_vms, "Main test object %s for test node '%s' not among:"\
-                                                 " %s" % (d["main_vm"], d["shortname"], d["vms"])
-
             # get configuration of each participating object and choose the one to mix with the node
+            d["vms"], d["main_vm"] = self._determine_objects_for_node_params(d, object_name)
             logging.debug("Fetching test objects %s to parse a test node", d["vms"].replace(" ", ", "))
             for vm_name in d["vms"].split(" "):
                 vms = graph.get_objects_by(param_key="main_vm", param_val="^"+vm_name+"$")
@@ -454,7 +434,22 @@ class CartesianLoader(VirtTestLoader):
         logging.debug("Reached %s install configured by %s", object_name, install_node.params["shortname"])
         return install_node
 
-    """internals - get/parse, duplicates"""
+    """internals"""
+    def _determine_objects_for_node_params(self, d, object_name):
+        """
+        Decide about test objects participating in the test node returning the
+        final selection of such and the main object for the test.
+        """
+        main_vm = object_name if object_name != "" else d.get("main_vm", param.main_vm())
+        # case of singleton test node
+        if d.get("vms") is None:
+            return main_vm, main_vm
+        # case of leaf test node or even specified object (dependency) as well as node
+        fixed_vms = d["vms"].split(" ")
+        assert main_vm in fixed_vms, "Main test object %s for test node '%s' not among:"\
+                                     " %s" % (d["main_vm"], d["shortname"], d["vms"])
+        return d["vms"], main_vm
+
     def _parse_and_get_parents(self, graph, test_node, test_object, param_str):
         """
         Generate (if necessary) all parent test nodes for a given test
