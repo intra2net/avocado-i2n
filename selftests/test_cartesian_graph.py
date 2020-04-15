@@ -126,7 +126,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$", "get_state": "^customize$", "set_state": "^on_customize$", "get_type": "^off$", "set_type": "^on$"},
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state": "^on_customize$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 7
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -143,7 +143,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 7
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -161,7 +161,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 8
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -177,7 +177,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 4
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -192,7 +192,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 4
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -216,7 +216,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
             {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 11
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -230,7 +230,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.permanent.connect.vm1", "vms": "^vm1$"},
             {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 3
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -250,7 +250,7 @@ class CartesianGraphTest(unittest.TestCase):
 
             {"shortname": "^all.tutorial_get", "vms": "^vm1 vm3$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 7
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -263,7 +263,7 @@ class CartesianGraphTest(unittest.TestCase):
         graph.load_setup_list.side_effect = FileNotFoundError("scan failed")
         DummyTestRunning.asserted_tests = [
         ]
-        DummyTestRunning.fail_switch = [False] * 0
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -278,8 +278,8 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 3
-        DummyTestRunning.fail_switch[2] = True
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
+        DummyTestRunning.fail_switch[-1] = True
         with self.assertRaises(exceptions.TestSkipError):
             self.runner.run_traversal(graph, self.config["param_str"])
 
@@ -291,7 +291,7 @@ class CartesianGraphTest(unittest.TestCase):
         graph.flag_parent_intersection(graph, flag_type="run", flag=False)
         DummyTestRunning.asserted_tests = [
         ]
-        DummyTestRunning.fail_switch = [False] * 0
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -310,7 +310,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
             {"shortname": "^internal.permanent.connect.vm2", "vms": "^vm2$"},
         ]
-        DummyTestRunning.fail_switch = [False] * 2
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_str"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
