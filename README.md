@@ -160,13 +160,15 @@ prepared using the test suite toolset through an extra tool development. More
 information about it and ephemeral tests in general can be found in the test
 development documentation.
 
-## How to install and run
+## How to install
 In terms of installation, you may proceed analogically to other avocado
-plugins.
+plugins. One quick way is using PyPI:
 
-Currently, the plugin will only run with our own avocado(-vt) mods
-(*master* branches of avocado and avocado-vt forks here).
+```
+pip install avocado-framework-plugin-i2n
+```
 
+## How to run
 In order to list a test set from the sample test suite, do
 
 ```
@@ -526,3 +528,9 @@ setup/cleanup that is required by the test you are running (the test node). Use
 with care as this is mostly used for manual and semi-manual tests where part of
 the test is not legally or due to other external factors allowed to be executed
 by a machine.
+
+## How to develop
+While some users might only run a test suite for their own product QA, others
+are probably going to be writing tests to expand its coverage. This document
+concentrates only on the running part and the developing part is covered in
+multiple tutorials in the project wiki. Feel free to check it out.
