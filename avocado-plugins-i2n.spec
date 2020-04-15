@@ -33,7 +33,7 @@
 
 Summary: Avocado I2N Plugin
 Name: avocado-plugins-i2n
-Version: 76.0
+Version: 77.0
 Release: 0%{?gitrel}%{?dist}
 License: GPLv2
 Group: Development/Tools
@@ -89,6 +89,10 @@ graph structure.
 %{_datadir}/avocado-plugins-i2n/tp_folder/*
 
 %changelog
+* Wed Apr 15 2020 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 77.0-0
+- Full refactoring of the cartgraph subpackage with formal permanent vm support
+- OOP reimplementation of switchable state setup backends
+
 * Wed Mar 4 2020 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 76.0-0
 - Default sample test suite installation with develop mode accessibility
 - Dropped requirements to use Intra2net avocado forks in order to run the plugin
