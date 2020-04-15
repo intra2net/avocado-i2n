@@ -236,7 +236,7 @@ class CartesianRunner(TestRunner):
         assert len(nodes) == 1, "There can only be one root for %s" % object_name
         test_node = nodes[0]
 
-        if test_object.is_permanent():
+        if test_object.is_permanent() and not test_node.params.get_boolean("create_permanent_vm"):
             raise AssertionError("Reached a permanent object root for %s due to incorrect setup"
                                  % test_object.name)
         else:

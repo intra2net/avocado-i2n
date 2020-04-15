@@ -226,8 +226,10 @@ def full(config, tag=""):
         state = "0root" if state == "root" else state
         state = "0preinstall" if state == "install" else state
 
+        # in case of permanent vms, support creation and other otherwise dangerous operations
+        setup_str = config["param_str"] + param.ParsedDict({"create_permanent_vm": "yes"}).parsable_form()
         # overwrite any existing test objects
-        create_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + state),
+        create_graph = l.parse_object_trees(setup_str, param.re_str("nonleaves.." + state),
                                             {vm_name: config["vm_strs"][vm_name]},
                                             prefix=tag, object_names=vm_name, objectless=True)
         create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=False)
