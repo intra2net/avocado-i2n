@@ -115,32 +115,50 @@ giving the details but strongly recommending checking the source code of the
 Cartesian graph data structure for anyone that want to have fun with forward
 and backward DFS, the symmetrical pruning, and the reversing traversal path.
 
-### Offline and on states, durable and ephemeral tests
-The basic way to implement virtual machine states is LVM. However, since LVM
+### Off and on states, normal and ephemeral tests, normal and permanent vms
+A standard way to implement virtual machine states is LVM. However, since LVM
 requires the image to be inactive while reverting to the snapshot,
 this will introduce at least shutdown-boot performance penalty between each
 two tests. Actually, "live revert" is part of the future plans of LVM but
 right now its extra steps while switching test nodes might be even slower.
 Therefore, there is another type of states simply called here "on states"
-leaving the LVM an implementation of off states. The on states
+leaving the LVM an implementation of off states. A fairly stadard on states
 implementation lies in the QCOW2 image format and more specifically the
-QEMU-Monitor ability to take full and automatic virtual machine snapshots
+QEMU ability to take complete virtual machine snapshots on running machines
 which will avoid these two steps - just freeze the vm state and eventually
 come back to it for another test that requires it. The QCOW2 format allows
 QEMU to take live snapshots of both the virtual machine and its image without
 a danger of saving image and ramdisk snapshots that are out of sync which is
-the case with another implementation of on states (still available as the
-"ramfile" state type). During a run with an automated vm state setup, a special
+the case with another implementation of on states (still available as a backend
+called "ramfile"). During a run with an automated vm state setup, a special
 dependency scan test checks for state availability once and uses this
 information for further decisions on test scheduling, order, and skipping.
 
-Each on state is based on an off state. The tests that produce on
-from off states are thus ephemeral as changing the off state would
-remove all on states and the test has to be repeated. Online states are
+A test suite might use only off states (e.g. logical volume snapshots), only
+on states (e.g. QCOW2 snapshots) or a mixture of the two where vms' QCOW2 images
+are contained on top of logical volumes which could even be on top of RAM for a
+maximum speedup. Each approach has its advantages and drawbacks where LVM is
+imperfectly container-isolated and thus harder to parallelize, could have more
+difficult to debug errors on unclean process interruptions, etc. while QCOW2
+might not support some cases of vm states like ones using pflash drives. In the
+case of mixture, each on state is based on an off state and the tests that
+produce on from off states are called ephemeral as changing the off state would
+remove all on states and the test has to be repeated. On states are
 however reusable within an off state transition and as many branches of
 on states transitions can span multiple tests without touching the off
 state. This is important in the test management as ephemeral tests provide
 states that can only be reused with protective scheduling.
+
+A final additional concept to consider for test running is that of permanent
+vms. For a test requiring vms with highly sophisticated preparation sequences
+that sometimes might be only semi-automatable or requiring strictly human input
+it might be more preferable to add an external vm that could for instance only
+be manipulated via on states (thus without interfering with the original setup).
+Such a permanent vm might just be brought from outside to participate in the
+test suite orchestration with a minimal pre-set on state or could be fully
+prepared using the test suite toolset through an extra tool development. More
+information about it and ephemeral tests in general can be found in the test
+development documentation.
 
 ## How to install and run
 In terms of installation, you may proceed analogically to other avocado
@@ -330,13 +348,14 @@ automatically determined during automatic setup. Generally, performing manual
 setup is also no longer necessary. You can easily distinguish among all manual
 and automated steps by looking at the test IDs. The manual steps contain "m"
 in their short names while automated steps contain "a". Cleanup tests contain
-"c" and "b" is reserved for duplicate tests due to multiple variants of their
+"c" and "d" is reserved for duplicate tests due to multiple variants of their
 setup. If you include only one *run* the tests executed within the run step
 will not contain any letters but if you include multiple *run* steps, in order
 to guarantee we can distinguish among the tests, they will contain "n" (with
 "s" for the shared root test for scanning all test dependencies and also "r"
 for an object-specific root or creation, "p" and "q" for preinstall and install
-test nodes). The typical approach to do this test tagging is in order of test
+test nodes), and finally "b" for autogenerated ephemeral nodes. The typical
+approach to do this test tagging is compound and specifically in order of test
 discovery, i.e. 0m1n1a2 stands for the test which is the second automated setup
 of the test which is the first test in a run step m1 and first run n1. These
 IDs are also used in all graphical descriptions of the Cartesian graph used
@@ -345,6 +364,19 @@ for resolving all test dependencies.
  **Note**: The order of regular (run/main) tests is not always guaranteed.
 Also, missing test numbers represent excluded tests due to guest variant
 restrictions (some tests run only on some OS, hardware, or vms in general).
+
+More details regarding the configuration necessary for creating the graph is
+available in the test development documentation but the essential ones are the
+*check*, *get*, *set*, and *unset* routines with additional parameters like
+
+- *\*_state* - A vm state to perform the routine on
+- *\*_type* - Type of the vm state: "on" or "off"
+- *\*_mode* - Behaviors in case of present/absent setup defined above
+- *\*_opts* - Secondary options, currently available ones are:
+  - "check_opts=print_pos=yes/no print_neg=yes/no" to decide whether to print
+    positive or negative outcomes from the check
+  - "get_opts=swtich=on/off" to generate ephemeral tests and switch retrieved
+    state from an off state to an on state or vice versa
 
 An *only* argument can have any number of ".", "..", and "," in between variant
 names where the first stands for *immediately followed by*, the second for AND

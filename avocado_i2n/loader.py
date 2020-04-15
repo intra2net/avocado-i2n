@@ -116,6 +116,11 @@ class CartesianLoader(VirtTestLoader):
         main_object = None
         test_nodes = []
 
+        if "0root" in nodes_str :
+            return [self.parse_create_node(graph, object_name, prefix=prefix)]
+        elif "0preinstall" in nodes_str:
+            return [self.parse_install_node(graph, object_name, prefix=prefix)]
+
         # prepare initial parser as starting configuration and get through tests
         early_config = param.Reparsable()
         early_config.parse_next_file("sets.cfg")
@@ -286,7 +291,7 @@ class CartesianLoader(VirtTestLoader):
             for test_object in test_node.objects:
                 logging.debug("Parsing dependencies of %s for object %s", test_node.params["shortname"], test_object.name)
                 object_params = test_node.params.object_params(test_object.name)
-                if object_params.get("get_state", "") == "":
+                if object_params.get("get", object_params.get("get_state", "")) == "":
                     continue
 
                 # get and parse parents
@@ -317,6 +322,7 @@ class CartesianLoader(VirtTestLoader):
                 used_objects.append(test_object)
                 used_roots.append(object_roots[0])
         graph.objects[:] = used_objects
+        assert len(used_objects) > 0, "The parsed test nodes don't seem to use any vm objects"
         root_for_all = self.parse_scan_node(graph, param_str)
         for root_for_object in used_roots:
             root_for_object.setup_nodes.append(root_for_all)
@@ -335,7 +341,7 @@ class CartesianLoader(VirtTestLoader):
         :type references: str or [str] or None
         :param which_tests: display behavior for incompatible tests
         :type which_tests: :py:class:`loader.DiscoverMode`
-        :return: test factories as tuples of the test class and its parameters
+        :returns: test factories as tuples of the test class and its parameters
         :rtype: [(type, {str, str})]
         """
         if references is not None:
@@ -355,29 +361,33 @@ class CartesianLoader(VirtTestLoader):
         return test_suite
 
     """custom nodes"""
-    def parse_scan_node(self, graph, param_str):
+    def parse_scan_node(self, graph, param_str="", prefix=""):
         """
         Get the first test node for all objects.
 
         :param graph: test graph to parse root node from
         :type graph: :py:class:`TestGraph`
         :param str param_str: block of command line parameters
+        :param str prefix: extra name identifier for the test to be run
+        :returns: parsed shared root node
+        :rtype: :py:class:`TestNode`
 
         This assumes that there is only one shared root test node.
         """
         objects = sorted(graph.test_objects.keys())
         setup_dict = {"abort_on_error": "yes", "set_state_on_error": "",
+                      "skip_image_processing": "yes",
                       "vms": " ".join(objects),
                       "main_vm": objects[0]}
         setup_str = param.ParsedDict(setup_dict).parsable_form() + param_str
         nodes = self.parse_nodes(param.re_str("nonleaves..0scan", setup_str), graph)
         assert len(nodes) == 1, "There can only be one shared root"
-        scan_node = TestNode("0s", nodes[0].config, [])
+        scan_node = TestNode(prefix + "0s", nodes[0].config, [])
         scan_node.regenerate_params()
         logging.debug("Reached shared root %s", scan_node.params["shortname"])
         return scan_node
 
-    def parse_create_node(self, graph, object_name, param_str):
+    def parse_create_node(self, graph, object_name, param_str="", prefix=""):
         """
         Get the first test node for the given object.
 
@@ -385,6 +395,9 @@ class CartesianLoader(VirtTestLoader):
         :type graph: :py:class:`TestGraph`
         :param str object_name: name of the test object whose configuration is reused if node if objectless
         :param str param_str: block of command line parameters
+        :param str prefix: extra name identifier for the test to be run
+        :returns: parsed object root node
+        :rtype: :py:class:`TestNode`
 
         This assumes that there is only one root test node which is the one
         with the 'root' start state.
@@ -392,47 +405,47 @@ class CartesianLoader(VirtTestLoader):
         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
         test_object = objects[0]
-        setup_dict = {"set_state": "root", "set_type": "off"}
+        setup_dict = {"set_state": "root",
+                      "vm_action": "set", "skip_image_processing": "yes"}
         setup_str = param.re_str("nonleaves..0root", param_str)
         config = test_object.config.get_copy()
         config.parse_next_batch(base_file="sets.cfg",
                                 ovrwrt_file=param.tests_ovrwrt_file(),
                                 ovrwrt_str=setup_str,
                                 ovrwrt_dict=setup_dict)
-        create_node = TestNode("0r", config, [test_object])
+        create_node = TestNode(prefix + "0r", config, [test_object])
         create_node.regenerate_params()
         logging.debug("Reached %s root %s", object_name, create_node.params["shortname"])
-        return [create_node]
+        return create_node
+
+    def parse_install_node(self, graph, object_name, param_str="", prefix=""):
+        """
+        Get the original install test node for the given object.
+
+        :param graph: test graph to parse root node from
+        :type graph: :py:class:`TestGraph`
+        :param str object_name: name of the test object whose configuration is reused if node if objectless
+        :param str param_str: block of command line parameters
+        :param str prefix: extra name identifier for the test to be run
+        :returns: original parsed object install node
+        :rtype: :py:class:`TestNode`
+        """
+        objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
+        assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
+        test_object = objects[0]
+        setup_dict = {"get": "0root", "set_state": "install"}
+        setup_str = param.re_str("nonleaves..0preinstall", param_str)
+        config = test_object.config.get_copy()
+        config.parse_next_batch(base_file="sets.cfg",
+                                ovrwrt_file=param.tests_ovrwrt_file(),
+                                ovrwrt_str=setup_str,
+                                ovrwrt_dict=setup_dict)
+        install_node = TestNode(prefix + "0p", config, [test_object])
+        install_node.regenerate_params()
+        logging.debug("Reached %s install configured by %s", object_name, install_node.params["shortname"])
+        return install_node
 
     """internals - get/parse, duplicates"""
-    def _get_and_parse_parent(self, graph, test_node, test_object, param_str, setup_restr):
-        """
-        Perform a fast and simple check for a single parent node and
-        generate it if it wasn't found during the check.
-
-        .. note:: This method is a legacy method which works faster but
-            *only* if the given test node has exactly *one* parent (per object).
-        """
-        get_parents = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
-                                         subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
-        parents = get_parents
-        if len(get_parents) == 0:
-            if setup_restr == "0root":
-                parse_parents = self.parse_create_node(graph, test_object.name, param_str)
-            else:
-                setup_str = param.re_str("nonleaves.." + setup_restr, param_str)
-                name = test_node.name + "a"
-                parse_parents = self.parse_nodes(setup_str, graph, prefix=name, object_name=test_object.name)
-            parents = parse_parents
-        else:
-            parse_parents = []
-        # NOTE: it is possible that exactly one of multiple parents is already parsed and we don't
-        # detect the node actually requiring more but again, this is legacy method and has its drawbacks
-        assert len(parents) <= 1, ("Test %s has multiple setups:\n%s\nSpecify 'get_parse=advanced' to "
-                                   "support this." % (test_node.params["shortname"],
-                                                      "\n".join([p.params["shortname"] for p in parents])))
-        return get_parents, parse_parents
-
     def _parse_and_get_parents(self, graph, test_node, test_object, param_str):
         """
         Generate (if necessary) all parent test nodes for a given test
@@ -442,23 +455,46 @@ class CartesianLoader(VirtTestLoader):
         object_params = test_node.params.object_params(test_object.name)
         # use get directive -> if not use get_state -> if not use root
         setup_restr = object_params.get("get", object_params.get("get_state", "0root"))
+        setup_opts = object_params.get_dict("get_opts")
         logging.debug("Parsing Cartesian setup of %s through restriction %s",
                       test_node.params["shortname"], setup_restr)
 
-        # NOTE: in general everything should be parsed in the full functionality way
-        # but for performance reasons, we will switch it off when we have the extra
-        # knowledge that the current test node uses simple setup
-        if object_params.get("get") is None and object_params.get("get_parse", "simple") == "simple":
-            return self._get_and_parse_parent(graph, test_node, test_object, param_str, setup_restr)
-        elif object_params.get("get_parse", "advanced") != "advanced":
-            raise ValueError("The setup parsing mode must be one of: 'simple', 'advanced'")
-
         if setup_restr == "0root":
-            new_parents = self.parse_create_node(graph, test_object.name, param_str)
+            new_parents = [self.parse_create_node(graph, test_object.name, param_str)]
+        elif setup_restr == "0preinstall":
+            new_parents = [self.parse_install_node(graph, test_object.name, param_str)]
+        elif setup_opts.get("switch") is not None:
+            switch = setup_opts.get("switch")
+            reverse = "off" if switch == "on" else "on"
+            logging.debug("Adding an ephemeral test to switch from %s to %s states for %s",
+                          switch, reverse, test_object.name)
+            setup_dict = {"get": setup_restr,
+                          "get_state": object_params.get("get_state"),
+                          "set_state": object_params.get("get_state"),
+                          "get_type": reverse, "set_type": switch}
+            setup_str = param.re_str("nonleaves..manage.start", param_str)
+            setup_str += param.ParsedDict(setup_dict).parsable_form()
+            name = test_node.name + "b"
+            test_node.params["get_type_" + test_object.name] = switch
+            old_parents = graph.get_nodes_by("name", "(\.|^)manage.start(\.|$)",
+                                             subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name,
+                                                                       subset=graph.get_nodes_by("get_state",
+                                                                                                 object_params.get("get_state"))))
+            if len(old_parents) > 0:
+                return old_parents, []
+            new_parents = self.parse_nodes(setup_str, graph, prefix=name, object_name=test_object.name)
+            assert len(new_parents) == 1, "There could be only one autogenerated ephemeral variant"
+            return [], new_parents
         else:
+            # speedup for handling already parsed unique parent cases
+            get_parent = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
+                                             subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
+            if len(get_parent) == 1:
+                return get_parent, []
             setup_str = param.re_str("nonleaves.." + setup_restr, param_str)
             name = test_node.name + "a"
             new_parents = self.parse_nodes(setup_str, graph, prefix=name, object_name=test_object.name)
+
         for new_parent in new_parents:
             # BUG: a good way to get a variant valid test name was to use
             # re.sub("^(.+\.)*(all|none|minimal)\.", "", NAME)
@@ -494,7 +530,7 @@ class CartesianLoader(VirtTestLoader):
                               child.params["shortname"], parents[i].params["shortname"])
 
                 clone_variant = child.params["name"]
-                clone_name = child.name + "b" + str(i+1)
+                clone_name = child.name + "d" + str(i+1)
                 clone_str = param.re_str(clone_variant)
                 config = child.config.get_copy()
                 config.parse_next_str(clone_str)

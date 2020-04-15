@@ -218,21 +218,18 @@ def full(config, tag=""):
     LOG_UI.info("Starting full setup for %s (%s)",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
 
-    clean(config, tag=tag + "mm")
     for vm_name in config["selected_vms"]:
         vm_params = config["vms_params"].object_params(vm_name)
         logging.info("Creating the full state '%s' of %s", vm_params.get("state", "customize"), vm_name)
-        if vm_params.get("state", "customize") == "root":
-            # TODO: avoid using other tools and rely on pure graph root creation in the future
-            root_config = config.copy()
-            root_config["selected_vms"] = [vm_name]
-            root_config["vms_params"] = vm_params
-            create(root_config, tag=tag)
-            continue
 
+        state = vm_params.get("state", "customize")
+        state = "0root" if state == "root" else state
+        state = "0preinstall" if state == "install" else state
+
+        # in case of permanent vms, support creation and other otherwise dangerous operations
+        setup_str = config["param_str"] + param.ParsedDict({"create_permanent_vm": "yes"}).parsable_form()
         # overwrite any existing test objects
-        vm_params["force_create"] = "yes"
-        create_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("state", "customize")),
+        create_graph = l.parse_object_trees(setup_str, param.re_str("nonleaves.." + state),
                                             {vm_name: config["vm_strs"][vm_name]},
                                             prefix=tag, object_names=vm_name, objectless=True)
         create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=False)
@@ -240,8 +237,7 @@ def full(config, tag=""):
 
         # NOTE: this makes sure that any present states are overwritten and no created
         # states are removed, skipping any state restoring for better performance
-        setup_str = config["param_str"] + param.ParsedDict({"force_create": "yes", "get_mode": "ia",
-                                                          "set_mode": "ff", "unset_mode": "ra"}).parsable_form()
+        setup_str = config["param_str"] + param.ParsedDict({"get_mode": "ia", "set_mode": "ff", "unset_mode": "ra"}).parsable_form()
         r.run_traversal(create_graph, setup_str)
 
     LOG_UI.info("Finished full setup")
@@ -271,33 +267,35 @@ def update(config, tag=""):
         vm_params = config["vms_params"].object_params(vm_name)
         logging.info("Updating state '%s' of %s", vm_params.get("to_state", "customize"), vm_name)
 
-        if vm_params.get("to_state", "customize") == "root":
+        from_state = vm_params.get("from_state", "install")
+        to_state = vm_params.get("to_state", "customize")
+        if to_state == "root":
             logging.warning("The root state of %s cannot be updated - use 'setup=full' instead.", vm_name)
             continue
 
-        logging.info("Tracing and removing all old states depending on the updated '%s'...",
-                     vm_params.get("to_state", "customize"))
+        logging.info("Tracing and removing all old states depending on the updated '%s'...", to_state)
+        to_state = "0preinstall" if to_state == "install" else to_state
         # remove all test nodes depending on the updated node if present (unset mode is "ignore otherwise")
         remove_graph = l.parse_object_trees(config["param_str"] + param.ParsedDict({"unset_mode": "fi"}).parsable_form(),
                                             param.re_str(vm_params.get("remove_set", "all")), config["vm_strs"],
                                             prefix=tag, object_names=vm_name, objectless=False, verbose=False)
         remove_graph.flag_children(flag_type="run", flag=False)
         remove_graph.flag_children(flag_type="clean", flag=False)
-        remove_graph.flag_children(vm_params.get("to_state", "customize"), vm_name,
-                                   flag_type="clean", flag=True, skip_roots=True)
+        remove_graph.flag_children(to_state, vm_name, flag_type="clean", flag=True, skip_roots=True)
         r.run_traversal(remove_graph, config["param_str"])
 
-        logging.info("Updating all states before '%s'", vm_params.get("to_state", "customize"))
-        update_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("to_state", "customize")),
+        logging.info("Updating all states before '%s'", to_state)
+        update_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + to_state),
                                             {vm_name: config["vm_strs"][vm_name]}, prefix=tag,
                                             object_names=vm_name, objectless=True)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=False)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=True,
                                               skip_object_roots=True, skip_shared_root=True)
 
-        logging.info("Preserving all states before '%s'", vm_params.get("from_state", "customize"))
-        if vm_params.get("from_state", "install") != "root":
-            reuse_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + vm_params.get("from_state", "install")),
+        logging.info("Preserving all states before '%s'", from_state)
+        from_state = "0preinstall" if from_state == "install" else from_state
+        if from_state != "root":
+            reuse_graph = l.parse_object_trees(config["param_str"], param.re_str("nonleaves.." + from_state),
                                                {vm_name: config["vm_strs"][vm_name]}, prefix=tag,
                                                object_names=vm_name, objectless=True, verbose=False)
             update_graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
@@ -383,12 +381,9 @@ def install(config, tag=""):
     LOG_UI.info("Installing %s (%s)",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
     graph = TestGraph()
-    graph.nodes, graph.objects = l.parse_object_nodes(param.re_str("nonleaves..install"),
-                                                      config["vm_strs"],
-                                                      prefix=tag,
-                                                      object_names=" ".join(config["selected_vms"]),
-                                                      objectless=True)
+    graph.objects = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
     for vm_name in sorted(graph.test_objects.keys()):
+        graph.nodes.append(l.parse_install_node(graph, vm_name, config["param_str"], prefix=tag))
         r.run_install_node(graph, vm_name, config["param_str"])
     LOG_UI.info("Finished installation")
 
@@ -701,13 +696,26 @@ def set(config, tag=""):
     LOG_UI.info("Starting state set for %s with job %s and params:\n%s",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
                 config["param_str"].rstrip())
+    setup_str = config["param_str"]
     for vm_name in config["selected_vms"]:
+        # TODO: replace usage of the param string with normal dictionary or something easier to digest
+        if "set_type" not in config["param_str"]:
+            graph = TestGraph()
+            graph.objects = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
+            if "set_state = root\n" in config["param_str"]:
+                node = l.parse_create_node(graph, vm_name, config["param_str"], prefix=tag)
+                setup_str += param.ParsedDict({"set_type": node.params["set_type"]}).parsable_form()
+            elif "set_state = install\n" in config["param_str"]:
+                node = l.parse_install_node(graph, vm_name, config["param_str"], prefix=tag)
+                setup_str += param.ParsedDict({"set_type": node.params["set_type"]}).parsable_form()
+            else:
+                pass  # will use default set type
         test_object = l.parse_objects(config["vm_strs"], vm_name)
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file(),
                                     ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
-                                                            config["param_str"]),
+                                                            setup_str),
                                     ovrwrt_dict={"vm_action": "set",
                                                  "skip_image_processing": "yes"})
         r.run_test_node(TestNode(tag, reparsable, []))
@@ -737,6 +745,18 @@ def unset(config, tag=""):
     else:
         setup_str = config["param_str"]
     for vm_name in config["selected_vms"]:
+        # TODO: replace usage of the param string with normal dictionary or something easier to digest
+        if "unset_type" not in config["param_str"]:
+            graph = TestGraph()
+            graph.objects = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
+            if "unset_state = root\n" in config["param_str"]:
+                node = l.parse_create_node(graph, vm_name, config["param_str"], prefix=tag)
+                setup_str += param.ParsedDict({"unset_type": node.params["set_type"]}).parsable_form()
+            if "unset_state = install\n" in config["param_str"]:
+                node = l.parse_install_node(graph, vm_name, config["param_str"], prefix=tag)
+                setup_str += param.ParsedDict({"unset_type": node.params["set_type"]}).parsable_form()
+            else:
+                pass  # will use default unset type
         test_object = l.parse_objects(config["vm_strs"], vm_name)
         reparsable = test_object[0].config.get_copy()
         reparsable.parse_next_batch(base_file="sets.cfg",
@@ -758,7 +778,7 @@ def create(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = config["param_str"]
-    config["param_str"] += param.ParsedDict({"set_state": "root", "set_mode": "af", "set_type": "off"}).parsable_form()
+    config["param_str"] += param.ParsedDict({"set_state": "root", "set_mode": "af"}).parsable_form()
     set(config, tag=tag)
     config["param_str"] = setup_str
 
@@ -772,6 +792,6 @@ def clean(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     setup_str = config["param_str"]
-    config["param_str"] += param.ParsedDict({"unset_state": "root", "unset_mode": "fa", "unset_type": "off"}).parsable_form()
+    config["param_str"] += param.ParsedDict({"unset_state": "root", "unset_mode": "fa"}).parsable_form()
     unset(config, tag=tag)
     config["param_str"] = setup_str

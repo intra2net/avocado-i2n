@@ -102,15 +102,15 @@ class TestNode(object):
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
-        return self.name == "0s" and len(self.objects) == 0
+        return self.name.endswith("0s") and len(self.objects) == 0
 
     def is_create_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.name == "0r" and len(self.objects) == 1
+        return self.name.endswith("0r") and len(self.objects) == 1
 
     def is_install_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return len(self.objects) == 1 and self.params.get("set_state") == "install"
+        return self.name.endswith("0p") and len(self.objects) == 1
 
     def is_shared_root(self):
         """Check if the test node is the root of all test nodes for all test objects."""
@@ -137,25 +137,12 @@ class TestNode(object):
             if object_state is None or object_state == "":
                 continue
 
-            # definition 1 (with non-root off starting state)
+            # any off-on state transition marks the test as ephemeral
             if (object_params.get("get_type", "on") == "off" and
-                    object_params.get("get_state", "0root") != "0root" and
-                    object_params.get("set_type", "on") == "on"):
-                return True
-
-            # definition 2 (with impermanent test object)
-            if (not test_object.is_permanent() and
                     object_params.get("set_type", "on") == "on"):
                 return True
 
         return False
-
-    def is_manual(self):
-        """
-        If the test node is manual, its execution is disallowed and considered
-        responsibility of the user.
-        """
-        return ".manual." in self.params["name"]
 
     def is_setup_ready(self):
         """

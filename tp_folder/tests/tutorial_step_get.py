@@ -2,15 +2,9 @@
 
 SUMMARY
 ------------------------------------------------------
-Run the steps necessary to make sure a vm has internet access.
+Sample test suite GET tutorial -- *Complex test dependencies*
 
 Copyright: Intra2net AG
-
-
-CONTENTS
-------------------------------------------------------
-Compared to :py:mod:`testsuite.host.tests.shared_set_provider`,
-this test ends in an on state where the vm is online.
 
 
 INTERFACE
@@ -18,15 +12,15 @@ INTERFACE
 
 """
 
-import logging
 import time
+import logging
 import os
 
 # avocado imports
 from avocado.core import exceptions
 
 # custom imports
-pass
+from sample_utility import sleep
 
 
 ###############################################################################
@@ -42,6 +36,18 @@ def run(test, params, env):
     :param env: environment object
     """
     vmnet = env.get_vmnet()
-    vm, _ = vmnet.get_single_vm_with_session()
+    vmnet.start_all_sessions()
+    vms = vmnet.get_vms()
+    temporary = vms.temporary
+    permanent = vms.permanent
 
-    vmnet.ping_all()
+    logging.info(temporary.session.cmd_output("uptime"))
+    logging.info(temporary.session.cmd_output("cat /etc/os-release"))
+
+    logging.info(permanent.session.cmd_output("uptime"))
+    logging.info(permanent.session.cmd_output("cat /etc/os-release"))
+
+    # call to a function shared among tests
+    sleep(3)
+
+    logging.info("Test passed.")

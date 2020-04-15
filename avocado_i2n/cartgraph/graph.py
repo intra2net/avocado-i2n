@@ -193,11 +193,10 @@ class TestGraph(object):
 
         :param env: environment related to the test
         :type env: Env object
+        :raises: :py:class:`AssertionError` if a permanent (manual) vms doesn't exist
         """
         for test_node in self.nodes:
             test_node.should_run = True
-            if test_node.is_manual():
-                test_node.should_run = False
 
             for test_object in test_node.objects:
                 object_name = test_object.name
@@ -230,32 +229,29 @@ class TestGraph(object):
                         # test should be run regardless of further checks
                         continue
 
-                # manual tests can only be run by the user and are his/her responsibility
-                if test_node.is_manual():
-                    # the set state has to be defined for all manual test objects
-                    logging.info("The state %s of %s is expected to be manually provided",
-                                 object_state, object_name)
-                    # test should not be run regardless of further checks
-                    continue
-
                 # ultimate consideration of whether the state is actually present
                 object_params["vms"] = object_name
                 object_params["check_state"] = object_state
                 object_params["check_type"] = object_params.get("set_type", "on")
-                is_state_detected = state_setup.check_state(object_params, env,
-                                                            print_pos=True, print_neg=True)
+                object_params["check_opts"] = object_params.get("check_opts",
+                                                                "print_pos=yes print_neg=yes")
+                is_state_detected = state_setup.check_state(object_params, env)
                 # the object state has to be defined to reach this stage
                 if is_state_detected:
                     test_node.should_run = False
+                elif object_state == "root" and test_object.is_permanent():
+                    # abort traversal
+                    self.flag_children(flag=False)
+                    raise AssertionError("Missing permanent vm %s" % object_name)
 
-    def flag_children(self, state_name=None, object_name=None, flag_type="run", flag=True,
+    def flag_children(self, node_name=None, object_name=None, flag_type="run", flag=True,
                       skip_roots=False):
         """
-        Set the run/clean flag for all children of a node, whose `set_state`
-        parameter is specified by the `state_name` argument.
+        Set the run/clean flag for all children of a parent node of a given name
+        or the entire graph.
 
-        :param state_name: state which is set by the parent node or root if None
-        :type state_name: str or None
+        :param node_name: name of the parent node or root if None
+        :type node_name: str or None
         :param object_name: test object whose state is set or shared root if None
         :type object_name: str or None
         :param str flag_type: 'run' or 'clean' categorization of the children
@@ -266,17 +262,17 @@ class TestGraph(object):
         activity = ("" if flag else "not ") + ("running" if flag_type == "run" else "cleanup")
         logging.debug("Selecting test nodes for %s", activity)
         if object_name is not None:
-            state_name = "root" if state_name is None else state_name
-            root_tests = self.get_nodes_by(param_key="set_state", param_val="^"+state_name+"$")
+            node_name = "root" if node_name is None else node_name
+            root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)"+node_name+"(?:\.|$)")
             root_tests = self.get_nodes_by(param_key="vms",
                                            param_val="(?:^|\s)%s(?:$|\s)" % object_name,
                                            subset=root_tests)
         else:
             root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)0scan(?:\.|$)")
         if len(root_tests) < 1:
-            raise AssertionError("Could not retrieve state %s and flag all its children tests" % state_name)
+            raise AssertionError("Could not retrieve node %s and flag all its children tests" % node_name)
         elif len(root_tests) > 1:
-            raise AssertionError("Could not identify state %s and flag all its children tests" % state_name)
+            raise AssertionError("Could not identify node %s and flag all its children tests" % node_name)
         else:
             test_node = root_tests[0]
 

@@ -56,7 +56,9 @@ def run(test, params, env):
     logging.info("Scanning for already available setup that we can reuse")
 
     trees = TestGraph.REFERENCE
-    trees.scan_object_states(env)
-    trees.save_setup_list(test.job.logdir)
+    try:
+        trees.scan_object_states(env)
+    finally:
+        trees.save_setup_list(test.job.logdir)
 
     logging.info("Scan completed successfully")
