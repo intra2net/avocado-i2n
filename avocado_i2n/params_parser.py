@@ -394,6 +394,18 @@ class Reparsable():
 ###################################################################
 
 
+def all_restrictions():
+    """
+    Return all vms that can be passed for any test configuration.
+
+    :returns: all available (from configuration) vms
+    :rtype: [str]
+    """
+    rep = Reparsable()
+    rep.parse_next_file("groups-base.cfg")
+    return rep.get_params(list_of_keys=["main_restrictions"]).objects("main_restrictions")
+
+
 def all_vms():
     """
     Return all vms that can be passed for any test configuration.

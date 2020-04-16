@@ -38,15 +38,12 @@ def params_from_cmd(config):
     # validate typed vm names and possible vm specific restrictions
     config["available_vms"] = available_vms = param.all_vms()
     config["selected_vms"] = selected_vms = list(available_vms)
-    # If the command line restrictions don't contain any of our primary restrictions
-    # (all|normal|minimal|none), we add "only <default>" to the list where <default> is the
-    # primary restriction definition found in the configs. If the configs are also
-    # not defining any default, we ultimately add "only all". You can have any futher
-    # restrictions like "only=curl" only in the command line.
-    primary_tests_restrictions = ["all", "normal", "minimal", "none"]
+    config["available_restrictions"] = available_restrictions = param.all_restrictions()
+
     use_tests_default = True
     with_nontrivial_restrictions = False
     use_vms_default = {vm_name: True for vm_name in available_vms}
+
     # the tests string includes the test restrictions while the vm strings include the ones for the vm variants
     tests_str = ""
     vm_strs = {}
@@ -57,7 +54,7 @@ def params_from_cmd(config):
             (key, value) = re.findall("(\w+)=(.*)", cmd_param)[0]
             if key == "only" or key == "no":
                 # detect if this is the primary restriction to escape defaults
-                if value in primary_tests_restrictions:
+                if value in available_restrictions:
                     use_tests_default = False
                 # detect if this is a second (i.e. additional) restriction
                 if tests_str != "":
@@ -101,9 +98,9 @@ def params_from_cmd(config):
     tests_str += param_str
     if use_tests_default:
         default = tests_params.get("default_only", "all")
-        if default not in primary_tests_restrictions:
+        if default not in available_restrictions:
             raise ValueError("Invalid primary restriction 'only=%s'! It has to be one "
-                             "of %s" % (default, ", ".join(primary_tests_restrictions)))
+                             "of %s" % (default, ", ".join(available_restrictions)))
         tests_str += "only %s\n" % default
     config["tests_params"] = tests_params
     config["tests_str"] = tests_str
