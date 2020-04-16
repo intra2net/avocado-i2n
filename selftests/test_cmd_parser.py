@@ -16,7 +16,9 @@ class CmdParserTest(unittest.TestCase):
         pass
 
     def test_parse_cmd(self):
+        self.config["params"] += ["aaa=bbb", "ccc"]
         cmd.params_from_cmd(self.config)
+        self.assertEqual(self.config["param_str"], "aaa = bbb\n")
 
 
 if __name__ == '__main__':

@@ -40,52 +40,56 @@ def params_from_cmd(config):
     config["selected_vms"] = selected_vms = list(available_vms)
     config["available_restrictions"] = available_restrictions = param.all_restrictions()
 
+    # default usage switches
     use_tests_default = True
     with_nontrivial_restrictions = False
     use_vms_default = {vm_name: True for vm_name in available_vms}
 
     # the tests string includes the test restrictions while the vm strings include the ones for the vm variants
-    tests_str = ""
-    vm_strs = {}
+    tests_str, vm_strs = "", {}
     # the run string includes only pure parameters
     param_str = ""
+
+    # main tokenizing loop
     for cmd_param in config["params"]:
-        try:
-            (key, value) = re.findall("(\w+)=(.*)", cmd_param)[0]
-            if key == "only" or key == "no":
-                # detect if this is the primary restriction to escape defaults
-                if value in available_restrictions:
-                    use_tests_default = False
-                # detect if this is a second (i.e. additional) restriction
-                if tests_str != "":
-                    with_nontrivial_restrictions = True
-                # main test restriction part
-                tests_str += "%s %s\n" % (key, value)
-            elif key.startswith("only_") or key.startswith("no_"):
-                for vm_name in available_vms:
-                    if re.match("(only|no)_%s" % vm_name, key):
-                        # escape defaults for this vm and use the command line
-                        use_vms_default[vm_name] = False
-                        # detect new restricted vm
-                        if vm_name not in vm_strs:
-                            vm_strs[vm_name] = ""
-                        # main vm restriction part
-                        vm_strs[vm_name] += "%s %s\n" % (key.replace("_%s" % vm_name, ""), value)
-            # NOTE: comma in a parameter sense implies the same as space in config file
-            elif key == "vms":
-                # NOTE: no restrictions of the required vms are allowed during tests since
-                # these are specified by each test (allowed only for manual setup steps)
-                selected_vms[:] = value.split(",")
-                for vm_name in selected_vms:
-                    if vm_name not in available_vms:
-                        raise ValueError("The vm '%s' is not among the supported vms: "
-                                         "%s" % (vm_name, ", ".join(available_vms)))
-            else:
-                # NOTE: comma on the command line is space in a config file
-                value = value.replace(",", " ")
-                param_str += "%s = %s\n" % (key, value)
-        except IndexError:
-            pass
+        re_param = re.match(r"(\w+)=(.*)", cmd_param)
+        if re_param is None:
+            log.error("Skipping malformed parameter on the command line '%s' - "
+                      "must be of the form <key>=<val>", cmd_param)
+            continue
+        (key, value) = re_param.group(1, 2)
+        if key == "only" or key == "no":
+            # detect if this is the primary restriction to escape defaults
+            if value in available_restrictions:
+                use_tests_default = False
+            # detect if this is a second (i.e. additional) restriction
+            if tests_str != "":
+                with_nontrivial_restrictions = True
+            # main test restriction part
+            tests_str += "%s %s\n" % (key, value)
+        elif key.startswith("only_") or key.startswith("no_"):
+            for vm_name in available_vms:
+                if re.match("(only|no)_%s" % vm_name, key):
+                    # escape defaults for this vm and use the command line
+                    use_vms_default[vm_name] = False
+                    # detect new restricted vm
+                    if vm_name not in vm_strs:
+                        vm_strs[vm_name] = ""
+                    # main vm restriction part
+                    vm_strs[vm_name] += "%s %s\n" % (key.replace("_%s" % vm_name, ""), value)
+        # NOTE: comma in a parameter sense implies the same as space in config file
+        elif key == "vms":
+            # NOTE: no restrictions of the required vms are allowed during tests since
+            # these are specified by each test (allowed only for manual setup steps)
+            selected_vms[:] = value.split(",")
+            for vm_name in selected_vms:
+                if vm_name not in available_vms:
+                    raise ValueError("The vm '%s' is not among the supported vms: "
+                                     "%s" % (vm_name, ", ".join(available_vms)))
+        else:
+            # NOTE: comma on the command line is space in a config file
+            value = value.replace(",", " ")
+            param_str += "%s = %s\n" % (key, value)
     config["param_str"] = param_str
     log.debug("Parsed param string '%s'", param_str)
 
