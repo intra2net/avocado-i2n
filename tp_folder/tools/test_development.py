@@ -66,9 +66,10 @@ def develop(config, tag=""):
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
     vms = " ".join(config["selected_vms"])
     mode = config["tests_params"].get("devmode", "generator")
-    setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
-    setup_str = param.re_str("nonleaves..develop.%s" % mode) + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
-    tests, _ = l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
+    setup_dict = config["param_dict"].copy()
+    setup_dict.update({"vms": vms, "main_vm": config["selected_vms"][0]})
+    setup_str = param.re_str("nonleaves..develop.%s" % mode)
+    tests, _ = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag, object_names=vms)
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
     r.run_test_node(TestNode(tag, tests[0].config, []))
     LOG_UI.info("Development complete")

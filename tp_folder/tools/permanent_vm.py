@@ -57,8 +57,9 @@ def permubuntu(config, tag=""):
         # permanent objects (i.e. instead of transition from customize to on
         # root, it is a transition from supposedly "permanentized" vm to the root)
         logging.info("Booting %s for the first permanent on state", vm.name)
-        setup_str = param.re_str("nonleaves..manage.start", config["param_str"])
-        setup_dict = {"set_state": "ready"}
+        setup_dict = config["param_dict"].copy()
+        setup_dict.update({"set_state": "ready"})
+        setup_str = param.re_str("nonleaves..manage.start")
         test_node = l.parse_node_from_object(vm, setup_str, setup_dict, prefix=tag)
         r.run_test_node(test_node)
 

@@ -119,17 +119,20 @@ class CartesianLoader(VirtTestLoader):
 
         return test_objects
 
-    def parse_nodes(self, nodes_str, graph, prefix="", object_name="", verbose=False):
+    def parse_nodes(self, graph, param_dict=None, nodes_str="", prefix="", verbose=False, object_name=""):
         """
         Parse all user defined tests (leaf nodes) using the nodes overwrite string
         and possibly restricting to a single test object for the singleton tests.
 
-        :param str nodes_str: block of node-specific parameters and variant restrictions
         :param graph: test graph of already parsed test objects
         :type graph: :py:class:`TestGraph`
+        :param param_dict: runtime parameters used for extra customization
+        :type param_dict: {str, str} or None
+        :param str nodes_str: block of node-specific variant restrictions
         :param str prefix: extra name identifier for the test to be run
-        :param str object_name: name of the test object whose configuration is reused if node if objectless
         :param bool verbose: whether to print extra messages or not
+        :param str object_name: name of the test object whose configuration is
+                                reused if the node does not specify objects
         :returns: parsed test nodes
         :rtype: [:py:class:`TestNode`]
         :raises: :py:class:`exceptions.ValueError` if the base vm is not among the vms for a node
@@ -138,6 +141,7 @@ class CartesianLoader(VirtTestLoader):
         main_object = None
         test_nodes = []
 
+        # TODO: it could be possible to pass a simpler set of objects than an entire graph
         if "0root" in nodes_str :
             return [self.parse_create_node(graph, object_name, prefix=prefix)]
         elif "0preinstall" in nodes_str:
@@ -147,6 +151,7 @@ class CartesianLoader(VirtTestLoader):
         early_config = param.Reparsable()
         early_config.parse_next_file("sets.cfg")
         early_config.parse_next_str(nodes_str)
+        early_config.parse_next_dict(param_dict)
         for i, d in enumerate(early_config.get_parser().get_dicts()):
             name = prefix + str(i+1)
             objects, objstrs = [], {}
@@ -176,7 +181,8 @@ class CartesianLoader(VirtTestLoader):
                                     ovrwrt_file=param.vms_ovrwrt_file())
             config.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file(),
-                                    ovrwrt_str=param.re_str(d["name"], nodes_str))
+                                    ovrwrt_str=param.re_str(d["name"]),
+                                    ovrwrt_dict=param_dict)
 
             test_node = TestNode(name, config, objects)
             try:
@@ -193,22 +199,19 @@ class CartesianLoader(VirtTestLoader):
 
         return test_nodes
 
-    def parse_object_nodes(self, nodes_str, object_strs=None,
-                           prefix="", object_names="",
-                           objectless=False, verbose=False):
+    def parse_object_nodes(self, param_dict=None, nodes_str="", object_strs=None,
+                           prefix="", verbose=False,
+                           object_names="", objectless=False):
         """
         Parse test nodes based on a selection of parsed objects.
 
-        :param str nodes_str: block of node-specific parameters and variant restrictions
-        :param object_strs: block of object-specific parameters and variant restrictions
-        :type object_strs: {str, str}
-        :param str prefix: extra name identifier for the test to be run
         :param str object_names: space separated test object names
         :param bool objectless: whether objectless test nodes are expected to be parsed
-        :param bool verbose: whether to print extra messages or not
         :returns: parsed test nodes and test objects
         :rtype: ([:py:class:`TestNode`], [:py:class:`TestObject`])
         :raises: :py:class:`param.EmptyCartesianProduct` if no test variants for the given vm variants
+
+        The rest of the parameters are identical to the methods before.
 
         If objectless test nodes are expected to be parsed, we will parse them once
         for each object provided through "object_names" or available in the configs.
@@ -217,7 +220,7 @@ class CartesianLoader(VirtTestLoader):
         """
         test_nodes, test_objects = [], []
         if objectless:
-            test_objects.extend(self.parse_objects(object_strs, object_names=object_names, verbose=verbose))
+            test_objects.extend(self.parse_objects(object_strs, verbose=verbose, object_names=object_names))
         else:
             test_objects.extend(self.parse_objects(object_strs, verbose=verbose))
         if verbose:
@@ -227,12 +230,14 @@ class CartesianLoader(VirtTestLoader):
         graph.objects = test_objects
         if objectless:
             for test_object in test_objects:
-                object_nodes = self.parse_nodes(nodes_str, graph, prefix=prefix,
-                                                object_name=test_object.name, verbose=verbose)
+                object_nodes = self.parse_nodes(graph, param_dict, nodes_str,
+                                                prefix=prefix, verbose=verbose,
+                                                object_name=test_object.name)
                 test_nodes.extend(object_nodes)
         else:
             selected_vms = [] if object_names == "" else object_names.split(" ")
-            for test_node in self.parse_nodes(nodes_str, graph, prefix=prefix, verbose=verbose):
+            for test_node in self.parse_nodes(graph, param_dict, nodes_str,
+                                              prefix=prefix, verbose=verbose):
                 compatible = True
                 test_vms = test_node.params.objects("vms")
                 for vm_name in selected_vms:
@@ -245,24 +250,25 @@ class CartesianLoader(VirtTestLoader):
             logging.info("%s selected test variant(s)", len(test_nodes))
         if len(test_nodes) == 0:
             object_restrictions = param.ParsedDict(graph.test_objects).parsable_form()
+            object_strs = {} if object_str is None else object_strs
             for object_str in object_strs.values():
                 object_restrictions += object_str
             config = param.Reparsable()
             config.parse_next_str(object_restrictions)
             config.parse_next_str(nodes_str)
+            config.parse_next_dict(param_dict)
             raise param.EmptyCartesianProduct(config.print_parsed())
 
         return test_nodes, test_objects
 
-    def parse_object_trees(self, param_str, nodes_str, object_strs=None,
-                           prefix="", object_names="",
-                           objectless=False, verbose=False):
+    def parse_object_trees(self, param_dict=None, nodes_str="", object_strs=None,
+                           prefix="", verbose=False,
+                           object_names="", objectless=False):
         """
         Parse all user defined tests (leaves) and their dependencies (internal nodes)
         connecting them according to the required/provided setup states of each test
-        object (vm) and the required/provided objects per test.
+        object (vm) and the required/provided objects per test node (test).
 
-        :param str param_str: block of command line parameters
         :returns: parsed graph of test nodes and test objects
         :rtype: :py:class:`TestGraph`
 
@@ -274,8 +280,9 @@ class CartesianLoader(VirtTestLoader):
         graph = TestGraph()
 
         # parse leaves and discover necessary setup (internal nodes)
-        leaves, stubs = self.parse_object_nodes(nodes_str, object_strs, prefix=prefix, object_names=object_names,
-                                                objectless=objectless, verbose=verbose)
+        leaves, stubs = self.parse_object_nodes(param_dict, nodes_str, object_strs,
+                                                prefix=prefix, verbose=verbose,
+                                                object_names=object_names, objectless=objectless)
         graph.nodes.extend(leaves)
         graph.objects.extend(stubs)
         # NOTE: reversing here turns the leaves into a simple stack
@@ -296,7 +303,7 @@ class CartesianLoader(VirtTestLoader):
                     continue
 
                 # get and parse parents
-                get_parents, parse_parents = self._parse_and_get_parents(graph, test_node, test_object, param_str)
+                get_parents, parse_parents = self._parse_and_get_parents(graph, test_node, test_object, param_dict)
                 graph.nodes.extend(parse_parents)
                 unresolved.extend(parse_parents)
                 parents = get_parents + parse_parents
@@ -324,7 +331,7 @@ class CartesianLoader(VirtTestLoader):
                 used_roots.append(object_roots[0])
         graph.objects[:] = used_objects
         assert len(used_objects) > 0, "The parsed test nodes don't seem to use any vm objects"
-        root_for_all = self.parse_scan_node(graph, param_str)
+        root_for_all = self.parse_scan_node(graph, param_dict)
         for root_for_object in used_roots:
             root_for_object.setup_nodes.append(root_for_all)
             root_for_all.cleanup_nodes.append(root_for_object)
@@ -347,11 +354,11 @@ class CartesianLoader(VirtTestLoader):
         """
         if references is not None:
             assert references.split() == self.config["params"]
-        param_str, nodes_str, object_strs = self.config["param_str"], self.config["tests_str"], self.config["vm_strs"]
+        param_dict, nodes_str, object_strs = self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"]
         prefix = self.config["prefix"]
 
-        graph = self.parse_object_trees(param_str, nodes_str, object_strs, prefix,
-                                        verbose=self.config["subcommand"]!="list")
+        graph = self.parse_object_trees(param_dict, nodes_str, object_strs,
+                                        prefix=prefix, verbose=self.config["subcommand"]!="list")
         test_suite = [n.get_test_factory() for n in graph.nodes]
 
         # HACK: pass the constructed graph to the runner using static attribute hack
@@ -362,13 +369,14 @@ class CartesianLoader(VirtTestLoader):
         return test_suite
 
     """custom nodes"""
-    def parse_scan_node(self, graph, param_str="", prefix=""):
+    def parse_scan_node(self, graph, param_dict=None, prefix=""):
         """
         Get the first test node for all objects.
 
         :param graph: test graph to parse root node from
         :type graph: :py:class:`TestGraph`
-        :param str param_str: block of command line parameters
+        :param param_dict: runtime parameters used for extra customization
+        :type param_dict: {str, str} or None
         :param str prefix: extra name identifier for the test to be run
         :returns: parsed shared root node
         :rtype: :py:class:`TestNode`
@@ -376,26 +384,29 @@ class CartesianLoader(VirtTestLoader):
         This assumes that there is only one shared root test node.
         """
         objects = sorted(graph.test_objects.keys())
-        setup_dict = {"abort_on_error": "yes", "set_state_on_error": "",
-                      "skip_image_processing": "yes",
-                      "vms": " ".join(objects),
-                      "main_vm": objects[0]}
-        setup_str = param.ParsedDict(setup_dict).parsable_form() + param_str
-        nodes = self.parse_nodes(param.re_str("nonleaves..0scan", setup_str), graph)
+        setup_dict = {} if param_dict is None else param_dict.copy()
+        setup_dict.update({"abort_on_error": "yes", "set_state_on_error": "",
+                           "skip_image_processing": "yes",
+                           "vms": " ".join(objects),
+                           "main_vm": objects[0]})
+        setup_str = param.re_str("nonleaves..0scan")
+        nodes = self.parse_nodes(graph, setup_dict, setup_str)
         assert len(nodes) == 1, "There can only be one shared root"
         scan_node = TestNode(prefix + "0s", nodes[0].config, [])
         scan_node.regenerate_params()
         logging.debug("Reached shared root %s", scan_node.params["shortname"])
         return scan_node
 
-    def parse_create_node(self, graph, object_name, param_str="", prefix=""):
+    def parse_create_node(self, graph, object_name, param_dict=None, prefix=""):
         """
         Get the first test node for the given object.
 
         :param graph: test graph to parse root node from
         :type graph: :py:class:`TestGraph`
-        :param str object_name: name of the test object whose configuration is reused if node is objectless
-        :param str param_str: block of command line parameters
+        :param str object_name: name of the test object whose configuration is
+                                reused as the node does not specify objects
+        :param param_dict: runtime parameters used for extra customization
+        :type param_dict: {str, str} or None
         :param str prefix: extra name identifier for the test to be run
         :returns: parsed object root node
         :rtype: :py:class:`TestNode`
@@ -406,21 +417,24 @@ class CartesianLoader(VirtTestLoader):
         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
         test_object = objects[0]
-        setup_dict = {"set_state": "root",
-                      "vm_action": "set", "skip_image_processing": "yes"}
-        setup_str = param.re_str("nonleaves..0root", param_str)
+        setup_dict = {} if param_dict is None else param_dict.copy()
+        setup_dict.update({"set_state": "root",
+                           "vm_action": "set", "skip_image_processing": "yes"})
+        setup_str = param.re_str("nonleaves..0root")
         create_node = self.parse_node_from_object(test_object, setup_str, setup_dict, prefix=prefix+"0r")
         logging.debug("Reached %s root %s", object_name, create_node.params["shortname"])
         return create_node
 
-    def parse_install_node(self, graph, object_name, param_str="", prefix=""):
+    def parse_install_node(self, graph, object_name, param_dict=None, prefix=""):
         """
         Get the original install test node for the given object.
 
         :param graph: test graph to parse root node from
         :type graph: :py:class:`TestGraph`
-        :param str object_name: name of the test object whose configuration is reused if node is objectless
-        :param str param_str: block of command line parameters
+        :param str object_name: name of the test object whose configuration is
+                                reused as the node does not specify objects
+        :param param_dict: runtime parameters used for extra customization
+        :type param_dict: {str, str} or None
         :param str prefix: extra name identifier for the test to be run
         :returns: original parsed object install node
         :rtype: :py:class:`TestNode`
@@ -428,8 +442,9 @@ class CartesianLoader(VirtTestLoader):
         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
         test_object = objects[0]
-        setup_dict = {"get": "0root", "set_state": "install"}
-        setup_str = param.re_str("nonleaves..0preinstall", param_str)
+        setup_dict = {} if param_dict is None else param_dict.copy()
+        setup_dict.update({"get": "0root", "set_state": "install"})
+        setup_str = param.re_str("nonleaves..0preinstall")
         install_node = self.parse_node_from_object(test_object, setup_str, setup_dict, prefix=prefix+"0p")
         logging.debug("Reached %s install configured by %s", object_name, install_node.params["shortname"])
         return install_node
@@ -450,7 +465,7 @@ class CartesianLoader(VirtTestLoader):
                                      " %s" % (d["main_vm"], d["shortname"], d["vms"])
         return d["vms"], main_vm
 
-    def _parse_and_get_parents(self, graph, test_node, test_object, param_str):
+    def _parse_and_get_parents(self, graph, test_node, test_object, param_dict=None):
         """
         Generate (if necessary) all parent test nodes for a given test
         node and test object (including the object creation root test).
@@ -464,20 +479,20 @@ class CartesianLoader(VirtTestLoader):
                       test_node.params["shortname"], setup_restr)
 
         if setup_restr == "0root":
-            new_parents = [self.parse_create_node(graph, test_object.name, param_str)]
+            new_parents = [self.parse_create_node(graph, test_object.name, param_dict)]
         elif setup_restr == "0preinstall":
-            new_parents = [self.parse_install_node(graph, test_object.name, param_str)]
+            new_parents = [self.parse_install_node(graph, test_object.name, param_dict)]
         elif setup_opts.get("switch") is not None:
             switch = setup_opts.get("switch")
             reverse = "off" if switch == "on" else "on"
             logging.debug("Adding an ephemeral test to switch from %s to %s states for %s",
                           switch, reverse, test_object.name)
-            setup_dict = {"get": setup_restr,
-                          "get_state": object_params.get("get_state"),
-                          "set_state": object_params.get("get_state"),
-                          "get_type": reverse, "set_type": switch}
-            setup_str = param.re_str("nonleaves..manage.start", param_str)
-            setup_str += param.ParsedDict(setup_dict).parsable_form()
+            setup_dict = {} if param_dict is None else param_dict.copy()
+            setup_dict.update({"get": setup_restr,
+                               "get_state": object_params.get("get_state"),
+                               "set_state": object_params.get("get_state"),
+                               "get_type": reverse, "set_type": switch})
+            setup_str = param.re_str("nonleaves..manage.start")
             name = test_node.name + "b"
             test_node.params["get_type_" + test_object.name] = switch
             old_parents = graph.get_nodes_by("name", "(\.|^)manage.start(\.|$)",
@@ -486,7 +501,7 @@ class CartesianLoader(VirtTestLoader):
                                                                                                  object_params.get("get_state"))))
             if len(old_parents) > 0:
                 return old_parents, []
-            new_parents = self.parse_nodes(setup_str, graph, prefix=name, object_name=test_object.name)
+            new_parents = self.parse_nodes(graph, setup_dict, setup_str, prefix=name, object_name=test_object.name)
             assert len(new_parents) == 1, "There could be only one autogenerated ephemeral variant"
             return [], new_parents
         else:
@@ -495,9 +510,9 @@ class CartesianLoader(VirtTestLoader):
                                              subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
             if len(get_parent) == 1:
                 return get_parent, []
-            setup_str = param.re_str("nonleaves.." + setup_restr, param_str)
+            setup_str = param.re_str("nonleaves.." + setup_restr)
             name = test_node.name + "a"
-            new_parents = self.parse_nodes(setup_str, graph, prefix=name, object_name=test_object.name)
+            new_parents = self.parse_nodes(graph, param_dict, setup_str, prefix=name, object_name=test_object.name)
 
         for new_parent in new_parents:
             # BUG: a good way to get a variant valid test name was to use

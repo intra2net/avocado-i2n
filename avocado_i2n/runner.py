@@ -63,14 +63,15 @@ class CartesianRunner(TestRunner):
         # like most of the other runners do
         return self.run_test(self.job, self.result, node.get_test_factory(self.job), SimpleQueue(), set())
 
-    def run_traversal(self, graph, param_str):
+    def run_traversal(self, graph, params):
         """
         Run all user and system defined tests optimizing the setup reuse and
         minimizing the repetition of demanded tests.
 
         :param graph: test graph to traverse
         :type graph: :py:class:`TestGraph`
-        :param str param_str: block of command line parameters
+        :param params: runtime parameters used for extra customization
+        :type params: {str, str}
         :raises: :py:class:`AssertionError` if some traversal assertions are violated
 
         The highest priority is at the setup tests (parents) since the test cannot be
@@ -117,7 +118,7 @@ class CartesianRunner(TestRunner):
             if previous in next.cleanup_nodes or previous in next.visited_cleanup_nodes:
 
                 if next.is_setup_ready():
-                    self._traverse_test_node(graph, next, param_str)
+                    self._traverse_test_node(graph, next, params)
                     previous.visit_node(next)
                     traverse_path.pop()
                 else:
@@ -130,10 +131,10 @@ class CartesianRunner(TestRunner):
                     traverse_path.append(next.pick_next_parent())
                     continue
                 else:
-                    self._traverse_test_node(graph, next, param_str)
+                    self._traverse_test_node(graph, next, params)
 
                 if next.is_cleanup_ready():
-                    self._reverse_test_node(graph, next, param_str)
+                    self._reverse_test_node(graph, next, params)
                     for setup in next.visited_setup_nodes:
                         setup.visit_node(next)
                     traverse_path.pop()
@@ -172,11 +173,11 @@ class CartesianRunner(TestRunner):
         summary = set()
         if self.job.sysinfo is not None:
             self.job.sysinfo.start_job_hook()
-        param_str = self.job.config["param_str"]
+        params = self.job.config["param_dict"]
 
         try:
             graph.visualize(self.job.logdir)
-            self.run_traversal(graph, param_str)
+            self.run_traversal(graph, params)
         except KeyboardInterrupt:
             TEST_LOG.error('Job interrupted by ctrl+c.')
             summary.add('INTERRUPTED')
@@ -189,13 +190,12 @@ class CartesianRunner(TestRunner):
         return summary
 
     """custom nodes"""
-    def run_scan_node(self, graph, param_str):
+    def run_scan_node(self, graph):
         """
         Run the set of tests necessary for starting test traversal.
 
         :param graph: test graph to run scan node from
         :type graph: :py:class:`TestGraph`
-        :param str param_str: block of command line parameters
         """
         # HACK: pass the constructed graph to the test using static attribute hack
         # since there is absolutely no sane way to pass through the cloud of imports
@@ -219,14 +219,13 @@ class CartesianRunner(TestRunner):
         for node in graph.nodes:
             self.result.cancelled += 1 if not node.should_run else 0
 
-    def run_create_node(self, graph, object_name, param_str):
+    def run_create_node(self, graph, object_name):
         """
         Run the set of tests necessary for creating a given test object.
 
         :param graph: test graph to run create node from
         :type graph: :py:class:`TestGraph`
         :param str object_name: name of the test object to be created
-        :param str param_str: block of command line parameters
         """
         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
@@ -242,14 +241,15 @@ class CartesianRunner(TestRunner):
         else:
             self.run_test_node(test_node)
 
-    def run_install_node(self, graph, object_name, param_str):
+    def run_install_node(self, graph, object_name, params):
         """
         Run the set of tests necessary for installing a given test object.
 
         :param graph: test graph to run install node from
         :type graph: :py:class:`TestGraph`
         :param str object_name: name of the test object to be installed
-        :param str param_str: block of command line parameters
+        :param params: runtime parameters used for extra customization
+        :type params: {str, str}
         :raises: :py:class:`NotImplementedError` if using incompatible installation variant
         """
         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
@@ -271,28 +271,28 @@ class CartesianRunner(TestRunner):
             return
 
         logging.info("Installing virtual machine %s", test_object.name)
+        setup_dict = {} if params is None else params.copy()
         if install_params.get("configure_install", "stepmaker") == "unattended_install":
             if test_object.params["os_type"] == "windows":
-                ovrwrt_str = param.re_str("nonleaves..unattended_install", param_str)
+                setup_str = param.re_str("nonleaves..unattended_install")
             elif install_params["unattended_file"].endswith(".preseed"):
-                ovrwrt_str = param.re_str("nonleaves..unattended_install.cdrom.in_cdrom_ks", param_str)
+                setup_str = param.re_str("nonleaves..unattended_install.cdrom.in_cdrom_ks")
             elif install_params["unattended_file"].endswith(".ks"):
-                ovrwrt_str = param.re_str("nonleaves..unattended_install.cdrom.extra_cdrom_ks", param_str)
+                setup_str = param.re_str("nonleaves..unattended_install.cdrom.extra_cdrom_ks")
             else:
                 raise NotImplementedError("Unattended install tests are not supported for variant %s" % test_object.params["name"])
-            ovrwrt_dict = {}
         else:
-            ovrwrt_dict = {"type": install_params.get("configure_install", "stepmaker")}
-            ovrwrt_str = param.re_str("nonleaves..install", param_str)
+            setup_dict.update({"type": install_params.get("configure_install", "stepmaker")})
+            setup_str = param.re_str("nonleaves..install")
 
         if install_params["set_type"] == "off":
-            ovrwrt_dict.update({"set_state": install_params["set_state"],
-                                "set_type": install_params["set_type"]})
+            setup_dict.update({"set_state": install_params["set_state"],
+                               "set_type": install_params["set_type"]})
         install_config = test_object.config.get_copy()
         install_config.parse_next_batch(base_file="sets.cfg",
                                         ovrwrt_file=param.tests_ovrwrt_file(),
-                                        ovrwrt_str=ovrwrt_str,
-                                        ovrwrt_dict=ovrwrt_dict)
+                                        ovrwrt_str=setup_str,
+                                        ovrwrt_dict=setup_dict)
         status = self.run_test_node(TestNode("0q", install_config, test_node.objects))
 
         # TODO: status is broken and is always true
@@ -300,19 +300,20 @@ class CartesianRunner(TestRunner):
             return
 
         if install_params["set_type"] == "on":
-            ovrwrt_dict = {"set_state": install_params["set_state"],
-                           "set_type": install_params["set_type"],
-                           "skip_image_processing": "yes"}
-            ovrwrt_str = param.re_str("nonleaves..manage.start", param_str)
+            setup_dict = {} if params is None else params.copy()
+            setup_dict.update({"set_state": install_params["set_state"],
+                               "set_type": install_params["set_type"],
+                               "skip_image_processing": "yes"})
+            setup_str = param.re_str("nonleaves..manage.start")
             postinstall_config = test_object.config.get_copy()
             postinstall_config.parse_next_batch(base_file="sets.cfg",
                                                 ovrwrt_file=param.tests_ovrwrt_file(),
-                                                ovrwrt_str=ovrwrt_str,
-                                                ovrwrt_dict=ovrwrt_dict)
+                                                ovrwrt_str=setup_str,
+                                                ovrwrt_dict=setup_dict)
             self.run_test_node(TestNode("0qq", postinstall_config, test_node.objects))
 
     """internals"""
-    def _traverse_test_node(self, graph, test_node, param_str):
+    def _traverse_test_node(self, graph, test_node, params):
         """Run a single test according to user defined policy and state availability."""
         # ephemeral setup can get lost and if so must be repeated
         if not test_node.should_run and test_node.is_ephemeral() and not test_node.is_cleanup_ready():
@@ -330,11 +331,11 @@ class CartesianRunner(TestRunner):
             # the primary setup nodes need special treatment
             if test_node.is_scan_node():
                 logging.debug("Test run started from the shared root")
-                self.run_scan_node(graph, param_str)
+                self.run_scan_node(graph)
             elif test_node.is_create_node():
-                self.run_create_node(graph, test_node.params.get("vms", ""), param_str)
+                self.run_create_node(graph, test_node.params.get("vms", ""))
             elif test_node.is_install_node():
-                self.run_install_node(graph, test_node.params.get("vms", ""), param_str)
+                self.run_install_node(graph, test_node.params.get("vms", ""), params)
 
             # re-runnable tests need unique variant names
             elif test_node.is_ephemeral():
@@ -357,7 +358,7 @@ class CartesianRunner(TestRunner):
         else:
             logging.debug("Skipping test %s", test_node.params["shortname"])
 
-    def _reverse_test_node(self, graph, test_node, param_str):
+    def _reverse_test_node(self, graph, test_node, params):
         """
         Clean up any states that could be created by this node (will be skipped
         by default but the states can be removed with "unset_mode=f.").
@@ -371,13 +372,13 @@ class CartesianRunner(TestRunner):
                     # avoid running any test unless the user really requires cleanup
                     if vm_params.get("unset_mode", "ri")[0] == "f" and vm_params.get("set_state"):
 
-                        setup_str = param_str
+                        setup_dict = {} if params is None else params.copy()
                         # NOTE: we are forcing the unset_mode to be the one defined for the test node because
                         # the unset manual step behaves differently now (all this extra complexity starts from
                         # the fact that it has different default value which is noninvasive
-                        setup_dict = {"unset_state": vm_params["set_state"],
-                                      "unset_type": vm_params.get("set_type", "off"),
-                                      "unset_mode": vm_params.get("unset_mode", "ri")}
+                        setup_dict.update({"unset_state": vm_params["set_state"],
+                                           "unset_type": vm_params.get("set_type", "off"),
+                                           "unset_mode": vm_params.get("unset_mode", "ri")})
                         setup_dict["vm_action"] = "unset"
                         # TODO: find more flexible way to pass identical test node parameters for cleanup
                         setup_dict["images_" + vm_name] = vm_params["images"]
@@ -389,6 +390,7 @@ class CartesianRunner(TestRunner):
                             if image_params.get_boolean("create_image", False):
                                 setup_dict["remove_image_" + image] = "yes"
                                 setup_dict["skip_image_processing"] = "no"
+                        setup_str = param.re_str("nonleaves..manage.unchanged")
 
                         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+vm_name+"$")
                         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (vm_name, objects)
@@ -396,8 +398,7 @@ class CartesianRunner(TestRunner):
                         forward_config = test_object.config.get_copy()
                         forward_config.parse_next_batch(base_file="sets.cfg",
                                                         ovrwrt_file=param.tests_ovrwrt_file(),
-                                                        ovrwrt_str=param.re_str("nonleaves..manage.unchanged",
-                                                                                setup_str, ""),
+                                                        ovrwrt_str=setup_str,
                                                         ovrwrt_dict=setup_dict)
                         self.run_test_node(TestNode("c" + test_node.name, forward_config, [test_object]))
 
