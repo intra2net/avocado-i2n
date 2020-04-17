@@ -14,7 +14,7 @@ The two milestones and guiding principles for a test running process are:
    minimal set of configuration parameters and code
 
 2) *test reusability* - how to be reuse a maximum number of overlapping steps
-   which offers greater performance gain with the thouroughness
+   which offers greater performance gain with the thoroughness
 
 The first is the code/configuration reuse, while the second is the
 run/execution reuse. Combining optimally extensive testing of automatically
@@ -94,9 +94,7 @@ ignore the missing setup depending on a user defined policy). It then also
 contains a set of children (outwards connections to other tests) where a DFS
 traversal rule guarantees that the setup gain from running a child test will
 not be lost but used until possible. The connection to/from another test node
-might be based on one or multiple provided/required objects although the
-simplified version requires that a test provides at most one object state to
-others and a test using more than one virtual machines is a leaf node.
+might be based on one or multiple provided/required objects.
 
 3) *Running all interconnected tests in a way that should minimize the
    precious time lost by repeating test setup*
@@ -122,7 +120,7 @@ this will introduce at least shutdown-boot performance penalty between each
 two tests. Actually, "live revert" is part of the future plans of LVM but
 right now its extra steps while switching test nodes might be even slower.
 Therefore, there is another type of states simply called here "on states"
-leaving the LVM an implementation of off states. A fairly stadard on states
+leaving the LVM an implementation of off states. A fairly standard on states
 implementation lies in the QCOW2 image format and more specifically the
 QEMU ability to take complete virtual machine snapshots on running machines
 which will avoid these two steps - just freeze the vm state and eventually
@@ -156,7 +154,7 @@ it might be more preferable to add an external vm that could for instance only
 be manipulated via on states (thus without interfering with the original setup).
 Such a permanent vm might just be brought from outside to participate in the
 test suite orchestration with a minimal pre-set on state or could be fully
-prepared using the test suite toolset through an extra tool development. More
+prepared using the test suite tool set through an extra tool development. More
 information about it and ephemeral tests in general can be found in the test
 development documentation.
 
@@ -202,7 +200,7 @@ avocado manu setup=run only=tutorial1 file_contents=testing
 avocado manu only=tutorial1 file_contents=testing
 ```
 
-but using the manu plugin is preferrable because of its simpler syntax as well
+but using the manu plugin is preferable because of its simpler syntax as well
 generalization to many other tools implemented as manual steps. Thus, from here
 on we will only look at the manu plugin with default option *setup=run* unless
 explicitly stated at the command line.
@@ -231,8 +229,7 @@ and the *get/set/unset_mode* parameter is mostly used in the case of test mode
  - *install* - Prepare step files and install virtual machines
  - *deploy* - Simply deploy changes on top of current state (will be lost
    after reverting to snapshot)
- - *internal* - Run a custom setup node otherwise inaccessible and part of the
-   automated setup
+ - *internal* - Run a custom setup node without any automated setup
  - *boot* - Simply boot the registered virtual machines and run selected
    controls if any
  - *list* - List selected tests
@@ -301,7 +298,7 @@ is a brief description of each possible policies and action combinations:
             was run)
    - *f.* - Overwrite (recreate and save) all existing setup for children
             (set_state)
-   - *.a* - Abort if the set_state is missing (if for exampe the purpose was
+   - *.a* - Abort if the set_state is missing (if for example the purpose was
             overwriting)
    - *.f* - Create and save all missing setup for children (set_state)
 
@@ -330,8 +327,8 @@ avocado manu only=tutorial2..files
 ```
 
 Assuming that line one and two will create two vms and then simply reuse the
-first one whcih is a dependency for the given tutorial test. The third line
-will then elimitate the existing setup for vm1 (and vm1 entirely). The final
+first one which is a dependency for the given tutorial test. The third line
+will then eliminate the existing setup for vm1 (and vm1 entirely). The final
 line would then still require vm1 although only vm2 is available. The setup for
 this test will start by bringing vm1 to the state which is required for the
 tutorial test ignoring and not modifying in any way the setup of vm2. If for
@@ -377,7 +374,7 @@ available in the test development documentation but the essential ones are the
 - *\*_opts* - Secondary options, currently available ones are:
   - "check_opts=print_pos=yes/no print_neg=yes/no" to decide whether to print
     positive or negative outcomes from the check
-  - "get_opts=swtich=on/off" to generate ephemeral tests and switch retrieved
+  - "get_opts=switch=on/off" to generate ephemeral tests and switch retrieved
     state from an off state to an on state or vice versa
 
 An *only* argument can have any number of ".", "..", and "," in between variant
@@ -511,10 +508,9 @@ follow the guide about unit testing in python and put your own test module
 next to the utility with the name `<my-utility>_unittest.py` and it will be
 automatically discovered when you run the "unittest" manual step.
 
-### Internal nodes
-If you want to run a test "out of the law" of automated setup, i.e. an internal
-test node instead of a regular (leaf) test, you can use the *internal* tool or
-manual step
+### Single node running
+If you want to run a test without automated setup from a complete graph, i.e.
+an internal (variant) test node, you can use the *internal* tool or manual step
 
 ```
 avocado manu setup=internal node=set_provider vms=vm1
@@ -525,9 +521,22 @@ setup) completely manually, i.e. without performing any automated setup or
 requiring any present state as well as setting any state. This implies that you
 can escape any automated setup/cleanup steps but are responsible for any
 setup/cleanup that is required by the test you are running (the test node). Use
-with care as this is mostly used for manual and semi-manual tests where part of
-the test is not legally or due to other external factors allowed to be executed
-by a machine.
+with care as this is mostly used for manual and semi-manual tests. All variants
+in the configuration can be parsed from the command line and the ones that are
+inaccessible will not be traversed as described in:
+
+https://github.com/intra2net/avocado-i2n/blob/master/doc/test_traversal_algorithm.pdf
+
+What this means is that all nodes we typically parse with *only leaves* will
+usually represent actual use cases of the product under QA connected to a scan
+traversal entry point through *nonleaves* and thus ultimately traversed. The
+most standard set *only normal* is an even smaller set of such nodes while the
+*only all* restriction will parse the complete graph but traverse only the part
+reachable from the shared root or scan node. Any internal tests that are not
+directly used remain disconnected and as such will not be run. They are then
+typically called only from (manual step) tools. Reading the graph from the
+config is thus mostly WYSIWYG and does not require any extra knowledge of the
+code parsing it.
 
 ## How to develop
 While some users might only run a test suite for their own product QA, others
