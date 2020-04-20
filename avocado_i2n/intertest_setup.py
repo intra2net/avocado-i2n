@@ -387,9 +387,9 @@ def install(config, tag=""):
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
     graph = TestGraph()
     graph.objects = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
-    for vm_name in sorted(graph.test_objects.keys()):
-        graph.nodes.append(l.parse_install_node(graph, vm_name, config["param_dict"], prefix=tag))
-        r.run_install_node(graph, vm_name, config["param_dict"])
+    for vm in graph.objects:
+        graph.nodes.append(l.parse_install_node(vm, config["param_dict"], prefix=tag))
+        r.run_install_node(graph, vm.name, config["param_dict"])
     LOG_UI.info("Finished installation")
 
 
@@ -429,7 +429,7 @@ def deploy(config, tag=""):
                 setup_dict["set_state"] = ""
             setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
             setup_str = param.re_str("nonleaves..customize")
-            test_node = l.parse_node_from_object(vm, setup_str, setup_dict, prefix=setup_tag)
+            test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=setup_tag)
             r.run_test_node(test_node)
 
     LOG_UI.info("Finished data deployment")
@@ -455,7 +455,7 @@ def internal(config, tag=""):
             setup_dict.update({"get_state": "", "set_state": "",
                                "skip_image_processing": "yes", "kill_vm": "no"})
         setup_str = param.re_str("nonleaves.." + vm.params["node"])
-        test_node = l.parse_node_from_object(vm, setup_str, setup_dict, prefix=tag)
+        test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
         r.run_test_node(test_node)
     LOG_UI.info("Finished internal setup")
 
@@ -668,7 +668,7 @@ def get(config, tag=""):
         setup_dict = config["param_dict"].copy()
         setup_dict.update({"vm_action": "get", "skip_image_processing": "yes"})
         setup_str = param.re_str("nonleaves..manage.unchanged")
-        test_node = l.parse_node_from_object(objects[0], setup_str, setup_dict, prefix=tag)
+        test_node = l.parse_node_from_object(objects[0], setup_dict, setup_str, prefix=tag)
         r.run_test_node(test_node)
     LOG_UI.info("Finished state get")
 
@@ -691,21 +691,19 @@ def set(config, tag=""):
                 param.ParsedDict(config["param_dict"]).reportable_form())
     setup_dict = config["param_dict"].copy()
     for vm_name in config["selected_vms"]:
+        objects = l.parse_objects(config["vm_strs"], vm_name)
         if "set_type" not in setup_dict:
-            graph = TestGraph()
-            graph.objects = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
             if setup_dict.get("set_state") == "root":
-                node = l.parse_create_node(graph, vm_name, config["param_dict"], prefix=tag)
+                node = l.parse_create_node(objects[0], config["param_dict"], prefix=tag)
                 setup_dict["set_type"] = node.params["set_type"]
             elif setup_dict.get("set_state") == "install":
-                node = l.parse_install_node(graph, vm_name, config["param_dict"], prefix=tag)
+                node = l.parse_install_node(objects[0], config["param_dict"], prefix=tag)
                 setup_dict["set_type"] = node.params["set_type"]
             else:
                 pass  # will use default set type
-        objects = l.parse_objects(config["vm_strs"], vm_name)
         setup_dict.update({"vm_action": "set", "skip_image_processing": "yes"})
         setup_str = param.re_str("nonleaves..manage.unchanged")
-        test_node = l.parse_node_from_object(objects[0], setup_str, setup_dict, prefix=tag)
+        test_node = l.parse_node_from_object(objects[0], setup_dict, setup_str, prefix=tag)
         r.run_test_node(test_node)
     LOG_UI.info("Finished state set")
 
@@ -732,21 +730,19 @@ def unset(config, tag=""):
     if "unset_mode" not in setup_dict:
         setup_dict["unset_mode"] = "fi"
     for vm_name in config["selected_vms"]:
+        objects = l.parse_objects(config["vm_strs"], vm_name)
         if "unset_type" not in setup_dict:
-            graph = TestGraph()
-            graph.objects = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
             if setup_dict.get("unset_state") == "root":
-                node = l.parse_create_node(graph, vm_name, config["param_dict"], prefix=tag)
+                node = l.parse_create_node(objects[0], config["param_dict"], prefix=tag)
                 setup_dict["unset_type"] = node.params["set_type"]
             elif setup_dict.get("unset_state") == "install":
-                node = l.parse_install_node(graph, vm_name, config["param_dict"], prefix=tag)
+                node = l.parse_install_node(objects[0], config["param_dict"], prefix=tag)
                 setup_dict["unset_type"] = node.params["set_type"]
             else:
                 pass  # will use default unset type
-        objects = l.parse_objects(config["vm_strs"], vm_name)
         setup_dict.update({"vm_action": "unset", "skip_image_processing": "yes"})
         setup_str = param.re_str("nonleaves..manage.unchanged")
-        test_node = l.parse_node_from_object(objects[0], setup_str, setup_dict, prefix=tag)
+        test_node = l.parse_node_from_object(objects[0], setup_dict, setup_str, prefix=tag)
         r.run_test_node(test_node)
     LOG_UI.info("Finished state unset")
 

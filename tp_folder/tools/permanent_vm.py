@@ -60,7 +60,7 @@ def permubuntu(config, tag=""):
         setup_dict = config["param_dict"].copy()
         setup_dict.update({"set_state": "ready"})
         setup_str = param.re_str("nonleaves..manage.start")
-        test_node = l.parse_node_from_object(vm, setup_str, setup_dict, prefix=tag)
+        test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
         r.run_test_node(test_node)
 
     LOG_UI.info("Finished permanent vm setup")

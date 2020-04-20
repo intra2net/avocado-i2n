@@ -58,27 +58,6 @@ class CartesianLoader(VirtTestLoader):
         self.config = vars(self.args)
 
     """parsing functionality"""
-    def parse_node_from_object(self, test_object, setup_str, setup_dict, prefix=""):
-        """
-        Get the original install test node for the given object.
-
-        :param str object_name: name of the test object whose configuration is reused
-        :param str setup_str: string block of parameters to be used as overwrite string
-        :param setup_dict: extra parameters to be used as overwrite dictionary
-        :type setup_dict: {str, str}
-        :param str prefix: extra name identifier for the test to be run
-        :returns: parsed test node for the object
-        :rtype: :py:class:`TestNode`
-        """
-        config = test_object.config.get_copy()
-        config.parse_next_batch(base_file="sets.cfg",
-                                ovrwrt_file=param.tests_ovrwrt_file(),
-                                ovrwrt_str=setup_str,
-                                ovrwrt_dict=setup_dict)
-        test_node = TestNode(prefix, config, [test_object])
-        test_node.regenerate_params()
-        return test_node
-
     def parse_objects(self, object_strs=None, object_names="", verbose=False):
         """
         Parse all available test objects and their configurations or
@@ -119,6 +98,28 @@ class CartesianLoader(VirtTestLoader):
 
         return test_objects
 
+    def parse_node_from_object(self, test_object, param_dict=None, param_str="", prefix=""):
+        """
+        Get the original install test node for the given object.
+
+        :param test_object: fully parsed test object to parse the node from
+        :type: test_object: :py:class:`TestObject`
+        :param param_dict: extra parameters to be used as overwrite dictionary
+        :type param_dict: {str, str} or None
+        :param str param_str: string block of parameters to be used as overwrite string
+        :param str prefix: extra name identifier for the test to be run
+        :returns: parsed test node for the object
+        :rtype: :py:class:`TestNode`
+        """
+        config = test_object.config.get_copy()
+        config.parse_next_batch(base_file="sets.cfg",
+                                ovrwrt_file=param.tests_ovrwrt_file(),
+                                ovrwrt_str=param_str,
+                                ovrwrt_dict=param_dict)
+        test_node = TestNode(prefix, config, [test_object])
+        test_node.regenerate_params()
+        return test_node
+
     def parse_nodes(self, graph, param_dict=None, nodes_str="", prefix="", verbose=False, object_name=""):
         """
         Parse all user defined tests (leaf nodes) using the nodes overwrite string
@@ -141,12 +142,6 @@ class CartesianLoader(VirtTestLoader):
         main_object = None
         test_nodes = []
 
-        # TODO: it could be possible to pass a simpler set of objects than an entire graph
-        if "0root" in nodes_str :
-            return [self.parse_create_node(graph, object_name, prefix=prefix)]
-        elif "0preinstall" in nodes_str:
-            return [self.parse_install_node(graph, object_name, prefix=prefix)]
-
         # prepare initial parser as starting configuration and get through tests
         early_config = param.Reparsable()
         early_config.parse_next_file("sets.cfg")
@@ -168,6 +163,11 @@ class CartesianLoader(VirtTestLoader):
             if main_object is None:
                 raise ValueError("Could not detect the main object among '%s' "
                                  "in the test '%s'" % (d["vms"], d["shortname"]))
+
+            if "0root" in nodes_str:
+                return [self.parse_create_node(obj, param_dict, prefix=prefix) for obj in objects]
+            elif "0preinstall" in nodes_str:
+                return [self.parse_install_node(obj, param_dict, prefix=prefix) for obj in objects]
 
             # final variant multiplication to produce final test node configuration
             logging.debug("Multiplying the vm variants by the test variants using %s", main_object.name)
@@ -397,14 +397,12 @@ class CartesianLoader(VirtTestLoader):
         logging.debug("Reached shared root %s", scan_node.params["shortname"])
         return scan_node
 
-    def parse_create_node(self, graph, object_name, param_dict=None, prefix=""):
+    def parse_create_node(self, test_object, param_dict=None, prefix=""):
         """
         Get the first test node for the given object.
 
-        :param graph: test graph to parse root node from
-        :type graph: :py:class:`TestGraph`
-        :param str object_name: name of the test object whose configuration is
-                                reused as the node does not specify objects
+        :param test_object: fully parsed test object to parse the node from
+        :type: test_object: :py:class:`TestObject`
         :param param_dict: runtime parameters used for extra customization
         :type param_dict: {str, str} or None
         :param str prefix: extra name identifier for the test to be run
@@ -414,39 +412,31 @@ class CartesianLoader(VirtTestLoader):
         This assumes that there is only one root test node which is the one
         with the 'root' start state.
         """
-        objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
-        assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
-        test_object = objects[0]
         setup_dict = {} if param_dict is None else param_dict.copy()
         setup_dict.update({"set_state": "root",
                            "vm_action": "set", "skip_image_processing": "yes"})
         setup_str = param.re_str("nonleaves..0root")
-        create_node = self.parse_node_from_object(test_object, setup_str, setup_dict, prefix=prefix+"0r")
-        logging.debug("Reached %s root %s", object_name, create_node.params["shortname"])
+        create_node = self.parse_node_from_object(test_object, setup_dict, setup_str, prefix=prefix+"0r")
+        logging.debug("Reached %s root %s", test_object.name, create_node.params["shortname"])
         return create_node
 
-    def parse_install_node(self, graph, object_name, param_dict=None, prefix=""):
+    def parse_install_node(self, test_object, param_dict=None, prefix=""):
         """
         Get the original install test node for the given object.
 
-        :param graph: test graph to parse root node from
-        :type graph: :py:class:`TestGraph`
-        :param str object_name: name of the test object whose configuration is
-                                reused as the node does not specify objects
+        :param test_object: fully parsed test object to parse the node from
+        :type: test_object: :py:class:`TestObject`
         :param param_dict: runtime parameters used for extra customization
         :type param_dict: {str, str} or None
         :param str prefix: extra name identifier for the test to be run
         :returns: original parsed object install node
         :rtype: :py:class:`TestNode`
         """
-        objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
-        assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
-        test_object = objects[0]
         setup_dict = {} if param_dict is None else param_dict.copy()
         setup_dict.update({"get": "0root", "set_state": "install"})
         setup_str = param.re_str("nonleaves..0preinstall")
-        install_node = self.parse_node_from_object(test_object, setup_str, setup_dict, prefix=prefix+"0p")
-        logging.debug("Reached %s install configured by %s", object_name, install_node.params["shortname"])
+        install_node = self.parse_node_from_object(test_object, setup_dict, setup_str, prefix=prefix+"0p")
+        logging.debug("Reached %s install configured by %s", test_object.name, install_node.params["shortname"])
         return install_node
 
     """internals"""
@@ -479,9 +469,9 @@ class CartesianLoader(VirtTestLoader):
                       test_node.params["shortname"], setup_restr)
 
         if setup_restr == "0root":
-            new_parents = [self.parse_create_node(graph, test_object.name, param_dict)]
+            new_parents = [self.parse_create_node(test_object, param_dict)]
         elif setup_restr == "0preinstall":
-            new_parents = [self.parse_install_node(graph, test_object.name, param_dict)]
+            new_parents = [self.parse_install_node(test_object, param_dict)]
         elif setup_opts.get("switch") is not None:
             switch = setup_opts.get("switch")
             reverse = "off" if switch == "on" else "on"
