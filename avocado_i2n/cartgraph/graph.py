@@ -84,6 +84,14 @@ class TestGraph(object):
         self.nodes = []
         self.objects = []
 
+    def __repr__(self):
+        dump = "[cartgraph] objects='%s' nodes='%s'" % (len(self.nodes), len(self.objects))
+        for test_object in self.objects:
+            dump = "%s\n\t%s" % (dump, str(test_object))
+            for test_node in self.nodes:
+                dump = "%s\n\t\t%s" % (dump, str(test_node))
+        return dump
+
     def new_objects(self, objects):
         """
         Add new objects excluding (old) repeating ones as ID.

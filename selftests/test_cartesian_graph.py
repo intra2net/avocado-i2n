@@ -92,6 +92,32 @@ class CartesianGraphTest(unittest.TestCase):
         shutil.rmtree("./graph_parse", ignore_errors=True)
         shutil.rmtree("./graph_traverse", ignore_errors=True)
 
+    def test_cartraph_structures(self):
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+
+        repr = str(graph)
+        self.assertIn("[cartgraph]", repr)
+        self.assertIn("[object]", repr)
+        self.assertIn("[node]", repr)
+
+        test_object = graph.get_object_by(param_val="vm1")
+        self.assertIn(test_object.name, graph.test_objects.keys())
+        self.assertEqual(test_object.name, "vm1")
+        object_num = len(graph.test_objects)
+        graph.new_objects(test_object)
+        self.assertEqual(len(graph.test_objects), object_num)
+
+        test_node = graph.get_node_by(param_val="tutorial1")
+        self.assertIn("1", test_node.name)
+        self.assertIn(test_node.id, graph.test_nodes.keys())
+        test_node.validate()
+        node_num = len(graph.test_objects)
+        graph.new_nodes(test_node)
+        self.assertEqual(len(graph.test_objects), node_num)
+
     def test_object_params(self):
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],

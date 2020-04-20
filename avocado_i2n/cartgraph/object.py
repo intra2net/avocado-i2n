@@ -62,6 +62,10 @@ class TestObject(object):
         # TODO: integrate these features better
         self.current_state = "unknown"
 
+    def __repr__(self):
+        obj_tuple = (self.id, self.params.get("shortname", "<unknown>"))
+        return "[object] id='%s', name='%s'" % obj_tuple
+
     def is_permanent(self):
         """
         If the test object is permanent, it can only be created manually
