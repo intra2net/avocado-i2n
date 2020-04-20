@@ -481,7 +481,6 @@ class CartesianLoader(VirtTestLoader):
         Generate (if necessary) all parent test nodes for a given test
         node and test object (including the object creation root test).
         """
-        get_parents, parse_parents = [], []
         object_params = test_node.params.object_params(test_object.name)
         # use get directive -> if not use get_state -> if not use root
         setup_restr = object_params.get("get", object_params.get("get_state", "0root"))
@@ -527,7 +526,10 @@ class CartesianLoader(VirtTestLoader):
             setup_str = param.re_str("all.." + setup_restr)
             name = test_node.name + "a"
             new_parents = self.parse_nodes(graph, setup_dict, setup_str, prefix=name)
+            if len(get_parent) == 0:
+                return [], new_parents
 
+        get_parents, parse_parents = [], []
         for new_parent in new_parents:
             # BUG: a good way to get a variant valid test name was to use
             # re.sub("^(.+\.)*(all|none|minimal)\.", "", NAME)
