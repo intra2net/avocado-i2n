@@ -227,8 +227,8 @@ class CartesianLoader(VirtTestLoader):
                                           prefix=prefix, verbose=verbose):
             compatible = True
             test_vms = test_node.params.objects("vms")
-            for vm_name in selected_objects:
-                if vm_name not in test_vms:
+            for vm_name in test_vms:
+                if vm_name not in selected_objects:
                     compatible = False
                     break
             if compatible:
