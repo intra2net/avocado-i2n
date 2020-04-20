@@ -92,8 +92,9 @@ class CartesianGraphTest(unittest.TestCase):
 
     def test_object_params(self):
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         test_object = graph.objects[0]
         dict_generator = test_object.config.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
@@ -107,8 +108,9 @@ class CartesianGraphTest(unittest.TestCase):
 
     def test_node_params(self):
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         test_node = graph.nodes[0]
         dict_generator = test_node.config.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
@@ -120,8 +122,9 @@ class CartesianGraphTest(unittest.TestCase):
 
     def test_one_leaf(self):
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.0root.vm1", "vms": "^vm1$", "set_state": "^root$", "set_type": "^off$"},
@@ -138,8 +141,9 @@ class CartesianGraphTest(unittest.TestCase):
     def test_one_leaf_with_off_setup(self):
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_dict"].update({"get_type": "off", "set_type": "off"})
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.0root.vm1", "vms": "^vm1$", "set_state": "^root$", "set_type": "^off$"},
@@ -156,8 +160,9 @@ class CartesianGraphTest(unittest.TestCase):
     def test_one_leaf_with_on_setup(self):
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_dict"].update({"get_type": "on", "set_type": "on"})
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.0root.vm1", "vms": "^vm1$", "set_state": "^root$", "set_type": "^on$"},
@@ -174,8 +179,9 @@ class CartesianGraphTest(unittest.TestCase):
 
     def test_one_leaf_with_path_setup(self):
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         DummyStateCheck.present_states = ["root", "install"]
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
@@ -191,8 +197,9 @@ class CartesianGraphTest(unittest.TestCase):
 
     def test_one_leaf_with_step_setup(self):
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         DummyStateCheck.present_states = ["install", "customize"]
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
@@ -207,8 +214,9 @@ class CartesianGraphTest(unittest.TestCase):
 
     def test_two_objects_without_setup(self):
         self.config["tests_str"] += "only tutorial3\nno remote\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         DummyStateCheck.present_states = []
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
@@ -232,8 +240,9 @@ class CartesianGraphTest(unittest.TestCase):
 
     def test_two_objects_with_setup(self):
         self.config["tests_str"] += "only tutorial3\nno remote\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         DummyStateCheck.present_states = ["root", "install", "customize"]
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
@@ -247,8 +256,9 @@ class CartesianGraphTest(unittest.TestCase):
 
     def test_with_permanent_object_and_switch(self):
         self.config["tests_str"] += "only tutorial_get\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         DummyStateCheck.present_states = ["root"]
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
@@ -268,8 +278,9 @@ class CartesianGraphTest(unittest.TestCase):
 
     def test_without_permanent_object(self):
         self.config["tests_str"] += "only tutorial_get\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         DummyStateCheck.present_states = []
         with self.assertRaises(AssertionError):
             graph.scan_object_states(None)
@@ -283,8 +294,9 @@ class CartesianGraphTest(unittest.TestCase):
     def test_abort_run(self):
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_dict"].update({"abort_on_error": "yes"})
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         DummyStateCheck.present_states = ["root", "install"]
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
@@ -321,8 +333,9 @@ class CartesianGraphTest(unittest.TestCase):
         self.config["tests_str"] += "only connect\n"
         self.main_vm = "vm1"
         self.config["param_dict"]["main_vm"] = "vm1"
-        graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
         graph.flag_parent_intersection(graph, flag_type="run", flag=False)
         DummyTestRunning.asserted_tests = [
         ]
@@ -338,10 +351,12 @@ class CartesianGraphTest(unittest.TestCase):
         tests_str2 += "only 0preinstall\n"
         self.main_vm = "vm2"
         self.config["param_dict"]["main_vm"] = "vm2"
-        graph = self.loader.parse_object_trees(self.config["param_dict"], tests_str1, self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm)
-        reuse_graph = self.loader.parse_object_trees(self.config["param_dict"], tests_str2, self.config["vm_strs"],
-                                                     prefix=self.prefix, object_names=self.main_vm)
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               tests_str1, self.config["vm_strs"],
+                                               prefix=self.prefix)
+        reuse_graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                     tests_str2, self.config["vm_strs"],
+                                                     prefix=self.prefix)
 
         graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
         DummyTestRunning.asserted_tests = [

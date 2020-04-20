@@ -213,6 +213,9 @@ def full(config, tag=""):
     The state can be achieved all the way from the test object creation. The
     performed setup depends entirely on the state's dependencies which can
     be completely different than the regular create->install->deploy path.
+
+    Only singleton test setup is supported within the full setup path since
+    we cannot guarantee other setup involved vms exist.
     """
     l, r = config["graph"].l, config["graph"].r
     LOG_UI.info("Starting full setup for %s (%s)",
@@ -232,8 +235,7 @@ def full(config, tag=""):
         setup_dict["main_vm"] = vm_name
         # overwrite any existing test objects
         create_graph = l.parse_object_trees(setup_dict, param.re_str("nonleaves.." + state),
-                                            {vm_name: config["vm_strs"][vm_name]},
-                                            prefix=tag, object_names=vm_name)
+                                            {vm_name: config["vm_strs"][vm_name]}, prefix=tag)
         create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=False)
         create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=True, skip_shared_root=True)
 
@@ -257,6 +259,9 @@ def update(config, tag=""):
     :param str tag: extra name identifier for the test to be run
 
     Thus, a change in a state can be reflected in all the dependent states.
+
+    Only singleton test setup is supported within the update setup path since
+    we cannot guarantee other setup involved vms exist.
 
     .. note:: If you want to update the install state, you also need to change the default
         'from_state=install' to 'from_state=root'. You cannot update the root as this is
@@ -282,8 +287,10 @@ def update(config, tag=""):
         setup_dict["unset_mode"] = "fi"
         # remove all test nodes depending on the updated node if present (unset mode is "ignore otherwise")
         remove_graph = l.parse_object_trees(setup_dict,
-                                            param.re_str(vm_params.get("remove_set", "all")), config["vm_strs"],
-                                            prefix=tag, object_names=vm_name, verbose=False)
+                                            param.re_str(vm_params.get("remove_set", "all")),
+                                            # TODO: need all vm strings here
+                                            config["vm_strs"],
+                                            prefix=tag, verbose=False)
         remove_graph.flag_children(flag_type="run", flag=False)
         remove_graph.flag_children(flag_type="clean", flag=False)
         remove_graph.flag_children(to_state, vm_name, flag_type="clean", flag=True, skip_roots=True)
@@ -292,9 +299,9 @@ def update(config, tag=""):
         logging.info("Updating all states before '%s'", to_state)
         setup_dict = config["param_dict"].copy()
         setup_dict["main_vm"] = vm_name
-        update_graph = l.parse_object_trees(setup_dict, param.re_str("nonleaves.." + to_state),
-                                            {vm_name: config["vm_strs"][vm_name]}, prefix=tag,
-                                            object_names=vm_name)
+        update_graph = l.parse_object_trees(setup_dict,
+                                            param.re_str("nonleaves.." + to_state),
+                                            {vm_name: config["vm_strs"][vm_name]}, prefix=tag)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=False)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=True,
                                               skip_object_roots=True, skip_shared_root=True)
@@ -304,9 +311,10 @@ def update(config, tag=""):
         if from_state != "root":
             setup_dict = config["param_dict"].copy()
             setup_dict["main_vm"] = vm_name
-            reuse_graph = l.parse_object_trees(setup_dict, param.re_str("nonleaves.." + from_state),
-                                               {vm_name: config["vm_strs"][vm_name]}, prefix=tag,
-                                               object_names=vm_name, verbose=False)
+            reuse_graph = l.parse_object_trees(setup_dict,
+                                               param.re_str("nonleaves.." + from_state),
+                                               {vm_name: config["vm_strs"][vm_name]},
+                                               prefix=tag, verbose=False)
             update_graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
 
         # NOTE: this makes sure that no new states are created and the updated
@@ -391,7 +399,7 @@ def install(config, tag=""):
     LOG_UI.info("Installing %s (%s)",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
     graph = TestGraph()
-    graph.objects = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
+    graph.objects = l.parse_objects(config["vm_strs"])
     for vm in graph.objects:
         graph.nodes.append(l.parse_install_node(vm, config["param_dict"], prefix=tag))
         r.run_install_node(graph, vm.name, config["param_dict"])
@@ -412,7 +420,7 @@ def deploy(config, tag=""):
     l, r = config["graph"].l, config["graph"].r
     LOG_UI.info("Deploying data to %s (%s)",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
-    vms = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
+    vms = l.parse_objects(config["vm_strs"])
     for vm in vms:
 
         states = vm.params.objects("states")
@@ -453,7 +461,7 @@ def internal(config, tag=""):
     l, r = config["graph"].l, config["graph"].r
     LOG_UI.info("Performing internal setup on %s (%s)",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
-    vms = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
+    vms = l.parse_objects(config["vm_strs"])
     for vm in vms:
         setup_dict = config["param_dict"].copy()
         if vm.params.get("stateless", "yes") == "yes":
@@ -489,7 +497,7 @@ def boot(config, tag=""):
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": config["selected_vms"][0]})
     setup_str = param.re_str("nonleaves..manage.start")
-    tests, _ = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag, object_names=vms)
+    tests, _ = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one boot test variant from %s" % tests
     r.run_test_node(TestNode(tag, tests[0].config, []))
     LOG_UI.info("Boot complete")
@@ -516,7 +524,7 @@ def download(config, tag=""):
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": config["selected_vms"][0]})
     setup_str = param.re_str("nonleaves..manage.download")
-    tests, _ = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag, object_names=vms)
+    tests, _ = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one download test variant from %s" % tests
     r.run_test_node(TestNode(tag, tests[0].config, []))
     LOG_UI.info("Download complete")
@@ -543,7 +551,7 @@ def upload(config, tag=""):
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": config["selected_vms"][0]})
     setup_str = param.re_str("nonleaves..manage.upload")
-    tests, _ = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag, object_names=vms)
+    tests, _ = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one upload test variant from %s" % tests
     r.run_test_node(TestNode(tag, tests[0].config, []))
     LOG_UI.info("Upload complete")
@@ -568,7 +576,7 @@ def shutdown(config, tag=""):
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": config["selected_vms"][0]})
     setup_str = param.re_str("nonleaves..manage.stop")
-    tests, _ = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag, object_names=vms)
+    tests, _ = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one shutdown test variant from %s" % tests
     r.run_test_node(TestNode(tag, tests[0].config, []))
     LOG_UI.info("Shutdown complete")
@@ -592,7 +600,7 @@ def check(config, tag=""):
     LOG_UI.info("Starting state check for %s with job %s and params:\n%s",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form())
-    vms = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
+    vms = l.parse_objects(config["vm_strs"])
     for vm in vms:
         setup_dict = config["param_dict"].copy()
         setup_dict.update({"vm_action": "check", "skip_image_processing": "yes"})
@@ -616,7 +624,7 @@ def pop(config, tag=""):
     LOG_UI.info("Starting state pop for %s with job %s and params:\n%s",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form())
-    vms = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
+    vms = l.parse_objects(config["vm_strs"])
     for vm in vms:
         setup_dict = config["param_dict"].copy()
         setup_dict.update({"vm_action": "pop", "skip_image_processing": "yes"})
@@ -639,7 +647,7 @@ def push(config, tag=""):
     LOG_UI.info("Starting state push for %s with job %s and params:\n%s",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form())
-    vms = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
+    vms = l.parse_objects(config["vm_strs"])
     for vm in vms:
         setup_dict = config["param_dict"].copy()
         setup_dict.update({"vm_action": "push", "skip_image_processing": "yes"})
@@ -666,7 +674,8 @@ def get(config, tag=""):
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form())
     for vm_name in config["selected_vms"]:
-        objects = l.parse_objects(config["vm_strs"], vm_name)
+        vm_strs = {key: config["vm_strs"][key] for key in [vm_name]}
+        objects = l.parse_objects(vm_strs)
         setup_dict = config["param_dict"].copy()
         setup_dict.update({"vm_action": "get", "skip_image_processing": "yes"})
         setup_str = param.re_str("nonleaves..manage.unchanged")
@@ -693,7 +702,8 @@ def set(config, tag=""):
                 param.ParsedDict(config["param_dict"]).reportable_form())
     setup_dict = config["param_dict"].copy()
     for vm_name in config["selected_vms"]:
-        objects = l.parse_objects(config["vm_strs"], vm_name)
+        vm_strs = {key: config["vm_strs"][key] for key in [vm_name]}
+        objects = l.parse_objects(vm_strs)
         if "set_type" not in setup_dict:
             if setup_dict.get("set_state") == "root":
                 node = l.parse_create_node(objects[0], config["param_dict"], prefix=tag)
@@ -732,7 +742,8 @@ def unset(config, tag=""):
     if "unset_mode" not in setup_dict:
         setup_dict["unset_mode"] = "fi"
     for vm_name in config["selected_vms"]:
-        objects = l.parse_objects(config["vm_strs"], vm_name)
+        vm_strs = {key: config["vm_strs"][key] for key in [vm_name]}
+        objects = l.parse_objects(vm_strs)
         if "unset_type" not in setup_dict:
             if setup_dict.get("unset_state") == "root":
                 node = l.parse_create_node(objects[0], config["param_dict"], prefix=tag)

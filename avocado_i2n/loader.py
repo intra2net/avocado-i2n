@@ -58,31 +58,27 @@ class CartesianLoader(VirtTestLoader):
         self.config = vars(self.args)
 
     """parsing functionality"""
-    def parse_objects(self, object_strs=None, object_names="", verbose=False):
+    def parse_objects(self, object_strs=None, verbose=False):
         """
         Parse all available test objects and their configurations or
-        a selection of such where the selection has the form of objects parameter.
-        e.g. 'vm1 vm2 vm3' for the `vms` parameter.
+        a selection of such where the selection is defined by the object
+        string keys.
 
-        :param object_strs: block of object-specific parameters and variant restrictions
+        :param object_strs: object-specific names and variant restrictions
         :type object_strs: {str, str}
-        :param str object_names: space separated test object names
         :param bool verbose: whether to print extra messages or not
         :returns: parsed test objects
         :rtype: [:py:class:`TestObject`]
         """
         if object_strs is None:
-            object_strs = {}
-        if object_names == "":
             # all possible hardware-software combinations
             available_vms = param.all_vms()
+            object_strs = {vm_name: "" for vm_name in available_vms}
         else:
-            available_vms = object_names.split(" ")
+            available_vms = object_strs.keys()
 
         test_objects = []
         for vm_name in available_vms:
-            if vm_name not in object_strs:
-                object_strs[vm_name] = ""
             # all possible hardware-software combinations for a given vm
             config = param.Reparsable()
             config.parse_next_batch(base_file="objects.cfg",
@@ -199,11 +195,10 @@ class CartesianLoader(VirtTestLoader):
         return test_nodes
 
     def parse_object_nodes(self, param_dict=None, nodes_str="", object_strs=None,
-                           prefix="", verbose=False, object_names=""):
+                           prefix="", verbose=False):
         """
         Parse test nodes based on a selection of parsable objects.
 
-        :param str object_names: space separated test object names
         :returns: parsed test nodes and test objects
         :rtype: ([:py:class:`TestNode`], [:py:class:`TestObject`])
         :raises: :py:class:`param.EmptyCartesianProduct` if no test variants for the given vm variants
@@ -212,10 +207,10 @@ class CartesianLoader(VirtTestLoader):
 
         We will parse all available objects in the configs, then parse all
         selected nodes and finally restrict to the selected objects specified
-        in "object_names" (if set) on a test by test basis.
+        via the object strings (if set) on a test by test basis.
         """
         test_nodes, test_objects = [], []
-        selected_objects = [] if object_names == "" else object_names.split(" ")
+        selected_objects = [] if object_strs is None else object_strs.keys()
 
         graph = TestGraph()
         graph.objects = self.parse_objects(object_strs, verbose=verbose)
@@ -239,7 +234,7 @@ class CartesianLoader(VirtTestLoader):
             logging.info("%s selected test variant(s)", len(test_nodes))
         if len(test_nodes) == 0:
             object_restrictions = param.ParsedDict(graph.test_objects).parsable_form()
-            object_strs = {} if object_str is None else object_strs
+            object_strs = {} if object_strs is None else object_strs
             for object_str in object_strs.values():
                 object_restrictions += object_str
             config = param.Reparsable()
@@ -251,7 +246,7 @@ class CartesianLoader(VirtTestLoader):
         return test_nodes, test_objects
 
     def parse_object_trees(self, param_dict=None, nodes_str="", object_strs=None,
-                           prefix="", verbose=False, object_names=""):
+                           prefix="", verbose=False):
         """
         Parse all user defined tests (leaves) and their dependencies (internal nodes)
         connecting them according to the required/provided setup states of each test
@@ -269,8 +264,7 @@ class CartesianLoader(VirtTestLoader):
 
         # parse leaves and discover necessary setup (internal nodes)
         leaves, stubs = self.parse_object_nodes(param_dict, nodes_str, object_strs,
-                                                prefix=prefix, verbose=verbose,
-                                                object_names=object_names)
+                                                prefix=prefix, verbose=verbose)
         graph.nodes.extend(leaves)
         graph.objects.extend(stubs)
         # NOTE: reversing here turns the leaves into a simple stack

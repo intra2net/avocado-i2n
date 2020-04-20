@@ -116,10 +116,15 @@ def params_from_cmd(config):
                                 ovrwrt_str=param.ParsedDict(param_dict).parsable_form(),
                                 ovrwrt_dict={"vms": " ".join(selected_vms)})
     vms_params = vms_config.get_params()
+    # some selected vms might not be restricted on the command line so use default restrictions
     for vm_name in available_vms:
-        # some selected vms might not be restricted on the command line so check again
-        if vm_name not in vm_strs:
+        # the keys of vm strings must be equivalent to the selected vms
+        if vm_name in selected_vms and vm_name not in vm_strs:
             vm_strs[vm_name] = ""
+        elif vm_name not in selected_vms:
+            if vm_name in vm_strs:
+                del vm_strs[vm_name]
+            continue
         vm_strs[vm_name] += param.ParsedDict(param_dict).parsable_form()
         if use_vms_default[vm_name]:
             default = vms_params.get("default_only_%s" % vm_name)
