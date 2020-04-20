@@ -320,8 +320,9 @@ class CartesianGraphTest(unittest.TestCase):
         self.config["tests_str"] = "only nonleaves\n"
         self.config["tests_str"] += "only connect\n"
         self.main_vm = "vm1"
+        self.config["param_dict"]["main_vm"] = "vm1"
         graph = self.loader.parse_object_trees(self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm, objectless=True)
+                                               prefix=self.prefix, object_names=self.main_vm)
         graph.flag_parent_intersection(graph, flag_type="run", flag=False)
         DummyTestRunning.asserted_tests = [
         ]
@@ -336,10 +337,11 @@ class CartesianGraphTest(unittest.TestCase):
         tests_str2 = self.config["tests_str"]
         tests_str2 += "only 0preinstall\n"
         self.main_vm = "vm2"
+        self.config["param_dict"]["main_vm"] = "vm2"
         graph = self.loader.parse_object_trees(self.config["param_dict"], tests_str1, self.config["vm_strs"],
-                                               prefix=self.prefix, object_names=self.main_vm, objectless=True)
+                                               prefix=self.prefix, object_names=self.main_vm)
         reuse_graph = self.loader.parse_object_trees(self.config["param_dict"], tests_str2, self.config["vm_strs"],
-                                                     prefix=self.prefix, object_names=self.main_vm, objectless=True)
+                                                     prefix=self.prefix, object_names=self.main_vm)
 
         graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
         DummyTestRunning.asserted_tests = [

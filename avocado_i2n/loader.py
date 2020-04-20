@@ -199,53 +199,43 @@ class CartesianLoader(VirtTestLoader):
         return test_nodes
 
     def parse_object_nodes(self, param_dict=None, nodes_str="", object_strs=None,
-                           prefix="", verbose=False,
-                           object_names="", objectless=False):
+                           prefix="", verbose=False, object_names=""):
         """
-        Parse test nodes based on a selection of parsed objects.
+        Parse test nodes based on a selection of parsable objects.
 
         :param str object_names: space separated test object names
-        :param bool objectless: whether objectless test nodes are expected to be parsed
         :returns: parsed test nodes and test objects
         :rtype: ([:py:class:`TestNode`], [:py:class:`TestObject`])
         :raises: :py:class:`param.EmptyCartesianProduct` if no test variants for the given vm variants
 
         The rest of the parameters are identical to the methods before.
 
-        If objectless test nodes are expected to be parsed, we will parse them once
-        for each object provided through "object_names" or available in the configs.
-        Otherwise, we will parse for all objects available in the configs, then restrict
-        to the ones in "object_names" if set on a test by test basis.
+        We will parse all available objects in the configs, then parse all
+        selected nodes and finally restrict to the selected objects specified
+        in "object_names" (if set) on a test by test basis.
         """
         test_nodes, test_objects = [], []
-        if objectless:
-            test_objects.extend(self.parse_objects(object_strs, verbose=verbose, object_names=object_names))
-        else:
-            test_objects.extend(self.parse_objects(object_strs, verbose=verbose))
-        if verbose:
-            logging.info("%s selected vm variant(s)", len(test_objects))
+        selected_objects = [] if object_names == "" else object_names.split(" ")
 
         graph = TestGraph()
-        graph.objects = test_objects
-        if objectless:
-            for test_object in test_objects:
-                object_nodes = self.parse_nodes(graph, param_dict, nodes_str,
-                                                prefix=prefix, verbose=verbose,
-                                                object_name=test_object.name)
-                test_nodes.extend(object_nodes)
-        else:
-            selected_vms = [] if object_names == "" else object_names.split(" ")
-            for test_node in self.parse_nodes(graph, param_dict, nodes_str,
-                                              prefix=prefix, verbose=verbose):
-                compatible = True
-                test_vms = test_node.params.objects("vms")
-                for vm_name in selected_vms:
-                    if vm_name not in test_vms:
-                        compatible = False
-                        break
-                if compatible:
-                    test_nodes.append(test_node)
+        graph.objects = self.parse_objects(object_strs, verbose=verbose)
+        for test_object in graph.objects:
+            if test_object.name in selected_objects:
+                test_objects.append(test_object)
+
+        for test_node in self.parse_nodes(graph, param_dict, nodes_str,
+                                          prefix=prefix, verbose=verbose):
+            compatible = True
+            test_vms = test_node.params.objects("vms")
+            for vm_name in selected_objects:
+                if vm_name not in test_vms:
+                    compatible = False
+                    break
+            if compatible:
+                test_nodes.append(test_node)
+
         if verbose:
+            logging.info("%s selected vm variant(s)", len(test_objects))
             logging.info("%s selected test variant(s)", len(test_nodes))
         if len(test_nodes) == 0:
             object_restrictions = param.ParsedDict(graph.test_objects).parsable_form()
@@ -261,8 +251,7 @@ class CartesianLoader(VirtTestLoader):
         return test_nodes, test_objects
 
     def parse_object_trees(self, param_dict=None, nodes_str="", object_strs=None,
-                           prefix="", verbose=False,
-                           object_names="", objectless=False):
+                           prefix="", verbose=False, object_names=""):
         """
         Parse all user defined tests (leaves) and their dependencies (internal nodes)
         connecting them according to the required/provided setup states of each test
@@ -281,7 +270,7 @@ class CartesianLoader(VirtTestLoader):
         # parse leaves and discover necessary setup (internal nodes)
         leaves, stubs = self.parse_object_nodes(param_dict, nodes_str, object_strs,
                                                 prefix=prefix, verbose=verbose,
-                                                object_names=object_names, objectless=objectless)
+                                                object_names=object_names)
         graph.nodes.extend(leaves)
         graph.objects.extend(stubs)
         # NOTE: reversing here turns the leaves into a simple stack

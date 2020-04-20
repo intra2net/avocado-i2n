@@ -229,10 +229,11 @@ def full(config, tag=""):
         # in case of permanent vms, support creation and other otherwise dangerous operations
         setup_dict = config["param_dict"].copy()
         setup_dict["create_permanent_vm"] = "yes"
+        setup_dict["main_vm"] = vm_name
         # overwrite any existing test objects
         create_graph = l.parse_object_trees(setup_dict, param.re_str("nonleaves.." + state),
                                             {vm_name: config["vm_strs"][vm_name]},
-                                            prefix=tag, object_names=vm_name, objectless=True)
+                                            prefix=tag, object_names=vm_name)
         create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=False)
         create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=True, skip_shared_root=True)
 
@@ -282,16 +283,18 @@ def update(config, tag=""):
         # remove all test nodes depending on the updated node if present (unset mode is "ignore otherwise")
         remove_graph = l.parse_object_trees(setup_dict,
                                             param.re_str(vm_params.get("remove_set", "all")), config["vm_strs"],
-                                            prefix=tag, object_names=vm_name, objectless=False, verbose=False)
+                                            prefix=tag, object_names=vm_name, verbose=False)
         remove_graph.flag_children(flag_type="run", flag=False)
         remove_graph.flag_children(flag_type="clean", flag=False)
         remove_graph.flag_children(to_state, vm_name, flag_type="clean", flag=True, skip_roots=True)
         r.run_traversal(remove_graph, config["param_dict"])
 
         logging.info("Updating all states before '%s'", to_state)
-        update_graph = l.parse_object_trees(config["param_dict"], param.re_str("nonleaves.." + to_state),
+        setup_dict = config["param_dict"].copy()
+        setup_dict["main_vm"] = vm_name
+        update_graph = l.parse_object_trees(setup_dict, param.re_str("nonleaves.." + to_state),
                                             {vm_name: config["vm_strs"][vm_name]}, prefix=tag,
-                                            object_names=vm_name, objectless=True)
+                                            object_names=vm_name)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=False)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=True,
                                               skip_object_roots=True, skip_shared_root=True)
@@ -299,9 +302,11 @@ def update(config, tag=""):
         logging.info("Preserving all states before '%s'", from_state)
         from_state = "0preinstall" if from_state == "install" else from_state
         if from_state != "root":
-            reuse_graph = l.parse_object_trees(config["param_dict"], param.re_str("nonleaves.." + from_state),
+            setup_dict = config["param_dict"].copy()
+            setup_dict["main_vm"] = vm_name
+            reuse_graph = l.parse_object_trees(setup_dict, param.re_str("nonleaves.." + from_state),
                                                {vm_name: config["vm_strs"][vm_name]}, prefix=tag,
-                                               object_names=vm_name, objectless=True, verbose=False)
+                                               object_names=vm_name, verbose=False)
             update_graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
 
         # NOTE: this makes sure that no new states are created and the updated
@@ -587,14 +592,13 @@ def check(config, tag=""):
     LOG_UI.info("Starting state check for %s with job %s and params:\n%s",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form())
-    setup_dict = config["param_dict"].copy()
-    setup_dict.update({"vm_action": "check", "skip_image_processing": "yes"})
-    setup_str = param.re_str("nonleaves..manage.unchanged")
-    tests, _ = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"],
-                                    object_names=" ".join(config["selected_vms"]),
-                                    objectless=True, prefix=tag)
-    for test in tests:
-        r.run_test_node(TestNode(tag, test.config, []))
+    vms = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
+    for vm in vms:
+        setup_dict = config["param_dict"].copy()
+        setup_dict.update({"vm_action": "check", "skip_image_processing": "yes"})
+        setup_str = param.re_str("nonleaves..manage.unchanged")
+        test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
+        r.run_test_node(test_node)
     LOG_UI.info("Finished state check")
 
 
@@ -612,14 +616,13 @@ def pop(config, tag=""):
     LOG_UI.info("Starting state pop for %s with job %s and params:\n%s",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form())
-    setup_dict = config["param_dict"].copy()
-    setup_dict.update({"vm_action": "pop", "skip_image_processing": "yes"})
-    setup_str = param.re_str("nonleaves..manage.unchanged")
-    tests, _ = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"],
-                                    object_names=" ".join(config["selected_vms"]),
-                                    objectless=True, prefix=tag)
-    for test in tests:
-        r.run_test_node(TestNode(tag, test.config, []))
+    vms = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
+    for vm in vms:
+        setup_dict = config["param_dict"].copy()
+        setup_dict.update({"vm_action": "pop", "skip_image_processing": "yes"})
+        setup_str = param.re_str("nonleaves..manage.unchanged")
+        test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
+        r.run_test_node(test_node)
     LOG_UI.info("Finished state pop")
 
 
@@ -636,14 +639,13 @@ def push(config, tag=""):
     LOG_UI.info("Starting state push for %s with job %s and params:\n%s",
                 ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form())
-    setup_dict = config["param_dict"].copy()
-    setup_dict.update({"vm_action": "push", "skip_image_processing": "yes"})
-    setup_str = param.re_str("nonleaves..manage.unchanged")
-    tests, _ = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"],
-                                    object_names=" ".join(config["selected_vms"]),
-                                    objectless=True, prefix=tag)
-    for test in tests:
-        r.run_test_node(TestNode(tag, test.config, []))
+    vms = l.parse_objects(config["vm_strs"], " ".join(config["selected_vms"]))
+    for vm in vms:
+        setup_dict = config["param_dict"].copy()
+        setup_dict.update({"vm_action": "push", "skip_image_processing": "yes"})
+        setup_str = param.re_str("nonleaves..manage.unchanged")
+        test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
+        r.run_test_node(test_node)
     LOG_UI.info("Finished state push")
 
 
