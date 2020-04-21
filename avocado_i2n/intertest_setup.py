@@ -401,7 +401,7 @@ def install(config, tag=""):
     LOG_UI.info("Installing %s (%s)",
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
     graph = TestGraph()
-    graph.objects = l.parse_objects(config["vm_strs"])
+    graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
     for vm in graph.objects:
         graph.nodes.append(l.parse_install_node(vm, config["param_dict"], prefix=tag))
         r.run_install_node(graph, vm.name, config["param_dict"])
@@ -423,8 +423,7 @@ def deploy(config, tag=""):
     selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Deploying data to %s (%s)",
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
-    vms = l.parse_objects(config["vm_strs"])
-    for vm in vms:
+    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
 
         states = vm.params.objects("states")
         if len(states) == 0:
@@ -465,8 +464,7 @@ def internal(config, tag=""):
     selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Performing internal setup on %s (%s)",
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
-    vms = l.parse_objects(config["vm_strs"])
-    for vm in vms:
+    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
         setup_dict = config["param_dict"].copy()
         if vm.params.get("stateless", "yes") == "yes":
             setup_dict.update({"get_state": "", "set_state": "",
@@ -637,7 +635,7 @@ def set(config, tag=""):
 
     l, r = config["graph"].l, config["graph"].r
     setup_dict = config["param_dict"].copy()
-    for vm in l.parse_objects(config["vm_strs"]):
+    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
         vm_op_type = op_type + "_" + vm.name
         state_type = vm_op_type if vm_op_type in setup_dict else op_type
         if state_type not in setup_dict:
@@ -676,7 +674,7 @@ def unset(config, tag=""):
 
     l, r = config["graph"].l, config["graph"].r
     setup_dict = config["param_dict"].copy()
-    for vm in l.parse_objects(config["vm_strs"]):
+    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
 
         # since the default unset_mode is passive (ri) we need a better
         # default value for that case but still modifiable by the user
@@ -774,7 +772,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
     LOG_UI.info("Starting %s for %s with job %s and params:\n%s", operation,
                 ", ".join(selected_vms), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form().rstrip("\n"))
-    for vm in l.parse_objects(config["vm_strs"]):
+    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
         setup_dict = config["param_dict"].copy()
         setup_dict.update(param_dict)
         setup_str = param.re_str("nonleaves..manage.unchanged")

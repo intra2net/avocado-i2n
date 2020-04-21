@@ -58,12 +58,14 @@ class CartesianLoader(VirtTestLoader):
         self.config = vars(self.args)
 
     """parsing functionality"""
-    def parse_objects(self, object_strs=None, verbose=False):
+    def parse_objects(self, param_dict=None, object_strs=None, verbose=False):
         """
         Parse all available test objects and their configurations or
         a selection of such where the selection is defined by the object
         string keys.
 
+        :param param_dict: runtime parameters used for extra customization
+        :type param_dict: {str, str} or None
         :param object_strs: object-specific names and variant restrictions
         :type object_strs: {str, str}
         :param bool verbose: whether to print extra messages or not
@@ -72,17 +74,22 @@ class CartesianLoader(VirtTestLoader):
         """
         if object_strs is None:
             # all possible hardware-software combinations
-            available_vms = param.all_vms()
-            object_strs = {vm_name: "" for vm_name in available_vms}
+            selected_vms = param.all_vms()
+            object_strs = {vm_name: "" for vm_name in selected_vms}
         else:
-            available_vms = object_strs.keys()
+            selected_vms = object_strs.keys()
 
         test_objects = []
-        for vm_name in available_vms:
+        for vm_name in selected_vms:
+            objstr = {vm_name: object_strs[vm_name]}
             # all possible hardware-software combinations for a given vm
             config = param.Reparsable()
             config.parse_next_batch(base_file="objects.cfg",
-                                    base_str=param.vm_str(vm_name, object_strs),
+                                    # TODO: the current suffix operators make it nearly impossible to overwrite
+                                    # object parameters with object specific values after the suffix operator is
+                                    # applied with the exception of special regex operator within the config
+                                    base_str=param.vm_str(objstr, param.ParsedDict(param_dict).parsable_form()),
+                                    # make sure we have the final word on parameters we use to identify objects
                                     base_dict={"main_vm": vm_name},
                                     ovrwrt_file=param.vms_ovrwrt_file())
 
@@ -171,7 +178,10 @@ class CartesianLoader(VirtTestLoader):
                 objstrs[test_object.name] = test_object.object_str
             config = param.Reparsable()
             config.parse_next_batch(base_file="objects.cfg",
-                                    base_str=param.vm_str(d["vms"], objstrs),
+                                    # TODO: the current suffix operators make it nearly impossible to overwrite
+                                    # object parameters with object specific values after the suffix operator is
+                                    # applied with the exception of special regex operator within the config
+                                    base_str=param.vm_str(objstrs, param.ParsedDict(param_dict).parsable_form()),
                                     base_dict={"main_vm": main_object.name},
                                     ovrwrt_file=param.vms_ovrwrt_file())
             config.parse_next_batch(base_file="sets.cfg",
@@ -213,7 +223,7 @@ class CartesianLoader(VirtTestLoader):
         selected_objects = [] if object_strs is None else object_strs.keys()
 
         graph = TestGraph()
-        graph.objects = self.parse_objects(object_strs, verbose=verbose)
+        graph.objects = self.parse_objects(param_dict, object_strs, verbose=verbose)
         for test_object in graph.objects:
             if test_object.name in selected_objects:
                 test_objects.append(test_object)

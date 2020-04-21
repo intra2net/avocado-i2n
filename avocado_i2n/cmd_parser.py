@@ -152,7 +152,6 @@ def full_vm_params_and_strs(param_dict, vm_strs, use_vms_default):
                                 ovrwrt_dict=param_dict)
     vms_params = vms_config.get_params()
     for vm_name in param.all_vms():
-        vm_strs[vm_name] += param.ParsedDict(param_dict).parsable_form()
         if use_vms_default[vm_name]:
             default = vms_params.get("default_only_%s" % vm_name)
             if not default:
@@ -180,7 +179,6 @@ def full_tests_params_and_str(param_dict, tests_str, use_tests_default):
                                   ovrwrt_file=param.tests_ovrwrt_file(),
                                   ovrwrt_dict=param_dict)
     tests_params = tests_config.get_params()
-    tests_str += param.ParsedDict(param_dict).parsable_form()
     if use_tests_default:
         default = tests_params.get("default_only", "all")
         available_restrictions = param.all_restrictions()

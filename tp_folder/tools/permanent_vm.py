@@ -50,7 +50,7 @@ def permubuntu(config, tag=""):
     LOG_UI.info("Starting permanent vm setup for %s (%s)",
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
-    for vm in l.parse_objects(config["vm_strs"]):
+    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
         logging.info("Performing extra setup for the permanent %s", vm.name)
 
         # consider this as a special kind of ephemeral test which concerns

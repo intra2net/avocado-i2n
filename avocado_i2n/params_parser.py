@@ -430,39 +430,39 @@ def main_vm():
     return rep.get_params(list_of_keys=["main_vm"]).get("main_vm")
 
 
-def re_str(variant, ovrwrt_str="", tag=""):
+def re_str(variant_str, base_str="", tag=""):
     """
-    Add a variant restriction to the overwrite string, optionally
+    Add a variant restriction to the base string, optionally
     adding a custom tag as well.
 
-    :param str variant: variant restriction
-    :param str ovrwrt_str: string where the variant restriction will be added
+    :param str variant_str: variant restriction
+    :param str base_str: string where the variant restriction will be added
     :param str tag: additional tag to the variant combination
     :returns: restricted parameter string
     :rtype: str
     """
     if tag != "":
-        subtest_variant = "variants:\n    - %s:\n        only %s\n" % (tag, variant)
+        variant_str = "variants:\n    - %s:\n        only %s\n" % (tag, variant)
     else:
-        subtest_variant = "only %s\n" % variant
-    ovrwrt_str = subtest_variant + ovrwrt_str
-    return ovrwrt_str
+        variant_str = "only %s\n" % variant_str
+    return base_str + variant_str
 
 
-def vm_str(vms, variant_strs):
+def vm_str(variant_strs, base_str=""):
     """
-    Add a vm variant restriction to the overwrite string, reaching
+    Add a vm variant restriction to the base string, reaching
     exactly one vm variant afterwards.
 
-    :param str vms: vms to be kept as variants into the selection
     :param variant_strs: variant restrictions for each vm as key, value pair
     :type variant_strs: {str, str}
+    :param str base_str: string where the variant restriction will be added
     :returns: restricted parameter string
     :rtype: str
     """
-    variant_str = ""
+    vms, variant_str = "", ""
     for vm, variant in variant_strs.items():
         subvariant = "".join(["    " + l + "\n" for l in variant.rstrip("\n").split("\n")])
         variant_str += "%s:\n%s" % (vm, subvariant)
-    variant_str += "join " + vms + "\n"
-    return variant_str
+        vms += " " + vm
+    variant_str += "join" + vms + "\n"
+    return base_str + variant_str
