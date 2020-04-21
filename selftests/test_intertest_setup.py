@@ -18,9 +18,9 @@ class DummyTestRunning(object):
     fail_switch = False
     asserted_tests = []
 
-    def __init__(self, node):
+    def __init__(self, node_params):
         # assertions about the test calls
-        current_test_dict = node.params
+        current_test_dict = node_params
         assert len(self.asserted_tests) > 0, "Unexpected test %s" % current_test_dict["shortname"]
         expected_test_dict = self.asserted_tests.pop(0)
         for checked_key in expected_test_dict.keys():
@@ -43,12 +43,12 @@ def new_job(config):
     yield job
 
 
-def mock_run_test_node(_self, node):
-    return DummyTestRunning(node)
+def mock_run_test(_self, _job, _result, factory, _queue, _set):
+    return DummyTestRunning(factory[1]['vt_params'])
 
 
 @mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
-@mock.patch.object(CartesianRunner, 'run_test_node', mock_run_test_node)
+@mock.patch.object(CartesianRunner, 'run_test', mock_run_test)
 class IntertestSetupTest(unittest.TestCase):
 
     def setUp(self):
@@ -294,26 +294,31 @@ class IntertestSetupTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_manual_state_manipulation(self):
-        self.config["selected_vms"] = ["vm2"]
-        self.config["vm_strs"] = {"vm2": "only Win10\n"}
+        self.config["selected_vms"] = ["vm2", "vm3"]
+        self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
         for state_action in ["check", "pop", "push", "get", "set", "unset"]:
             DummyTestRunning.asserted_tests = [
                 {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$",
+                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
+                {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$",
                  "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
             ]
             setup_func = getattr(intertest_setup, state_action)
             setup_func(self.config)
 
         for state_action in ["create", "clean"]:
+            operation = "set" if state_action == "create" else "unset"
             DummyTestRunning.asserted_tests = [
                 {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$",
-                 "skip_image_processing": "^yes$", "vm_action": "^set$" if state_action == "create" else "^unset$",
-                 "set_state": "^root$", "unset_state": "^root$"},
+                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
+                {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$",
+                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
             ]
-            if state_action == "create":
-                del DummyTestRunning.asserted_tests[0]["unset_state"]
-            else:
-                del DummyTestRunning.asserted_tests[0]["set_state"]
+            for test in DummyTestRunning.asserted_tests:
+                test[operation+"_state"] = "^root$"
+                test[operation+"_type_vm2"] = "^off$"
+                test[operation+"_type_vm3"] = "^on$"
+                test[operation+"_mode"] = "^af$" if operation == "set" else "^fa$"
             setup_func = getattr(intertest_setup, state_action)
             setup_func(self.config, "5m")
 
