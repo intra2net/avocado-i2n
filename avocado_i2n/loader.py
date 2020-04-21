@@ -391,7 +391,7 @@ class CartesianLoader(VirtTestLoader):
         setup_str = param.re_str("nonleaves..0scan")
         nodes = self.parse_nodes(graph, setup_dict, setup_str)
         assert len(nodes) == 1, "There can only be one shared root"
-        scan_node = TestNode(prefix + "0s", nodes[0].config, [])
+        scan_node = TestNode(prefix + "0s", nodes[0].config, graph.objects)
         scan_node.regenerate_params()
         logging.debug("Reached shared root %s", scan_node.params["shortname"])
         return scan_node

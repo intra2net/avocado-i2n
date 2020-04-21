@@ -18,10 +18,10 @@ class DummyTestRunning(object):
     fail_switch = []
     asserted_tests = []
 
-    def __init__(self, node):
+    def __init__(self, node_params):
         assert len(self.fail_switch) == len(self.asserted_tests), "len(%s) != len(%s)" % (self.fail_switch, self.asserted_tests)
         # assertions about the test calls
-        self.current_test_dict = node.params
+        self.current_test_dict = node_params
         assert len(self.asserted_tests) > 0, "Unexpected test %s" % self.current_test_dict["shortname"]
         self.expected_test_dict, self.expected_test_fail = self.asserted_tests.pop(0), self.fail_switch.pop(0)
         for checked_key in self.expected_test_dict.keys():
@@ -52,8 +52,8 @@ class DummyStateCheck(object):
             self.result = False
 
 
-def mock_run_test_node(_self, node):
-    return DummyTestRunning(node).result()
+def mock_run_test(_self, _job, _result, factory, _queue, _set):
+    return DummyTestRunning(factory[1]['vt_params']).result()
 
 
 def mock_check_state(params, env):
@@ -61,7 +61,7 @@ def mock_check_state(params, env):
 
 
 @mock.patch('avocado_i2n.cartgraph.graph.state_setup.check_state', mock_check_state)
-@mock.patch.object(CartesianRunner, 'run_test_node', mock_run_test_node)
+@mock.patch.object(CartesianRunner, 'run_test', mock_run_test)
 @mock.patch.object(TestGraph, 'load_setup_list', mock.MagicMock())
 class CartesianGraphTest(unittest.TestCase):
 
@@ -295,6 +295,25 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         DummyTestRunning.fail_switch[-1] = True
         with self.assertRaises(exceptions.TestSkipError):
+            self.runner.run_traversal(graph, self.config["param_dict"])
+
+    def test_abort_objectless_node(self):
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        test_node = graph.get_nodes_by(param_val="tutorial1")[0]
+        # assume we are parsing invalid configuration
+        test_node.params["vms"] = ""
+        DummyStateCheck.present_states = ["root", "install"]
+        graph.scan_object_states(None)
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
+        ]
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
+        with self.assertRaises(AssertionError):
             self.runner.run_traversal(graph, self.config["param_dict"])
 
     def test_trees_difference_zero(self):

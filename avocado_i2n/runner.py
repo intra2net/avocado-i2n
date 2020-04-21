@@ -52,12 +52,15 @@ class CartesianRunner(TestRunner):
 
         :param node: test node to run
         :type node: :py:class:`TestNode`
-        :return: run status of :py:meth:`run_test`
+        :returns: run status of :py:meth:`run_test`
         :rtype: bool
+        :raises: :py:class:`AssertionError` if the ran test node contains no objects
 
         This is a simple wrapper to provide some default arguments
         for simplicity of invocation.
         """
+        if node.is_objectless():
+            raise AssertionError("Cannot run test nodes not using any test objects, here %s" % node)
         # TODO: in the future we better inherit from the Runner interface in
         # avocado.core.plugin_interfaces and implement our own test node running
         # like most of the other runners do
