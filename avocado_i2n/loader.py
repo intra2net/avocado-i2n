@@ -268,7 +268,7 @@ class CartesianLoader(VirtTestLoader):
         graph.nodes.extend(leaves)
         graph.objects.extend(stubs)
         # NOTE: reversing here turns the leaves into a simple stack
-        unresolved = sorted(list(leaves), key=lambda x: int(re.match("^(\d+)", x.id).group(1)), reverse=True)
+        unresolved = sorted(leaves, key=lambda x: int(re.match("^(\d+)", x.id).group(1)), reverse=True)
 
         if logging.getLogger('graph').level <= logging.DEBUG:
             parse_dir = os.path.join(self.logdir, "graph_parse")

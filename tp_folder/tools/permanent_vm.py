@@ -46,8 +46,9 @@ def permubuntu(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     l, r = config["graph"].l, config["graph"].r
+    selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Starting permanent vm setup for %s (%s)",
-                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
+                ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
     for vm in l.parse_objects(config["vm_strs"]):
         logging.info("Performing extra setup for the permanent %s", vm.name)

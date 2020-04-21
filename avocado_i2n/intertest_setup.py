@@ -218,10 +218,11 @@ def full(config, tag=""):
     we cannot guarantee other setup involved vms exist.
     """
     l, r = config["graph"].l, config["graph"].r
+    selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Starting full setup for %s (%s)",
-                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
+                ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
-    for vm_name in config["selected_vms"]:
+    for vm_name in selected_vms:
         vm_params = config["vms_params"].object_params(vm_name)
         logging.info("Creating the full state '%s' of %s", vm_params.get("state", "customize"), vm_name)
 
@@ -268,10 +269,11 @@ def update(config, tag=""):
         analogical to running the full manual step.
     """
     l, r = config["graph"].l, config["graph"].r
+    selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Starting update setup for %s (%s)",
-                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
+                ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
-    for vm_name in config["selected_vms"]:
+    for vm_name in selected_vms:
         vm_params = config["vms_params"].object_params(vm_name)
         logging.info("Updating state '%s' of %s", vm_params.get("to_state", "customize"), vm_name)
 
@@ -396,8 +398,9 @@ def install(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     l, r = config["graph"].l, config["graph"].r
+    selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Installing %s (%s)",
-                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
+                ", ".join(selected_vms), os.path.basename(r.job.logdir))
     graph = TestGraph()
     graph.objects = l.parse_objects(config["vm_strs"])
     for vm in graph.objects:
@@ -418,8 +421,9 @@ def deploy(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     l, r = config["graph"].l, config["graph"].r
+    selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Deploying data to %s (%s)",
-                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
+                ", ".join(selected_vms), os.path.basename(r.job.logdir))
     vms = l.parse_objects(config["vm_strs"])
     for vm in vms:
 
@@ -459,8 +463,9 @@ def internal(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     l, r = config["graph"].l, config["graph"].r
+    selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Performing internal setup on %s (%s)",
-                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
+                ", ".join(selected_vms), os.path.basename(r.job.logdir))
     vms = l.parse_objects(config["vm_strs"])
     for vm in vms:
         setup_dict = config["param_dict"].copy()
@@ -743,11 +748,12 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     :param str tag: extra name identifier for the test to be run
     """
     l, r = config["graph"].l, config["graph"].r
+    selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("%s virtual machines %s (%s)", verb[0],
-                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
-    vms = " ".join(config["selected_vms"])
+                ", ".join(selected_vms), os.path.basename(r.job.logdir))
+    vms = " ".join(selected_vms)
     setup_dict = config["param_dict"].copy()
-    setup_dict.update({"vms": vms, "main_vm": config["selected_vms"][0]})
+    setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
     setup_str = param.re_str("nonleaves..manage.%s" % verb[1])
     tests, vms = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one %s test variant from %s" % (verb[2], tests)
@@ -765,8 +771,9 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
     :param str tag: extra name identifier for the test to be run
     """
     l, r = config["graph"].l, config["graph"].r
+    selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Starting %s for %s with job %s and params:\n%s", operation,
-                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir),
+                ", ".join(selected_vms), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form().rstrip("\n"))
     for vm in l.parse_objects(config["vm_strs"]):
         setup_dict = config["param_dict"].copy()

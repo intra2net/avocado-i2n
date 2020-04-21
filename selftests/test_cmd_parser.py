@@ -23,30 +23,69 @@ class CmdParserTest(unittest.TestCase):
         self.assertEqual(self.config["param_dict"]["aaa"], "bbb")
 
     def test_selected_vms(self):
+        # test default (from config)
         cmd.params_from_cmd(self.config)
-        self.assertEqual(self.config["selected_vms"], self.config["available_vms"])
+        self.assertEqual(list(self.config["vm_strs"].keys()), self.config["available_vms"])
+        self.assertIn("only CentOS", self.config["vm_strs"]["vm1"])
+        self.assertIn("only Win10", self.config["vm_strs"]["vm2"])
+        self.assertIn("only Ubuntu", self.config["vm_strs"]["vm3"])
+
+        # test override (from command line)
+
+        # TODO: current sample test suite does not support multiple guest variants per object
+        self.config["params"] += ["only_vm1=CentOS"]
+        cmd.params_from_cmd(self.config)
+        self.assertEqual(list(self.config["vm_strs"].keys()), self.config["available_vms"])
+        self.assertIn("only CentOS", self.config["vm_strs"]["vm1"])
 
         self.config["params"] += ["vms=vm1"]
         cmd.params_from_cmd(self.config)
-        self.assertEqual(self.config["selected_vms"], ["vm1"])
+        self.assertEqual(list(self.config["vm_strs"].keys()), ["vm1"])
+        self.assertIn("only CentOS", self.config["vm_strs"]["vm1"])
 
     def test_selected_vms_invalid(self):
-        self.config["params"] += ["vms=vmX"]
+        base_params = self.config["params"]
+
+        self.config["params"] = base_params + ["vms=vmX"]
         with self.assertRaises(ValueError):
             cmd.params_from_cmd(self.config)
 
-    def test_selected_restr(self):
+        self.config["params"] = base_params + ["default_only_vm1="]
+        with self.assertRaises(ValueError):
+            cmd.params_from_cmd(self.config)
+
+    def test_selected_tests(self):
+        # test default (from config)
         cmd.params_from_cmd(self.config)
         self.assertIn("only normal\n", self.config["tests_str"])
 
+        # test override (from command line)
         self.config["params"] += ["only=minimal"]
         cmd.params_from_cmd(self.config)
         self.assertIn("only minimal\n", self.config["tests_str"])
 
-    def test_selected_restr_invalid(self):
+    def test_selected_tests_invalid(self):
         self.config["params"] += ["default_only=nonminimal"]
         with self.assertRaises(ValueError):
             cmd.params_from_cmd(self.config)
+
+    def test_selected_tests_nontrivial(self):
+        # test default (from config)
+        cmd.params_from_cmd(self.config)
+        self.assertIn("only normal\n", self.config["tests_str"])
+        self.assertNotIn("only tutorial1\n", self.config["tests_str"])
+
+        # test override (from command line)
+
+        self.config["params"] += ["only=tutorial1"]
+        cmd.params_from_cmd(self.config)
+        self.assertIn("only normal\n", self.config["tests_str"])
+        self.assertIn("only tutorial1\n", self.config["tests_str"])
+
+        self.config["params"] += ["only=minimal"]
+        cmd.params_from_cmd(self.config)
+        self.assertIn("only minimal\n", self.config["tests_str"])
+        self.assertIn("only tutorial1\n", self.config["tests_str"])
 
 if __name__ == '__main__':
     unittest.main()
