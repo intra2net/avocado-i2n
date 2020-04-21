@@ -304,7 +304,7 @@ class TestGraph(object):
         set a run/clean flag for each one in the intersection.
 
         :param graph: Cartesian graph to intersect the current graph with
-        :type graph: CartesianGraph object
+        :type graph: :py:class:`TestGraph`
         :param str flag_type: 'run' or 'clean' categorization of the children
         :param bool flag: whether the run/clean action should be executed or not
         :param bool skip_object_roots: whether the object roots should not be flagged as well
@@ -332,35 +332,70 @@ class TestGraph(object):
                     test_node.should_clean = flag
 
     """get queries"""
-    def get_nodes_by(self, param_key="name", param_val="", subset=None):
-        """
-        Query all test nodes by a value in a parameter, returning a set of tests.
-
-        Warning: The matching is using 'param LIKE %value%' instead of 'param=value'
-        which is necessary for matching a subvariant if the key is the test name.
-        """
-        tests_selection = []
-        if subset is None:
-            subset = self.nodes
-        for test in subset:
-            if re.search(param_val, test.params.get(param_key, "")):
-                tests_selection.append(test)
-        logging.debug("Retrieved %s/%s test nodes with %s = %s",
-                      len(tests_selection), len(subset), param_key, param_val)
-        return tests_selection
-
     def get_objects_by(self, param_key="main_vm", param_val="", subset=None):
         """
-        Query all test objects by a value in a parameter, returning a set of vms.
+        Query all test objects by a value in a parameter, returning a set of objects.
 
-        Warning: The matching is using 'param LIKE %value%' instead of 'param=value'.
+        :param str param_key: exact key to use for the search
+        :param str param_val: regex to match the object parameter values
+        :param subset: a subset of test objects within the graph to search in
+        :type subset: [:py:class:`TestObject`]
+        :returns: a selection of objects satisfying ``key=val`` criterion
+        :rtype: [:py:class:`TestObject`]
         """
-        vms_selection = []
+        objects_selection = []
         if subset is None:
             subset = self.objects
-        for vm in subset:
-            if re.search(param_val, vm.params.get(param_key, "")):
-                vms_selection.append(vm)
+        for test_object in subset:
+            if re.search(param_val, test_object.params.get(param_key, "")):
+                objects_selection.append(test_object)
         logging.debug("Retrieved %s/%s test objects with %s = %s",
-                      len(vms_selection), len(subset), param_key, param_val)
-        return vms_selection
+                      len(objects_selection), len(subset), param_key, param_val)
+        return objects_selection
+
+    def get_object_by(self, param_key="main_vm", param_val="", subset=None):
+        """
+        Query all test objects by a value in a parameter, returning a unique object.
+
+        :returns: a unique object satisfying ``key=val`` criterion
+        :rtype: :py:class:`TestObject`
+
+        The rest of the arguments are analogical to the plural version.
+        """
+        objects_selection = self.get_objects_by(param_key, param_val, subset)
+        assert len(objects_selection) == 1
+        return objects_selection[0]
+
+    def get_nodes_by(self, param_key="name", param_val="", subset=None):
+        """
+        Query all test nodes by a value in a parameter, returning a set of nodes.
+
+        :param str param_key: exact key to use for the search
+        :param str param_val: regex to match the object parameter values
+        :param subset: a subset of test nodes within the graph to search in
+        :type subset: [:py:class:`TestNode`]
+        :returns: a selection of nodes satisfying ``key=val`` criterion
+        :rtype: [:py:class:`TestNode`]
+        """
+        nodes_selection = []
+        if subset is None:
+            subset = self.nodes
+        for test_node in subset:
+            if re.search(param_val, test_node.params.get(param_key, "")):
+                nodes_selection.append(test_node)
+        logging.debug("Retrieved %s/%s test nodes with %s = %s",
+                      len(nodes_selection), len(subset), param_key, param_val)
+        return nodes_selection
+
+    def get_node_by(self, param_key="name", param_val="", subset=None):
+        """
+        Query all test nodes by a value in a parameter, returning a unique node.
+
+        :returns: a unique node satisfying ``key=val`` criterion
+        :rtype: :py:class:`TestNode`
+
+        The rest of the arguments are analogical to the plural version.
+        """
+        nodes_selection = self.get_nodes_by(param_key, param_val, subset)
+        assert len(nodes_selection) == 1
+        return nodes_selection[0]
