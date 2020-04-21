@@ -25,7 +25,7 @@ class CmdParserTest(unittest.TestCase):
     def test_selected_vms(self):
         # test default (from config)
         cmd.params_from_cmd(self.config)
-        self.assertEqual(list(self.config["vm_strs"].keys()), self.config["available_vms"])
+        self.assertEqual(self.config["vm_strs"], self.config["available_vms"])
         self.assertIn("only CentOS", self.config["vm_strs"]["vm1"])
         self.assertIn("only Win10", self.config["vm_strs"]["vm2"])
         self.assertIn("only Ubuntu", self.config["vm_strs"]["vm3"])
@@ -35,12 +35,13 @@ class CmdParserTest(unittest.TestCase):
         # TODO: current sample test suite does not support multiple guest variants per object
         self.config["params"] += ["only_vm1=CentOS"]
         cmd.params_from_cmd(self.config)
-        self.assertEqual(list(self.config["vm_strs"].keys()), self.config["available_vms"])
+        self.assertEqual(self.config["vm_strs"], self.config["available_vms"])
         self.assertIn("only CentOS", self.config["vm_strs"]["vm1"])
 
         self.config["params"] += ["vms=vm1"]
         cmd.params_from_cmd(self.config)
-        self.assertEqual(list(self.config["vm_strs"].keys()), ["vm1"])
+        self.assertEqual(sorted(self.config["available_vms"].keys()), ["vm1", "vm2", "vm3"])
+        self.assertEqual(sorted(self.config["vm_strs"].keys()), ["vm1"])
         self.assertIn("only CentOS", self.config["vm_strs"]["vm1"])
 
     def test_selected_vms_invalid(self):
@@ -57,11 +58,13 @@ class CmdParserTest(unittest.TestCase):
     def test_selected_tests(self):
         # test default (from config)
         cmd.params_from_cmd(self.config)
+        self.assertIn("normal", self.config["available_restrictions"])
         self.assertIn("only normal\n", self.config["tests_str"])
 
         # test override (from command line)
         self.config["params"] += ["only=minimal"]
         cmd.params_from_cmd(self.config)
+        self.assertIn("minimal", self.config["available_restrictions"])
         self.assertIn("only minimal\n", self.config["tests_str"])
 
     def test_selected_tests_invalid(self):

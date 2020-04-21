@@ -290,8 +290,7 @@ def update(config, tag=""):
         # remove all test nodes depending on the updated node if present (unset mode is "ignore otherwise")
         remove_graph = l.parse_object_trees(setup_dict,
                                             param.re_str(vm_params.get("remove_set", "all")),
-                                            # TODO: need all vm strings here
-                                            config["vm_strs"],
+                                            config["available_vms"],
                                             prefix=tag, verbose=False)
         remove_graph.flag_children(flag_type="run", flag=False)
         remove_graph.flag_children(flag_type="clean", flag=False)

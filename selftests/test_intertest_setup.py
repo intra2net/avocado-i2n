@@ -56,8 +56,11 @@ class IntertestSetupTest(unittest.TestCase):
         DummyTestRunning.fail_switch = False
 
         self.config = {}
+        self.config["available_vms"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
+        self.config["available_restrictions"] = ["normal"]
         self.config["param_dict"] = {}
-        self.config["vm_strs"] = {}
+        self.config["vm_strs"] = self.config["available_vms"].copy()
+        self.config["tests_str"] = {}
         self.config["tests_params"] = utils_params.Params()
         self.config["vms_params"] = utils_params.Params()
 
@@ -136,6 +139,18 @@ class IntertestSetupTest(unittest.TestCase):
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
         ]
         intertest_setup.update(self.config, tag="0")
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
+    def test_update_minimal(self):
+        self.config["vms_params"]["remove_set"] = "minimal"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^on_customize$"},
+            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
+        ]
+        # vm2 does not participate in any test from the minimal test set but vm1 will be updated before this assertion fails
+        with self.assertRaises(AssertionError):
+            intertest_setup.update(self.config, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_update_custom(self):

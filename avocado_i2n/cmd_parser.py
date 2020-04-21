@@ -39,8 +39,8 @@ def params_from_cmd(config):
     sys.path.insert(1, os.path.join(param.suite_path, "utils"))
 
     # validate typed vm names and possible vm specific restrictions
-    config["available_vms"] = available_vms = param.all_vms()
-    config["available_restrictions"] = available_restrictions = param.all_restrictions()
+    available_vms = param.all_vms()
+    available_restrictions = param.all_restrictions()
 
     # defaults usage vs command line overriding
     use_tests_default = True
@@ -51,7 +51,7 @@ def params_from_cmd(config):
     # the run string includes only pure parameters
     param_dict = {}
     # the tests string includes the test restrictions while the vm strings include the ones for the vm variants
-    tests_str, vm_strs = "", {}
+    tests_str, vm_strs = "", {vm: "" for vm in available_vms}
 
     # main tokenizing loop
     for cmd_param in config["params"]:
@@ -75,9 +75,6 @@ def params_from_cmd(config):
                 if re.match("(only|no)_%s" % vm_name, key):
                     # escape defaults for this vm and use the command line
                     use_vms_default[vm_name] = False
-                    # detect new restricted vm
-                    if vm_name not in vm_strs:
-                        vm_strs[vm_name] = ""
                     # main vm restriction part
                     vm_strs[vm_name] += "%s %s\n" % (key.replace("_%s" % vm_name, ""), value)
         # NOTE: comma in a parameter sense implies the same as space in config file
@@ -98,9 +95,16 @@ def params_from_cmd(config):
 
     # get minimal configurations and parse defaults if no command line arguments
     config["vms_params"], config["vm_strs"] = full_vm_params_and_strs(param_dict, vm_strs,
-                                                                      use_vms_default, with_selected_vms)
+                                                                      use_vms_default)
+    config["vms_params"]["vms"] = " ".join(with_selected_vms)
+    config["available_vms"] = vm_strs.copy()
+    for vm_name in available_vms:
+        # the keys of vm strings must be equivalent to the selected vms
+        if vm_name not in with_selected_vms:
+            del vm_strs[vm_name]
     config["tests_params"], config["tests_str"] = full_tests_params_and_str(param_dict, tests_str,
                                                                             use_tests_default)
+    config["available_restrictions"] = available_restrictions
 
     # control against invoking internal tests
     control_config = param.Reparsable()
@@ -126,7 +130,7 @@ def params_from_cmd(config):
     env_process_hooks()
 
 
-def full_vm_params_and_strs(param_dict, vm_strs, use_vms_default, selected_vms):
+def full_vm_params_and_strs(param_dict, vm_strs, use_vms_default):
     """
     Add default vm parameters and strings for missing command line such.
 
@@ -137,8 +141,6 @@ def full_vm_params_and_strs(param_dict, vm_strs, use_vms_default, selected_vms):
     :param use_vms_default: whether to use default variant restriction for a
                             particular vm
     :type use_vms_default: {str, bool}
-    :param selected_vms: vm selection from the command line or all vms otherwise
-    :type selected_vms: [str]
     :returns: complete vm parameters and strings
     :rtype: (:py:class:`Params`, {str, str})
     :raises: :py:class:`ValueError` if no command line or default variant
@@ -147,18 +149,9 @@ def full_vm_params_and_strs(param_dict, vm_strs, use_vms_default, selected_vms):
     vms_config = param.Reparsable()
     vms_config.parse_next_batch(base_file="guest-base.cfg",
                                 ovrwrt_file=param.vms_ovrwrt_file(),
-                                ovrwrt_str=param.ParsedDict(param_dict).parsable_form(),
-                                ovrwrt_dict={"vms": " ".join(selected_vms)})
+                                ovrwrt_dict=param_dict)
     vms_params = vms_config.get_params()
-    # some selected vms might not be restricted on the command line so use default restrictions
     for vm_name in param.all_vms():
-        # the keys of vm strings must be equivalent to the selected vms
-        if vm_name in selected_vms and vm_name not in vm_strs:
-            vm_strs[vm_name] = ""
-        elif vm_name not in selected_vms:
-            if vm_name in vm_strs:
-                del vm_strs[vm_name]
-            continue
         vm_strs[vm_name] += param.ParsedDict(param_dict).parsable_form()
         if use_vms_default[vm_name]:
             default = vms_params.get("default_only_%s" % vm_name)
