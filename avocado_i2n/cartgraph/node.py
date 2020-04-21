@@ -72,6 +72,8 @@ class TestNode(object):
         self.should_run = True
         self.should_clean = True
 
+        self.node_str = None
+
         # list of objects involved in the test
         self.objects = objects
 

@@ -107,7 +107,7 @@ class CartesianLoader(VirtTestLoader):
             test_object.regenerate_params()
             if verbose:
                 print("vm    %s:  %s" % (test_object.name, test_object.params["shortname"]))
-            # TODO: object string and state management require further development on the test objects
+            # the original restriction is an optional but useful attribute
             test_object.object_str = object_strs[vm_name]
             test_objects.append(test_object)
 
@@ -202,6 +202,8 @@ class CartesianLoader(VirtTestLoader):
                                     ovrwrt_dict=param_dict)
 
             test_node = TestNode(name, config, objects)
+            # the original restriction is an optional but useful attribute
+            test_node.node_str = nodes_str
             try:
                 test_node.regenerate_params()
                 if verbose:
