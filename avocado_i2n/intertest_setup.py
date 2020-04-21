@@ -235,7 +235,7 @@ def full(config, tag=""):
         setup_dict["create_permanent_vm"] = "yes"
         setup_dict["main_vm"] = vm_name
         # overwrite any existing test objects
-        create_graph = l.parse_object_trees(setup_dict, param.re_str("nonleaves.." + state),
+        create_graph = l.parse_object_trees(setup_dict, param.re_str("all.." + state),
                                             {vm_name: config["vm_strs"][vm_name]}, prefix=tag)
         create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=False)
         create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=True, skip_shared_root=True)
@@ -289,7 +289,7 @@ def update(config, tag=""):
         setup_dict["unset_mode"] = "fi"
         # remove all test nodes depending on the updated node if present (unset mode is "ignore otherwise")
         remove_graph = l.parse_object_trees(setup_dict,
-                                            param.re_str(vm_params.get("remove_set", "all")),
+                                            param.re_str(vm_params.get("remove_set", "leaves")),
                                             config["available_vms"],
                                             prefix=tag, verbose=False)
         remove_graph.flag_children(flag_type="run", flag=False)
@@ -301,7 +301,7 @@ def update(config, tag=""):
         setup_dict = config["param_dict"].copy()
         setup_dict["main_vm"] = vm_name
         update_graph = l.parse_object_trees(setup_dict,
-                                            param.re_str("nonleaves.." + to_state),
+                                            param.re_str("all.." + to_state),
                                             {vm_name: config["vm_strs"][vm_name]}, prefix=tag)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=False)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=True,
@@ -313,7 +313,7 @@ def update(config, tag=""):
             setup_dict = config["param_dict"].copy()
             setup_dict["main_vm"] = vm_name
             reuse_graph = l.parse_object_trees(setup_dict,
-                                               param.re_str("nonleaves.." + from_state),
+                                               param.re_str("all.." + from_state),
                                                {vm_name: config["vm_strs"][vm_name]},
                                                prefix=tag, verbose=False)
             update_graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
@@ -444,7 +444,7 @@ def deploy(config, tag=""):
                 setup_dict["get_state"] = ""
                 setup_dict["set_state"] = ""
             setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
-            setup_str = param.re_str("nonleaves..customize")
+            setup_str = param.re_str("all..internal..customize")
             test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=setup_tag)
             r.run_test_node(test_node)
 
@@ -470,7 +470,7 @@ def internal(config, tag=""):
         if vm.params.get("stateless", "yes") == "yes":
             setup_dict.update({"get_state": "", "set_state": "",
                                "skip_image_processing": "yes", "kill_vm": "no"})
-        setup_str = param.re_str("nonleaves.." + vm.params["node"])
+        setup_str = param.re_str("all..internal.." + vm.params["node"])
         test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
         r.run_test_node(test_node)
     LOG_UI.info("Finished internal setup")
@@ -752,7 +752,7 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     vms = " ".join(selected_vms)
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
-    setup_str = param.re_str("nonleaves..manage.%s" % verb[1])
+    setup_str = param.re_str("all..internal..manage.%s" % verb[1])
     tests, vms = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one %s test variant from %s" % (verb[2], tests)
     r.run_test_node(TestNode(tag, tests[0].config, vms))
@@ -776,7 +776,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
     for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
         setup_dict = config["param_dict"].copy()
         setup_dict.update(param_dict)
-        setup_str = param.re_str("nonleaves..manage.unchanged")
+        setup_str = param.re_str("all..internal..manage.unchanged")
         test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
         r.run_test_node(test_node)
     LOG_UI.info("Finished %s", operation)

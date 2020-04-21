@@ -73,7 +73,7 @@ class CartesianGraphTest(unittest.TestCase):
 
         self.config = {}
         self.config["param_dict"] = {}
-        self.config["tests_str"] = "only all\n"
+        self.config["tests_str"] = "only normal\n"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
 
         self.prefix = ""
@@ -160,7 +160,7 @@ class CartesianGraphTest(unittest.TestCase):
                          "A new parameter=%s of %s must be 123" % (test_node.params["new_key"], test_object.name))
 
     def test_object_node_overwrite_scope(self):
-        self.config["tests_str"] += "only tutorial3.no_remote\n"
+        self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
@@ -222,7 +222,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "set_state": "^install$", "set_type": "^off$"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^install$", "set_state": "^customize$", "get_type": "^off$", "set_type": "^off$"},
             {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$", "get_state": "^customize$", "set_state": "^on_customize$", "get_type": "^off$", "set_type": "^on$"},
-            {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state": "^on_customize$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state": "^on_customize$"},
         ]
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
@@ -241,7 +241,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "set_state": "^install$", "set_type": "^off$"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^install$", "set_state": "^customize$", "get_type": "^off$", "set_type": "^off$"},
             {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
-            {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
@@ -261,7 +261,7 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.stateless.manage.start.vm1", "vms": "^vm1$", "set_state": "^install$", "set_type": "^on$"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^install$", "set_state": "^customize$", "get_type": "^on$", "set_type": "^on$"},
             {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
-            {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
@@ -279,7 +279,7 @@ class CartesianGraphTest(unittest.TestCase):
             # cleanup is expected only if at least one of the states is reusable (here root+install)
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
-            {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
@@ -296,14 +296,14 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.0root.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
-            {"shortname": "^all.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_two_objects_without_setup(self):
-        self.config["tests_str"] += "only tutorial3\nno remote\n"
+        self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
@@ -322,14 +322,14 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.stateless.0preinstall.vm2", "vms": "^vm2$"},
             {"shortname": "^original.unattended_install.cdrom.in_cdrom_ks.default_install.aio_threads.vm2", "vms": "^vm2$"},
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
-            {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
+            {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_two_objects_with_setup(self):
-        self.config["tests_str"] += "only tutorial3\nno remote\n"
+        self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
@@ -338,13 +338,14 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1 vm2$"},
             {"shortname": "^internal.permanent.connect.vm1", "vms": "^vm1$"},
-            {"shortname": "^all.tutorial3", "vms": "^vm1 vm2$"},
+            {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_with_permanent_object_and_switch(self):
+        self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_get\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -360,13 +361,14 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.permanent.connect.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.manage.start.vm1", "vms": "^vm1$", "get_state": "^connect", "set_state": "^connect$", "get_type": "^off$", "set_type": "^on$"},
 
-            {"shortname": "^all.tutorial_get", "vms": "^vm1 vm3$"},
+            {"shortname": "^leaves.tutorial_get", "vms": "^vm1 vm3$"},
         ]
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_without_permanent_object(self):
+        self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_get\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -451,7 +453,7 @@ class CartesianGraphTest(unittest.TestCase):
         graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
-            {"shortname": "^internal.permanent.connect.vm2", "vms": "^vm2$"},
+            {"shortname": "^nonleaves.internal.permanent.connect.vm2", "vms": "^vm2$"},
         ]
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])

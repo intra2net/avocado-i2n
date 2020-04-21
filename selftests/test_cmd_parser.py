@@ -4,6 +4,7 @@ import unittest
 import unittest_importer
 
 import avocado_i2n.cmd_parser as cmd
+import avocado_i2n.params_parser as param
 
 
 class CmdParserTest(unittest.TestCase):
@@ -90,6 +91,19 @@ class CmdParserTest(unittest.TestCase):
         cmd.params_from_cmd(self.config)
         self.assertIn("only minimal\n", self.config["tests_str"])
         self.assertIn("only tutorial1\n", self.config["tests_str"])
+
+    def test_abort_early_empty_product(self):
+        self.config["params"] += ["only=install"]
+        with self.assertRaises(param.EmptyCartesianProduct):
+            cmd.params_from_cmd(self.config)
+
+        self.config["params"] = ["only=nonexistent_variant"]
+        with self.assertRaises(param.EmptyCartesianProduct):
+            cmd.params_from_cmd(self.config)
+
+        self.config["params"] = ["only=tutoria1", "only=tutorial2"]
+        with self.assertRaises(param.EmptyCartesianProduct):
+            cmd.params_from_cmd(self.config)
 
 if __name__ == '__main__':
     unittest.main()

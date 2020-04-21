@@ -277,16 +277,16 @@ class CartesianRunner(TestRunner):
         setup_dict = {} if params is None else params.copy()
         if install_params.get("configure_install", "stepmaker") == "unattended_install":
             if test_object.params["os_type"] == "windows":
-                setup_str = param.re_str("nonleaves..unattended_install")
+                setup_str = param.re_str("all..original..unattended_install")
             elif install_params["unattended_file"].endswith(".preseed"):
-                setup_str = param.re_str("nonleaves..unattended_install.cdrom.in_cdrom_ks")
+                setup_str = param.re_str("all..original..unattended_install.cdrom.in_cdrom_ks")
             elif install_params["unattended_file"].endswith(".ks"):
-                setup_str = param.re_str("nonleaves..unattended_install.cdrom.extra_cdrom_ks")
+                setup_str = param.re_str("all..original..unattended_install.cdrom.extra_cdrom_ks")
             else:
                 raise NotImplementedError("Unattended install tests are not supported for variant %s" % test_object.params["name"])
         else:
             setup_dict.update({"type": install_params.get("configure_install", "stepmaker")})
-            setup_str = param.re_str("nonleaves..install")
+            setup_str = param.re_str("all..original..install")
 
         if install_params["set_type"] == "off":
             setup_dict.update({"set_state": install_params["set_state"],
@@ -307,7 +307,7 @@ class CartesianRunner(TestRunner):
             setup_dict.update({"set_state": install_params["set_state"],
                                "set_type": install_params["set_type"],
                                "skip_image_processing": "yes"})
-            setup_str = param.re_str("nonleaves..manage.start")
+            setup_str = param.re_str("all..internal..manage.start")
             postinstall_config = test_object.config.get_copy()
             postinstall_config.parse_next_batch(base_file="sets.cfg",
                                                 ovrwrt_file=param.tests_ovrwrt_file(),
@@ -393,7 +393,7 @@ class CartesianRunner(TestRunner):
                             if image_params.get_boolean("create_image", False):
                                 setup_dict["remove_image_" + image] = "yes"
                                 setup_dict["skip_image_processing"] = "no"
-                        setup_str = param.re_str("nonleaves..manage.unchanged")
+                        setup_str = param.re_str("all..internal..manage.unchanged")
 
                         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+vm_name+"$")
                         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (vm_name, objects)

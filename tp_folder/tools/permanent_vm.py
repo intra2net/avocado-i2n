@@ -59,7 +59,7 @@ def permubuntu(config, tag=""):
         logging.info("Booting %s for the first permanent on state", vm.name)
         setup_dict = config["param_dict"].copy()
         setup_dict.update({"set_state": "ready"})
-        setup_str = param.re_str("nonleaves..manage.start")
+        setup_str = param.re_str("all..internal..manage.start")
         test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
         r.run_test_node(test_node)
 

@@ -65,8 +65,8 @@ def params_from_cmd(config):
             # detect if this is the primary restriction to escape defaults
             if value in available_restrictions:
                 use_tests_default = False
-            # detect if this is a second (i.e. additional) restriction
-            if tests_str != "":
+            # else this is an auxiliary restriction
+            else:
                 with_nontrivial_restrictions = True
             # main test restriction part
             tests_str += "%s %s\n" % (key, value)
@@ -106,19 +106,16 @@ def params_from_cmd(config):
                                                                             use_tests_default)
     config["available_restrictions"] = available_restrictions
 
-    # control against invoking internal tests
+    # control against invoking only runnable tests and empty Cartesian products
     control_config = param.Reparsable()
     control_config.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file(),
-                                    ovrwrt_str=tests_str)
+                                    ovrwrt_str=config["tests_str"],
+                                    ovrwrt_dict=config["param_dict"])
     control_parser = control_config.get_parser()
     if with_nontrivial_restrictions:
-        for d in control_parser.get_dicts():
-            if ".internal." in d["name"] or ".original." in d["name"]:
-                # the user should have gotten empty Cartesian product by now but check just in case
-                raise ValueError("You cannot restrict to internal tests from the command line.\n"
-                                 "Please use the provided manual steps or automated setup policies "
-                                 "to run an internal test %s." % d["name"])
+        log.info("%s tests with nontrivial restriction %s",
+                 len(list(control_parser.get_dicts())), config["tests_str"])
 
     # prefix for all tests of the current run making it possible to perform multiple runs in one command
     config["prefix"] = ""

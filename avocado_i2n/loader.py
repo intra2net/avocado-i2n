@@ -178,10 +178,13 @@ class CartesianLoader(VirtTestLoader):
                 raise ValueError("Could not detect the main object among '%s' "
                                  "in the test '%s'" % (d["vms"], d["shortname"]))
 
-            if "0root" in nodes_str:
-                return [self.parse_create_node(obj, param_dict, prefix=prefix) for obj in objects]
-            elif "0preinstall" in nodes_str:
-                return [self.parse_install_node(obj, param_dict, prefix=prefix) for obj in objects]
+            # 0scan shared root is parsable through the default procedure here
+            if "0root" in d["name"]:
+                test_nodes += [self.parse_create_node(obj, param_dict, prefix=prefix) for obj in objects]
+                continue
+            elif "0preinstall" in d["name"]:
+                test_nodes += [self.parse_install_node(obj, param_dict, prefix=prefix) for obj in objects]
+                continue
 
             # final variant multiplication to produce final test node configuration
             logging.debug("Multiplying the vm variants by the test variants using %s", main_object.name)
@@ -349,11 +352,13 @@ class CartesianLoader(VirtTestLoader):
                 used_roots.append(object_roots[0])
         graph.objects[:] = used_objects
         assert len(used_objects) > 0, "The parsed test nodes don't seem to use any vm objects"
+        for shared_root in graph.get_nodes_by("name", "(\.|^)0scan(\.|$)"):
+            graph.nodes.remove(shared_root)
         root_for_all = self.parse_scan_node(graph, param_dict)
-        for root_for_object in used_roots:
-            root_for_object.setup_nodes.append(root_for_all)
-            root_for_all.cleanup_nodes.append(root_for_object)
         graph.nodes.append(root_for_all)
+        for root_for_object in used_roots:
+            root_for_object.setup_nodes = [root_for_all]
+            root_for_all.cleanup_nodes.append(root_for_object)
 
         return graph
 
@@ -405,7 +410,7 @@ class CartesianLoader(VirtTestLoader):
                            "skip_image_processing": "yes",
                            "vms": " ".join(objects),
                            "main_vm": objects[0]})
-        setup_str = param.re_str("nonleaves..0scan")
+        setup_str = param.re_str("all..internal..0scan")
         nodes = self.parse_nodes(graph, setup_dict, setup_str)
         assert len(nodes) == 1, "There can only be one shared root"
         scan_node = TestNode(prefix + "0s", nodes[0].config, graph.objects)
@@ -431,7 +436,7 @@ class CartesianLoader(VirtTestLoader):
         setup_dict = {} if param_dict is None else param_dict.copy()
         setup_dict.update({"set_state": "root",
                            "vm_action": "set", "skip_image_processing": "yes"})
-        setup_str = param.re_str("nonleaves..0root")
+        setup_str = param.re_str("all..internal..0root")
         create_node = self.parse_node_from_object(test_object, setup_dict, setup_str, prefix=prefix+"0r")
         logging.debug("Reached %s root %s", test_object.name, create_node.params["shortname"])
         return create_node
@@ -450,7 +455,7 @@ class CartesianLoader(VirtTestLoader):
         """
         setup_dict = {} if param_dict is None else param_dict.copy()
         setup_dict.update({"get": "0root", "set_state": "install"})
-        setup_str = param.re_str("nonleaves..0preinstall")
+        setup_str = param.re_str("all..internal..0preinstall")
         install_node = self.parse_node_from_object(test_object, setup_dict, setup_str, prefix=prefix+"0p")
         logging.debug("Reached %s install configured by %s", test_object.name, install_node.params["shortname"])
         return install_node
@@ -499,7 +504,7 @@ class CartesianLoader(VirtTestLoader):
                                "set_state": object_params.get("get_state"),
                                "get_type": reverse, "set_type": switch,
                                "main_vm": test_object.name, "require_existence": "yes"})
-            setup_str = param.re_str("nonleaves..manage.start")
+            setup_str = param.re_str("all..internal..manage.start")
             name = test_node.name + "b"
             test_node.params["get_type_" + test_object.name] = switch
             old_parents = graph.get_nodes_by("name", "(\.|^)manage.start(\.|$)",
@@ -519,7 +524,7 @@ class CartesianLoader(VirtTestLoader):
                 return get_parent, []
             setup_dict = {} if param_dict is None else param_dict.copy()
             setup_dict.update({"main_vm": test_object.name, "require_existence": "yes"})
-            setup_str = param.re_str("nonleaves.." + setup_restr)
+            setup_str = param.re_str("all.." + setup_restr)
             name = test_node.name + "a"
             new_parents = self.parse_nodes(graph, setup_dict, setup_str, prefix=name)
 
