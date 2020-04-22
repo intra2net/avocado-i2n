@@ -79,6 +79,16 @@ class CartesianLoader(VirtTestLoader):
         else:
             selected_vms = object_strs.keys()
 
+        # TODO: multi-object-variant runs are not fully supported yet so empty strings
+        # will not result in "all variants" as they are supposed to but in validation error
+        # - override with unique defaults for now
+        from .cmd_parser import full_vm_params_and_strs
+        available_object_strs = {vm_name: "" for vm_name in param.all_vms()}
+        available_object_strs.update(object_strs)
+        use_vms_default = {vm_name: available_object_strs[vm_name] == "" for vm_name in available_object_strs}
+        _, object_strs = full_vm_params_and_strs(param_dict, available_object_strs,
+                                                 use_vms_default=use_vms_default)
+
         test_objects = []
         for vm_name in selected_vms:
             objstr = {vm_name: object_strs[vm_name]}
@@ -222,8 +232,10 @@ class CartesianLoader(VirtTestLoader):
         test_nodes, test_objects = [], []
         selected_objects = [] if object_strs is None else object_strs.keys()
 
+        initial_object_strs = {vm_name: "" for vm_name in param.all_vms()}
+        initial_object_strs.update(object_strs)
         graph = TestGraph()
-        graph.objects = self.parse_objects(param_dict, object_strs, verbose=verbose)
+        graph.objects = self.parse_objects(param_dict, initial_object_strs, verbose=verbose)
         for test_object in graph.objects:
             if test_object.name in selected_objects:
                 test_objects.append(test_object)

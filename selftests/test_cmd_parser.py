@@ -32,17 +32,18 @@ class CmdParserTest(unittest.TestCase):
 
         # test override (from command line)
 
-        # TODO: current sample test suite does not support multiple guest variants per object
-        self.config["params"] += ["only_vm1=CentOS"]
+        self.config["params"] += ["only_vm1=Fedora", "only_vm2=Win10"]
         cmd.params_from_cmd(self.config)
         self.assertEqual(self.config["vm_strs"], self.config["available_vms"])
-        self.assertIn("only CentOS", self.config["vm_strs"]["vm1"])
+        self.assertIn("only Fedora", self.config["vm_strs"]["vm1"])
+        self.assertIn("only Win10", self.config["vm_strs"]["vm2"])
+        self.assertIn("only Ubuntu", self.config["vm_strs"]["vm3"])
 
-        self.config["params"] += ["vms=vm1"]
+        self.config["params"] += ["vms=vm2", "only_vm2=Win7"]
         cmd.params_from_cmd(self.config)
         self.assertEqual(sorted(self.config["available_vms"].keys()), ["vm1", "vm2", "vm3"])
-        self.assertEqual(sorted(self.config["vm_strs"].keys()), ["vm1"])
-        self.assertIn("only CentOS", self.config["vm_strs"]["vm1"])
+        self.assertEqual(sorted(self.config["vm_strs"].keys()), ["vm2"])
+        self.assertIn("only Win7", self.config["vm_strs"]["vm2"])
 
     def test_selected_vms_invalid(self):
         base_params = self.config["params"]

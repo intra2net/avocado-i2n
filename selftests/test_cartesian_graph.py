@@ -8,6 +8,7 @@ import re
 from avocado.core import exceptions
 
 import unittest_importer
+from avocado_i2n import params_parser as param
 from avocado_i2n.cartgraph import TestGraph
 from avocado_i2n.loader import CartesianLoader
 from avocado_i2n.runner import CartesianRunner
@@ -200,6 +201,14 @@ class CartesianGraphTest(unittest.TestCase):
         #                 "The new %s of %s must be %s" % (default_object_param, test_node.name, custom_object_param2))
         self.assertEqual(test_node.params["images_vm2"], default_object_param,
                          "The second %s of %s should be preserved" % (default_object_param, test_node.name))
+
+    def test_object_node_incompatible(self):
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
+        with self.assertRaises(param.EmptyCartesianProduct):
+            graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                   self.config["tests_str"], self.config["vm_strs"],
+                                                   prefix=self.prefix, verbose=True)
 
     def test_one_leaf(self):
         self.config["tests_str"] += "only tutorial1\n"

@@ -101,7 +101,7 @@ def params_from_cmd(config):
     for vm_name in available_vms:
         # the keys of vm strings must be equivalent to the selected vms
         if vm_name not in with_selected_vms:
-            del vm_strs[vm_name]
+            del config["vm_strs"][vm_name]
     config["tests_params"], config["tests_str"] = full_tests_params_and_str(param_dict, tests_str,
                                                                             use_tests_default)
     config["available_restrictions"] = available_restrictions
