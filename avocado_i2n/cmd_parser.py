@@ -48,7 +48,7 @@ def params_from_cmd(config):
     # the tests string includes the test restrictions while the vm strings include the ones for the vm variants
     tests_str, vm_strs = "", {}
     # the run string includes only pure parameters
-    param_str = ""
+    param_dict = {}
 
     # main tokenizing loop
     for cmd_param in config["params"]:
@@ -89,17 +89,17 @@ def params_from_cmd(config):
         else:
             # NOTE: comma on the command line is space in a config file
             value = value.replace(",", " ")
-            param_str += "%s = %s\n" % (key, value)
-    config["param_str"] = param_str
-    log.debug("Parsed param string '%s'", param_str)
+            param_dict[key] = value
+    config["param_dict"] = param_dict
+    log.debug("Parsed param dict '%s'", param_dict)
 
     # get minimal configurations and parse defaults if no command line arguments
     tests_config = param.Reparsable()
     tests_config.parse_next_batch(base_file="groups-base.cfg",
                                   ovrwrt_file=param.tests_ovrwrt_file(),
-                                  ovrwrt_str=param_str)
+                                  ovrwrt_dict=param_dict)
     tests_params = tests_config.get_params()
-    tests_str += param_str
+    tests_str += param.ParsedDict(param_dict).parsable_form()
     if use_tests_default:
         default = tests_params.get("default_only", "all")
         if default not in available_restrictions:
@@ -113,14 +113,14 @@ def params_from_cmd(config):
     vms_config = param.Reparsable()
     vms_config.parse_next_batch(base_file="guest-base.cfg",
                                 ovrwrt_file=param.vms_ovrwrt_file(),
-                                ovrwrt_str=param_str,
+                                ovrwrt_str=param.ParsedDict(param_dict).parsable_form(),
                                 ovrwrt_dict={"vms": " ".join(selected_vms)})
     vms_params = vms_config.get_params()
     for vm_name in available_vms:
         # some selected vms might not be restricted on the command line so check again
         if vm_name not in vm_strs:
             vm_strs[vm_name] = ""
-        vm_strs[vm_name] += param_str
+        vm_strs[vm_name] += param.ParsedDict(param_dict).parsable_form()
         if use_vms_default[vm_name]:
             default = vms_params.get("default_only_%s" % vm_name)
             if default is None:

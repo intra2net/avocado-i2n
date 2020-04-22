@@ -102,7 +102,7 @@ class TestNode(object):
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
-        return self.name.endswith("0s") and len(self.objects) == 0
+        return self.name.endswith("0s")
 
     def is_create_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
@@ -119,6 +119,10 @@ class TestNode(object):
     def is_object_root(self):
         """Check if the test node is the root of all test nodes for some test object."""
         return self.is_create_node()
+
+    def is_objectless(self):
+        """Check if the test node is not defined with any test object."""
+        return len(self.objects) == 0 or self.params["vms"] == ""
 
     def is_ephemeral(self):
         """

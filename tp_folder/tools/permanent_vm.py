@@ -24,7 +24,6 @@ import logging
 
 from avocado.core.output import LOG_UI
 from avocado_i2n import params_parser as param
-from avocado_i2n.cartgraph import TestNode
 from avocado_i2n.intertest_setup import with_cartesian_graph
 
 
@@ -58,11 +57,10 @@ def permubuntu(config, tag=""):
         # permanent objects (i.e. instead of transition from customize to on
         # root, it is a transition from supposedly "permanentized" vm to the root)
         logging.info("Booting %s for the first permanent on state", vm.name)
-        reparsable = vm.config.get_copy()
-        reparsable.parse_next_batch(base_file="sets.cfg",
-                                    ovrwrt_file=param.tests_ovrwrt_file(),
-                                    ovrwrt_str=param.re_str("nonleaves..manage.start", config["param_str"]),
-                                    ovrwrt_dict={"set_state": "ready"})
-        r.run_test_node(TestNode(tag, reparsable, []))
+        setup_dict = config["param_dict"].copy()
+        setup_dict.update({"set_state": "ready"})
+        setup_str = param.re_str("nonleaves..manage.start")
+        test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
+        r.run_test_node(test_node)
 
     LOG_UI.info("Finished permanent vm setup")

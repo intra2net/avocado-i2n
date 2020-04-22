@@ -18,7 +18,9 @@ class CmdParserTest(unittest.TestCase):
     def test_param_dict(self):
         self.config["params"] += ["ccc"]
         cmd.params_from_cmd(self.config)
-        self.assertEqual(self.config["param_str"], "aaa = bbb\n")
+        self.assertEqual(len(self.config["param_dict"].keys()), 1)
+        self.assertIn("aaa", self.config["param_dict"].keys())
+        self.assertEqual(self.config["param_dict"]["aaa"], "bbb")
 
     def test_selected_vms(self):
         cmd.params_from_cmd(self.config)

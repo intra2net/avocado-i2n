@@ -57,7 +57,7 @@ class IntertestSetupTest(unittest.TestCase):
 
         self.config = {}
         self.config["selected_vms"] = []
-        self.config["param_str"] = ""
+        self.config["param_dict"] = {}
         self.config["vm_strs"] = {}
         self.config["tests_params"] = utils_params.Params()
         self.config["vms_params"] = utils_params.Params()
@@ -255,7 +255,7 @@ class IntertestSetupTest(unittest.TestCase):
 
     def test_boot(self):
         self.config["selected_vms"] = ["vm1", "vm2"]
-        self.config["param_str"] += "vms=vm1 vm2\n"
+        self.config["param_dict"]["vms"] = "vm1 vm2"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.manage.start", "start_vm": "^yes$", "vms": "^vm1 vm2$"},
@@ -265,7 +265,7 @@ class IntertestSetupTest(unittest.TestCase):
 
     def test_download(self):
         self.config["selected_vms"] = ["vm1", "vm2"]
-        self.config["param_str"] += "vms=vm1 vm2\n"
+        self.config["param_dict"]["vms"] = "vm1 vm2"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.manage.download", "vms": "^vm1 vm2$"},
@@ -275,7 +275,7 @@ class IntertestSetupTest(unittest.TestCase):
 
     def test_upload(self):
         self.config["selected_vms"] = ["vm1", "vm2"]
-        self.config["param_str"] += "vms=vm1 vm2\n"
+        self.config["param_dict"]["vms"] = "vm1 vm2"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.manage.upload", "vms": "^vm1 vm2$"},
@@ -285,7 +285,7 @@ class IntertestSetupTest(unittest.TestCase):
 
     def test_shutdown(self):
         self.config["selected_vms"] = ["vm1", "vm2"]
-        self.config["param_str"] += "vms=vm1 vm2\n"
+        self.config["param_dict"]["vms"] = "vm1 vm2"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.manage.stop", "vms": "^vm1 vm2$"},
