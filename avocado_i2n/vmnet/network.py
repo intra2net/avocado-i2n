@@ -789,7 +789,7 @@ class VMNetwork(object):
             overwrite_dict["images_%s" % client] = ""
             overwrite_dict["boot_order_%s" % client] = "dcn"
             overwrite_dict["cdroms_%s" % client] = "cd_rip"
-            overwrite_dict["shell_prompt_%s" % client] = "^[\#\$]"
+            overwrite_dict["shell_prompt_%s" % client] = r"^[\#\$]"
             overwrite_dict["isa_serials_%s" % client] = "serial1"
 
             # network adapters
@@ -1176,7 +1176,7 @@ class VMNetwork(object):
                 logging.debug("Found a vpn connection with id %s between %s and %s",
                               id, src_vm.name, dst_vm.name)
                 vpn = tunnel
-                left_index, right_index = re.match("^vpn(\d+)\.(\d+)\w*", id).group(1,2)
+                left_index, right_index = re.match(r"^vpn(\d+)\.(\d+)\w*", id).group(1,2)
                 break
         else:
             raise exceptions.TestError("The source %s and destination %s are not connected by a tunnel" % (src_vm.name, dst_vm.name))
@@ -1195,7 +1195,7 @@ class VMNetwork(object):
         logging.info("Checking log of %s for the firewall rule tag %s ", log_vm.name, log_message)
         log = log_vm.session.cmd("cat /var/log/messages")
         if require_blocked:
-            if re.match(log_message + "\s", log) is not None:
+            if re.match(log_message + r"\s", log) is not None:
                 raise exceptions.TestFail("The access message %s was found in log" % log_message)
             if deny_message not in log:
                 raise exceptions.TestFail("The deny message %s was not found in log" % deny_message)
@@ -1204,7 +1204,7 @@ class VMNetwork(object):
                 raise exceptions.TestFail("The access message %s was not found in log" % log_message)
             if deny_message in log:
                 raise exceptions.TestFail("The deny message %s was found in log" % deny_message)
-        for message in re.findall("VPN_%i\.\d+" % log_index, log):
+        for message in re.findall(r"VPN_%i\.\d+" % log_index, log):
             if message != log_message:
                 raise exceptions.TestFail("Wrong message %s in addition to %s was found in log" % (message, log_message))
         logging.info("Ok, resetting the messages log at %s", log_vm.name)
@@ -1448,7 +1448,7 @@ class VMNetwork(object):
                                   "-o UserKnownHostsFile=/dev/null "
                                   "root@%s dhcpcd --dumplease eth0 | grep host_name" % ssh_ip)
         logging.debug(dump)
-        dst_hostname = re.search("host_name=(\w+)", dump)
+        dst_hostname = re.search(r"host_name=(\w+)", dump)
         if dst_hostname:
             dst_hostname = dst_hostname.group(1)
             logging.info("Reported host name is %s", dst_hostname)
@@ -1474,7 +1474,7 @@ class VMNetwork(object):
             elif match == 1:
                 # the extra search is due to the inability of the builtin command to match the host
                 # therefore internally match all and perform the actual matching here
-                dst_hostname = re.search("(\w+)\.[a-zA-Z]+", text)
+                dst_hostname = re.search(r"(\w+)\.[a-zA-Z]+", text)
                 if dst_hostname:
                     dst_hostname = dst_hostname.group(1)
                     logging.info("Reported host name is %s", dst_hostname)
@@ -1540,7 +1540,7 @@ class VMNetwork(object):
             elif match == 1:
                 # the extra search is due to the inability of the builtin command to match the host
                 # therefore internally match all and perform the actual matching here
-                file_transfer = re.search("ETA(.+\s+100%.+)", text)
+                file_transfer = re.search(r"ETA(.+\s+100%.+)", text)
                 if file_transfer:
                     logging.info(file_transfer.group(1))
                     return
