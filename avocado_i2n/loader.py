@@ -104,7 +104,9 @@ class CartesianLoader(VirtTestLoader):
                                     ovrwrt_file=param.vms_ovrwrt_file())
 
             test_object = TestObject(vm_name, config)
-            test_object.regenerate_params(verbose=verbose)
+            test_object.regenerate_params()
+            if verbose:
+                print("vm    %s:  %s" % (test_object.name, test_object.params["shortname"]))
             # TODO: object string and state management require further development on the test objects
             test_object.object_str = object_strs[vm_name]
             test_objects.append(test_object)
@@ -201,7 +203,9 @@ class CartesianLoader(VirtTestLoader):
 
             test_node = TestNode(name, config, objects)
             try:
-                test_node.regenerate_params(verbose=verbose)
+                test_node.regenerate_params()
+                if verbose:
+                    print("test    %s:  %s" % (test_node.name, test_node.params["shortname"]))
                 logging.debug("Parsed a test '%s' with main test object %s",
                               d["shortname"], main_object.name)
                 test_nodes.append(test_node)
@@ -231,29 +235,28 @@ class CartesianLoader(VirtTestLoader):
         """
         test_nodes, test_objects = [], []
         selected_objects = [] if object_strs is None else object_strs.keys()
+        compatible_objects = {obj: False for obj in selected_objects}
 
         initial_object_strs = {vm_name: "" for vm_name in param.all_vms()}
         initial_object_strs.update(object_strs)
         graph = TestGraph()
-        graph.objects = self.parse_objects(param_dict, initial_object_strs, verbose=verbose)
+        graph.objects = self.parse_objects(param_dict, initial_object_strs, verbose=False)
         for test_object in graph.objects:
             if test_object.name in selected_objects:
                 test_objects.append(test_object)
 
         for test_node in self.parse_nodes(graph, param_dict, nodes_str,
                                           prefix=prefix, verbose=verbose):
-            compatible = True
             test_vms = test_node.params.objects("vms")
             for vm_name in test_vms:
                 if vm_name not in selected_objects:
-                    compatible = False
                     break
-            if compatible:
+            else:
                 test_nodes.append(test_node)
+                for vm_name in test_vms:
+                    if vm_name in selected_objects:
+                        compatible_objects[vm_name] = True
 
-        if verbose:
-            logging.info("%s selected vm variant(s)", len(test_objects))
-            logging.info("%s selected test variant(s)", len(test_nodes))
         if len(test_nodes) == 0:
             object_restrictions = param.ParsedDict(graph.test_objects).parsable_form()
             object_strs = {} if object_strs is None else object_strs
@@ -264,6 +267,15 @@ class CartesianLoader(VirtTestLoader):
             config.parse_next_str(nodes_str)
             config.parse_next_dict(param_dict)
             raise param.EmptyCartesianProduct(config.print_parsed())
+        if verbose:
+            print("%s selected test variant(s)" % len(test_nodes))
+            graph.objects = test_objects.copy()
+            for test_object in graph.objects:
+                if compatible_objects[test_object.name]:
+                    print("vm    %s:  %s" % (test_object.name, test_object.params["shortname"]))
+                else:
+                    test_objects.remove(test_object)
+            print("%s selected vm variant(s)" % len(test_objects))
 
         return test_nodes, test_objects
 
@@ -339,8 +351,6 @@ class CartesianLoader(VirtTestLoader):
         for root_for_object in used_roots:
             root_for_object.setup_nodes.append(root_for_all)
             root_for_all.cleanup_nodes.append(root_for_object)
-        if verbose:
-            logging.info("%s final vm variant(s)", len(graph.objects))
         graph.nodes.append(root_for_all)
 
         return graph

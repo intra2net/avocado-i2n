@@ -377,7 +377,8 @@ def list(config, tag=""):
     """
     loader = CartesianLoader(config, {"logdir": data_dir.get_base_dir()})
     prefix = tag + "l" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
-    graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"], prefix=prefix)
+    graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"],
+                                      prefix=prefix, verbose=True)
     graph.visualize(data_dir.get_base_dir())
 
 
