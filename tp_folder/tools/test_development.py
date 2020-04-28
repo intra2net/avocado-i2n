@@ -62,13 +62,15 @@ def develop(config, tag=""):
     that all the vms exist is a user's responsibility.
     """
     l, r = config["graph"].l, config["graph"].r
+    selected_vms = list(config["vm_strs"].keys())
     LOG_UI.info("Developing on virtual machines %s (%s)",
-                ", ".join(config["selected_vms"]), os.path.basename(r.job.logdir))
-    vms = " ".join(config["selected_vms"])
+                ", ".join(selected_vms), os.path.basename(r.job.logdir))
+    vms = " ".join(selected_vms)
     mode = config["tests_params"].get("devmode", "generator")
-    setup_dict = {"vms": vms, "main_vm": config["selected_vms"][0]}
-    setup_str = param.re_str("nonleaves..develop.%s" % mode) + param.ParsedDict(setup_dict).parsable_form() + config["param_str"]
-    tests, _ = l.parse_object_nodes(setup_str, config["vm_strs"], prefix=tag, object_names=vms)
+    setup_dict = config["param_dict"].copy()
+    setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
+    setup_str = param.re_str("all..manual..develop.%s" % mode)
+    tests, vms = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
-    r.run_test_node(TestNode(tag, tests[0].config, []))
+    r.run_test_node(TestNode(tag, tests[0].config, vms))
     LOG_UI.info("Development complete")

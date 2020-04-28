@@ -32,116 +32,90 @@ def params_from_cmd(config):
 
     :param config: command line arguments
     :type config: {str, str}
+    :raises: :py:class:`ValueError` if a command line selected vm is not available
+             from the configuration and thus supported or internal tests are
+             restricted from the command line
     """
     sys.path.insert(1, os.path.join(param.suite_path, "utils"))
 
     # validate typed vm names and possible vm specific restrictions
-    config["available_vms"] = available_vms = param.all_vms()
-    config["selected_vms"] = selected_vms = list(available_vms)
-    # If the command line restrictions don't contain any of our primary restrictions
-    # (all|normal|minimal|none), we add "only <default>" to the list where <default> is the
-    # primary restriction definition found in the configs. If the configs are also
-    # not defining any default, we ultimately add "only all". You can have any futher
-    # restrictions like "only=curl" only in the command line.
-    primary_tests_restrictions = ["all", "normal", "minimal", "none"]
+    available_vms = param.all_vms()
+    available_restrictions = param.all_restrictions()
+
+    # defaults usage vs command line overriding
     use_tests_default = True
     with_nontrivial_restrictions = False
     use_vms_default = {vm_name: True for vm_name in available_vms}
-    # the tests string includes the test restrictions while the vm strings include the ones for the vm variants
-    tests_str = ""
-    vm_strs = {}
+    with_selected_vms = list(available_vms)
+
     # the run string includes only pure parameters
-    param_str = ""
+    param_dict = {}
+    # the tests string includes the test restrictions while the vm strings include the ones for the vm variants
+    tests_str, vm_strs = "", {vm: "" for vm in available_vms}
+
+    # main tokenizing loop
     for cmd_param in config["params"]:
-        try:
-            (key, value) = re.findall("(\w+)=(.*)", cmd_param)[0]
-            if key == "only" or key == "no":
-                # detect if this is the primary restriction to escape defaults
-                if value in primary_tests_restrictions:
-                    use_tests_default = False
-                # detect if this is a second (i.e. additional) restriction
-                if tests_str != "":
-                    with_nontrivial_restrictions = True
-                # main test restriction part
-                tests_str += "%s %s\n" % (key, value)
-            elif key.startswith("only_") or key.startswith("no_"):
-                for vm_name in available_vms:
-                    if re.match("(only|no)_%s" % vm_name, key):
-                        # escape defaults for this vm and use the command line
-                        use_vms_default[vm_name] = False
-                        # detect new restricted vm
-                        if vm_name not in vm_strs:
-                            vm_strs[vm_name] = ""
-                        # main vm restriction part
-                        vm_strs[vm_name] += "%s %s\n" % (key.replace("_%s" % vm_name, ""), value)
-            # NOTE: comma in a parameter sense implies the same as space in config file
-            elif key == "vms":
-                # NOTE: no restrictions of the required vms are allowed during tests since
-                # these are specified by each test (allowed only for manual setup steps)
-                selected_vms[:] = value.split(",")
-                for vm_name in selected_vms:
-                    if vm_name not in available_vms:
-                        raise ValueError("The vm '%s' is not among the supported vms: "
-                                         "%s" % (vm_name, ", ".join(available_vms)))
+        re_param = re.match(r"(\w+)=(.*)", cmd_param)
+        if re_param is None:
+            log.error("Skipping malformed parameter on the command line '%s' - "
+                      "must be of the form <key>=<val>", cmd_param)
+            continue
+        (key, value) = re_param.group(1, 2)
+        if key == "only" or key == "no":
+            # detect if this is the primary restriction to escape defaults
+            if value in available_restrictions:
+                use_tests_default = False
+            # else this is an auxiliary restriction
             else:
-                # NOTE: comma on the command line is space in a config file
-                value = value.replace(",", " ")
-                param_str += "%s = %s\n" % (key, value)
-        except IndexError:
-            pass
-    config["param_str"] = param_str
-    log.debug("Parsed param string '%s'", param_str)
+                with_nontrivial_restrictions = True
+            # main test restriction part
+            tests_str += "%s %s\n" % (key, value)
+        elif key.startswith("only_") or key.startswith("no_"):
+            for vm_name in available_vms:
+                if re.match("(only|no)_%s" % vm_name, key):
+                    # escape defaults for this vm and use the command line
+                    use_vms_default[vm_name] = False
+                    # main vm restriction part
+                    vm_strs[vm_name] += "%s %s\n" % (key.replace("_%s" % vm_name, ""), value)
+        # NOTE: comma in a parameter sense implies the same as space in config file
+        elif key == "vms":
+            # NOTE: no restrictions of the required vms are allowed during tests since
+            # these are specified by each test (allowed only for manual setup steps)
+            with_selected_vms[:] = value.split(",")
+            for vm_name in with_selected_vms:
+                if vm_name not in available_vms:
+                    raise ValueError("The vm '%s' is not among the supported vms: "
+                                     "%s" % (vm_name, ", ".join(available_vms)))
+        else:
+            # NOTE: comma on the command line is space in a config file
+            value = value.replace(",", " ")
+            param_dict[key] = value
+    config["param_dict"] = param_dict
+    log.debug("Parsed param dict '%s'", param_dict)
 
     # get minimal configurations and parse defaults if no command line arguments
-    tests_config = param.Reparsable()
-    tests_config.parse_next_batch(base_file="groups-base.cfg",
-                                  ovrwrt_file=param.tests_ovrwrt_file(),
-                                  ovrwrt_str=param_str)
-    tests_params = tests_config.get_params()
-    tests_str += param_str
-    if use_tests_default:
-        default = tests_params.get("default_only", "all")
-        if default not in primary_tests_restrictions:
-            raise ValueError("Invalid primary restriction 'only=%s'! It has to be one "
-                             "of %s" % (default, ", ".join(primary_tests_restrictions)))
-        tests_str += "only %s\n" % default
-    config["tests_params"] = tests_params
-    config["tests_str"] = tests_str
-    log.debug("Parsed tests string '%s'", tests_str)
-
-    vms_config = param.Reparsable()
-    vms_config.parse_next_batch(base_file="guest-base.cfg",
-                                ovrwrt_file=param.vms_ovrwrt_file(),
-                                ovrwrt_str=param_str,
-                                ovrwrt_dict={"vms": " ".join(selected_vms)})
-    vms_params = vms_config.get_params()
+    config["vms_params"], config["vm_strs"] = full_vm_params_and_strs(param_dict, vm_strs,
+                                                                      use_vms_default)
+    config["vms_params"]["vms"] = " ".join(with_selected_vms)
+    config["available_vms"] = vm_strs.copy()
     for vm_name in available_vms:
-        # some selected vms might not be restricted on the command line so check again
-        if vm_name not in vm_strs:
-            vm_strs[vm_name] = ""
-        vm_strs[vm_name] += param_str
-        if use_vms_default[vm_name]:
-            default = vms_params.get("default_only_%s" % vm_name)
-            if default is None:
-                raise ValueError("No default variant restriction found for %s!" % vm_name)
-            vm_strs[vm_name] += "only %s\n" % default
-    config["vms_params"] = vms_params
-    config["vm_strs"] = vm_strs
-    log.debug("Parsed vm strings '%s'", vm_strs)
+        # the keys of vm strings must be equivalent to the selected vms
+        if vm_name not in with_selected_vms:
+            del config["vm_strs"][vm_name]
+    config["tests_params"], config["tests_str"] = full_tests_params_and_str(param_dict, tests_str,
+                                                                            use_tests_default)
+    config["available_restrictions"] = available_restrictions
 
-    # control against invoking internal tests
+    # control against invoking only runnable tests and empty Cartesian products
     control_config = param.Reparsable()
     control_config.parse_next_batch(base_file="sets.cfg",
                                     ovrwrt_file=param.tests_ovrwrt_file(),
-                                    ovrwrt_str=tests_str)
+                                    ovrwrt_str=config["tests_str"],
+                                    ovrwrt_dict=config["param_dict"])
     control_parser = control_config.get_parser()
     if with_nontrivial_restrictions:
-        for d in control_parser.get_dicts():
-            if ".internal." in d["name"] or ".original." in d["name"]:
-                # the user should have gotten empty Cartesian product by now but check just in case
-                raise ValueError("You cannot restrict to internal tests from the command line.\n"
-                                 "Please use the provided manual steps or automated setup policies "
-                                 "to run an internal test %s." % d["name"])
+        log.info("%s tests with nontrivial restriction %s",
+                 len(list(control_parser.get_dicts())), config["tests_str"])
 
     # prefix for all tests of the current run making it possible to perform multiple runs in one command
     config["prefix"] = ""
@@ -151,6 +125,66 @@ def params_from_cmd(config):
 
     # attach environment processing hooks
     env_process_hooks()
+
+
+def full_vm_params_and_strs(param_dict, vm_strs, use_vms_default):
+    """
+    Add default vm parameters and strings for missing command line such.
+
+    :param param_dict: runtime parameters used for extra customization
+    :type param_dict: {str, str} or None
+    :param vm_strs: command line vm-specific names and variant restrictions
+    :type vm_strs: {str, str}
+    :param use_vms_default: whether to use default variant restriction for a
+                            particular vm
+    :type use_vms_default: {str, bool}
+    :returns: complete vm parameters and strings
+    :rtype: (:py:class:`Params`, {str, str})
+    :raises: :py:class:`ValueError` if no command line or default variant
+             restriction could be found for some vm
+    """
+    vms_config = param.Reparsable()
+    vms_config.parse_next_batch(base_file="guest-base.cfg",
+                                ovrwrt_file=param.vms_ovrwrt_file(),
+                                ovrwrt_dict=param_dict)
+    vms_params = vms_config.get_params()
+    for vm_name in param.all_vms():
+        if use_vms_default[vm_name]:
+            default = vms_params.get("default_only_%s" % vm_name)
+            if not default:
+                raise ValueError("No default variant restriction found for %s!" % vm_name)
+            vm_strs[vm_name] += "only %s\n" % default
+    log.debug("Parsed vm strings '%s'", vm_strs)
+    return vms_params, vm_strs
+
+
+def full_tests_params_and_str(param_dict, tests_str, use_tests_default):
+    """
+    Add default tests parameters and string for missing command line such.
+
+    :param param_dict: runtime parameters used for extra customization
+    :type param_dict: {str, str} or None
+    :param str tests_str: command line variant restrictions
+    :param bool use_tests_default: whether to use default primary restriction
+    :returns: complete tests parameters and string
+    :rtype: (:py:class:`Params`, str)
+    :raises: :py:class:`ValueError` if the default primary restriction could is
+             not valid (among the available ones)
+    """
+    tests_config = param.Reparsable()
+    tests_config.parse_next_batch(base_file="groups-base.cfg",
+                                  ovrwrt_file=param.tests_ovrwrt_file(),
+                                  ovrwrt_dict=param_dict)
+    tests_params = tests_config.get_params()
+    if use_tests_default:
+        default = tests_params.get("default_only", "all")
+        available_restrictions = param.all_restrictions()
+        if default not in available_restrictions:
+            raise ValueError("Invalid primary restriction 'only=%s'! It has to be one "
+                             "of %s" % (default, ", ".join(available_restrictions)))
+        tests_str += "only %s\n" % default
+    log.debug("Parsed tests string '%s'", tests_str)
+    return tests_params, tests_str
 
 
 def env_process_hooks():
