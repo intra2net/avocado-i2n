@@ -540,7 +540,7 @@ class CartesianLoader(VirtTestLoader):
         get_parents, parse_parents = [], []
         for new_parent in new_parents:
             # BUG: a good way to get a variant valid test name was to use
-            # re.sub("^(.+\.)*(all|none|minimal)\.", "", NAME)
+            # re.sub("^(.+\.)*(all|normal|minimal|...)\.", "", NAME)
             # but this regex performs extremely slow (much slower than string replacement)
             parent_name = ".".join(new_parent.params["name"].split(".")[1:])
             old_parents = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % parent_name,
