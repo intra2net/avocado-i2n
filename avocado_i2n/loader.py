@@ -52,7 +52,7 @@ class CartesianLoader(VirtTestLoader):
         :param extra_params: extra configuration parameters
         :type extra_params: {str, str}
         """
-        self.logdir = extra_params.pop('logdir', None)
+        self.logdir = extra_params.pop('logdir', ".")
         super().__init__(config, extra_params)
         # VT is still behind taking on the new config structure (once done remove this)
         self.config = vars(self.args)

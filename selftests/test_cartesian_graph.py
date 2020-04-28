@@ -208,7 +208,7 @@ class CartesianGraphTest(unittest.TestCase):
         with self.assertRaises(param.EmptyCartesianProduct):
             graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                    self.config["tests_str"], self.config["vm_strs"],
-                                                   prefix=self.prefix, verbose=True)
+                                                   prefix=self.prefix)
 
     def test_one_leaf(self):
         self.config["tests_str"] += "only tutorial1\n"
@@ -395,6 +395,20 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
+    def test_complete_verbose_graph_dry_run(self):
+        self.config["tests_str"] = "only all\n"
+        self.config["param_dict"]["dry_run"] = "yes"
+        # TODO: install graphvis and enable dumps too?
+        # logging.getLogger('graph').level = 0
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix, verbose=True)
+        DummyStateCheck.present_states = []
+        DummyTestRunning.asserted_tests = [
+        ]
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
+        self.runner.run_traversal(graph, self.config["param_dict"])
 
     def test_abort_run(self):
         self.config["tests_str"] += "only tutorial1\n"
