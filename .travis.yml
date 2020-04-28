@@ -48,8 +48,7 @@ script:
 - avocado vt-bootstrap --vt-skip-verify-download-assets --yes-to-all
 - avocado manu setup=noop
 - avocado list --loaders cartesian_graph -- "only=tutorial1"
-# TODO: provide noop-like variant to avoid setting up vms
-# - avocado run --auto --loaders cartesian_graph -- "only=tutorial1"
+- avocado run --auto --loaders cartesian_graph -- "only=tutorial1 dry_run=yes"
 # Cleanup avocado(-vt) libs
 - rm -rf avocado-vt-libs
 - rm -rf avocado-libs

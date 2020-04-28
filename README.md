@@ -188,7 +188,8 @@ avocado manu[ "K1=V1[ K2=V2[ ...]]"]
 avocado manu setup=full,update vms=vm1
 ```
 
-where any further overwriting parameters can be provided on the command line.
+where any further overwriting parameters can be provided on the command line. In
+order to initate dry runs for instance you can use *dry_run=yes*.
 
 ### Tool options
 The auto plugin is a an instance of a manual run step from the manu plugin

@@ -302,6 +302,19 @@ class CartesianGraphTest(unittest.TestCase):
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
+    def test_one_leaf_dry_run(self):
+        self.config["param_dict"]["dry_run"] = "yes"
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        graph.scan_object_states(None)
+        DummyTestRunning.asserted_tests = [
+        ]
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
+        self.runner.run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
     def test_two_objects_without_setup(self):
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],

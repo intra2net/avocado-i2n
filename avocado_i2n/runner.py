@@ -332,7 +332,9 @@ class CartesianRunner(TestRunner):
         if test_node.should_run:
 
             # the primary setup nodes need special treatment
-            if test_node.is_scan_node():
+            if params.get("dry_run", "no") == "yes":
+                logging.info("Running a dry %s", test_node.params["shortname"])
+            elif test_node.is_scan_node():
                 logging.debug("Test run started from the shared root")
                 self.run_scan_node(graph)
             elif test_node.is_create_node():
@@ -367,8 +369,12 @@ class CartesianRunner(TestRunner):
         by default but the states can be removed with "unset_mode=f.").
         """
         if test_node.should_clean:
-            if test_node.is_shared_root():
+
+            if params.get("dry_run", "no") == "yes":
+                logging.info("Cleaning a dry %s", test_node.params["shortname"])
+            elif test_node.is_shared_root():
                 logging.debug("Test run ended at the shared root")
+
             else:
                 for vm_name in test_node.params.objects("vms"):
                     vm_params = test_node.params.object_params(vm_name)
