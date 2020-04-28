@@ -357,7 +357,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_with_permanent_object_and_switch(self):
+    def test_permanent_object_and_switch_and_cloning(self):
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_get\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -366,15 +366,27 @@ class CartesianGraphTest(unittest.TestCase):
         DummyStateCheck.present_states = ["root"]
         graph.scan_object_states(None)
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1 vm3$"},
-
+            {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1 vm2 vm3$"},
+            # automated setup of vm1
             {"shortname": "^internal.stateless.0preinstall.vm1", "vms": "^vm1$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.permanent.linux_virtuser.vm1", "vms": "^vm1$"},
+            # automated setup of vm2
+            {"shortname": "^internal.stateless.0preinstall.vm2", "vms": "^vm2$"},
+            {"shortname": "^original.unattended_install.cdrom.in_cdrom_ks.default_install.aio_threads.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
+            {"shortname": "^internal.permanent.windows_virtuser.vm2", "vms": "^vm2$"},
+            # first parent GUI setup dependency through vm2
+            {"shortname": "^tutorial_gui.as_use_case.vm1.virtio_blk.smp2.virtio_net.CentOS.7.0.x86_64.vm2.smp2.Win10.x86_64", "vms": "^vm1 vm2$"},
+            # on switch dependency dependency through vm1
             {"shortname": "^internal.permanent.connect.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.manage.start.vm1", "vms": "^vm1$", "get_state": "^connect", "set_state": "^connect$", "get_type": "^off$", "set_type": "^on$"},
-
-            {"shortname": "^leaves.tutorial_get", "vms": "^vm1 vm3$"},
+            # first actual test
+            {"shortname": "^leaves.tutorial_get", "vms": "^vm1 vm2 vm3$"},
+            # second parent GUI setup dependency through vm2 and duplicated actual test
+            {"shortname": "^tutorial_gui.as_pure_setup.vm1", "vms": "^vm1 vm2$"},
+            {"shortname": "^leaves.tutorial_get", "vms": "^vm1 vm2 vm3$"},
         ]
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])

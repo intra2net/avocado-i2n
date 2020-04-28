@@ -549,13 +549,13 @@ class CartesianLoader(VirtTestLoader):
                 parse_parents.append(new_parent)
         return get_parents, parse_parents
 
-    def _copy_branch(self, root_node, root_parent, parents):
+    def _copy_branch(self, root_node, root_parent, copy_parents):
         """
         Copy a test node and all of its descendants to provide each parent
         node with a unique successor.
         """
         test_nodes = []
-        to_copy = [(root_node, root_parent, parents)]
+        to_copy = [(root_node, root_parent, copy_parents)]
         while len(to_copy) > 0:
             child, parent, parents = to_copy.pop()
 
@@ -564,13 +564,12 @@ class CartesianLoader(VirtTestLoader):
                 logging.debug("Duplicating test node %s for another parent %s",
                               child.params["shortname"], parents[i].params["shortname"])
 
-                clone_variant = child.params["name"]
                 clone_name = child.name + "d" + str(i+1)
-                clone_str = param.re_str(clone_variant)
                 config = child.config.get_copy()
-                config.parse_next_str(clone_str)
 
-                clones.append(TestNode(clone_name, config, list(child.objects)))
+                clone = TestNode(clone_name, config, list(child.objects))
+                clone.regenerate_params()
+                clones.append(clone)
 
                 # clone setup with the exception of unique parent copy
                 for clone_setup in child.setup_nodes:
