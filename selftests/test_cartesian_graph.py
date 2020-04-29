@@ -414,6 +414,39 @@ class CartesianGraphTest(unittest.TestCase):
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
+    def test_deep_cloning(self):
+        self.config["tests_str"] = "only leaves\n"
+        self.config["tests_str"] += "only tutorial_finale\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        DummyStateCheck.present_states = ["root", "install", "customize"]
+        graph.scan_object_states(None)
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1 vm2 vm3$"},
+            # automated setup of vm1
+            {"shortname": "^internal.permanent.linux_virtuser.vm1", "vms": "^vm1$"},
+            # automated setup of vm2
+            {"shortname": "^internal.permanent.windows_virtuser.vm2", "vms": "^vm2$"},
+            # first (noop) parent GUI setup dependency through vm2
+            {"shortname": "^tutorial_gui.client_noop", "vms": "^vm1 vm2$", "set_state_vm2": "guisetup.noop"},
+            # on switch dependency dependency through vm1
+            {"shortname": "^internal.permanent.connect.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.stateless.manage.start.vm1", "vms": "^vm1$", "get_state": "^connect$", "set_state": "^connect$", "get_type": "^off$", "set_type": "^on$"},
+            # first (noop) duplicated actual test
+            {"shortname": "^tutorial_get.implicit_both.+guisetup.noop", "vms": "^vm1 vm2 vm3$", "get_state_vm2": "guisetup.noop", "set_state_vm2": "getsetup.guisetup.noop"},
+            {"shortname": "^leaves.tutorial_finale.+getsetup.guisetup.noop", "vms": "^vm1 vm2 vm3$", "get_state_vm2": "getsetup.guisetup.noop"},
+            # second (clicked) parent GUI setup dependency through vm2
+            {"shortname": "^tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "set_state_vm2": "guisetup.clicked"},
+            {"shortname": "^internal.stateless.manage.start.vm1", "vms": "^vm1$", "get_state": "^connect$", "set_state": "^connect$", "get_type": "^off$", "set_type": "^on$"},
+            # second (clicked) duplicated actual test
+            {"shortname": "^tutorial_get.implicit_both.+guisetup.clicked", "vms": "^vm1 vm2 vm3$", "get_state_vm2": "guisetup.clicked", "set_state_vm2": "getsetup.guisetup.clicked"},
+            {"shortname": "^leaves.tutorial_finale.+getsetup.guisetup.clicked", "vms": "^vm1 vm2 vm3$", "get_state_vm2": "getsetup.guisetup.clicked"},
+        ]
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
+        self.runner.run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
     def test_complete_verbose_graph_dry_run(self):
         self.config["tests_str"] = "only all\n"
         self.config["param_dict"]["dry_run"] = "yes"

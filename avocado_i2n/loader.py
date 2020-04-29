@@ -555,45 +555,47 @@ class CartesianLoader(VirtTestLoader):
         node with a unique successor.
         """
         test_nodes = []
-        copy_parent = copy_parents[0]
-        to_copy = [(copy_node, copy_parent, copy_parents[1:])]
-
-        # the splitting initiator link could use different state transitions
-        clone_object_params = copy_parent.params.object_params(copy_object.name)
-        clone_state = clone_object_params.get("set_state", "")
-        copy_node.params["get_state_" + copy_object.name] = clone_state
+        to_copy = [(copy_node, copy_parents)]
 
         while len(to_copy) > 0:
-            child, parent, parents = to_copy.pop()
-
+            clone_source, parents = to_copy.pop()
             clones = []
-            for i in range(len(parents)):
-                logging.debug("Duplicating test node %s for another parent %s",
-                              child.params["shortname"], parents[i].params["shortname"])
+            logging.debug("Duplicating test node %s for multiple parents:\n%s",
+                          clone_source.params["shortname"],
+                          "\n".join([p.params["shortname"] for p in parents]))
+            for i, parent in enumerate(parents):
+                if i == 0:
+                    child = clone_source
+                else:
+                    clone_name = clone_source.name + "d" + str(i)
+                    clone_config = clone_source.config.get_copy()
+                    clone = TestNode(clone_name, clone_config, list(clone_source.objects))
+                    clone.regenerate_params()
 
-                clone_name = child.name + "d" + str(i+1)
-                config = child.config.get_copy()
-                clone = TestNode(clone_name, config, list(child.objects))
-                clone.regenerate_params()
-                # the splitting initiator link could use different state transitions
-                if child == copy_node:
-                    clone_object_params = parents[i].params.object_params(copy_object.name)
-                    clone_state = clone_object_params.get("set_state", "")
-                    clone.params["get_state_" + copy_object.name] = clone_state
-                clones.append(clone)
+                    # clone setup with the exception of unique parent copy
+                    for clone_setup in clone_source.setup_nodes:
+                        if clone_setup == parents[0]:
+                            clone.setup_nodes.append(parent)
+                            parent.cleanup_nodes.append(clone)
+                        else:
+                            clone.setup_nodes.append(clone_setup)
+                            clone_setup.cleanup_nodes.append(clone)
 
-                # clone setup with the exception of unique parent copy
-                for clone_setup in child.setup_nodes:
-                    if clone_setup == parent:
-                        clones[-1].setup_nodes.append(parents[i])
-                        parents[i].cleanup_nodes.append(clones[-1])
-                    else:
-                        clones[-1].setup_nodes.append(clone_setup)
-                        clone_setup.cleanup_nodes.append(clones[-1])
+                    child = clone
+                    clones.append(child)
 
-            for grandchild in child.cleanup_nodes:
-                to_copy.append((grandchild, child, clones))
+                parent_object_params = parent.params.object_params(copy_object.name)
+                parent_state = parent_object_params.get("set_state", "")
+                child.params["shortname"] += "." + parent_state
+                child.params["name"] += "." + parent_state
+                child.params["get_state_" + copy_object.name] = parent_state
+                child_object_params = child.params.object_params(copy_object.name)
+                child_state = child_object_params.get("set_state", "")
+                if child_state:
+                    child.params["set_state_" + copy_object.name] += "." + parent_state
 
+            for grandchild in clone_source.cleanup_nodes:
+                to_copy.append((grandchild, [clone_source, *clones]))
             test_nodes.extend(clones)
 
         return test_nodes
