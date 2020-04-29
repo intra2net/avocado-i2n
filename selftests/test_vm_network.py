@@ -13,12 +13,20 @@ from avocado_i2n import vmnet
 from avocado_i2n.vmnet import VMNetwork
 
 
+@mock.patch.object(VMNetwork, 'ping', lambda *args, **kwargs: (0, "\n\n\n\n"))
+@mock.patch.object(VMNetwork, 'port_connectivity', lambda *args, **kwargs: (1, ""))
+@mock.patch.object(VMNetwork, 'https_connectivity', lambda *args, **kwargs: (0, "HTML"))
+@mock.patch.object(VMNetwork, 'ftp_connectivity', lambda *args, **kwargs: (0, "hi"))
+@mock.patch.object(VMNetwork, 'tftp_connectivity', lambda *args, **kwargs: (0, "hi"))
 class VMNetworkTest(unittest.TestCase):
 
     def setUp(self):
         self.vmnet = mock.MagicMock()
         self.run_params = utils_params.Params()
         self.run_params["vms"] = "vm1 vm2"
+        self.run_params["roles"] = "node1 node2"
+        self.run_params["node1"] = "vm1"
+        self.run_params["node2"] = "vm2"
         self.run_params["nics"] = "b1 b2"
         self.run_params["nic_roles"] = "internet_nic lan_nic"
         self.run_params["internet_nic"] = "b1"
@@ -30,23 +38,113 @@ class VMNetworkTest(unittest.TestCase):
         self.run_params["ip_b2_vm1"] = "172.17.0.1"
         self.run_params["ip_b1_vm2"] = "10.2.0.1"
         self.run_params["ip_b2_vm2"] = "172.18.0.1"
+        self.run_params["netdst_b1_vm1"] = "virbr0"
+        self.run_params["netdst_b2_vm1"] = "virbr1"
+        self.run_params["netdst_b1_vm2"] = "virbr2"
+        self.run_params["netdst_b2_vm2"] = "virbr3"
 
         self.env = mock.MagicMock(name='env')
         self.env.get_vm = mock.MagicMock(side_effect=self._get_mock_vm)
+        self.env.create_vm = mock.MagicMock(side_effect=self._create_mock_vm)
 
         self.mock_vms = {}
 
         # inline class definition and instantiation
-        self.test = type('obj', (object,), {'outputdir': ''})()
+        self.test = type('obj', (object,), {'outputdir': '', 'bindir': ''})()
 
     def _get_mock_vm(self, vm_name):
+        return None if vm_name not in self.mock_vms else self.mock_vms[vm_name]
+
+    def _create_mock_vm(self, vm_type, target, vm_name, vm_params, bindir):
+        self.mock_vms[vm_name] = mock.MagicMock(name=vm_name)
+        self.mock_vms[vm_name].name = vm_name
+        self.mock_vms[vm_name].params = vm_params
         return self.mock_vms[vm_name]
 
     def _create_mock_vms(self):
         for vm_name in self.run_params.objects("vms"):
-            self.mock_vms[vm_name] = mock.MagicMock(name=vm_name)
-            self.mock_vms[vm_name].name = vm_name
-            self.mock_vms[vm_name].params = self.run_params.object_params(vm_name)
+            self._create_mock_vm("qemu", None, vm_name,
+                                 self.run_params.object_params(vm_name), "")
+
+    def test_representation(self):
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        repr = str(self.vmnet)
+        self.assertIn("[vmnet]", repr)
+        self.assertIn("[node]", repr)
+        self.assertIn("[iface]", repr)
+        self.assertIn("[net]", repr)
+
+    def test_get_vms(self):
+        self.run_params["vms"] = "vm1"
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet.get_single_vm()
+        self.vmnet.get_single_vm_with_session()
+        self.vmnet.get_single_vm_with_session_and_params()
+
+        self.run_params["vms"] = "vm1 vm2"
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet.get_ordered_vms()
+        self.vmnet.get_vms()
+        self.vmnet.start_all_sessions()
+
+    def test_integrate_node(self):
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        node1 = self.vmnet.nodes["vm1"]
+        with self.assertRaises(AssertionError):
+            self.vmnet.integrate_node(node1)
+
+        self.run_params["vms"] = "vm2"
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        node1.interfaces = {}
+        self.vmnet.integrate_node(node1)
+
+    def test_reattach_interface(self):
+        self._create_mock_vms()
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        client, server = self.vmnet.get_vms()
+        self.vmnet.reattach_interface(client, server)
+
+    @mock.patch('avocado_i2n.vmnet.network.os.rename', mock.Mock(return_value=0))
+    @mock.patch('avocado_i2n.vmnet.network.process', mock.Mock())
+    @mock.patch('avocado_i2n.vmnet.network.utils_net')
+    def test_host_networking(self, utils_net):
+        self.run_params["ip_provider_b1_vm1"] = "10.1.0.254"
+        self.run_params["host_b1_vm1"] = "10.1.0.254"
+        self.run_params["host_set_bridge_b1_vm1"] = "yes"
+        self.run_params["permanent_netdst_b1_vm1"] = "no"
+        self.run_params["host_services_b1_vm1"] = "yes"
+        self._create_mock_vms()
+
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet.setup_host_services()
+        utils_net.find_bridge_manager.get_structure.return_value = ["virbr0", "virbr2"]
+        self.vmnet.setup_host_bridges()
+        utils_net.find_bridge_manager.return_value = None
+        self.vmnet.setup_host_bridges()
+
+    def test_spawn_clients(self):
+        self._create_mock_vms()
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+
+        with self.assertRaises(NotImplementedError):
+            self.vmnet.spawn_clients("vm1", 1)
+
+        self.vmnet._register_client_at_server = mock.MagicMock()
+        self.vmnet.spawn_clients("vm1", 1)
+
+    def test_change_network_address(self):
+        self.run_params["os_type"] = "windows"
+        self._create_mock_vms()
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        netconfig = self.vmnet.netconfigs["10.1.0.0"]
+        self.vmnet.change_network_address(netconfig, "10.3.0.1")
+
+    def test_set_static_address(self):
+        self.run_params["os_type"] = "windows"
+        self._create_mock_vms()
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        client, server = self.vmnet.get_vms()
+        self.vmnet.set_static_address(client, server)
 
     def test_configure_tunnel_between_vms_basic(self):
         self._create_mock_vms()
@@ -308,6 +406,21 @@ class VMNetworkTest(unittest.TestCase):
                          tunnel2.left_params['vpnconn_activation'])
         self.assertEqual(route2.right_params['vpnconn_activation'],
                          tunnel2.right_params['vpnconn_activation'])
+
+    def test_connectivity_validate(self):
+        self._create_mock_vms()
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        client, server = self.vmnet.get_vms()
+        self.vmnet.reattach_interface(client, server)
+
+        self.vmnet.ping_validate(client, server)
+
+        # check both blocked and unclocked cases depending on what is easier
+        self.vmnet.http_connectivity_validate(client, server, require_blocked=True)
+        self.vmnet.https_connectivity_validate(client, server)
+        self.vmnet.ssh_connectivity_validate(client, server, require_blocked=True)
+        self.vmnet.ftp_connectivity_validate("hi", "path", client, server)
+        self.vmnet.tftp_connectivity_validate("hi", "path", client, server)
 
 
 if __name__ == '__main__':
