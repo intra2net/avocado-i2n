@@ -336,7 +336,7 @@ class CartesianLoader(VirtTestLoader):
                     test_node.setup_nodes.append(parents[0])
                     parents[0].cleanup_nodes.append(test_node)
                 if len(parents) > 1:
-                    graph.nodes += self._copy_branch(test_node, parents[0], parents[1:])
+                    graph.nodes += self._copy_branch(test_node, test_object, parents)
 
                 if logging.getLogger('graph').level <= logging.DEBUG:
                     step += 1
@@ -549,13 +549,20 @@ class CartesianLoader(VirtTestLoader):
                 parse_parents.append(new_parent)
         return get_parents, parse_parents
 
-    def _copy_branch(self, root_node, root_parent, copy_parents):
+    def _copy_branch(self, copy_node, copy_object, copy_parents):
         """
         Copy a test node and all of its descendants to provide each parent
         node with a unique successor.
         """
         test_nodes = []
-        to_copy = [(root_node, root_parent, copy_parents)]
+        copy_parent = copy_parents[0]
+        to_copy = [(copy_node, copy_parent, copy_parents[1:])]
+
+        # the splitting initiator link could use different state transitions
+        clone_object_params = copy_parent.params.object_params(copy_object.name)
+        clone_state = clone_object_params.get("set_state", "")
+        copy_node.params["get_state_" + copy_object.name] = clone_state
+
         while len(to_copy) > 0:
             child, parent, parents = to_copy.pop()
 
@@ -566,9 +573,13 @@ class CartesianLoader(VirtTestLoader):
 
                 clone_name = child.name + "d" + str(i+1)
                 config = child.config.get_copy()
-
                 clone = TestNode(clone_name, config, list(child.objects))
                 clone.regenerate_params()
+                # the splitting initiator link could use different state transitions
+                if child == copy_node:
+                    clone_object_params = parents[i].params.object_params(copy_object.name)
+                    clone_state = clone_object_params.get("set_state", "")
+                    clone.params["get_state_" + copy_object.name] = clone_state
                 clones.append(clone)
 
                 # clone setup with the exception of unique parent copy
