@@ -378,7 +378,10 @@ class CartesianRunner(TestRunner):
             else:
                 for vm_name in test_node.params.objects("vms"):
                     vm_params = test_node.params.object_params(vm_name)
-                    # avoid running any test unless the user really requires cleanup
+                    # avoid running any test for unselected vms
+                    if vm_name not in params.get("vms", param.all_vms()):
+                        continue
+                    # avoid running any test unless the user really requires cleanup and such is needed
                     if vm_params.get("unset_mode", "ri")[0] == "f" and vm_params.get("set_state"):
 
                         setup_dict = {} if params is None else params.copy()

@@ -295,7 +295,7 @@ def update(config, tag=""):
         remove_graph.flag_children(flag_type="run", flag=False)
         remove_graph.flag_children(flag_type="clean", flag=False)
         remove_graph.flag_children(to_state, vm_name, flag_type="clean", flag=True, skip_roots=True)
-        r.run_traversal(remove_graph, config["param_dict"])
+        r.run_traversal(remove_graph, {"vms": vm_name, **config["param_dict"]})
 
         logging.info("Updating all states before '%s'", to_state)
         setup_dict = config["param_dict"].copy()
@@ -322,6 +322,7 @@ def update(config, tag=""):
         # states are not removed, aborting in any other case
         setup_dict = config["param_dict"].copy()
         setup_dict.update({"get_mode": "ra", "set_mode": "fa", "unset_mode": "ra"})
+        setup_dict["vms"] = vm_name
         r.run_traversal(update_graph, setup_dict)
 
     LOG_UI.info("Finished update setup")

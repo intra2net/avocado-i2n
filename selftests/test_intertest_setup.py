@@ -135,6 +135,12 @@ class IntertestSetupTest(unittest.TestCase):
             {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^connect$", "unset_type": "^on"},
             {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^connect", "unset_type": "^off"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.noop"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.guisetup.noop"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^guisetup.noop"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.clicked"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.guisetup.clicked"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^guisetup.clicked"},
             {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^windows_virtuser$"},
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
         ]
@@ -178,6 +184,12 @@ class IntertestSetupTest(unittest.TestCase):
         self.config["vms_params"]["to_state"] = "install"
         self.config["vm_strs"] = {"vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.noop"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.guisetup.noop"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^guisetup.noop"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.clicked"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.guisetup.clicked"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^guisetup.clicked"},
             {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^windows_virtuser$"},
             {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^customize"},
             {"shortname": "^internal.stateless.0preinstall.vm2", "vms": "^vm2$"},
