@@ -537,12 +537,12 @@ class CartesianLoader(VirtTestLoader):
             parent_name = ".".join(new_parent.params["name"].split(".")[1:])
             old_parents = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % parent_name,
                                              subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
-            assert len(old_parents) <= 1, "Full name parsing must give a unique '%s' test" % parent_name
             if len(old_parents) > 0:
-                old_parent = old_parents[0]
-                logging.debug("Found parsed dependency %s for %s through object %s",
-                              old_parent.params["shortname"], test_node.params["shortname"], test_object.name)
-                get_parents.append(old_parent)
+                for old_parent in old_parents:
+                    logging.debug("Found parsed dependency %s for %s through object %s",
+                                  old_parent.params["shortname"], test_node.params["shortname"], test_object.name)
+                    if old_parent not in get_parents:
+                        get_parents.append(old_parent)
             else:
                 logging.debug("Found new dependency %s for %s through object %s",
                               new_parent.params["shortname"], test_node.params["shortname"], test_object.name)
