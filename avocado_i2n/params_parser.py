@@ -31,7 +31,6 @@ INTERFACE
 import logging
 import os
 import copy
-import shutil
 import collections
 
 from virttest import cartesian_config
@@ -71,9 +70,9 @@ def tests_ovrwrt_file():
     ovrwrt_file = os.path.join(os.environ['HOME'], _tests_ovrwrt_file)
     if not os.path.exists(ovrwrt_file):
         logging.warning("Generating a file to use for overwriting the original test parameters")
-        shutil.copyfile(os.path.join(custom_configs_dir(),
-                                     "sets-overwrite.cfg"),
-                        ovrwrt_file)
+        with open(ovrwrt_file, "w") as handle:
+            handle.write("# Use this config to override with test nodes configuration\n"
+                         "include " + os.path.join(custom_configs_dir(), "sets-overwrite.cfg") + "\n")
     return ovrwrt_file
 
 
@@ -83,9 +82,9 @@ def vms_ovrwrt_file():
     ovrwrt_file = os.path.join(os.environ['HOME'], _vms_ovrwrt_file)
     if not os.path.exists(ovrwrt_file):
         logging.warning("Generating a file to use for overwriting the original vm parameters")
-        shutil.copyfile(os.path.join(custom_configs_dir(),
-                                     "objects-overwrite.cfg"),
-                        ovrwrt_file)
+        with open(ovrwrt_file, "w") as handle:
+            handle.write("# Use this config to override with test objects configuration\n"
+                         "include " + os.path.join(custom_configs_dir(), "objects-overwrite.cfg") + "\n")
     return ovrwrt_file
 
 
