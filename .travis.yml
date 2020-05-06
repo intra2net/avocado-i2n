@@ -2,6 +2,7 @@ language: python
 python:
 - 3.6
 - 3.7
+- 3.8
 - pypy3
 env:
 - INSTALL_VARIANT=pip
@@ -40,7 +41,8 @@ install:
 - pip install -e .
 before_script:
 - sleep 3
-- if [[ $TRAVIS_PYTHON_VERSION != '3.4' ]]; then export EXTRA_PYTHON_VERSION=1; fi
+# TODO: python3.8 adds phantom lines reducing the coverage so update to a fixed version
+- if [[ $TRAVIS_PYTHON_VERSION == '3.8' ]]; then pip install coverage==5.0; fi
 script:
 - make check
 - codecov
