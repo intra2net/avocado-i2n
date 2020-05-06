@@ -63,7 +63,7 @@ class TestNode(object):
         :param config: variant configuration for the test node
         :type config: :py:class:`param.Reparsable`
         :param objects: objects participating in the test node
-        :type objects: [TestObject]
+        :type objects: [:py:class:`TestObject`]
         """
         self.name = name
         self.config = config
@@ -170,6 +170,25 @@ class TestNode(object):
         be run anymore.
         """
         return self.is_cleanup_ready() and not self.should_run
+
+    def has_dependency(self, state, test_object):
+        """
+        Check if the test node has a dependency parsed and available.
+
+        :param str state: name of the dependency (state or parent test set)
+        :param test_object: object used for the dependency
+        :type test_object: :py:class:`TestObject`
+        :returns: whether the dependency was already found among the setup nodes
+        :rtype: bool
+        """
+        for test_node in self.setup_nodes:
+            if test_object in test_node.objects:
+                setup_object_params = test_node.params.object_params(test_object.name)
+                if re.search("(\.|^)" + state + "(\.|$)", setup_object_params.get("name")):
+                    return True
+                if state == setup_object_params.get("set_state"):
+                    return True
+        return False
 
     @staticmethod
     def comes_before(node1, node2):

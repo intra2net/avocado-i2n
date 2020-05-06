@@ -320,7 +320,13 @@ class CartesianLoader(VirtTestLoader):
             for test_object in test_node.objects:
                 logging.debug("Parsing dependencies of %s for object %s", test_node.params["shortname"], test_object.name)
                 object_params = test_node.params.object_params(test_object.name)
-                if object_params.get("get", object_params.get("get_state", "")) == "":
+                object_dependency = object_params.get("get", object_params.get("get_state", ""))
+                # handle nodes without dependency for the given object
+                if not object_dependency:
+                    continue
+                # handle partially loaded nodes with already satisfied dependency
+                if len(test_node.setup_nodes) > 0 and test_node.has_dependency(object_dependency, test_object):
+                    logging.debug("Dependency already parsed through duplication or partial dependency resolution")
                     continue
 
                 # get and parse parents
@@ -336,7 +342,9 @@ class CartesianLoader(VirtTestLoader):
                     test_node.setup_nodes.append(parents[0])
                     parents[0].cleanup_nodes.append(test_node)
                 if len(parents) > 1:
-                    graph.nodes += self._copy_branch(test_node, test_object, parents)
+                    clones = self._copy_branch(test_node, test_object, parents)
+                    graph.nodes.extend(clones)
+                    unresolved.extend(clones)
 
                 if logging.getLogger('graph').level <= logging.DEBUG:
                     step += 1
