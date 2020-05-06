@@ -421,7 +421,7 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.ephemeral.on_customize.vm1", "vms": "^vm1$", "set_state_vm1_on_error": "^$"},
         ]
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         DummyTestRunning.fail_switch[-1] = True
