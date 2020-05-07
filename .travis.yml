@@ -23,9 +23,8 @@ branches:
 os: linux
 dist: xenial
 install:
-# Clone-install Avocado
-- pip install Sphinx==1.3b1
 - pip install -r requirements_pip.txt
+# Clone-install Avocado
 - git clone --depth 1 https://github.com/avocado-framework/aexpect.git aexpect-libs
 - cd aexpect-libs
 - pip install -e .
