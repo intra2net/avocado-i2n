@@ -6,7 +6,7 @@ python:
 - pypy3
 env:
 - INSTALL_VARIANT=pip
-matrix:
+jobs:
   include:
   allow_failures:
   - python: pypy3
@@ -20,7 +20,8 @@ branches:
   except:
   - master-experimental
   - tp-i2n
-sudo: true
+os: linux
+dist: xenial
 install:
 # Clone-install Avocado
 - pip install Sphinx==1.3b1
@@ -56,7 +57,7 @@ script:
 - rm -rf avocado-libs
 deploy:
   provider: pypi
-  user: "__token__"
+  username: "__token__"
   password:
     secure: ALzPshHJvQ0ouM74gntpgDBYp0YcbxGjVkGvTGmbPBzQ/ImiuFDbLP/bq8CW50/hZBoGW7qB0wrttiKQ5jXHRE/hljcL66DeYDBq+ONaTIRy8l6gcoUXN7JmELxuojO6gKzMV1Zixhzbmvz7gFNvOsLpjDOqER0bOzwkxvNilI8VN0ObIN7zVzv/Fkahx0yWQjjM48Xxs4V1p3Q4MAeMpKr1SbbHXRlB2F7/lFmkmYVX9TomnhVigu8qt1yKmCORDhHq7uFj9BLdlqCs4fX+fAoQQbLdRg4+/wT1o2tjSXH+f7rzZU4bgFnFB25PS+Ycb/7TbhRcsRzdo0JDj2AGIRpg+CH/GivJwvLoLlPNh3/d5ZFB0kNNVI6T9jnEQY1HqpCldwuBLJc7aBppAUxXc0UF/UXFjRYpUsQkSxC+Rqj6Zoz3z0JCSYEKGu7dfFIGh8QYnrkabedAz8jRODnCE5t/Nc0CrNuRGilS2K5mU3cLaXqWQWCjONZh8HQwByusp/nRtuX2zgBQlcUTM2SXqixlhSrxRlLYvwOS383/RMCwUqaY/DIzmI+CMhLzumv2Tk0SArdUgueqiq0y1Xasb+0FZONnpZkzCOd9pgDiSTF7wR42rNTMLokoZFuMT5DAguX3NnhHuYCqWoaBYl5oS6qnjSHx375DeNVrtbHBB88=
   distributions: "sdist bdist_wheel"
