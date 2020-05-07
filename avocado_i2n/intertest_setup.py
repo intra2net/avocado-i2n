@@ -287,9 +287,16 @@ def update(config, tag=""):
         to_state = "0preinstall" if to_state == "install" else to_state
         setup_dict = config["param_dict"].copy()
         setup_dict["unset_mode"] = "fi"
+        setup_str = vm_params.get("remove_set", "leaves")
+        for restriction in config["available_restrictions"]:
+            if restriction in setup_str:
+                break
+        else:
+            setup_str = "all.." + setup_str
+        setup_str = param.re_str(setup_str)
         # remove all test nodes depending on the updated node if present (unset mode is "ignore otherwise")
         remove_graph = l.parse_object_trees(setup_dict,
-                                            param.re_str(vm_params.get("remove_set", "leaves")),
+                                            setup_str,
                                             config["available_vms"],
                                             prefix=tag, verbose=False)
         remove_graph.flag_children(flag_type="run", flag=False)
