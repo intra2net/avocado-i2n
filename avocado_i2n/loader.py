@@ -320,7 +320,13 @@ class CartesianLoader(VirtTestLoader):
             for test_object in test_node.objects:
                 logging.debug("Parsing dependencies of %s for object %s", test_node.params["shortname"], test_object.name)
                 object_params = test_node.params.object_params(test_object.name)
-                if object_params.get("get", object_params.get("get_state", "")) == "":
+                object_dependency = object_params.get("get", object_params.get("get_state", ""))
+                # handle nodes without dependency for the given object
+                if not object_dependency:
+                    continue
+                # handle partially loaded nodes with already satisfied dependency
+                if len(test_node.setup_nodes) > 0 and test_node.has_dependency(object_dependency, test_object):
+                    logging.debug("Dependency already parsed through duplication or partial dependency resolution")
                     continue
 
                 # get and parse parents
@@ -336,7 +342,9 @@ class CartesianLoader(VirtTestLoader):
                     test_node.setup_nodes.append(parents[0])
                     parents[0].cleanup_nodes.append(test_node)
                 if len(parents) > 1:
-                    graph.nodes += self._copy_branch(test_node, parents[0], parents[1:])
+                    clones = self._copy_branch(test_node, test_object, parents)
+                    graph.nodes.extend(clones)
+                    unresolved.extend(clones)
 
                 if logging.getLogger('graph').level <= logging.DEBUG:
                     step += 1
@@ -537,53 +545,65 @@ class CartesianLoader(VirtTestLoader):
             parent_name = ".".join(new_parent.params["name"].split(".")[1:])
             old_parents = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % parent_name,
                                              subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
-            assert len(old_parents) <= 1, "Full name parsing must give a unique '%s' test" % parent_name
             if len(old_parents) > 0:
-                old_parent = old_parents[0]
-                logging.debug("Found parsed dependency %s for %s through object %s",
-                              old_parent.params["shortname"], test_node.params["shortname"], test_object.name)
-                get_parents.append(old_parent)
+                for old_parent in old_parents:
+                    logging.debug("Found parsed dependency %s for %s through object %s",
+                                  old_parent.params["shortname"], test_node.params["shortname"], test_object.name)
+                    if old_parent not in get_parents:
+                        get_parents.append(old_parent)
             else:
                 logging.debug("Found new dependency %s for %s through object %s",
                               new_parent.params["shortname"], test_node.params["shortname"], test_object.name)
                 parse_parents.append(new_parent)
         return get_parents, parse_parents
 
-    def _copy_branch(self, root_node, root_parent, parents):
+    def _copy_branch(self, copy_node, copy_object, copy_parents):
         """
         Copy a test node and all of its descendants to provide each parent
         node with a unique successor.
         """
         test_nodes = []
-        to_copy = [(root_node, root_parent, parents)]
+        to_copy = [(copy_node, copy_parents)]
+
         while len(to_copy) > 0:
-            child, parent, parents = to_copy.pop()
-
+            clone_source, parents = to_copy.pop()
             clones = []
-            for i in range(len(parents)):
-                logging.debug("Duplicating test node %s for another parent %s",
-                              child.params["shortname"], parents[i].params["shortname"])
+            logging.debug("Duplicating test node %s for multiple parents:\n%s",
+                          clone_source.params["shortname"],
+                          "\n".join([p.params["shortname"] for p in parents]))
+            for i, parent in enumerate(parents):
+                if i == 0:
+                    child = clone_source
+                else:
+                    clone_name = clone_source.name + "d" + str(i)
+                    clone_config = clone_source.config.get_copy()
+                    clone = TestNode(clone_name, clone_config, list(clone_source.objects))
+                    clone.regenerate_params()
 
-                clone_variant = child.params["name"]
-                clone_name = child.name + "d" + str(i+1)
-                clone_str = param.re_str(clone_variant)
-                config = child.config.get_copy()
-                config.parse_next_str(clone_str)
+                    # clone setup with the exception of unique parent copy
+                    for clone_setup in clone_source.setup_nodes:
+                        if clone_setup == parents[0]:
+                            clone.setup_nodes.append(parent)
+                            parent.cleanup_nodes.append(clone)
+                        else:
+                            clone.setup_nodes.append(clone_setup)
+                            clone_setup.cleanup_nodes.append(clone)
 
-                clones.append(TestNode(clone_name, config, list(child.objects)))
+                    child = clone
+                    clones.append(child)
 
-                # clone setup with the exception of unique parent copy
-                for clone_setup in child.setup_nodes:
-                    if clone_setup == parent:
-                        clones[-1].setup_nodes.append(parents[i])
-                        parents[i].cleanup_nodes.append(clones[-1])
-                    else:
-                        clones[-1].setup_nodes.append(clone_setup)
-                        clone_setup.cleanup_nodes.append(clones[-1])
+                parent_object_params = parent.params.object_params(copy_object.name)
+                parent_state = parent_object_params.get("set_state", "")
+                child.params["shortname"] += "." + parent_state
+                child.params["name"] += "." + parent_state
+                child.params["get_state_" + copy_object.name] = parent_state
+                child_object_params = child.params.object_params(copy_object.name)
+                child_state = child_object_params.get("set_state", "")
+                if child_state:
+                    child.params["set_state_" + copy_object.name] += "." + parent_state
 
-            for grandchild in child.cleanup_nodes:
-                to_copy.append((grandchild, child, clones))
-
+            for grandchild in clone_source.cleanup_nodes:
+                to_copy.append((grandchild, [clone_source, *clones]))
             test_nodes.extend(clones)
 
         return test_nodes

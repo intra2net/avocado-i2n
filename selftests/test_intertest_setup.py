@@ -57,7 +57,7 @@ class IntertestSetupTest(unittest.TestCase):
 
         self.config = {}
         self.config["available_vms"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
-        self.config["available_restrictions"] = ["normal"]
+        self.config["available_restrictions"] = ["leaves", "normal", "minimal"]
         self.config["param_dict"] = {}
         self.config["vm_strs"] = self.config["available_vms"].copy()
         self.config["tests_str"] = {}
@@ -135,13 +135,19 @@ class IntertestSetupTest(unittest.TestCase):
             {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^connect$", "unset_type": "^on"},
             {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^connect", "unset_type": "^off"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.noop"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.guisetup.noop"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^guisetup.noop"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.clicked"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.guisetup.clicked"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^guisetup.clicked"},
             {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^windows_virtuser$"},
             {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$"},
         ]
         intertest_setup.update(self.config, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_update_minimal(self):
+    def test_update_custom_cleanup(self):
         self.config["vms_params"]["remove_set"] = "minimal"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
@@ -151,6 +157,23 @@ class IntertestSetupTest(unittest.TestCase):
         # vm2 does not participate in any test from the minimal test set but vm1 will be updated before this assertion fails
         with self.assertRaises(AssertionError):
             intertest_setup.update(self.config, tag="0")
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
+        self.config["vms_params"]["remove_set"] = "tutorial1"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n"}
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^on_customize$"},
+            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
+        ]
+        intertest_setup.update(self.config, tag="0")
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
+        self.config["vms_params"]["remove_set"] = "minimal..tutorial1"
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^on_customize$"},
+            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
+        ]
+        intertest_setup.update(self.config, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_update_custom(self):
@@ -178,6 +201,12 @@ class IntertestSetupTest(unittest.TestCase):
         self.config["vms_params"]["to_state"] = "install"
         self.config["vm_strs"] = {"vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.noop"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.guisetup.noop"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^guisetup.noop"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.clicked"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^getsetup.guisetup.clicked"},
+            {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^guisetup.clicked"},
             {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^windows_virtuser$"},
             {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "unset_state": "^customize"},
             {"shortname": "^internal.stateless.0preinstall.vm2", "vms": "^vm2$"},
