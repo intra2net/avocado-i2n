@@ -82,7 +82,7 @@ setup(name='avocado-framework-plugin-i2n',
       url='http://github.com/intra2net/avocado-i2n',
       packages=['avocado_i2n', 'avocado_i2n.plugins', 'avocado_i2n.cartgraph', 'avocado_i2n.vmnet'],
       package_data={'avocado_i2n.vmnet': ['templates/*.template']},
-      install_requires=['avocado-framework-plugin-vt', 'aexpect'],
+      install_requires=['avocado-framework-plugin-vt==%s' % VERSION, 'aexpect'],
       data_files=get_data_files(),
       include_package_data=True,
       entry_points={
