@@ -17,7 +17,6 @@ all:
 
 check:
 	$(COVERAGE) run --source=avocado_i2n -m unittest discover -v selftests
-	$(COVERAGE) report -m
 
 install:
 	$(PYTHON) setup.py install --root $(DESTDIR)

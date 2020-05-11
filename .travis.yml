@@ -45,12 +45,14 @@ before_script:
 - if [[ $TRAVIS_PYTHON_VERSION == '3.8' ]]; then pip install coverage==5.0; fi
 script:
 - make check
-- codecov
 # Running will take too much time building the required vms but we can at least validate noop runs and the list of tests
 - avocado vt-bootstrap --vt-skip-verify-download-assets --yes-to-all
-- avocado manu setup=noop
-- avocado list --loaders cartesian_graph -- "only=tutorial1"
-- avocado run --auto --loaders cartesian_graph -- "only=tutorial1 dry_run=yes"
+- coverage run --append --source=avocado_i2n $(which avocado) manu setup=noop
+- coverage run --append --source=avocado_i2n $(which avocado) list --loaders cartesian_graph -- "only=tutorial1"
+- coverage run --append --source=avocado_i2n $(which avocado) run --auto --loaders cartesian_graph -- "only=tutorial1 dry_run=yes"
+# Collect all coverage
+- coverage report -m
+- codecov
 # Cleanup avocado(-vt) libs
 - rm -rf avocado-vt-libs
 - rm -rf avocado-libs
