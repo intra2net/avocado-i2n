@@ -125,6 +125,8 @@ class StateBackend():
         for image in params.objects("images"):
             image_params = params.object_params(image)
             image_name = image_params["image_name"]
+            if not os.path.isabs(image_name):
+                image_name = os.path.join(image_params["images_base_dir"], image_name)
             image_format = image_params.get("image_format", "qcow2")
             logging.debug("Checking for %s image %s", image_format, image_name)
             image_format = "" if image_format == "raw" else "." + image_format
@@ -163,6 +165,8 @@ class StateBackend():
         for image in params.objects("images"):
             image_params = params.object_params(image)
             image_name = image_params["image_name"]
+            if not os.path.isabs(image_name):
+                image_name = os.path.join(image_params["images_base_dir"], image_name)
             logging.info("Creating image %s for %s", image_name, vm_name)
             image_params.update({"create_image": "yes", "force_create_image": "yes"})
             env_process.preprocess_image(None, image_params, image_name)
@@ -181,6 +185,8 @@ class StateBackend():
         for image in params.objects("images"):
             image_params = params.object_params(image)
             image_name = image_params["image_name"]
+            if not os.path.isabs(image_name):
+                image_name = os.path.join(image_params["images_base_dir"], image_name)
             logging.info("Removing image %s for %s", image_name, vm_name)
             image_params.update({"remove_image": "yes"})
             env_process.postprocess_image(None, image_params, image_name)
@@ -208,14 +214,25 @@ class LVMBackend(StateBackend):
             image_params = params.object_params(image)
             image_name = image_params["image_name"]
             if mount_loc is None:
-                mount_loc = os.path.dirname(image_name)
-            elif mount_loc != os.path.dirname(image_name):
-                # it would be best to assert this but let's be more permissive
-                # to allow for stranger configuration hoping that the user knows
-                # what they are doing
-                logging.warning("Not all vm images are located in the same logical"
-                                " volume mount directory - choosing the first one"
-                                " as the actual mount location")
+                if os.path.isabs(image_name):
+                    mount_loc = os.path.dirname(image_name)
+                else:
+                    mount_loc = image_params["images_base_dir"]
+            else:
+                if os.path.isabs(image_name):
+                    has_different_values = mount_loc != os.path.dirname(image_name)
+                else:
+                    has_different_values = mount_loc != image_params.get("images_base_dir")
+                if has_different_values:
+                    # it would be best to assert this but let's be more permissive
+                    # to allow for stranger configuration hoping that the user knows
+                    # what they are doing
+                    logging.warning("Not all vm images are located in the same logical"
+                                    " volume mount directory - choosing the first one"
+                                    " as the actual mount location")
+        if mount_loc is None:
+            raise exceptions.TestError("Cannot identify LV mount location for the image"
+                                       " %s with path %s" % (image, image_name))
         return mount_loc
 
     @staticmethod
@@ -424,6 +441,8 @@ class QCOW2Backend(StateBackend):
             image_params = params.object_params(image)
             image_name = image_params["image_name"]
             image_format = image_params.get("image_format", "qcow2")
+            if not os.path.isabs(image_name):
+                image_name = os.path.join(image_params["images_base_dir"], image_name)
             logging.debug("Showing snapshots for %s image %s", image_format, image_name)
             image_format = "" if image_format == "raw" else "." + image_format
             image_path = image_name + image_format
@@ -546,6 +565,8 @@ class RamfileBackend(StateBackend):
         for image in params.objects("images"):
             image_params = params.object_params(image)
             image_name = image_params["image_name"]
+            if not os.path.isabs(image_name):
+                image_name = os.path.join(image_params["images_base_dir"], image_name)
             if state_dir is None:
                 state_dir = os.path.dirname(image_name)
             else:
