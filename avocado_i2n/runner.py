@@ -324,9 +324,10 @@ class CartesianRunner(TestRunner):
                 object_name = test_object.name
                 object_params = test_node.params.object_params(object_name)
                 # if previous state is not known keep behavior assuming that the user knows what they are doing
-                if object_params.get("get_state") != test_object.current_state != "unknown":
-                    logging.debug("Re-running ephemeral setup %s since %s state was switched to %s",
-                                  test_node.params["shortname"], test_object.name, test_object.current_state)
+                required_state = object_params.get("set_state")
+                if required_state != test_object.current_state != "unknown":
+                    logging.debug("Re-running ephemeral setup %s since %s state was switched to %s but test requires %s",
+                                  test_node.params["shortname"], test_object.name, test_object.current_state, required_state)
                     test_node.should_run = True
                     break
         if test_node.should_run:
@@ -357,8 +358,10 @@ class CartesianRunner(TestRunner):
             for test_object in test_node.objects:
                 object_name = test_object.name
                 object_params = test_node.params.object_params(object_name)
-                if object_params.get("get_state") is not None and object_params.get("get_state") != "":
-                    test_object.current_state = object_params.get("get_state")
+                # if a state was set it is final and the retrieved state was overwritten
+                object_state = object_params.get("set_state", object_params.get("get_state"))
+                if object_state is not None and object_state != "":
+                    test_object.current_state = object_state
             test_node.should_run = False
         else:
             logging.debug("Skipping test %s", test_node.params["shortname"])
