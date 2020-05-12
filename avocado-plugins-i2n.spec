@@ -33,7 +33,7 @@
 
 Summary: Avocado I2N Plugin
 Name: avocado-plugins-i2n
-Version: 78.0
+Version: 79.0
 Release: 0%{?gitrel}%{?dist}
 License: GPLv2
 Group: Development/Tools
@@ -89,6 +89,10 @@ graph structure.
 %{_datadir}/avocado-plugins-i2n/tp_folder/*
 
 %changelog
+* Tue May 12 2020 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 79.0-0
+- Deep state branch cloning revival, coverage, and tutorials (last old feature)
+- Coverage improvements with elaborate dependency fixes and python 3.8 support
+
 * Tue Apr 28 2020 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 78.0-0
 - Full refactoring of the command line parser with unit test coverage
 - API simplification of all test node and object parsing and running
