@@ -46,7 +46,21 @@ def run(test, params, env):
     elif params.get("vm_action", "run") == "run":
         vms = vmnet.get_ordered_vms()
         for vm in vms:
-            raise NotImplementedError("Run control files or other code snippet on an %s vm", params["os_type"])
+            raise NotImplementedError("Run control files or other code snippet on an %s vm" % params["os_type"])
+            # OR:
+            if params.get("os_type", "linux") in ["android", "windows"]:
+                raise exceptions.TestError("Cannot run control files on an %s vm" % params["os_type"])
+            if vm.name == params.get("main_vm"):
+                session = vmnet.vmnodes[vm.name].get_session()
+                door.SRC_CONTROL_DIR = os.path.join(vm.params.get("original_test_data_path"), "..", "controls")
+                door.DUMP_CONTROL_DIR = test.logdir
+                logging.info("Running custom control file on %s", vm.name)
+                control_path = door.set_subcontrol_parameter_object(vm.params["control_file"], vm.params)
+                door.run_subcontrol(session, control_path)
+                extra_timeout = int(params.get("extra_timeout", "0"))
+                logging.info("Parameters will be available for extra %s seconds", extra_timeout)
+                time.sleep(extra_timeout)
+                break
     elif params.get("vm_action", "run") == "download":
         if params.get("os_type", "linux") in ["android"]:
             raise NotImplementedError("No data exchange is currently possible for Android")
