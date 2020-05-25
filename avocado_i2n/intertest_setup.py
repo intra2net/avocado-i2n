@@ -69,7 +69,7 @@ from .runner import CartesianRunner
 #: list of all available manual steps or simply semi-automation tools
 __all__ = ["noop", "unittest", "full", "update", "run", "list",
            "install", "deploy", "internal",
-           "boot", "download", "upload", "shutdown",
+           "boot", "download", "control", "upload", "shutdown",
            "check", "pop", "push", "get", "set", "unset",
            "collect", "create", "clean"]
 
@@ -495,6 +495,20 @@ def download(config, tag=""):
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
     _parse_one_node_for_all_objects(config, tag, ("Downloading from", "download", "download", "Download"))
+
+
+@with_cartesian_graph
+def control(config, tag=""):
+    """
+    Run a control file on the given vms.
+
+    :param config: command line arguments and run configuration
+    :type config: {str, str}
+    :param str tag: extra name identifier for the test to be run
+
+    The control file is specified using a "control_file" parameter.
+    """
+    _parse_one_node_for_all_objects(config, tag, ("Running on", "run", "run", "Run"))
 
 
 @with_cartesian_graph

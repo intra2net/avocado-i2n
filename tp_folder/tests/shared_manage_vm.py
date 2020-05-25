@@ -18,6 +18,7 @@ import os
 import logging
 
 # avocado imports
+from aexpect import remote_door as door
 from avocado.core import exceptions
 from virttest import error_context
 from avocado_i2n.states import setup as ss
@@ -52,7 +53,19 @@ def run(test, params, env):
         vmnet.start_all_sessions()
     elif params.get("vm_action", "run") == "run":
         for vm in vmnet.get_ordered_vms():
-            raise NotImplementedError(f"Run control files or other code snippet on an {params['os_type']} vm")
+            if params.get("os_type", "linux") in ["windows"]:
+                raise exceptions.TestError(f"Cannot run control files on an {params['os_type']} vm")
+            if vm.name == params.get("main_vm"):
+                session = vmnet.nodes[vm.name].get_session()
+                door.SRC_CONTROL_DIR = os.path.join(vm.params.get("original_test_data_path"), "..", "controls")
+                door.DUMP_CONTROL_DIR = test.logdir
+                logging.info("Running custom control file on %s", vm.name)
+                control_path = door.set_subcontrol_parameter_object(vm.params["control_file"], vm.params)
+                door.run_subcontrol(session, control_path)
+                extra_timeout = int(params.get("extra_timeout", "0"))
+                logging.info("Parameters will be available for extra %s seconds", extra_timeout)
+                time.sleep(extra_timeout)
+                break
     elif params.get("vm_action", "run") == "download":
         if params.get("os_type", "linux") in ["android"]:
             raise NotImplementedError("No data exchange is currently possible for Android")

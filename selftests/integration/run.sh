@@ -106,4 +106,8 @@ ls -A1q "$test_results/latest/test-results" | grep -q install && exit 1
 ls -A1q "$test_results/latest/test-results" | grep -q tutorial1 || exit 1
 
 echo
+echo "Test coverage for manual tools"
+coverage run --append --source=avocado_i2n $(which avocado) manu setup=control slots=$test_slots control_file=manual.control
+
+echo
 echo "Integration tests passed successfully"
