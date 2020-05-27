@@ -174,8 +174,6 @@ class CartesianRunner(TestRunner):
 
         graph = self._graph_from_suite(test_suite)
         summary = set()
-        if self.job.sysinfo is not None:
-            self.job.sysinfo.start_job_hook()
         params = self.job.config["param_dict"]
 
         try:
@@ -185,8 +183,6 @@ class CartesianRunner(TestRunner):
             TEST_LOG.error('Job interrupted by ctrl+c.')
             summary.add('INTERRUPTED')
 
-        if self.job.sysinfo is not None:
-            self.job.sysinfo.end_job_hook()
         self.result.end_tests()
         self.job.funcatexit.run()
         signal.signal(signal.SIGTSTP, signal.SIG_IGN)
