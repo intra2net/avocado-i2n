@@ -348,13 +348,14 @@ def run(config, tag=""):
     # NOTE: each run expects already incremented count in the beginning but this prefix
     # is preferential to setup chains with a single "run" step since this is usually the case
     config["prefix"] = tag + "n" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
-    config["test_runner"] = "traverser"
+    config["run.test_runner"] = "traverser"
 
-    config["sysinfo"] = config.get("sysinfo", "on")
-    config["html_job_result"] = config.get("html_job_result", "on")
-    config["json_job_result"] = config.get("json_job_result", "on")
-    config["xunit_job_result"] = config.get("xunit_job_result", "on")
-    config["tap_job_result"] = config.get("tap_job_result", "on")
+    config["sysinfo.collect.enabled"] = config.get("sysinfo.collect.enabled", "on")
+    config["run.html.job_result"] = config.get("run.html.job_result", "on")
+    config["run.json.job_result"] = config.get("run.json.job_result", "on")
+    config["run.xunit.job_result"] = config.get("run.xunit.job_result", "on")
+    config["run.tap.job_result"] = config.get("run.tap.job_result", "on")
+    config["run.journal.enabled"] = config.get("run.journal.enabled", "on")
 
     # essentially we imitate the auto plugin to make the tool plugin a superset
     with new_job(config) as job:

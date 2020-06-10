@@ -121,7 +121,7 @@ def params_from_cmd(config):
     config["prefix"] = ""
 
     # log into files for each major level the way it was done for autotest
-    config["store_logging_stream"] = [":10", ":20", ":30", ":40"]
+    config["run.store_logging_stream"] = [":10", ":20", ":30", ":40"]
 
     # attach environment processing hooks
     env_process_hooks()
