@@ -355,6 +355,7 @@ def run(config, tag=""):
     config["run.json.job_result"] = config.get("run.json.job_result", "on")
     config["run.xunit.job_result"] = config.get("run.xunit.job_result", "on")
     config["run.tap.job_result"] = config.get("run.tap.job_result", "on")
+    config["run.journal.enabled"] = config.get("run.journal.enabled", "on")
 
     # essentially we imitate the auto plugin to make the tool plugin a superset
     with new_job(config) as job:
