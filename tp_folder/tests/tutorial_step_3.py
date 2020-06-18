@@ -113,10 +113,10 @@ def run(test, params, env):
         door.REMOTE_PYTHON_BINARY = "python3.4"
 
         # The most advanced remote methods require serialization backend.
-        serialization_cmd = door.REMOTE_PYTHON_BINARY + " -c 'import Pyro4'"
+        serialization_cmd = door.REMOTE_PYTHON_BINARY + " -c 'import Pyro5'"
         host_serialization = server_vm.session.cmd_status(serialization_cmd) == 0
         try:
-            import Pyro4
+            import Pyro5
         except ImportError:
             guest_serialization = False
         else:

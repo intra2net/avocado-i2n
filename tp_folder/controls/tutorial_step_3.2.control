@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(module)-16.16s '
                     'L%(lineno)-.4d %(levelname)-5.5s| %(message)s')
 
 # custom imports
-import Pyro4
+import Pyro5 as pyro
 
 # deployed utilities
 sys.path.append("/tmp/utils")
@@ -28,7 +28,7 @@ logging.info("%s control file.", NAME)
 
 # HELPERS
 
-class ProxyParams(Pyro4.Proxy):
+class ProxyParams(pyro.Proxy):
     """
     Serialized version of the test parameters that connects to
     all remote methods and reimplements indexing (subscripting)
