@@ -54,8 +54,6 @@ class CartesianLoader(VirtTestLoader):
         """
         self.logdir = extra_params.pop('logdir', ".")
         super().__init__(config, extra_params)
-        # VT is still behind taking on the new config structure (once done remove this)
-        self.config = vars(self.args)
 
     """parsing functionality"""
     def parse_objects(self, param_dict=None, object_strs=None, verbose=False):
