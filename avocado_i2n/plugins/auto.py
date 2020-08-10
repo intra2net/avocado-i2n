@@ -16,6 +16,7 @@
 import os
 
 from avocado.core.loader import loader
+from avocado.core.settings import settings
 from avocado.core.output import LOG_JOB as log
 from avocado.core.plugin_interfaces import CLI
 
@@ -41,7 +42,14 @@ class Auto(CLI):
 
         msg = 'test execution using restriction-generated graph of setup state dependencies'
         cmd_parser = run_subcommand_parser.add_argument_group(msg)
-        cmd_parser.add_argument("--auto", action="store_true", help="Run in auto mode.")
+
+        settings.register_option(section='run',
+                                 key='auto',
+                                 key_type=bool,
+                                 default=False,
+                                 help_msg="Run in auto mode.",
+                                 parser=cmd_parser,
+                                 long_arg='--auto')
 
     def run(self, config):
         """
@@ -60,5 +68,5 @@ class Auto(CLI):
         cmd_parser.params_from_cmd(config)
 
         loader.register_plugin(CartesianLoader)
-        if config.get("auto") and config["auto"]:
+        if config.get("run.auto") and config["run.auto"]:
             config["run.test_runner"] = "traverser"
