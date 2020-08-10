@@ -36,7 +36,7 @@ class Manu(CLICmd):
         """
         parser = super(Manu, self).configure(parser)
 
-        settings.register_option(section='manu',
+        settings.register_option(section='i2n.manu',
                                  key='params',
                                  key_type=list,
                                  default=[],
@@ -55,7 +55,7 @@ class Manu(CLICmd):
         # set English environment (command output might be localized, need to be safe)
         os.environ['LANG'] = 'en_US.UTF-8'
 
-        config["params"] = config["manu.params"]
+        config["params"] = config["i2n.manu.params"]
         cmd_parser.params_from_cmd(config)
         intertest.load_addons_tools()
         run_params = config["vms_params"]

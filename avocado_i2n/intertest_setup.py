@@ -56,6 +56,7 @@ from avocado.core import job
 from avocado.core import output
 from avocado.core import data_dir
 from avocado.core import dispatcher
+from avocado.core.settings import settings
 from avocado.core.output import LOG_UI
 
 from . import params_parser as param
@@ -73,7 +74,8 @@ __all__ = ["noop", "unittest", "full", "update", "run", "list",
 
 def load_addons_tools():
     """Load all custom manual steps defined in the test suite tools folder."""
-    tools_path = os.path.join(param.suite_path, "tools")
+    suite_path = settings.as_dict().get('i2n.common.suite_path')
+    tools_path = os.path.join(suite_path, "tools")
     sys.path.append(tools_path)
     # we have no other choice to avoid loading at intertest import
     global __all__
@@ -183,7 +185,7 @@ def unittest(config, tag=""):
     util_unittests = unittest.TestSuite()
     util_testrunner = unittest.TextTestRunner(stream=sys.stdout, verbosity=2)
 
-    root_path = param.suite_path
+    root_path = settings.as_dict().get('i2n.common.suite_path')
     subtests_filter = config["tests_params"].get("ut_filter", "*_unittest.py")
 
     subtests_path = os.path.join(root_path, "utils")
