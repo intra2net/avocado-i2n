@@ -56,6 +56,9 @@ class Auto(CLI):
         Take care of command line overwriting, parameter preparation,
         setup and cleanup chains, and paths/utilities for all host controls.
         """
+        if not config["run.auto"]:
+            return
+
         if config.get("run.references") or config.get("list.references"):
             refs = config.get("run.references") if config.get("run.references") else config.get("list.references")
             # graph generated tests are not 1-to-1 mapped to test references which is the
@@ -68,5 +71,4 @@ class Auto(CLI):
         cmd_parser.params_from_cmd(config)
 
         loader.register_plugin(CartesianLoader)
-        if config.get("run.auto") and config["run.auto"]:
-            config["run.test_runner"] = "traverser"
+        config["run.test_runner"] = "traverser"
