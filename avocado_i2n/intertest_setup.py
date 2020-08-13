@@ -53,9 +53,8 @@ import importlib
 from collections import namedtuple
 
 from avocado.core import job
-from avocado.core import output
 from avocado.core import data_dir
-from avocado.core import dispatcher
+from avocado.core.suite import TestSuite
 from avocado.core.settings import settings
 from avocado.core.output import LOG_UI
 
@@ -108,26 +107,14 @@ def new_job(config):
     :param config: command line arguments
     :type config: {str, str}
     """
-    with job.Job(config) as job_instance:
+    suite = TestSuite('suite', {}, tests=[], job_config=config)
+    with job.Job(config, [suite]) as job_instance:
 
-        pre_post_dispatcher = dispatcher.JobPrePostDispatcher()
-        try:
-            # run job pre plugins
-            output.log_plugin_failures(pre_post_dispatcher.load_failures)
-            pre_post_dispatcher.map_method('pre', job_instance)
+        loader, runner = config["graph"].l, config["graph"].r
+        loader.logdir = job_instance.logdir
+        runner.job = job_instance
 
-            # second initiation stage (as a test runner)
-            yield job_instance
-
-        finally:
-            # run job post plugins
-            pre_post_dispatcher.map_method('post', job_instance)
-
-    result_dispatcher = dispatcher.ResultDispatcher()
-    if result_dispatcher.extensions:
-        result_dispatcher.map_method('render',
-                                     job_instance.result,
-                                     job_instance)
+        yield job_instance
 
 
 def with_cartesian_graph(fn):
@@ -140,20 +127,16 @@ def with_cartesian_graph(fn):
     :rtype: function
     """
     def wrapper(config, tag=""):
+        loader = CartesianLoader(config)
+        runner = CartesianRunner()
+        CartesianGraph = namedtuple('CartesianGraph', 'l r')
+        config["graph"] = CartesianGraph(l=loader, r=runner)
+
         with new_job(config) as job:
-
-            loader = CartesianLoader(config, {"logdir": job.logdir})
-            runner = CartesianRunner()
-            # TODO: need to decide what is more reusable between jobs and graphs
-            # e.g. by providing job and result in a direct traversal call
-            runner.job = job
-            runner.result = job.result
-            CartesianGraph = namedtuple('CartesianGraph', 'l r')
-            config["graph"] = CartesianGraph(l=loader, r=runner)
-
             fn(config, tag=tag)
 
             config["graph"] = None
+
     return wrapper
 
 
@@ -359,17 +342,22 @@ def run(config, tag=""):
     config["run.tap.job_result"] = config.get("run.tap.job_result", "on")
     config["run.journal.enabled"] = config.get("run.journal.enabled", "on")
 
+    loader = CartesianLoader(config)
+    runner = CartesianRunner()
+    CartesianGraph = namedtuple('CartesianGraph', 'l r')
+    config["graph"] = CartesianGraph(l=loader, r=runner)
+
     # essentially we imitate the auto plugin to make the tool plugin a superset
     with new_job(config) as job:
 
-        loader = CartesianLoader(config, {"logdir": job.logdir})
-        runner = CartesianRunner()
-        # TODO: need to decide what is more reusable between jobs and graphs
-        # e.g. by providing job and result in a direct traversal call
-        runner.job = job
-        runner.result = job.result
-        CartesianGraph = namedtuple('CartesianGraph', 'l r')
-        config["graph"] = CartesianGraph(l=loader, r=runner)
+        graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"],
+                                          prefix=config["prefix"], verbose=config["subcommand"]!="list")
+        job.test_suites[0].tests = [n.get_test_factory() for n in graph.nodes]
+
+        # HACK: pass the constructed graph to the runner using static attribute hack
+        # since the currently digested test suite contains factory arguments obtained
+        # from an irreversible (information destructive) approach
+        TestGraph.REFERENCE = graph
 
         job.run()
 

@@ -6,6 +6,7 @@ import shutil
 import re
 
 from avocado.core import exceptions
+from avocado.core.suite import TestSuite
 
 import unittest_importer
 from avocado_i2n import params_parser as param
@@ -53,7 +54,7 @@ class DummyStateCheck(object):
             self.result = False
 
 
-def mock_run_test(_self, _job, _result, factory, _queue, _set):
+def mock_run_test(_self, _job, factory, _queue, _set):
     return DummyTestRunning(factory[1]['vt_params']).result()
 
 
@@ -549,7 +550,9 @@ class CartesianGraphTest(unittest.TestCase):
         self.config["subcommand"] = "run"
         self.loader.config = self.config
 
-        test_suite = self.loader.discover(references)
+        test_suite = TestSuite('suite',
+                               tests=self.loader.discover(references),
+                               config=self.config)
 
         DummyStateCheck.present_states = []
         DummyTestRunning.asserted_tests = [
@@ -564,7 +567,7 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
 
         self.runner.job.config = self.config
-        self.runner.run_suite(self.runner.job, self.result, test_suite, None)
+        self.runner.run_suite(self.runner.job, test_suite)
 
 if __name__ == '__main__':
     unittest.main()
