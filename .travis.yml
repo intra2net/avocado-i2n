@@ -16,6 +16,7 @@ addons:
   apt:
     packages:
     - arping
+    - graphviz
 branches:
   except:
   - master-experimental

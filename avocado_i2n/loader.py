@@ -52,6 +52,7 @@ class CartesianLoader(VirtTestLoader):
         :param extra_params: extra configuration parameters
         :type extra_params: {str, str}
         """
+        extra_params = {} if not extra_params else extra_params
         self.logdir = extra_params.pop('logdir', ".")
         super().__init__(config, extra_params)
 
@@ -310,7 +311,7 @@ class CartesianLoader(VirtTestLoader):
         if logging.getLogger('graph').level <= logging.DEBUG:
             parse_dir = os.path.join(self.logdir, "graph_parse")
             if not os.path.exists(parse_dir):
-                os.mkdir(parse_dir)
+                os.makedirs(parse_dir)
             step = 0
 
         while len(unresolved) > 0:

@@ -450,11 +450,15 @@ class CartesianGraphTest(unittest.TestCase):
     def test_complete_verbose_graph_dry_run(self):
         self.config["tests_str"] = "only all\n"
         self.config["param_dict"]["dry_run"] = "yes"
-        # TODO: install graphvis and enable dumps too?
-        # logging.getLogger('graph').level = 0
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix, verbose=True)
+        # this type of verbosity requires graphviz dependency
+        import logging
+        try:
+            logging.getLogger('graph').level = 0
+            graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                   self.config["tests_str"], self.config["vm_strs"],
+                                                   prefix=self.prefix, verbose=True)
+        finally:
+            logging.getLogger('graph').level = 50
         DummyStateCheck.present_states = []
         DummyTestRunning.asserted_tests = [
         ]

@@ -93,7 +93,7 @@ class CartesianRunner(TestRunner):
         if logging.getLogger('graph').level <= logging.DEBUG:
             traverse_dir = os.path.join(self.job.logdir, "graph_traverse")
             if not os.path.exists(traverse_dir):
-                os.mkdir(traverse_dir)
+                os.makedirs(traverse_dir)
             step = 0
 
         traverse_path = [root]
