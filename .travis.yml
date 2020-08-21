@@ -49,6 +49,7 @@ script:
 # Running will take too much time building the required vms but we can at least validate noop runs and the list of tests
 - avocado vt-bootstrap --vt-skip-verify-download-assets --yes-to-all
 - coverage run --append --source=avocado_i2n $(which avocado) manu setup=noop
+- coverage run --append --source=avocado_i2n $(which avocado) manu setup=list
 - coverage run --append --source=avocado_i2n $(which avocado) list --auto "only=tutorial1"
 - coverage run --append --source=avocado_i2n $(which avocado) run --auto "only=tutorial1 dry_run=yes"
 # Collect all coverage
