@@ -333,14 +333,6 @@ def run(config, tag=""):
     # NOTE: each run expects already incremented count in the beginning but this prefix
     # is preferential to setup chains with a single "run" step since this is usually the case
     config["prefix"] = tag + "n" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
-    config["run.test_runner"] = "traverser"
-
-    config["sysinfo.collect.enabled"] = config.get("sysinfo.collect.enabled", "on")
-    config["run.html.job_result"] = config.get("run.html.job_result", "on")
-    config["run.json.job_result"] = config.get("run.json.job_result", "on")
-    config["run.xunit.job_result"] = config.get("run.xunit.job_result", "on")
-    config["run.tap.job_result"] = config.get("run.tap.job_result", "on")
-    config["run.journal.enabled"] = config.get("run.journal.enabled", "on")
 
     loader = CartesianLoader(config)
     runner = CartesianRunner()
@@ -360,6 +352,7 @@ def run(config, tag=""):
         TestGraph.REFERENCE = graph
 
         job.run()
+        # runner.run_traversal(graph, config["param_dict"].copy())
 
         config["graph"] = None
 
