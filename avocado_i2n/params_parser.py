@@ -45,7 +45,7 @@ class EmptyCartesianProduct(Exception):
         """
         Initialize an empty Cartesian product exception.
 
-        :param str message: additional message about the excaption
+        :param str message: additional message about the exception
         """
         message = "Empty Cartesian product of parameters!\n" + message
         message = "Check for self-excluding variants in your current configuration:\n" + message
