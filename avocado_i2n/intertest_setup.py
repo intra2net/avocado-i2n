@@ -53,9 +53,9 @@ import importlib
 from collections import namedtuple
 
 from avocado.core import job
-from avocado.core import output
 from avocado.core import data_dir
-from avocado.core import dispatcher
+from avocado.core.suite import TestSuite
+from avocado.core.settings import settings
 from avocado.core.output import LOG_UI
 
 from . import params_parser as param
@@ -73,7 +73,8 @@ __all__ = ["noop", "unittest", "full", "update", "run", "list",
 
 def load_addons_tools():
     """Load all custom manual steps defined in the test suite tools folder."""
-    tools_path = os.path.join(param.suite_path, "tools")
+    suite_path = settings.as_dict().get('i2n.common.suite_path')
+    tools_path = os.path.join(suite_path, "tools")
     sys.path.append(tools_path)
     # we have no other choice to avoid loading at intertest import
     global __all__
@@ -106,26 +107,14 @@ def new_job(config):
     :param config: command line arguments
     :type config: {str, str}
     """
-    with job.Job(config) as job_instance:
+    suite = TestSuite('suite', {}, tests=[], job_config=config)
+    with job.Job(config, [suite]) as job_instance:
 
-        pre_post_dispatcher = dispatcher.JobPrePostDispatcher()
-        try:
-            # run job pre plugins
-            output.log_plugin_failures(pre_post_dispatcher.load_failures)
-            pre_post_dispatcher.map_method('pre', job_instance)
+        loader, runner = config["graph"].l, config["graph"].r
+        loader.logdir = job_instance.logdir
+        runner.job = job_instance
 
-            # second initiation stage (as a test runner)
-            yield job_instance
-
-        finally:
-            # run job post plugins
-            pre_post_dispatcher.map_method('post', job_instance)
-
-    result_dispatcher = dispatcher.ResultDispatcher()
-    if result_dispatcher.extensions:
-        result_dispatcher.map_method('render',
-                                     job_instance.result,
-                                     job_instance)
+        yield job_instance
 
 
 def with_cartesian_graph(fn):
@@ -138,20 +127,16 @@ def with_cartesian_graph(fn):
     :rtype: function
     """
     def wrapper(config, tag=""):
+        loader = CartesianLoader(config)
+        runner = CartesianRunner()
+        CartesianGraph = namedtuple('CartesianGraph', 'l r')
+        config["graph"] = CartesianGraph(l=loader, r=runner)
+
         with new_job(config) as job:
-
-            loader = CartesianLoader(config, {"logdir": job.logdir})
-            runner = CartesianRunner()
-            # TODO: need to decide what is more reusable between jobs and graphs
-            # e.g. by providing job and result in a direct traversal call
-            runner.job = job
-            runner.result = job.result
-            CartesianGraph = namedtuple('CartesianGraph', 'l r')
-            config["graph"] = CartesianGraph(l=loader, r=runner)
-
             fn(config, tag=tag)
 
             config["graph"] = None
+
     return wrapper
 
 
@@ -183,7 +168,7 @@ def unittest(config, tag=""):
     util_unittests = unittest.TestSuite()
     util_testrunner = unittest.TextTestRunner(stream=sys.stdout, verbosity=2)
 
-    root_path = param.suite_path
+    root_path = settings.as_dict().get('i2n.common.suite_path')
     subtests_filter = config["tests_params"].get("ut_filter", "*_unittest.py")
 
     subtests_path = os.path.join(root_path, "utils")
@@ -348,28 +333,26 @@ def run(config, tag=""):
     # NOTE: each run expects already incremented count in the beginning but this prefix
     # is preferential to setup chains with a single "run" step since this is usually the case
     config["prefix"] = tag + "n" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
-    config["run.test_runner"] = "traverser"
 
-    config["sysinfo.collect.enabled"] = config.get("sysinfo.collect.enabled", "on")
-    config["run.html.job_result"] = config.get("run.html.job_result", "on")
-    config["run.json.job_result"] = config.get("run.json.job_result", "on")
-    config["run.xunit.job_result"] = config.get("run.xunit.job_result", "on")
-    config["run.tap.job_result"] = config.get("run.tap.job_result", "on")
-    config["run.journal.enabled"] = config.get("run.journal.enabled", "on")
+    loader = CartesianLoader(config)
+    runner = CartesianRunner()
+    CartesianGraph = namedtuple('CartesianGraph', 'l r')
+    config["graph"] = CartesianGraph(l=loader, r=runner)
 
     # essentially we imitate the auto plugin to make the tool plugin a superset
     with new_job(config) as job:
 
-        loader = CartesianLoader(config, {"logdir": job.logdir})
-        runner = CartesianRunner()
-        # TODO: need to decide what is more reusable between jobs and graphs
-        # e.g. by providing job and result in a direct traversal call
-        runner.job = job
-        runner.result = job.result
-        CartesianGraph = namedtuple('CartesianGraph', 'l r')
-        config["graph"] = CartesianGraph(l=loader, r=runner)
+        graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"],
+                                          prefix=config["prefix"], verbose=config["subcommand"]!="list")
+        job.test_suites[0].tests = [n.get_test_factory() for n in graph.nodes]
+
+        # HACK: pass the constructed graph to the runner using static attribute hack
+        # since the currently digested test suite contains factory arguments obtained
+        # from an irreversible (information destructive) approach
+        TestGraph.REFERENCE = graph
 
         job.run()
+        # runner.run_traversal(graph, config["param_dict"].copy())
 
         config["graph"] = None
 

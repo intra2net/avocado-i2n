@@ -58,9 +58,16 @@ class EmptyCartesianProduct(Exception):
 
 
 _devel_tp_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tp_folder"))
-suite_path = settings.get_value('i2n.common', 'suite_path', default=_devel_tp_folder)
+settings.register_option(section='i2n.common',
+                         key='suite_path',
+                         key_type=str,
+                         default=_devel_tp_folder,
+                         help_msg="Path to the test suite containing Cartesian variants and test scripts.")
+
+
 def custom_configs_dir():
     """Custom directory for all config files."""
+    suite_path = settings.as_dict().get('i2n.common.suite_path')
     return os.path.join(suite_path, "configs")
 
 

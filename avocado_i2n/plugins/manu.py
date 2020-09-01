@@ -15,6 +15,7 @@
 
 import os
 
+from avocado.core.settings import settings
 from avocado.core.output import LOG_JOB as log
 from avocado.core.plugin_interfaces import CLICmd
 
@@ -34,8 +35,16 @@ class Manu(CLICmd):
         :param parser: Main test runner parser.
         """
         parser = super(Manu, self).configure(parser)
-        parser.add_argument("params", default=[], nargs='*',
-                            help="List of 'key=value' pairs passed to a Cartesian parser.")
+
+        settings.register_option(section='i2n.manu',
+                                 key='params',
+                                 key_type=list,
+                                 default=[],
+                                 metavar='PARAM=VALUE',
+                                 help_msg="List of 'key=value' pairs passed to a Cartesian parser.",
+                                 parser=parser,
+                                 nargs='*',
+                                 positional_arg=True)
 
     def run(self, config):
         """
@@ -46,6 +55,8 @@ class Manu(CLICmd):
         # set English environment (command output might be localized, need to be safe)
         os.environ['LANG'] = 'en_US.UTF-8'
 
+        config["run.test_runner"] = "traverser"
+        config["params"] = config["i2n.manu.params"]
         cmd_parser.params_from_cmd(config)
         intertest.load_addons_tools()
         run_params = config["vms_params"]

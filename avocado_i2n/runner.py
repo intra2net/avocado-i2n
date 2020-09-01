@@ -64,7 +64,7 @@ class CartesianRunner(TestRunner):
         # TODO: in the future we better inherit from the Runner interface in
         # avocado.core.plugin_interfaces and implement our own test node running
         # like most of the other runners do
-        return self.run_test(self.job, self.result, node.get_test_factory(self.job), SimpleQueue(), set())
+        return self.run_test(self.job, node.get_test_factory(self.job), SimpleQueue(), set())
 
     def run_traversal(self, graph, params):
         """
@@ -93,7 +93,7 @@ class CartesianRunner(TestRunner):
         if logging.getLogger('graph').level <= logging.DEBUG:
             traverse_dir = os.path.join(self.job.logdir, "graph_traverse")
             if not os.path.exists(traverse_dir):
-                os.mkdir(traverse_dir)
+                os.makedirs(traverse_dir)
             step = 0
 
         traverse_path = [root]
@@ -152,25 +152,18 @@ class CartesianRunner(TestRunner):
                 step += 1
                 graph.visualize(traverse_dir, step)
 
-    def run_suite(self, job, result, test_suite, _variants, _timeout=0,
-                  _replay_map=None, _execution_order=None):
+    def run_suite(self, job, test_suite):
         """
         Run one or more tests and report with test result.
 
-        :param test_suite: a list of tests to run
-        :type test_suite: [(type, {str, str})]
-        :param variants: varianter iterator to produce test params
-        :type variants: :py:class:`avocado.core.varianter.Varianter`
-        :param int timeout: maximum amount of time (in seconds) to execute
-        :param replay_map: optional list to override test class based on test index
-        :type replay_map: [None or type]
-        :param str execution_order: Mode in which we should iterate through tests
-                                    and variants (if None will default to
-                                    :py:attr:`DEFAULT_EXECUTION_ORDER`
+        :param job: job that includes the test suite
+        :type test_suite: :py:class:`avocado.core.job.Job`
+        :param test_suite: test suite with some tests to run
+        :type test_suite: :py:class:`avocado.core.suite.TestSuite`
         :returns: a set with types of test failures
         :rtype: :py:class:`set`
         """
-        self.job, self.result = job, result
+        self.job = job
 
         graph = self._graph_from_suite(test_suite)
         summary = set()
@@ -183,7 +176,7 @@ class CartesianRunner(TestRunner):
             TEST_LOG.error('Job interrupted by ctrl+c.')
             summary.add('INTERRUPTED')
 
-        self.result.end_tests()
+        self.job.result.end_tests()
         self.job.funcatexit.run()
         signal.signal(signal.SIGTSTP, signal.SIG_IGN)
         return summary
@@ -216,7 +209,7 @@ class CartesianRunner(TestRunner):
                 graph.flag_children(flag=False)
 
         for node in graph.nodes:
-            self.result.cancelled += 1 if not node.should_run else 0
+            self.job.result.cancelled += 1 if not node.should_run else 0
 
     def run_create_node(self, graph, object_name):
         """
@@ -427,7 +420,7 @@ class CartesianRunner(TestRunner):
 
         # validate the test suite refers to the same test graph
         assert len(test_suite) == len(graph.nodes)
-        for node1, node2 in zip(test_suite, graph.nodes):
+        for node1, node2 in zip(test_suite.tests, graph.nodes):
             assert node1 == node2.get_test_factory()
 
         return graph

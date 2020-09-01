@@ -40,10 +40,15 @@ def new_job(config):
     # jobless run delegation - simply pass to another mock function
     job = mock.MagicMock()
     job.logdir = "/some/path"
+
+    loader, runner = config["graph"].l, config["graph"].r
+    loader.logdir = job.logdir
+    runner.job = job
+
     yield job
 
 
-def mock_run_test(_self, _job, _result, factory, _queue, _set):
+def mock_run_test(_self, _job, factory, _queue, _set):
     return DummyTestRunning(factory[1]['vt_params'])
 
 

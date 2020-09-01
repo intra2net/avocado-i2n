@@ -16,6 +16,7 @@
 import os
 
 from avocado.core.loader import loader
+from avocado.core.settings import settings
 from avocado.core.output import LOG_JOB as log
 from avocado.core.plugin_interfaces import CLI
 
@@ -36,18 +37,37 @@ class Auto(CLI):
         :param parser: Main test runner parser.
         """
         run_subcommand_parser = parser.subcommands.choices.get('run', None)
-        if run_subcommand_parser is None:
-            return
-
+        list_subcommand_parser = parser.subcommands.choices.get('list', None)
         msg = 'test execution using restriction-generated graph of setup state dependencies'
-        cmd_parser = run_subcommand_parser.add_argument_group(msg)
-        cmd_parser.add_argument("--auto", action="store_true", help="Run in auto mode.")
+
+        if run_subcommand_parser:
+            cmd_parser = run_subcommand_parser.add_argument_group(msg)
+            settings.register_option(section='run',
+                                     key='auto',
+                                     key_type=bool,
+                                     default=False,
+                                     help_msg="Run in auto mode.",
+                                     parser=cmd_parser,
+                                     long_arg='--auto')
+
+        if list_subcommand_parser:
+            cmd_parser = list_subcommand_parser.add_argument_group(msg)
+            settings.register_option(section='list',
+                                     key='auto',
+                                     key_type=bool,
+                                     default=False,
+                                     help_msg="Run in auto mode.",
+                                     parser=cmd_parser,
+                                     long_arg='--auto')
 
     def run(self, config):
         """
         Take care of command line overwriting, parameter preparation,
         setup and cleanup chains, and paths/utilities for all host controls.
         """
+        if not config["run.auto"] and not config["list.auto"]:
+            return
+
         if config.get("run.references") or config.get("list.references"):
             refs = config.get("run.references") if config.get("run.references") else config.get("list.references")
             # graph generated tests are not 1-to-1 mapped to test references which is the
@@ -60,5 +80,4 @@ class Auto(CLI):
         cmd_parser.params_from_cmd(config)
 
         loader.register_plugin(CartesianLoader)
-        if config.get("auto") and config["auto"]:
-            config["run.test_runner"] = "traverser"
+        config["run.test_runner"] = "traverser"

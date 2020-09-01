@@ -17,6 +17,7 @@ import sys
 import os
 import re
 
+from avocado.core.settings import settings
 from avocado.core.output import LOG_JOB as log
 from virttest import env_process
 
@@ -35,8 +36,17 @@ def params_from_cmd(config):
     :raises: :py:class:`ValueError` if a command line selected vm is not available
              from the configuration and thus supported or internal tests are
              restricted from the command line
+
+    .. todo:: Any dynamically created config keys here are usually entire data
+        structures like dictionaries and lists and only used internally during
+        the run which makes them unfit for displaying to the user and putting
+        in a namespace scope like the officially registered plugin settings.
+        Let's wait to see if the multi-suite support in avocado would establish
+        some standards for doing this first. Until then, the user won't directly
+        interact with these keys anyway.
     """
-    sys.path.insert(1, os.path.join(param.suite_path, "utils"))
+    suite_path = settings.as_dict().get('i2n.common.suite_path')
+    sys.path.insert(1, os.path.join(suite_path, "utils"))
 
     # validate typed vm names and possible vm specific restrictions
     available_vms = param.all_vms()
