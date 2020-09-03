@@ -20,7 +20,8 @@ class DummyTestRunning(object):
     fail_switch = []
     asserted_tests = []
 
-    def __init__(self, node_params):
+    def __init__(self, node_params, test_results):
+        self.test_results = test_results
         assert len(self.fail_switch) == len(self.asserted_tests), "len(%s) != len(%s)" % (self.fail_switch, self.asserted_tests)
         # assertions about the test calls
         self.current_test_dict = node_params
@@ -35,12 +36,24 @@ class DummyTestRunning(object):
                                                                                            self.expected_test_dict["shortname"])
 
     def result(self):
+        shortname = self.current_test_dict["shortname"]
         if self.expected_test_fail and "install" in self.expected_test_dict["shortname"]:
+            self.add_test_result(shortname, "FAIL")
             raise exceptions.TestFail("God wanted this test to fail")
         elif self.expected_test_fail and self.current_test_dict.get("abort_on_error", "no") == "yes":
+            self.add_test_result(shortname, "SKIP")
             raise exceptions.TestSkipError("God wanted this test to abort")
         else:
+            self.add_test_result(shortname, "FAIL" if self.expected_test_fail else "PASS")
             return not self.expected_test_fail
+
+    def add_test_result(self, shortname, status):
+        name = mock.MagicMock()
+        name.name = shortname
+        self.test_results.append({
+            "name": name,
+            "status": status
+        })
 
 
 class DummyStateCheck(object):
@@ -55,7 +68,7 @@ class DummyStateCheck(object):
 
 
 def mock_run_test(_self, _job, factory, _queue, _set):
-    return DummyTestRunning(factory[1]['vt_params']).result()
+    return DummyTestRunning(factory[1]['vt_params'], _self.result.tests).result()
 
 
 def mock_check_state(params, env):
@@ -84,6 +97,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.job = mock.MagicMock()
         self.job.logdir = "."
         self.result = mock.MagicMock()
+        self.result.tests = []
         self.runner = CartesianRunner()
         self.runner.job = self.job
         self.runner.result = self.result
