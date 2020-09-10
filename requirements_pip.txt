@@ -1,5 +1,5 @@
 coverage==4.5.1
-codecov==2.0.15
+codecov==2.1.9
 
 aexpect==1.5.1
 simplejson==3.8.0
