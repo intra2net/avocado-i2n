@@ -35,8 +35,6 @@ INTERFACE
 
 import logging
 
-import aexpect
-
 
 class VMNode(object):
     """
@@ -169,27 +167,3 @@ class VMNode(object):
         # TODO: possibly use the original vm session list or remove this wrapper entirely
         self.platform.session = self.last_session
         return self.last_session
-
-    def reboot(self, trigger=True):
-        """
-        Reboot or wait for a vm node to reboot returning its last words.
-
-        :param bool trigger: whether to trigger the reboot or just wait for it
-        :raises: :py:class:`exceptions.NotImplementedError` if vm node is not a linux machine
-
-        This is currently supported only for linux vms.
-        """
-        if self.params["os_type"] != "linux":
-            raise NotImplementedError("Rebooting is currently only supported for linux machines")
-
-        if trigger:
-            self.last_session.cmd("reboot")
-
-        timeout = float(self.params.get("reboot_timeout", 600))
-        try:
-            self.last_session.cmd("tail -f /var/log/messages", timeout)
-
-        except aexpect.ShellProcessTerminatedError as ex:
-            last_words = ex.output
-        self.get_session()
-        return last_words
