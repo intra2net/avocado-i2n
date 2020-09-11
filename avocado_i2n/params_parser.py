@@ -302,6 +302,8 @@ class Reparsable():
         parser = cartesian_config.Parser()
         hostname = os.environ.get("PREFIX", os.environ.get("HOSTNAME", "avocado"))
         parser.parse_string("hostname = %s\n" % hostname)
+        suite_path = settings.as_dict().get('i2n.common.suite_path')
+        parser.parse_string("suite_path = %s\n" % suite_path)
 
         for step in self.steps:
             if isinstance(step, ParsedFile):
