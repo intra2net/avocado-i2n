@@ -235,40 +235,34 @@ class VMNetwork(object):
         :type node: :py:class:`VMNode`
         """
         logging.debug("Generating all interfaces for %s", node.name)
-        def get_interfaces(node):
-            """
-            Generate new interfaces from the vm restricted parameters
-            that can be retrieved from the platform.
+        if node in self.nodes:
+            raise AssertionError("The vm node has already been integrated")
+        if len(node.interfaces) > 0:
+            raise AssertionError("The integrated vm node must not have any initialized interfaces")
 
-            :returns: interfaces of the vm node
-            :rtype: {str, :py:class:`VMInterface`}
-            """
-            interfaces = {}
-            for nic_name in node.platform.params.objects("nics"):
-                nic_params = node.platform.params.object_params(nic_name)
-                interfaces[nic_name] = self.new_interface(nic_name, nic_params)
-            return interfaces
-        node.interfaces = get_interfaces(node)
-        for nic_name in node.interfaces.keys():
+        for nic_name in node.platform.params.objects("nics"):
             ikey = "%s.%s" % (node.name, nic_name)
-            self.interfaces[ikey] = node.interfaces[nic_name]
+
+            nic_params = node.platform.params.object_params(nic_name)
+            new_interface = self.new_interface(nic_name, nic_params)
+
+            node.interfaces[nic_name] = new_interface
+            self.interfaces[ikey] = new_interface
             self.interfaces[ikey].node = node
+
             logging.debug('Generated interface {0}: {1}'.format(ikey, self.interfaces[ikey]))
 
-        logging.debug("Generating all netconfigs for %s", node.name)
         for interface in node.interfaces.values():
-            interface_attached = False
-            logging.debug("Generating netconfigs for interface {0}".format(interface))
+            logging.debug("Checking required netconfig for interface {0}".format(interface))
             for netconfig in self.netconfigs.values():
                 if netconfig.can_add_interface(interface):
-                    logging.debug("Adding interface {0}".format(interface))
+                    logging.debug("Adding interface {0} to previous {1}".format(interface, netconfig))
                     netconfig.add_interface(interface)
-                    interface_attached = True
                     break
-            if not interface_attached:
-                logging.debug("Attaching interface {0}".format(interface))
+            else:
                 netconfig = self.new_netconfig()
                 netconfig.from_interface(interface)
+                logging.debug("Adding interface {0} to a new {1}".format(interface, netconfig))
                 netconfig.add_interface(interface)
                 self.netconfigs[netconfig.net_ip] = netconfig
 

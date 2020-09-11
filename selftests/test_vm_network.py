@@ -88,15 +88,28 @@ class VMNetworkTest(unittest.TestCase):
         self.vmnet.start_all_sessions()
 
     def test_integrate_node(self):
+        # repeated vm node in the net
         self.vmnet = VMNetwork(self.test, self.run_params, self.env)
         node1 = self.vmnet.nodes["vm1"]
         with self.assertRaises(AssertionError):
             self.vmnet.integrate_node(node1)
 
+        # already initialized interfaces
         self.run_params["vms"] = "vm2"
         self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        with self.assertRaises(AssertionError):
+            self.vmnet.integrate_node(node1)
+
+        # correct case (ininitialized vm node interfaces)
         node1.interfaces = {}
         self.vmnet.integrate_node(node1)
+
+        # repeated address in the netconfig
+        self.run_params["ip_b1_vm2"] = "10.1.0.1"
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        node1.interfaces = {}
+        with self.assertRaises(IndexError):
+            self.vmnet.integrate_node(node1)
 
     def test_reattach_interface(self):
         self._create_mock_vms()
