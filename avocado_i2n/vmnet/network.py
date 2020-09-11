@@ -423,8 +423,10 @@ class VMNetwork(object):
                 rev_string = declarations["rev"].replace("#ZONENAME#", netconfig.domain)
                 rev_string = rev_string.replace("#ZONEREV#", netconfig.rev)
                 fwd_string += "%s \t\t IN \t A \t %s\n" % (node.name, interface.ip)
-                open("/var/named/%s.fwd" % netconfig.view, "w").write(fwd_string)
-                open("/var/named/%s.rev" % netconfig.view, "w").write(rev_string)
+                with open("/var/named/%s.fwd" % netconfig.view, "w") as f:
+                    f.write(fwd_string)
+                with open("/var/named/%s.rev" % netconfig.view, "w") as f:
+                    f.write(rev_string)
 
         else:
             if not re.search("interface=%s" % netconfig.netdst, config_string, re.DOTALL):
@@ -504,16 +506,20 @@ class VMNetwork(object):
             dhcp_string = dhcp_string.replace("%s\n" % dhcp_declarations["host"], "")
         with open(os.path.join(data_path, "named.conf.template"), "r") as f:
             dns_string = f.read()
-            dns_declarations["all"] = open(os.path.join(data_path, "all.fwd.template"), "r").read()
-            dns_declarations["fwd"] = open(os.path.join(data_path, "zone.fwd.template"), "r").read()
-            dns_declarations["rev"] = open(os.path.join(data_path, "zone.rev.template"), "r").read()
-            dns_declarations["view"] = re.search("view \"#VIEWNAME#\" .+?rev\";.+?};.+?};",
-                                                 dns_string, re.DOTALL).group()
-            # load the config strings without the declarations
-            dns_string = dns_string.replace("%s\n" % dns_declarations["view"], "")
+        with open(os.path.join(data_path, "all.fwd.template"), "r") as f:
+            dns_declarations["all"] = f.read()
+        with open(os.path.join(data_path, "zone.fwd.template"), "r") as f:
+            dns_declarations["fwd"] = f.read()
+        with open(os.path.join(data_path, "zone.rev.template"), "r") as f:
+            dns_declarations["rev"] = f.read()
+        dns_declarations["view"] = re.search("view \"#VIEWNAME#\" .+?rev\";.+?};.+?};",
+                                             dns_string, re.DOTALL).group()
+        # load the config strings without the declarations
+        dns_string = dns_string.replace("%s\n" % dns_declarations["view"], "")
         with open(os.path.join(data_path, "dnsmasq.conf.template"), "r") as f:
-            dns_declarations["hosts"] = open(os.path.join(data_path, "hosts.conf.template"), "r").read()
             dns_dhcp_string = f.read()
+        with open(os.path.join(data_path, "hosts.conf.template"), "r") as f:
+            dns_declarations["hosts"] = f.read()
 
         # configure selected interfaces
         for interface in self.interfaces.values():
