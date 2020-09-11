@@ -62,6 +62,15 @@ from .netconfig import VMNetconfig
 from .tunnel import VMTunnel
 
 
+#: networking service backend paths
+BIND_DHCP_CONFIG = "/etc/dhcp/dhcpd.conf"
+BIND_DNS_CONFIG = "/etc/named.conf"
+BIND_DECLARATIONS = "/var/named"
+DNSMASQ_CONFIG = "/etc/dnsmasq.d/avocado.conf"
+DNSMASQ_HOSTS = "/etc/avocado-hosts.conf"
+DNSMASQ_PIDFILE = "/var/run/avocado-dnsmasq.pid"
+
+
 class VMNetwork(object):
     """
     Any VMNetwork instance can be used to connect vms in various network topologies
@@ -423,9 +432,9 @@ class VMNetwork(object):
                 rev_string = declarations["rev"].replace("#ZONENAME#", netconfig.domain)
                 rev_string = rev_string.replace("#ZONEREV#", netconfig.rev)
                 fwd_string += "%s \t\t IN \t A \t %s\n" % (node.name, interface.ip)
-                with open("/var/named/%s.fwd" % netconfig.view, "w") as f:
+                with open(os.path.join(BIND_DECLARATIONS, "%s.fwd" % netconfig.view), "w") as f:
                     f.write(fwd_string)
-                with open("/var/named/%s.rev" % netconfig.view, "w") as f:
+                with open(os.path.join(BIND_DECLARATIONS, "%s.rev" % netconfig.view), "w") as f:
                     f.write(rev_string)
 
         else:
@@ -572,7 +581,7 @@ class VMNetwork(object):
         # write configurations if any
         if dhcp_set_config:
             logging.debug("Writing new DHCP config file:\n%s", dhcp_string)
-            dhcp_config = "/etc/dhcp/dhcpd.conf"
+            dhcp_config = BIND_DHCP_CONFIG
             if not os.path.exists("%s.bak" % dhcp_config):
                 os.rename(dhcp_config, "%s.bak" % dhcp_config)
             with open(dhcp_config, "w") as f:
@@ -583,12 +592,12 @@ class VMNetwork(object):
             process.run("systemctl stop dhcpd.service", ignore_status=True)
         if dns_set_config:
             logging.debug("Writing new DNS config file:\n%s", dns_string)
-            dns_config = "/etc/named.conf"
+            dns_config = BIND_DNS_CONFIG
             if not os.path.exists("%s.bak" % dns_config):
                 os.rename(dns_config, "%s.bak" % dns_config)
             with open(dns_config, "w") as f:
                 f.write(dns_string)
-            with open("/var/named/all.fwd", "w") as f:
+            with open(os.path.join(BIND_DECLARATIONS, "all.fwd"), "w") as f:
                 f.write(dns_declarations["all"])
             logging.debug("Resetting DNS service")
             process.run("systemctl restart named.service")
@@ -596,14 +605,14 @@ class VMNetwork(object):
             process.run("systemctl stop named.service", ignore_status=True)
         if dns_dhcp_set_config:
             logging.debug("Writing new DHCP/DNS config file:\n%s", dns_dhcp_string)
-            dns_dhcp_config = "/etc/dnsmasq.d/avocado.conf"
+            dns_dhcp_config = DNSMASQ_CONFIG
             with open(dns_dhcp_config, "w") as f:
                 f.write(dns_dhcp_string)
-            with open("/etc/avocado-hosts.conf", "w") as f:
+            with open(DNSMASQ_HOSTS, "w") as f:
                 f.write(dns_declarations["hosts"])
             logging.debug("Resetting DHCP/DNS service")
-        if os.path.exists("/var/run/avocado-dnsmasq.pid"):
-            with open("/var/run/avocado-dnsmasq.pid") as f:
+        if os.path.exists(DNSMASQ_PIDFILE):
+            with open(DNSMASQ_PIDFILE) as f:
                 try:
                     os.kill(int(f.read()), 15)
                 except ProcessLookupError:

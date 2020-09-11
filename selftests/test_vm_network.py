@@ -116,6 +116,8 @@ class VMNetworkTest(unittest.TestCase):
         self._create_mock_vms()
 
         self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        vmnet.network.DNSMASQ_CONFIG = "avocado.conf"
+        vmnet.network.DNSMASQ_HOSTS = "avocado-hosts.conf"
         self.vmnet.setup_host_services()
         utils_net.find_bridge_manager.get_structure.return_value = ["virbr0", "virbr2"]
         self.vmnet.setup_host_bridges()
