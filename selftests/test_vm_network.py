@@ -26,10 +26,10 @@ class VMNetworkTest(unittest.TestCase):
         self.run_params["mac"] = "00:00:00:00:00:00"
         self.run_params["netmask_b1"] = "255.255.0.0"
         self.run_params["netmask_b2"] = "255.255.0.0"
-        self.run_params["ip_b1_vm1"] = "10.1.1.1"
-        self.run_params["ip_b2_vm1"] = "172.17.1.1"
-        self.run_params["ip_b1_vm2"] = "10.2.1.1"
-        self.run_params["ip_b2_vm2"] = "172.18.1.1"
+        self.run_params["ip_b1_vm1"] = "10.1.0.1"
+        self.run_params["ip_b2_vm1"] = "172.17.0.1"
+        self.run_params["ip_b1_vm2"] = "10.2.0.1"
+        self.run_params["ip_b2_vm2"] = "172.18.0.1"
 
         self.env = mock.MagicMock(name='env')
         self.env.get_vm = mock.MagicMock(side_effect=self._get_mock_vm)
@@ -73,8 +73,8 @@ class VMNetworkTest(unittest.TestCase):
         self.assertEqual(tunnel.right_params['vpnconn_remote_net'], '172.17.0.0')
         self.assertEqual(tunnel.left_params['vpnconn_remote_netmask'], '255.255.0.0')
         self.assertEqual(tunnel.right_params['vpnconn_remote_netmask'], '255.255.0.0')
-        self.assertEqual(tunnel.left_params['vpnconn_peer_ip'], '10.2.1.1')
-        self.assertEqual(tunnel.right_params['vpnconn_peer_ip'], '10.1.1.1')
+        self.assertEqual(tunnel.left_params['vpnconn_peer_ip'], '10.2.0.1')
+        self.assertEqual(tunnel.right_params['vpnconn_peer_ip'], '10.1.0.1')
         self.assertEqual(tunnel.left_params['vpnconn_activation'], 'ALWAYS')
         self.assertEqual(tunnel.right_params['vpnconn_activation'], 'ALWAYS')
 
@@ -287,10 +287,10 @@ class VMNetworkTest(unittest.TestCase):
         self.assertEqual(route2.left_params['vpnconn_remote_net'],
                          tunnel2.left_params['vpnconn_remote_net'])
 
-        self.assertEqual(tunnel1.left_params['vpnconn_peer_ip'], '10.2.1.1')
-        self.assertEqual(tunnel1.right_params['vpnconn_peer_ip'], '10.1.1.1')
+        self.assertEqual(tunnel1.left_params['vpnconn_peer_ip'], '10.2.0.1')
+        self.assertEqual(tunnel1.right_params['vpnconn_peer_ip'], '10.1.0.1')
         self.assertEqual(tunnel2.left_params['vpnconn_peer_ip'], '10.3.1.1')
-        self.assertEqual(tunnel1.right_params['vpnconn_peer_ip'], '10.1.1.1')
+        self.assertEqual(tunnel1.right_params['vpnconn_peer_ip'], '10.1.0.1')
         self.assertEqual(route1.left_params['vpnconn_peer_ip'],
                          tunnel1.left_params['vpnconn_peer_ip'])
         self.assertEqual(route1.right_params['vpnconn_peer_ip'],
