@@ -214,7 +214,7 @@ class VMNetwork(object):
         roles = {}
         for role in self.params.objects("roles"):
             roles[role] = self.params.get(role)
-            if role is None:
+            if roles[role] is None:
                 raise exceptions.TestError("No vm assigned to the role %s" % role)
         logging.debug("Roles for vms: %s", roles)
 

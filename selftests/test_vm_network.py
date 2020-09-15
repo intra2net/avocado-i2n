@@ -77,15 +77,37 @@ class VMNetworkTest(unittest.TestCase):
     def test_get_vms(self):
         self.run_params["vms"] = "vm1"
         self.vmnet = VMNetwork(self.test, self.run_params, self.env)
-        self.vmnet.get_single_vm()
-        self.vmnet.get_single_vm_with_session()
-        self.vmnet.get_single_vm_with_session_and_params()
+        vm = self.vmnet.get_single_vm()
+        self.assertEqual(vm.name, "vm1")
+        vm, session = self.vmnet.get_single_vm_with_session()
+        self.assertEqual(vm.name, "vm1")
+        self.assertEqual(vm.session, session)
+        self.vmnet.nodes["vm1"].last_session = None
+        vm, session, params = self.vmnet.get_single_vm_with_session_and_params()
+        self.assertEqual(vm.name, "vm1")
+        self.assertEqual(vm.session, session)
+        self.assertEqual(vm.params, params)
 
         self.run_params["vms"] = "vm1 vm2"
         self.vmnet = VMNetwork(self.test, self.run_params, self.env)
-        self.vmnet.get_ordered_vms()
-        self.vmnet.get_vms()
-        self.vmnet.start_all_sessions()
+        with self.assertRaises(exceptions.TestError):
+            self.vmnet.get_single_vm()
+        vm1, vm2 = self.vmnet.get_ordered_vms()
+        self.assertEqual(vm1.name, "vm1")
+        self.assertEqual(vm2.name, "vm2")
+        vm1, vm2 = self.vmnet.get_ordered_vms(2)
+        self.assertEqual(vm1.name, "vm1")
+        self.assertEqual(vm2.name, "vm2")
+        with self.assertRaises(exceptions.TestError):
+            vm1 = self.vmnet.get_ordered_vms(1)
+        vms = self.vmnet.get_vms()
+        vm1, vm2 = vms.node1, vms.node2
+        self.assertEqual(vm1.name, "vm1")
+        self.assertEqual(vm2.name, "vm2")
+        self.vmnet.params["roles"] = "node1 node2 node3"
+        self.vmnet.params["node2"] = None
+        with self.assertRaises(exceptions.TestError):
+            self.vmnet.get_vms()
 
     def test_integrate_node(self):
         # repeated vm node in the net
