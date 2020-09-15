@@ -13,11 +13,6 @@ from avocado_i2n import vmnet
 from avocado_i2n.vmnet import VMNetwork
 
 
-@mock.patch.object(VMNetwork, 'ping', lambda *args, **kwargs: (0, "\n\n\n\n"))
-@mock.patch.object(VMNetwork, 'port_connectivity', lambda *args, **kwargs: (1, ""))
-@mock.patch.object(VMNetwork, 'https_connectivity', lambda *args, **kwargs: (0, "HTML"))
-@mock.patch.object(VMNetwork, 'ftp_connectivity', lambda *args, **kwargs: (0, "hi"))
-@mock.patch.object(VMNetwork, 'tftp_connectivity', lambda *args, **kwargs: (0, "hi"))
 class VMNetworkTest(unittest.TestCase):
 
     def setUp(self):
@@ -138,6 +133,7 @@ class VMNetworkTest(unittest.TestCase):
         self.vmnet = VMNetwork(self.test, self.run_params, self.env)
         client, server = self.vmnet.get_vms()
         self.vmnet.reattach_interface(client, server)
+        self.vmnet.reattach_interface(client, server, proxy_nic="b1")
 
     @mock.patch('avocado_i2n.vmnet.network.os.rename', mock.Mock(return_value=0))
     @mock.patch('avocado_i2n.vmnet.network.process', mock.Mock())
@@ -148,12 +144,42 @@ class VMNetworkTest(unittest.TestCase):
         self.run_params["host_set_bridge_b1_vm1"] = "yes"
         self.run_params["permanent_netdst_b1_vm1"] = "no"
         self.run_params["host_services_b1_vm1"] = "yes"
+        self.run_params["ip_provider_b1_vm2"] = "10.2.0.1"
+        self.run_params["host_b1_vm2"] = ""
         self._create_mock_vms()
 
+        # nonauthoritative service setup
         self.vmnet = VMNetwork(self.test, self.run_params, self.env)
         vmnet.network.DNSMASQ_CONFIG = "avocado.conf"
         vmnet.network.DNSMASQ_HOSTS = "avocado-hosts.conf"
         self.vmnet.setup_host_services()
+
+        # authoritative service setup
+        vmnet.network.BIND_DHCP_CONFIG = "dhcpd.conf"
+        vmnet.network.BIND_DNS_CONFIG = "named.conf"
+        vmnet.network.BIND_DECLARATIONS = "."
+        self.run_params["host_dhcp_authoritative"] = "yes"
+        self.run_params["host_dns_authoritative"] = "yes"
+        self.run_params["default_dns_forwarder"] = "8.8.8.8"
+        self.run_params["domain_provider"] = "lan.net"
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet.setup_host_services()
+
+        # additional ports could be added
+        self.run_params["host_additional_ports"] = "22"
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet.setup_host_services()
+        # blacklisted devices cannot be managed
+        self.vmnet.params["host_dhcp_blacklist"] = "virbr0 virbr1"
+        with self.assertRaises(exceptions.TestError):
+            self.vmnet.setup_host_services()
+        self.vmnet.params["host_dhcp_blacklist"] = "virbr1"
+        self.vmnet.setup_host_services()
+        self.run_params["host_dns_blacklist"] = "virbr0 virbr1"
+        with self.assertRaises(exceptions.TestError):
+            self.vmnet.setup_host_services()
+
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
         utils_net.find_bridge_manager.get_structure.return_value = ["virbr0", "virbr2"]
         self.vmnet.setup_host_bridges()
         utils_net.find_bridge_manager.return_value = None
@@ -163,6 +189,7 @@ class VMNetworkTest(unittest.TestCase):
         self._create_mock_vms()
         self.vmnet = VMNetwork(self.test, self.run_params, self.env)
 
+        # TODO: this method still lacks complete noncustom (available) implementation
         with self.assertRaises(NotImplementedError):
             self.vmnet.spawn_clients("vm1", 1)
 
@@ -171,17 +198,26 @@ class VMNetworkTest(unittest.TestCase):
 
     def test_change_network_address(self):
         self.run_params["os_type"] = "windows"
-        self._create_mock_vms()
         self.vmnet = VMNetwork(self.test, self.run_params, self.env)
         netconfig = self.vmnet.netconfigs["10.1.0.0"]
         self.vmnet.change_network_address(netconfig, "10.3.0.1")
+        netconfig = self.vmnet.netconfigs["10.2.0.0"]
+        self.vmnet.change_network_address(netconfig, "10.2.0.1", "255.255.0.0")
 
     def test_set_static_address(self):
         self.run_params["os_type"] = "windows"
-        self._create_mock_vms()
         self.vmnet = VMNetwork(self.test, self.run_params, self.env)
         client, server = self.vmnet.get_vms()
         self.vmnet.set_static_address(client, server)
+
+        # test nonexisting (unsupported) guest os variants
+        self._create_mock_vms()
+        self.run_params["os_type"] = "imaginary"
+        self.run_params["os_variant"] = "i2"
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        client, server = self.vmnet.get_vms()
+        with self.assertRaises(NotImplementedError):
+            self.vmnet.set_static_address(client, server)
 
     def test_configure_tunnel_between_vms_basic(self):
         self._create_mock_vms()
@@ -461,18 +497,55 @@ class VMNetworkTest(unittest.TestCase):
                          tunnel2.right_params['vpnconn_activation'])
 
     def test_connectivity_validate(self):
-        self._create_mock_vms()
         self.vmnet = VMNetwork(self.test, self.run_params, self.env)
         client, server = self.vmnet.get_vms()
+
+        with self.assertRaises(exceptions.TestError):
+            self.vmnet.ping(client, server)
         self.vmnet.reattach_interface(client, server)
 
+        client.session.cmd_status_output.return_value = (0, "\n\n\n\n")
         self.vmnet.ping_validate(client, server)
+        server.session.cmd_status_output.return_value = (0, "\n\n\n\n")
+        self.vmnet.ping_all()
 
-        # check both blocked and unclocked cases depending on what is easier
+        client.session.cmd_status_output.return_value = (0, "")
+        self.vmnet.http_connectivity(client, server)
+        client.session.cmd_status_output.return_value = (0, "HTML")
+        self.vmnet.http_connectivity_validate(client, server)
+        client.session.cmd_status_output.return_value = (1, "")
         self.vmnet.http_connectivity_validate(client, server, require_blocked=True)
+        client.session.cmd_status_output.return_value = (0, "HTML")
         self.vmnet.https_connectivity_validate(client, server)
+        client.session.cmd_status_output.return_value = (1, "")
+        self.vmnet.https_connectivity_validate(client, server, require_blocked=True)
+
+        # TODO: have to make sure to update the gateway on reattaching
+        self.run_params["ip_provider_b1_vm1"] = "172.18.0.1"
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet.reattach_interface(client, server)
+        client.session.cmd_status_output.return_value = (0, "")
+        self.vmnet.ssh_connectivity(client, server)
+        client.session.cmd_status_output.return_value = (0, "OpenSSH")
+        self.vmnet.ssh_connectivity_validate(client, server)
+        client.session.cmd_status_output.return_value = (1, "")
         self.vmnet.ssh_connectivity_validate(client, server, require_blocked=True)
+        client.session.read_until_last_line_matches.return_value = (1, "vm2.net.lan")
+        self.vmnet.ssh_hostname(client, server)
+        client.session.read_until_last_line_matches.return_value = (1, "ETA 1s 100% done")
+        self.vmnet.scp_files("file1", "file2", client, server)
+        # HACK: let's pretend for a moment that the client is an ephemeral node
+        self.vmnet.nodes[client.name]._ephemeral = True
+        server.session.cmd.return_value = "host_name=vm1.net.lan"
+        self.vmnet.ssh_hostname(server, client, dst_nic="internet_nic")
+        self.vmnet.ssh_connectivity(server, client)
+        self.vmnet.nodes[client.name]._ephemeral = False
+
+        client.params["ftp_username"] = "totoro"
+        client.params["ftp_password"] = "orotot"
+        client.session.cmd_status_output.return_value = (0, "hi")
         self.vmnet.ftp_connectivity_validate("hi", "path", client, server)
+        client.session.cmd_status_output.return_value = (0, "hi")
         self.vmnet.tftp_connectivity_validate("hi", "path", client, server)
 
 
