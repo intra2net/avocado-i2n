@@ -217,6 +217,10 @@ class VMNetworkTest(unittest.TestCase):
         self.assertEqual(tunnel.left_params['vpnconn_key_type'], 'NONE')
         self.assertEqual(tunnel.right_params['vpnconn_key_type'], 'NONE')
 
+        # other
+        self.assertTrue(tunnel.connects_nodes(tunnel.left, tunnel.right))
+        self.assertIn("[tunnel]", str(tunnel))
+
     @mock.patch.object(vmnet.VMTunnel, 'configure_on_endpoint', mock.MagicMock())
     def test_configure_tunnel_between_vms_internetip(self):
         self._create_mock_vms()
@@ -349,6 +353,18 @@ class VMNetworkTest(unittest.TestCase):
 
         self.assertEqual(tunnel.left_params['vpnconn_own_key_name'], 'sample-key')
         self.assertEqual(tunnel.right_params['vpnconn_foreign_key_name'], 'sample-key')
+
+    def test_configure_roadwarrior_vpn_on_server(self):
+        self._create_mock_vms()
+        self.run_params["ip_provider_b1_vm2"] = "10.2.0.1"
+        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        try:
+            self.vmnet.configure_roadwarrior_vpn_on_server("vpn1", self.mock_vms["vm1"], self.mock_vms["vm2"],
+                                                           local1={"type": "nic", "nic": "lan_nic"},
+                                                           remote1={"type": "modeconfig", "modeconfig_ip": "172.30.0.1"},
+                                                           auth={"type": "pubkey"})
+        except NotImplementedError:
+            pass
 
     @mock.patch.object(vmnet.VMTunnel, 'configure_on_endpoint', mock.MagicMock())
     def test_configure_vpn_route(self):

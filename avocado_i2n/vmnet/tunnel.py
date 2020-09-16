@@ -445,9 +445,11 @@ class VMTunnel(object):
             raise ValueError("Tunnel end node %s does not have interface in tunnel end net %s in %s"
                              % (node.name, netconfig1.net_ip, self))
         vm.session.cmd("ip addr add %s dev %s" % (lan_iface.ip, self.name))
-        vm.session.cmd("ip route add %s/%s dev %s" % (netconfig2.net_ip,
-                                                      netconfig2.mask_bit,
-                                                      self.name))
+        # roadwarrior connections don't have a remove netconfig
+        if netconfig2 is not None:
+            vm.session.cmd("ip route add %s/%s dev %s" % (netconfig2.net_ip,
+                                                          netconfig2.mask_bit,
+                                                          self.name))
 
         if apply_extra_options.get("apply_firewall_ruleset", True):
             # 47 stand for GRE (Generic Routing Encapsulation)
