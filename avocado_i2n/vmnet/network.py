@@ -62,6 +62,15 @@ from .netconfig import VMNetconfig
 from .tunnel import VMTunnel
 
 
+#: networking service backend paths
+BIND_DHCP_CONFIG = "/etc/dhcp/dhcpd.conf"
+BIND_DNS_CONFIG = "/etc/named.conf"
+BIND_DECLARATIONS = "/var/named"
+DNSMASQ_CONFIG = "/etc/dnsmasq.d/avocado.conf"
+DNSMASQ_HOSTS = "/etc/avocado-hosts.conf"
+DNSMASQ_PIDFILE = "/var/run/avocado-dnsmasq.pid"
+
+
 class VMNetwork(object):
     """
     Any VMNetwork instance can be used to connect vms in various network topologies
@@ -205,7 +214,7 @@ class VMNetwork(object):
         roles = {}
         for role in self.params.objects("roles"):
             roles[role] = self.params.get(role)
-            if role is None:
+            if roles[role] is None:
                 raise exceptions.TestError("No vm assigned to the role %s" % role)
         logging.debug("Roles for vms: %s", roles)
 
@@ -226,40 +235,34 @@ class VMNetwork(object):
         :type node: :py:class:`VMNode`
         """
         logging.debug("Generating all interfaces for %s", node.name)
-        def get_interfaces(node):
-            """
-            Generate new interfaces from the vm restricted parameters
-            that can be retrieved from the platform.
+        if node in self.nodes:
+            raise AssertionError("The vm node has already been integrated")
+        if len(node.interfaces) > 0:
+            raise AssertionError("The integrated vm node must not have any initialized interfaces")
 
-            :returns: interfaces of the vm node
-            :rtype: {str, :py:class:`VMInterface`}
-            """
-            interfaces = {}
-            for nic_name in node.platform.params.objects("nics"):
-                nic_params = node.platform.params.object_params(nic_name)
-                interfaces[nic_name] = self.new_interface(nic_name, nic_params)
-            return interfaces
-        node.interfaces = get_interfaces(node)
-        for nic_name in node.interfaces.keys():
+        for nic_name in node.platform.params.objects("nics"):
             ikey = "%s.%s" % (node.name, nic_name)
-            self.interfaces[ikey] = node.interfaces[nic_name]
+
+            nic_params = node.platform.params.object_params(nic_name)
+            new_interface = self.new_interface(nic_name, nic_params)
+
+            node.interfaces[nic_name] = new_interface
+            self.interfaces[ikey] = new_interface
             self.interfaces[ikey].node = node
+
             logging.debug('Generated interface {0}: {1}'.format(ikey, self.interfaces[ikey]))
 
-        logging.debug("Generating all netconfigs for %s", node.name)
         for interface in node.interfaces.values():
-            interface_attached = False
-            logging.debug("Generating netconfigs for interface {0}".format(interface))
+            logging.debug("Checking required netconfig for interface {0}".format(interface))
             for netconfig in self.netconfigs.values():
                 if netconfig.can_add_interface(interface):
-                    logging.debug("Adding interface {0}".format(interface))
+                    logging.debug("Adding interface {0} to previous {1}".format(interface, netconfig))
                     netconfig.add_interface(interface)
-                    interface_attached = True
                     break
-            if not interface_attached:
-                logging.debug("Attaching interface {0}".format(interface))
+            else:
                 netconfig = self.new_netconfig()
                 netconfig.from_interface(interface)
+                logging.debug("Adding interface {0} to a new {1}".format(interface, netconfig))
                 netconfig.add_interface(interface)
                 self.netconfigs[netconfig.net_ip] = netconfig
 
@@ -423,8 +426,10 @@ class VMNetwork(object):
                 rev_string = declarations["rev"].replace("#ZONENAME#", netconfig.domain)
                 rev_string = rev_string.replace("#ZONEREV#", netconfig.rev)
                 fwd_string += "%s \t\t IN \t A \t %s\n" % (node.name, interface.ip)
-                open("/var/named/%s.fwd" % netconfig.view, "w").write(fwd_string)
-                open("/var/named/%s.rev" % netconfig.view, "w").write(rev_string)
+                with open(os.path.join(BIND_DECLARATIONS, "%s.fwd" % netconfig.view), "w") as f:
+                    f.write(fwd_string)
+                with open(os.path.join(BIND_DECLARATIONS, "%s.rev" % netconfig.view), "w") as f:
+                    f.write(rev_string)
 
         else:
             if not re.search("interface=%s" % netconfig.netdst, config_string, re.DOTALL):
@@ -504,16 +509,20 @@ class VMNetwork(object):
             dhcp_string = dhcp_string.replace("%s\n" % dhcp_declarations["host"], "")
         with open(os.path.join(data_path, "named.conf.template"), "r") as f:
             dns_string = f.read()
-            dns_declarations["all"] = open(os.path.join(data_path, "all.fwd.template"), "r").read()
-            dns_declarations["fwd"] = open(os.path.join(data_path, "zone.fwd.template"), "r").read()
-            dns_declarations["rev"] = open(os.path.join(data_path, "zone.rev.template"), "r").read()
-            dns_declarations["view"] = re.search("view \"#VIEWNAME#\" .+?rev\";.+?};.+?};",
-                                                 dns_string, re.DOTALL).group()
-            # load the config strings without the declarations
-            dns_string = dns_string.replace("%s\n" % dns_declarations["view"], "")
+        with open(os.path.join(data_path, "all.fwd.template"), "r") as f:
+            dns_declarations["all"] = f.read()
+        with open(os.path.join(data_path, "zone.fwd.template"), "r") as f:
+            dns_declarations["fwd"] = f.read()
+        with open(os.path.join(data_path, "zone.rev.template"), "r") as f:
+            dns_declarations["rev"] = f.read()
+        dns_declarations["view"] = re.search("view \"#VIEWNAME#\" .+?rev\";.+?};.+?};",
+                                             dns_string, re.DOTALL).group()
+        # load the config strings without the declarations
+        dns_string = dns_string.replace("%s\n" % dns_declarations["view"], "")
         with open(os.path.join(data_path, "dnsmasq.conf.template"), "r") as f:
-            dns_declarations["hosts"] = open(os.path.join(data_path, "hosts.conf.template"), "r").read()
             dns_dhcp_string = f.read()
+        with open(os.path.join(data_path, "hosts.conf.template"), "r") as f:
+            dns_declarations["hosts"] = f.read()
 
         # configure selected interfaces
         for interface in self.interfaces.values():
@@ -566,7 +575,7 @@ class VMNetwork(object):
         # write configurations if any
         if dhcp_set_config:
             logging.debug("Writing new DHCP config file:\n%s", dhcp_string)
-            dhcp_config = "/etc/dhcp/dhcpd.conf"
+            dhcp_config = BIND_DHCP_CONFIG
             if not os.path.exists("%s.bak" % dhcp_config):
                 os.rename(dhcp_config, "%s.bak" % dhcp_config)
             with open(dhcp_config, "w") as f:
@@ -577,12 +586,12 @@ class VMNetwork(object):
             process.run("systemctl stop dhcpd.service", ignore_status=True)
         if dns_set_config:
             logging.debug("Writing new DNS config file:\n%s", dns_string)
-            dns_config = "/etc/named.conf"
+            dns_config = BIND_DNS_CONFIG
             if not os.path.exists("%s.bak" % dns_config):
                 os.rename(dns_config, "%s.bak" % dns_config)
             with open(dns_config, "w") as f:
                 f.write(dns_string)
-            with open("/var/named/all.fwd", "w") as f:
+            with open(os.path.join(BIND_DECLARATIONS, "all.fwd"), "w") as f:
                 f.write(dns_declarations["all"])
             logging.debug("Resetting DNS service")
             process.run("systemctl restart named.service")
@@ -590,14 +599,14 @@ class VMNetwork(object):
             process.run("systemctl stop named.service", ignore_status=True)
         if dns_dhcp_set_config:
             logging.debug("Writing new DHCP/DNS config file:\n%s", dns_dhcp_string)
-            dns_dhcp_config = "/etc/dnsmasq.d/avocado.conf"
+            dns_dhcp_config = DNSMASQ_CONFIG
             with open(dns_dhcp_config, "w") as f:
                 f.write(dns_dhcp_string)
-            with open("/etc/avocado-hosts.conf", "w") as f:
+            with open(DNSMASQ_HOSTS, "w") as f:
                 f.write(dns_declarations["hosts"])
             logging.debug("Resetting DHCP/DNS service")
-        if os.path.exists("/var/run/avocado-dnsmasq.pid"):
-            with open("/var/run/avocado-dnsmasq.pid") as f:
+        if os.path.exists(DNSMASQ_PIDFILE):
+            with open(DNSMASQ_PIDFILE) as f:
                 try:
                     os.kill(int(f.read()), 15)
                 except ProcessLookupError:
@@ -774,7 +783,7 @@ class VMNetwork(object):
             overwrite_dict["images_%s" % client] = ""
             overwrite_dict["boot_order_%s" % client] = "dcn"
             overwrite_dict["cdroms_%s" % client] = "cd_rip"
-            overwrite_dict["shell_prompt_%s" % client] = "^[\#\$]"
+            overwrite_dict["shell_prompt_%s" % client] = r"^[\#\$]"
             overwrite_dict["isa_serials_%s" % client] = "serial1"
 
             # network adapters
@@ -1161,7 +1170,7 @@ class VMNetwork(object):
                 logging.debug("Found a vpn connection with id %s between %s and %s",
                               id, src_vm.name, dst_vm.name)
                 vpn = tunnel
-                left_index, right_index = re.match("^vpn(\d+)\.(\d+)\w*", id).group(1,2)
+                left_index, right_index = re.match(r"^vpn(\d+)\.(\d+)\w*", id).group(1,2)
                 break
         else:
             raise exceptions.TestError("The source %s and destination %s are not connected by a tunnel" % (src_vm.name, dst_vm.name))
@@ -1180,7 +1189,7 @@ class VMNetwork(object):
         logging.info("Checking log of %s for the firewall rule tag %s ", log_vm.name, log_message)
         log = log_vm.session.cmd("cat /var/log/messages")
         if require_blocked:
-            if re.match(log_message + "\s", log) is not None:
+            if re.match(log_message + r"\s", log) is not None:
                 raise exceptions.TestFail("The access message %s was found in log" % log_message)
             if deny_message not in log:
                 raise exceptions.TestFail("The deny message %s was not found in log" % deny_message)
@@ -1189,7 +1198,7 @@ class VMNetwork(object):
                 raise exceptions.TestFail("The access message %s was not found in log" % log_message)
             if deny_message in log:
                 raise exceptions.TestFail("The deny message %s was found in log" % deny_message)
-        for message in re.findall("VPN_%i\.\d+" % log_index, log):
+        for message in re.findall(r"VPN_%i\.\d+" % log_index, log):
             if message != log_message:
                 raise exceptions.TestFail("Wrong message %s in addition to %s was found in log" % (message, log_message))
         logging.info("Ok, resetting the messages log at %s", log_vm.name)
@@ -1433,7 +1442,7 @@ class VMNetwork(object):
                                   "-o UserKnownHostsFile=/dev/null "
                                   "root@%s dhcpcd --dumplease eth0 | grep host_name" % ssh_ip)
         logging.debug(dump)
-        dst_hostname = re.search("host_name=(\w+)", dump)
+        dst_hostname = re.search(r"host_name=(\w+)", dump)
         if dst_hostname:
             dst_hostname = dst_hostname.group(1)
             logging.info("Reported host name is %s", dst_hostname)
@@ -1459,7 +1468,7 @@ class VMNetwork(object):
             elif match == 1:
                 # the extra search is due to the inability of the builtin command to match the host
                 # therefore internally match all and perform the actual matching here
-                dst_hostname = re.search("(\w+)\.[a-zA-Z]+", text)
+                dst_hostname = re.search(r"(\w+)\.[a-zA-Z]+", text)
                 if dst_hostname:
                     dst_hostname = dst_hostname.group(1)
                     logging.info("Reported host name is %s", dst_hostname)
@@ -1525,7 +1534,7 @@ class VMNetwork(object):
             elif match == 1:
                 # the extra search is due to the inability of the builtin command to match the host
                 # therefore internally match all and perform the actual matching here
-                file_transfer = re.search("ETA(.+\s+100%.+)", text)
+                file_transfer = re.search(r"ETA(.+\s+100%.+)", text)
                 if file_transfer:
                     logging.info(file_transfer.group(1))
                     return

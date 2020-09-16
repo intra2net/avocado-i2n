@@ -281,14 +281,15 @@ class VMNetconfig(object):
 
     def has_interface(self, interface):
         """
-        Check whether an interface already belongs to the netconfig.
+        Check whether an interface already belongs to the netconfig through
+        both IP and actual attachment (to counter same IP range netconfigs).
 
         :param interface: interface to check in the netconfig
         :type interface: Interface object
         :returns: whether the interface is already present in the netconfig
         :rtype: bool
         """
-        return interface.ip in self.interfaces.keys()
+        return interface.ip in self.interfaces.keys() and self.interfaces[interface.ip] == interface
 
     def can_add_interface(self, interface):
         """

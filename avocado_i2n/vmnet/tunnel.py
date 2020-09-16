@@ -302,28 +302,38 @@ class VMTunnel(object):
         :rtype: bool
         """
         def on_the_left(node):
-            # node is the left end point of the tunnel
             if node == self.left:
+                logging.debug("The node %s is the left end point of the tunnel %s",
+                              node, self)
                 return True
-            # node is in the left end site of the tunnel
             if self.left_net and node.check_interface(self.left_net.has_interface):
+                logging.debug("The node %s is in the left end site of the tunnel %s",
+                              node, self)
                 return True
-            # node is forwarded from the left end of the tunnel
             if self.left_params["vpnconn_lan_type"] == "CUSTOM":
                 if node.check_interface(self.left_net.can_add_interface):
+                    logging.debug("The node %s is forwarded from the left end of the tunnel %s",
+                                  node, self)
                     return True
+            return False
         def on_the_right(node):
-            # node is the right end point of the tunnel
             if node == self.right:
+                logging.debug("The node %s is the right end point of the tunnel %s",
+                              node, self)
                 return True
-            # node is in the right end site of the tunnel
             if self.right_net and node.check_interface(self.right_net.has_interface):
+                logging.debug("The node %s is in the right end site of the tunnel %s",
+                              node, self)
                 return True
-            # node is forwarded from the right end of the tunnel
             if self.right_params["vpnconn_lan_type"] == "CUSTOM":
                 if node.check_interface(self.right_net.can_add_interface):
+                    logging.debug("The node %s is forwarded from the right end of the tunnel %s",
+                                  node, self)
                     return True
+            return False
 
+        logging.debug("Checking if the tunnel %s connects %s and %s",
+                      self, node1, node2)
         if on_the_left(node1) and on_the_right(node2):
             return True
         elif on_the_right(node1) and on_the_left(node2):
@@ -435,9 +445,11 @@ class VMTunnel(object):
             raise ValueError("Tunnel end node %s does not have interface in tunnel end net %s in %s"
                              % (node.name, netconfig1.net_ip, self))
         vm.session.cmd("ip addr add %s dev %s" % (lan_iface.ip, self.name))
-        vm.session.cmd("ip route add %s/%s dev %s" % (netconfig2.net_ip,
-                                                      netconfig2.mask_bit,
-                                                      self.name))
+        # roadwarrior connections don't have a remove netconfig
+        if netconfig2 is not None:
+            vm.session.cmd("ip route add %s/%s dev %s" % (netconfig2.net_ip,
+                                                          netconfig2.mask_bit,
+                                                          self.name))
 
         if apply_extra_options.get("apply_firewall_ruleset", True):
             # 47 stand for GRE (Generic Routing Encapsulation)
