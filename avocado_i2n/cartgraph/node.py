@@ -285,3 +285,5 @@ class TestNode(object):
             raise ValueError("Additional parametric objects %s not in %s" % (param_objects, attr_objects))
         if len(attr_objects - param_objects) > 0:
             raise ValueError("Missing parametric objects %s from %s" % (param_objects, attr_objects))
+        if self in self.setup_nodes or self in self.cleanup_nodes:
+            raise ValueError("Detected reflexive dependency of %s to itself" % self)

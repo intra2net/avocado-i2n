@@ -113,7 +113,6 @@ class CartesianGraphTest(unittest.TestCase):
         test_node = graph.get_node_by(param_val="tutorial1")
         self.assertIn("1", test_node.name)
         self.assertIn(test_node.id, graph.test_nodes.keys())
-        test_node.validate()
         node_num = len(graph.test_objects)
         graph.new_nodes(test_node)
         self.assertEqual(len(graph.test_objects), node_num)
@@ -328,6 +327,30 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
+    def test_one_leaf_validations(self):
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        test_object = graph.get_object_by(param_val="vm1")
+        test_node = graph.get_node_by(param_val="tutorial1")
+        self.assertIn(test_object, test_node.objects)
+        test_node.validate()
+        test_node.objects.remove(test_object)
+        with self.assertRaises(ValueError):
+            test_node.validate()
+        test_node.objects.append(test_object)
+        test_node.validate()
+        test_node.params["vms"] = ""
+        with self.assertRaises(ValueError):
+            test_node.validate()
+
+        self.config["param_dict"]["get_state"] = "tutorial1"
+        with self.assertRaises(ValueError):
+            graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                   self.config["tests_str"], self.config["vm_strs"],
+                                                   prefix=self.prefix)
 
     def test_one_leaf_dry_run(self):
         self.config["param_dict"]["dry_run"] = "yes"

@@ -348,6 +348,7 @@ class CartesianLoader(VirtTestLoader):
                 if logging.getLogger('graph').level <= logging.DEBUG:
                     step += 1
                     graph.visualize(parse_dir, step)
+            test_node.validate()
 
         # finally build the shared root node from used test objects (roots)
         used_objects, used_roots = [], []
