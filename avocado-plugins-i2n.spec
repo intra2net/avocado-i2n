@@ -33,7 +33,7 @@
 
 Summary: Avocado I2N Plugin
 Name: avocado-plugins-i2n
-Version: 81.0
+Version: 82.0
 Release: 0%{?gitrel}%{?dist}
 License: GPLv2
 Group: Development/Tools
@@ -89,6 +89,10 @@ graph structure.
 %{_datadir}/avocado-plugins-i2n/tp_folder/*
 
 %changelog
+* Fri Sep 18 2020 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 82.0-0
+- Some stability fixes due to improved unit test coverage
+- Ability to rerun specific test nodes depending on status or unconditionally
+
 * Tue Sep 1 2020 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 81.0-0
 - Full compatibility with the unified global settings and setting types
 - Full compatibility with the new multi-suite job API
