@@ -92,12 +92,37 @@ class CartesianGraphTest(unittest.TestCase):
         shutil.rmtree("./graph_parse", ignore_errors=True)
         shutil.rmtree("./graph_traverse", ignore_errors=True)
 
+    def test_cartraph_structures(self):
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+
+        repr = str(graph)
+        self.assertIn("[cartgraph]", repr)
+        self.assertIn("[object]", repr)
+        self.assertIn("[node]", repr)
+
+        test_object = graph.get_object_by(param_val="vm1")
+        self.assertIn(test_object.name, graph.test_objects.keys())
+        self.assertEqual(test_object.name, "vm1")
+        object_num = len(graph.test_objects)
+        graph.new_objects(test_object)
+        self.assertEqual(len(graph.test_objects), object_num)
+
+        test_node = graph.get_node_by(param_val="tutorial1")
+        self.assertIn("1", test_node.name)
+        self.assertIn(test_node.id, graph.test_nodes.keys())
+        node_num = len(graph.test_objects)
+        graph.new_nodes(test_node)
+        self.assertEqual(len(graph.test_objects), node_num)
+
     def test_object_params(self):
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        test_object = graph.get_objects_by(param_val="vm1")[0]
+        test_object = graph.get_object_by(param_val="vm1")
         dict_generator = test_object.config.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
         # Parser of test objects must contain exactly one dictionary
@@ -113,7 +138,7 @@ class CartesianGraphTest(unittest.TestCase):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        test_node = graph.get_nodes_by(param_val="tutorial1")[0]
+        test_node = graph.get_node_by(param_val="tutorial1")
         dict_generator = test_node.config.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
         # Parser of test objects must contain exactly one dictionary
@@ -127,8 +152,8 @@ class CartesianGraphTest(unittest.TestCase):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        default_object_param = graph.get_nodes_by(param_val="tutorial1")[0].params["images"]
-        default_node_param = graph.get_nodes_by(param_val="tutorial1")[0].params["kill_vm"]
+        default_object_param = graph.get_node_by(param_val="tutorial1").params["images"]
+        default_node_param = graph.get_node_by(param_val="tutorial1").params["kill_vm"]
         custom_object_param = default_object_param + "00"
         custom_node_param = "no" if default_node_param == "yes" else "yes"
 
@@ -139,7 +164,7 @@ class CartesianGraphTest(unittest.TestCase):
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
 
-        test_object = graph.get_objects_by(param_val="vm1")[0]
+        test_object = graph.get_object_by(param_val="vm1")
         test_object_params = test_object.params.object_params(test_object.name)
         self.assertNotEqual(test_object_params["images"], default_object_param,
                             "The default %s of %s wasn't overwritten" % (default_object_param, test_object.name))
@@ -148,7 +173,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(test_object_params["new_key"], "123",
                          "A new parameter=%s of %s must be 123" % (test_object_params["new_key"], test_object.name))
 
-        test_node = graph.get_nodes_by(param_val="tutorial1")[0]
+        test_node = graph.get_node_by(param_val="tutorial1")
         self.assertNotEqual(test_node.params["kill_vm"], default_node_param,
                             "The default %s of %s wasn't overwritten" % (default_node_param, test_node.name))
         self.assertEqual(test_node.params["kill_vm"], custom_node_param,
@@ -165,7 +190,7 @@ class CartesianGraphTest(unittest.TestCase):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        default_object_param = graph.get_nodes_by(param_val="tutorial3")[0].params["images"]
+        default_object_param = graph.get_node_by(param_val="tutorial3").params["images"]
         custom_object_param1 = default_object_param + "01"
         custom_object_param2 = default_object_param + "02"
 
@@ -176,7 +201,7 @@ class CartesianGraphTest(unittest.TestCase):
                                                prefix=self.prefix)
 
         # TODO: the current suffix operators make it impossible to fully test this
-        test_object1 = graph.get_objects_by(param_val="vm1")[0]
+        test_object1 = graph.get_object_by(param_val="vm1")
         test_object_params1 = test_object1.params.object_params(test_object1.name)
         #self.assertNotEqual(test_object_params1["images"], default_object_param,
         #                    "The default %s of %s wasn't overwritten" % (default_object_param, test_object1.name))
@@ -185,13 +210,13 @@ class CartesianGraphTest(unittest.TestCase):
         #self.assertEqual(test_object_params1["images"], custom_object_param2,
         #                 "The new %s of %s must be %s" % (default_object_param, test_object1.name, custom_object_param2))
 
-        test_object2 = graph.get_objects_by(param_val="vm2")[0]
+        test_object2 = graph.get_object_by(param_val="vm2")
         test_object_params2 = test_object2.params.object_params(test_object2.name)
         self.assertEqual(test_object_params2["images"], default_object_param,
                          "The default %s of %s must be preserved" % (default_object_param, test_object2.name))
 
         # TODO: the current suffix operators make it impossible to fully test this
-        test_node = graph.get_nodes_by(param_val="tutorial3")[0]
+        test_node = graph.get_node_by(param_val="tutorial3")
         self.assertNotEqual(test_node.params["images"], default_object_param,
                          "The object-general default %s of %s must be overwritten" % (default_object_param, test_node.name))
         self.assertEqual(test_node.params["images"], custom_object_param1,
@@ -302,6 +327,30 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
+    def test_one_leaf_validations(self):
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        test_object = graph.get_object_by(param_val="vm1")
+        test_node = graph.get_node_by(param_val="tutorial1")
+        self.assertIn(test_object, test_node.objects)
+        test_node.validate()
+        test_node.objects.remove(test_object)
+        with self.assertRaises(ValueError):
+            test_node.validate()
+        test_node.objects.append(test_object)
+        test_node.validate()
+        test_node.params["vms"] = ""
+        with self.assertRaises(ValueError):
+            test_node.validate()
+
+        self.config["param_dict"]["get_state"] = "tutorial1"
+        with self.assertRaises(ValueError):
+            graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                   self.config["tests_str"], self.config["vm_strs"],
+                                                   prefix=self.prefix)
 
     def test_one_leaf_dry_run(self):
         self.config["param_dict"]["dry_run"] = "yes"
@@ -489,7 +538,7 @@ class CartesianGraphTest(unittest.TestCase):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        test_node = graph.get_nodes_by(param_val="tutorial1")[0]
+        test_node = graph.get_node_by(param_val="tutorial1")
         # assume we are parsing invalid configuration
         test_node.params["vms"] = ""
         DummyStateCheck.present_states = ["root", "install"]

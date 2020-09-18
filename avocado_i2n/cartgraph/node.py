@@ -84,7 +84,8 @@ class TestNode(object):
         self.visited_cleanup_nodes = []
 
     def __repr__(self):
-        return self.params["shortname"]
+        obj_tuple = (self.id, self.params.get("shortname", "<unknown>"))
+        return "[node] id='%s', name='%s'" % obj_tuple
 
     def get_test_factory(self, job=None):
         """
@@ -275,3 +276,14 @@ class TestNode(object):
         :param bool verbose: whether to show generated parameter dictionaries
         """
         self._params_cache = self.config.get_params(show_dictionaries=verbose)
+
+    def validate(self):
+        """Validate the test node for sane attribute-parameter correspondence."""
+        param_objects = set(self.params.objects("vms"))
+        attr_objects = set(o.name for o in self.objects)
+        if len(param_objects - attr_objects) > 0:
+            raise ValueError("Additional parametric objects %s not in %s" % (param_objects, attr_objects))
+        if len(attr_objects - param_objects) > 0:
+            raise ValueError("Missing parametric objects %s from %s" % (param_objects, attr_objects))
+        if self in self.setup_nodes or self in self.cleanup_nodes:
+            raise ValueError("Detected reflexive dependency of %s to itself" % self)
