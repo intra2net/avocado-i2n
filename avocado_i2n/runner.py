@@ -46,25 +46,73 @@ class CartesianRunner(TestRunner):
     description = 'Runs tests through a Cartesian graph traversal'
 
     """running functionality"""
-    def run_test_node(self, node):
+    def run_test_node(self, node, can_retry=False):
         """
-        A wrapper around the inherited :py:meth:`run_test`.
+        Run a node once, and optionally re-run it depending on the parameters.
 
         :param node: test node to run
         :type node: :py:class:`TestNode`
+        :param bool can_retry: whether this node can be re-run
         :returns: run status of :py:meth:`run_test`
         :rtype: bool
         :raises: :py:class:`AssertionError` if the ran test node contains no objects
 
-        This is a simple wrapper to provide some default arguments
-        for simplicity of invocation.
+        The retry parameters are `retry_attempts` and `retry_stop`. The first is
+        the maximum number of retries, and the second indicates when to stop retrying.
+        The possible combinations of these values are:
+
+        - `retry_stop = error`: retry until error or a maximum of `retry_attempts` number of times
+        - `retry_stop = success`: retry until success or a maximum of `retry_attempts` number of times
+        - `retry_stop = none`: retry a maximum of `retry_attempts` number of times
+
+        Only tests with the status of pass, warning, error or failure will be retried.
+        Other statuses will be ignored and the test will run only once.
+
+        This method also works as a convenience wrapper around :py:meth:`run_test`,
+        providing some default arguments.
         """
         if node.is_objectless():
             raise AssertionError("Cannot run test nodes not using any test objects, here %s" % node)
-        # TODO: in the future we better inherit from the Runner interface in
-        # avocado.core.plugin_interfaces and implement our own test node running
-        # like most of the other runners do
-        return self.run_test(self.job, node.get_test_factory(self.job), SimpleQueue(), set())
+
+        retry_stop = node.params.get("retry_stop", "none")
+        # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
+        runs_left = 1 + node.params.get_numeric("retry_attempts", 0) if can_retry else 1
+        # do not log when the user is not using the retry feature
+        if runs_left > 1:
+            logging.debug(f"Running test with retry_stop={retry_stop} and retry_attempts={runs_left}")
+
+        assert runs_left >= 1, "retry_attempts cannot be less than zero"
+        assert retry_stop in ["none", "error", "success"], "retry_stop must be one of 'none', 'error' or 'success'"
+
+        retval = False
+        original_shortname = node.params["shortname"]
+        for r in range(runs_left):
+            # appending a suffix to retries so we can tell them appart
+            if r > 0:
+                node.params["shortname"] = f"{original_shortname}.r{r}"
+
+            # TODO: in the future we better inherit from the Runner interface in
+            # avocado.core.plugin_interfaces and implement our own test node running
+            # like most of the other runners do
+            retval = self.run_test(self.job, node.get_test_factory(self.job), SimpleQueue(), set())
+
+            test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))
+            test_status = test_result["status"]
+            if test_status not in ["PASS", "WARN", "ERROR", "FAIL"]:
+                # it doesn't make sense to retry with other status
+                logging.info(f"Will not attempt to retry test with status {test_status}")
+                break
+            if retry_stop == "success" and test_status in ["PASS", "WARN"]:
+                logging.info("Stopping after first successful run")
+                break
+            if retry_stop == "error" and test_status in ["ERROR", "FAIL"]:
+                logging.info("Stopping after first failed run")
+                break
+        node.params["shortname"] = original_shortname
+        # no need to log when test was not repeated
+        if runs_left > 1:
+            logging.info(f"Finished running test {r} times")
+        return retval
 
     def run_traversal(self, graph, params):
         """
@@ -342,7 +390,7 @@ class CartesianRunner(TestRunner):
 
             else:
                 # finally, good old running of an actual test
-                self.run_test_node(test_node)
+                self.run_test_node(test_node, can_retry=True)
 
             for test_object in test_node.objects:
                 object_name = test_object.name

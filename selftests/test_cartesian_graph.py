@@ -20,7 +20,8 @@ class DummyTestRunning(object):
     fail_switch = []
     asserted_tests = []
 
-    def __init__(self, node_params):
+    def __init__(self, node_params, test_results):
+        self.test_results = test_results
         assert len(self.fail_switch) == len(self.asserted_tests), "len(%s) != len(%s)" % (self.fail_switch, self.asserted_tests)
         # assertions about the test calls
         self.current_test_dict = node_params
@@ -35,12 +36,28 @@ class DummyTestRunning(object):
                                                                                            self.expected_test_dict["shortname"])
 
     def result(self):
+        shortname = self.current_test_dict["shortname"]
+        # allow tests to specify the status they expect
+        if self.current_test_dict.get("test_status"):
+            self.add_test_result(shortname, self.current_test_dict["test_status"])
+            return True
         if self.expected_test_fail and "install" in self.expected_test_dict["shortname"]:
+            self.add_test_result(shortname, "FAIL")
             raise exceptions.TestFail("God wanted this test to fail")
         elif self.expected_test_fail and self.current_test_dict.get("abort_on_error", "no") == "yes":
+            self.add_test_result(shortname, "SKIP")
             raise exceptions.TestSkipError("God wanted this test to abort")
         else:
+            self.add_test_result(shortname, "FAIL" if self.expected_test_fail else "PASS")
             return not self.expected_test_fail
+
+    def add_test_result(self, shortname, status):
+        name = mock.MagicMock()
+        name.name = shortname
+        self.test_results.append({
+            "name": name,
+            "status": status
+        })
 
 
 class DummyStateCheck(object):
@@ -55,7 +72,7 @@ class DummyStateCheck(object):
 
 
 def mock_run_test(_self, _job, factory, _queue, _set):
-    return DummyTestRunning(factory[1]['vt_params']).result()
+    return DummyTestRunning(factory[1]['vt_params'], _self.job.result.tests).result()
 
 
 def mock_check_state(params, env):
@@ -83,10 +100,10 @@ class CartesianGraphTest(unittest.TestCase):
         self.loader = CartesianLoader(config=self.config, extra_params={})
         self.job = mock.MagicMock()
         self.job.logdir = "."
-        self.result = mock.MagicMock()
+        self.job.result = mock.MagicMock()
+        self.job.result.tests = []
         self.runner = CartesianRunner()
         self.runner.job = self.job
-        self.runner.result = self.result
 
     def tearDown(self):
         shutil.rmtree("./graph_parse", ignore_errors=True)
@@ -617,6 +634,188 @@ class CartesianGraphTest(unittest.TestCase):
 
         self.runner.job.config = self.config
         self.runner.run_suite(self.runner.job, test_suite)
+
+    def test_run_n_times(self):
+        """Check that the test is retried `retry_attempts` times if `retry_stop` is not specified."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_dict"]["retry_attempts"] = "4"
+        graph = self.loader.parse_object_trees(
+            self.config["param_dict"], self.config["tests_str"],
+            self.config["vm_strs"], prefix="")
+        DummyTestRunning.asserted_tests = [
+            {"shortname": r"^internal.stateless.0scan.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.stateless.0root.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.stateless.0preinstall.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.permanent.customize.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.permanent.customize.vm1.*?\.r1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.permanent.customize.vm1.*?\.r2", "vms": r"^vm1$"},
+            {"shortname": r"^internal.permanent.customize.vm1.*?\.r3", "vms": r"^vm1$"},
+            {"shortname": r"^internal.permanent.customize.vm1.*?\.r4", "vms": r"^vm1$"},
+            {"shortname": r"^internal.ephemeral.on_customize.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1.*?\.r1", "vms": r"^vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1.*?\.r2", "vms": r"^vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1.*?\.r3", "vms": r"^vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1.*?\.r4", "vms": r"^vm1$"},
+        ]
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
+        self.runner.run_traversal(graph, {})
+
+    def test_last_exit_code_is_preserved(self):
+        """Check that the return value of the last run is preserved."""
+        params = {
+            "retry_stop": "none",
+            "retry_attempts": "5",
+            "shortname": "some1-random_test"
+        }
+        test_node = self._mock_test_node(params)
+        # check that all tests have been run at least this first time
+        asserted_tests = [
+            {"shortname": r"^some1-random_test$"},
+            {"shortname": r"^some1-random_test\.r1$"},
+            {"shortname": r"^some1-random_test\.r2$"},
+            {"shortname": r"^some1-random_test\.r3$"},
+            {"shortname": r"^some1-random_test\.r4$"},
+            {"shortname": r"^some1-random_test\.r5$"}
+        ]
+        fail_switch = [False] * len(asserted_tests)
+        DummyTestRunning.asserted_tests = list(asserted_tests)
+        DummyTestRunning.fail_switch = list(fail_switch)
+        status = self.runner.run_test_node(test_node, can_retry=True)
+        # all runs succeed - status must be True
+        self.assertTrue(status)
+
+        # last run fails - status must be False
+        test_node = self._mock_test_node(params)
+        DummyTestRunning.asserted_tests = list(asserted_tests)
+        DummyTestRunning.fail_switch = list(fail_switch)
+        DummyTestRunning.fail_switch[-1] = True
+        status = self.runner.run_test_node(test_node, can_retry=True)
+        self.assertFalse(status, "runner not preserving last status")
+
+        # fourth run fails - status must be True
+        test_node = self._mock_test_node(params)
+        DummyTestRunning.asserted_tests = list(asserted_tests)
+        DummyTestRunning.fail_switch = list(fail_switch)
+        DummyTestRunning.fail_switch[3] = True
+        status = self.runner.run_test_node(test_node, can_retry=True)
+        self.assertTrue(status, "runner not preserving last status")
+
+    def test_retry_on_correct_status(self):
+        """Check that certain status are ignored when retrying a test."""
+        params = {
+            "retry_stop": "none",
+            "retry_attempts": "3",
+            "shortname": "some1-random_test"
+        }
+
+        # test should not be re-run on these status
+        for s in ["SKIP", "INTERRUPTED", "CANCEL"]:
+            DummyTestRunning.asserted_tests = [{"shortname": r"^some1-random_test$"}]
+            DummyTestRunning.fail_switch = [False]
+            test_node = self._mock_test_node({ **params, "test_status": s })
+            self.runner.run_test_node(test_node, can_retry=True)
+            # assert that tests were not repeated
+            self.assertEqual(len(self.runner.job.result.tests), 1)
+            # also assert the correct results were registered
+            self.assertEqual([x["status"] for x in self.runner.job.result.tests], [s])
+            self.runner.job.result.tests.clear()
+
+        # test should be re-run on these status
+        for s in ["PASS", "WARN", "FAIL", "ERROR"]:
+            DummyTestRunning.asserted_tests = [
+                {"shortname": r"^some1-random_test$"},
+                {"shortname": r"^some1-random_test\.r1$"},
+                {"shortname": r"^some1-random_test\.r2$"},
+                {"shortname": r"^some1-random_test\.r3$"}
+            ]
+            DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
+            test_node = self._mock_test_node({ **params, "test_status": s })
+            self.runner.run_test_node(test_node, can_retry=True)
+            # assert that tests were not repeated
+            self.assertEqual(len(self.runner.job.result.tests), 4)
+            # also assert the correct results were registered
+            self.assertEqual([x["status"] for x in self.runner.job.result.tests], [s] * 4)
+            self.runner.job.result.tests.clear()
+
+    def test_stop_on_status(self):
+        """Check that the `retry_stop` parameter is correctly handled by the runner."""
+        params = {
+            "retry_stop": "none",
+            "retry_attempts": "3",
+            "shortname": "some1-random_test"
+        }
+        # expect success and get success -> should run only once
+        for s in ["PASS", "WARN"]:
+            # a single test as it should not be repeated
+            DummyTestRunning.asserted_tests = [{"shortname": r"^some1-random_test$"}]
+            DummyTestRunning.fail_switch = [False]
+            new_params = { **params, "test_status": s, "retry_stop": "success" }
+            test_node = self._mock_test_node(new_params)
+            self.runner.run_test_node(test_node, can_retry=True)
+            # also assert the correct results were registered
+            self.assertEqual([x["status"] for x in self.runner.job.result.tests], [s])
+            self.runner.job.result.tests.clear()
+
+        # expect failure and get failure -> should run only once
+        for s in ["FAIL", "ERROR"]:
+            # a single test as it should not be repeated
+            DummyTestRunning.asserted_tests = [{"shortname": r"^some1-random_test$"}]
+            DummyTestRunning.fail_switch = [False]
+            new_params = { **params, "test_status": s, "retry_stop": "error" }
+            test_node = self._mock_test_node(new_params)
+            self.runner.run_test_node(test_node, can_retry=True)
+            # also assert the correct results were registered
+            self.assertEqual([x["status"] for x in self.runner.job.result.tests], [s])
+            self.runner.job.result.tests.clear()
+
+    def test_invalid_retry_stop(self):
+        """Check if an exception is thrown when retry_stop has an invalid value."""
+        params = {
+            "retry_stop": "invalid",
+            "retry_attempts": "5",
+            "shortname": "some1-random_test"
+        }
+        test_node = self._mock_test_node(params)
+        self.assertRaises(AssertionError, self.runner.run_test_node, test_node, can_retry=True)
+
+    def test_invalid_retry_attempts(self):
+        """Check if an exception is thrown when retry_attempts has an invalid value."""
+        params = {
+            "retry_stop": "none",
+            "shortname": "some1-random_test"
+        }
+        # negative values
+        with mock.patch.dict(params, { "retry_attempts": "-32" }):
+            test_node = self._mock_test_node(params)
+            self.assertRaises(AssertionError, self.runner.run_test_node, test_node, can_retry=True)
+
+        # floats
+        with mock.patch.dict(params, { "retry_attempts": "3.5" }):
+            test_node = self._mock_test_node(params)
+            self.assertRaises(ValueError, self.runner.run_test_node, test_node, can_retry=True)
+
+        # non-integers
+        with mock.patch.dict(params, { "retry_attempts": "hey" }):
+            test_node = self._mock_test_node(params)
+            self.assertRaises(ValueError, self.runner.run_test_node, test_node, can_retry=True)
+
+    def _mock_test_node(self, test_params):
+        """Create a mock of a test node to call py:function:`CartesianRunner.run_test_node` directly."""
+        test_node = mock.MagicMock()
+        # mock node params
+        params = test_params
+        test_node.params = mock.MagicMock()
+        test_node.params.__getitem__.side_effect = params.__getitem__
+        test_node.params.__setitem__.side_effect = params.__setitem__
+        test_node.params.get.side_effect = params.get
+        test_node.params.keys.side_effect = params.keys
+        test_node.params.get_numeric.side_effect = lambda _1, _2: int(test_params.get("retry_attempts", 1))
+        # mock some needed functions
+        test_node.is_objectless.side_effect = lambda: False
+        test_node.get_test_factory.side_effect = lambda _: [None, { "vt_params": test_node.params }]
+        return test_node
 
 if __name__ == '__main__':
     unittest.main()

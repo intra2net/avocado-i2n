@@ -18,21 +18,33 @@ class DummyTestRunning(object):
     fail_switch = False
     asserted_tests = []
 
-    def __init__(self, node_params):
+    def __init__(self, node_params, test_results):
+        self.test_results = test_results
         # assertions about the test calls
         current_test_dict = node_params
-        assert len(self.asserted_tests) > 0, "Unexpected test %s" % current_test_dict["shortname"]
+        shortname = current_test_dict["shortname"]
+        assert len(self.asserted_tests) > 0, "Unexpected test %s" % shortname
         expected_test_dict = self.asserted_tests.pop(0)
         for checked_key in expected_test_dict.keys():
-            assert checked_key in current_test_dict.keys(), "%s missing in %s" % (checked_key, current_test_dict["shortname"])
+            assert checked_key in current_test_dict.keys(), "%s missing in %s" % (checked_key, shortname)
             expected, current = expected_test_dict[checked_key], current_test_dict[checked_key]
             assert re.match(expected, current) is not None, "Expected parameter %s=%s "\
                                                             "but obtained %s=%s for %s" % (checked_key, expected,
                                                                                            checked_key, current,
                                                                                            expected_test_dict["shortname"])
 
+        self.add_test_result(shortname, "PASS")
         if self.fail_switch:
+            self.add_test_result(shortname, "FAIL")
             raise exceptions.TestFail("God wanted this test to fail")
+
+    def add_test_result(self, shortname, status):
+        name = mock.MagicMock()
+        name.name = shortname
+        self.test_results.append({
+            "name": name,
+            "status": status
+        })
 
 
 @contextlib.contextmanager
@@ -49,7 +61,10 @@ def new_job(config):
 
 
 def mock_run_test(_self, _job, factory, _queue, _set):
-    return DummyTestRunning(factory[1]['vt_params'])
+    if not hasattr(_self, "result"):
+        _self.job.result = mock.MagicMock()
+        _self.job.result.tests = []
+    return DummyTestRunning(factory[1]['vt_params'], _self.job.result.tests)
 
 
 @mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
