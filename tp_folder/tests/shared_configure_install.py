@@ -329,9 +329,9 @@ def run(test, params, env):
     :param params: extended dictionary of parameters
     :param env: environment object
     """
-    if params.get("configure_install", "stepmaker") == "steps":
+    if params["configure_install"] == "steps":
         configure_steps(params)
-    elif params.get("configure_install", "stepmaker") == "unattended_install":
+    elif params["configure_install"] == "unattended_install":
         if params["unattended_file"].endswith(".ks"):
             configure_unattended_kickstart(params)
         elif params["unattended_file"].endswith(".preseed"):
@@ -342,9 +342,14 @@ def run(test, params, env):
             configure_unattended_xml(params)
         else:
             raise exceptions.TestError("Unsupported unattended file format for %s" % params["unattended_file"])
-    elif params.get("configure_install", "stepmaker") == "stepmaker":
+    elif params["configure_install"] == "shared_gui_install":
+        logging.warning("A GUI installation does not need any preconfiguration.")
+    elif params["configure_install"] == "stepmaker":
         logging.warning("A stepmaker installation process cannot be preconfigured - you are supposed "
                         "to use it only to produce step files where no preconfiguration is necessary.")
+    elif params["configure_install"] == "shared_multigui_generator":
+        logging.warning("A GUI installation development process cannot be preconfigured - you are supposed "
+                        "to use it only to produce GUI tests where no preconfiguration is necessary.")
     else:
         raise exceptions.TestError("Unsupported installation method '%s' - must be one of "
-                                   "'steps', 'stepmaker', 'unattended_install'" % params["unattended_file"])
+                                   "'steps', 'stepmaker', 'unattended_install'" % params["configure_install"])
