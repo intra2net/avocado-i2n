@@ -62,9 +62,9 @@ def new_job(config):
 
 def mock_run_test(_self, _job, factory, _queue, _set):
     if not hasattr(_self, "result"):
-        _self.result = mock.MagicMock()
-        _self.result.tests = []
-    return DummyTestRunning(factory[1]['vt_params'], _self.result.tests)
+        _self.job.result = mock.MagicMock()
+        _self.job.result.tests = []
+    return DummyTestRunning(factory[1]['vt_params'], _self.job.result.tests)
 
 
 @mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
