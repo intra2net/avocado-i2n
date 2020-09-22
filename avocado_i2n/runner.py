@@ -80,14 +80,13 @@ class CartesianRunner(TestRunner):
         # do not log when the user is not using the retry feature
         if runs_left > 1:
             logging.debug(f"Running test with retry_stop={retry_stop} and retry_attempts={runs_left}")
-
         assert runs_left >= 1, "retry_attempts cannot be less than zero"
         assert retry_stop in ["none", "error", "success"], "retry_stop must be one of 'none', 'error' or 'success'"
 
         retval = False
         original_shortname = node.params["shortname"]
         for r in range(runs_left):
-            # appending a suffix to retries so we can tell them appart
+            # appending a suffix to retries so we can tell them apart
             if r > 0:
                 node.params["shortname"] = f"{original_shortname}.r{r}"
 
@@ -112,6 +111,9 @@ class CartesianRunner(TestRunner):
         # no need to log when test was not repeated
         if runs_left > 1:
             logging.info(f"Finished running test {r} times")
+        # FIX: as VT's retval is broken (always True), we fix its handling here
+        if test_status in ["ERROR", "FAIL"]:
+            retval = False
         return retval
 
     def run_traversal(self, graph, params):
@@ -247,14 +249,15 @@ class CartesianRunner(TestRunner):
         test_node = nodes[0]
         status = self.run_test_node(test_node)
 
-        # TODO: status is broken and is always true
-        if status:
-            try:
-                graph.load_setup_list(self.job.logdir)
-            except FileNotFoundError as e:
-                logging.error("Could not parse scanned available setup, aborting as it "
-                              "might be dangerous to overwrite existing undetected such")
-                graph.flag_children(flag=False)
+        try:
+            graph.load_setup_list(self.job.logdir)
+        except FileNotFoundError as e:
+            logging.error("Could not parse scanned available setup, aborting as it "
+                          "might be dangerous to overwrite existing undetected such")
+            status = False
+
+        if not status:
+            graph.flag_children(flag=False)
 
         for node in graph.nodes:
             self.job.result.cancelled += 1 if not node.should_run else 0
@@ -306,7 +309,6 @@ class CartesianRunner(TestRunner):
         test_node.params.update({"set_state": "", "skip_image_processing": "yes"})
         status = self.run_test_node(test_node)
 
-        # TODO: status is broken and is always true
         if not status:
             return
 
@@ -335,7 +337,6 @@ class CartesianRunner(TestRunner):
                                         ovrwrt_dict=setup_dict)
         status = self.run_test_node(TestNode("0q", install_config, test_node.objects))
 
-        # TODO: status is broken and is always true
         if not status:
             return
 

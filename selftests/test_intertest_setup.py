@@ -15,28 +15,32 @@ from avocado_i2n.runner import CartesianRunner
 
 class DummyTestRunning(object):
 
-    fail_switch = False
+    fail_switch = []
     asserted_tests = []
 
     def __init__(self, node_params, test_results):
         self.test_results = test_results
+        if len(self.fail_switch) == 0:
+            self.fail_switch = [False] * len(self.asserted_tests)
+        assert len(self.fail_switch) == len(self.asserted_tests), "len(%s) != len(%s)" % (self.fail_switch, self.asserted_tests)
         # assertions about the test calls
-        current_test_dict = node_params
-        shortname = current_test_dict["shortname"]
+        self.current_test_dict = node_params
+        shortname = self.current_test_dict["shortname"]
+
         assert len(self.asserted_tests) > 0, "Unexpected test %s" % shortname
-        expected_test_dict = self.asserted_tests.pop(0)
-        for checked_key in expected_test_dict.keys():
-            assert checked_key in current_test_dict.keys(), "%s missing in %s" % (checked_key, shortname)
-            expected, current = expected_test_dict[checked_key], current_test_dict[checked_key]
+        self.expected_test_dict, self.expected_test_fail = self.asserted_tests.pop(0), self.fail_switch.pop(0)
+        for checked_key in self.expected_test_dict.keys():
+            assert checked_key in self.current_test_dict.keys(), "%s missing in %s" % (checked_key, shortname)
+            expected, current = self.expected_test_dict[checked_key], self.current_test_dict[checked_key]
             assert re.match(expected, current) is not None, "Expected parameter %s=%s "\
                                                             "but obtained %s=%s for %s" % (checked_key, expected,
                                                                                            checked_key, current,
-                                                                                           expected_test_dict["shortname"])
+                                                                                           self.expected_test_dict["shortname"])
 
-        self.add_test_result(shortname, "PASS")
-        if self.fail_switch:
-            self.add_test_result(shortname, "FAIL")
-            raise exceptions.TestFail("God wanted this test to fail")
+    def get_test_result(self):
+        shortname = self.current_test_dict["shortname"]
+        self.add_test_result(shortname, "FAIL" if self.expected_test_fail else "PASS")
+        return not self.expected_test_fail
 
     def add_test_result(self, shortname, status):
         name = mock.MagicMock()
@@ -64,7 +68,7 @@ def mock_run_test(_self, _job, factory, _queue, _set):
     if not hasattr(_self, "result"):
         _self.job.result = mock.MagicMock()
         _self.job.result.tests = []
-    return DummyTestRunning(factory[1]['vt_params'], _self.job.result.tests)
+    return DummyTestRunning(factory[1]['vt_params'], _self.job.result.tests).get_test_result()
 
 
 @mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
@@ -73,7 +77,7 @@ class IntertestSetupTest(unittest.TestCase):
 
     def setUp(self):
         DummyTestRunning.asserted_tests = []
-        DummyTestRunning.fail_switch = False
+        DummyTestRunning.fail_switch = []
 
         self.config = {}
         self.config["available_vms"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
@@ -243,6 +247,22 @@ class IntertestSetupTest(unittest.TestCase):
             {"shortname": "^internal.stateless.0preinstall.vm2", "vms": "^vm2$"},
             {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
         ]
+        intertest_setup.install(self.config, tag="ut")
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
+    def test_install_abort(self):
+        self.config["param_dict"].update({"get_type": "on", "set_type": "on"})
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.0preinstall.vm1", "vms": "^vm1$"},
+            # skipped install test node
+            {"shortname": "^internal.stateless.0preinstall.vm2", "vms": "^vm2$"},
+            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
+            # skipped starting of vm2 due to on states
+        ]
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
+        DummyTestRunning.fail_switch[0] = True
+        DummyTestRunning.fail_switch[2] = True
         intertest_setup.install(self.config, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 

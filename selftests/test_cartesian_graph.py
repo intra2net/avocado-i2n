@@ -22,20 +22,24 @@ class DummyTestRunning(object):
 
     def __init__(self, node_params, test_results):
         self.test_results = test_results
+        if len(self.fail_switch) == 0:
+            self.fail_switch = [False] * len(self.asserted_tests)
         assert len(self.fail_switch) == len(self.asserted_tests), "len(%s) != len(%s)" % (self.fail_switch, self.asserted_tests)
         # assertions about the test calls
         self.current_test_dict = node_params
-        assert len(self.asserted_tests) > 0, "Unexpected test %s" % self.current_test_dict["shortname"]
+        shortname = self.current_test_dict["shortname"]
+
+        assert len(self.asserted_tests) > 0, "Unexpected test %s" % shortname
         self.expected_test_dict, self.expected_test_fail = self.asserted_tests.pop(0), self.fail_switch.pop(0)
         for checked_key in self.expected_test_dict.keys():
-            assert checked_key in self.current_test_dict.keys(), "%s missing in %s" % (checked_key, self.current_test_dict["shortname"])
+            assert checked_key in self.current_test_dict.keys(), "%s missing in %s" % (checked_key, shortname)
             expected, current = self.expected_test_dict[checked_key], self.current_test_dict[checked_key]
             assert re.match(expected, current) is not None, "Expected parameter %s=%s "\
                                                             "but obtained %s=%s for %s" % (checked_key, expected,
                                                                                            checked_key, current,
                                                                                            self.expected_test_dict["shortname"])
 
-    def result(self):
+    def get_test_result(self):
         shortname = self.current_test_dict["shortname"]
         # allow tests to specify the status they expect
         if self.current_test_dict.get("test_status"):
@@ -72,7 +76,7 @@ class DummyStateCheck(object):
 
 
 def mock_run_test(_self, _job, factory, _queue, _set):
-    return DummyTestRunning(factory[1]['vt_params'], _self.job.result.tests).result()
+    return DummyTestRunning(factory[1]['vt_params'], _self.job.result.tests).get_test_result()
 
 
 def mock_check_state(params, env):
@@ -108,6 +112,22 @@ class CartesianGraphTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree("./graph_parse", ignore_errors=True)
         shutil.rmtree("./graph_traverse", ignore_errors=True)
+
+    def _mock_test_node(self, test_params):
+        """Create a mock of a test node to call py:function:`CartesianRunner.run_test_node` directly."""
+        test_node = mock.MagicMock()
+        # mock node params
+        params = test_params
+        test_node.params = mock.MagicMock()
+        test_node.params.__getitem__.side_effect = params.__getitem__
+        test_node.params.__setitem__.side_effect = params.__setitem__
+        test_node.params.get.side_effect = params.get
+        test_node.params.keys.side_effect = params.keys
+        test_node.params.get_numeric.side_effect = lambda _1, _2: int(test_params.get("retry_attempts", 1))
+        # mock some needed functions
+        test_node.is_objectless.side_effect = lambda: False
+        test_node.get_test_factory.side_effect = lambda _: [None, { "vt_params": test_node.params }]
+        return test_node
 
     def test_cartraph_structures(self):
         self.config["tests_str"] += "only tutorial1\n"
@@ -800,22 +820,6 @@ class CartesianGraphTest(unittest.TestCase):
         with mock.patch.dict(params, { "retry_attempts": "hey" }):
             test_node = self._mock_test_node(params)
             self.assertRaises(ValueError, self.runner.run_test_node, test_node, can_retry=True)
-
-    def _mock_test_node(self, test_params):
-        """Create a mock of a test node to call py:function:`CartesianRunner.run_test_node` directly."""
-        test_node = mock.MagicMock()
-        # mock node params
-        params = test_params
-        test_node.params = mock.MagicMock()
-        test_node.params.__getitem__.side_effect = params.__getitem__
-        test_node.params.__setitem__.side_effect = params.__setitem__
-        test_node.params.get.side_effect = params.get
-        test_node.params.keys.side_effect = params.keys
-        test_node.params.get_numeric.side_effect = lambda _1, _2: int(test_params.get("retry_attempts", 1))
-        # mock some needed functions
-        test_node.is_objectless.side_effect = lambda: False
-        test_node.get_test_factory.side_effect = lambda _: [None, { "vt_params": test_node.params }]
-        return test_node
 
 if __name__ == '__main__':
     unittest.main()
