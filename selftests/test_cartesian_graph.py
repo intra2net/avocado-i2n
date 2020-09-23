@@ -130,6 +130,7 @@ class CartesianGraphTest(unittest.TestCase):
         return test_node
 
     def test_cartraph_structures(self):
+        """Check various usage of all Cartesian graph components."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -155,6 +156,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(graph.test_objects), node_num)
 
     def test_object_params(self):
+        """Check for correctly parsed test object parameters."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -171,6 +173,7 @@ class CartesianGraphTest(unittest.TestCase):
                              "The values of key %s %s=%s must be the same" % (key, dict1[key], test_object.params[key]))
 
     def test_node_params(self):
+        """Check for correctly parsed test node parameters."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -185,6 +188,7 @@ class CartesianGraphTest(unittest.TestCase):
             self.assertEqual(dict1[key], test_node.params[key], "The values of key %s %s=%s must be the same" % (key, dict1[key], test_node.params[key]))
 
     def test_object_node_overwrite(self):
+        """Check for correct overwriting of preselected configuration."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -223,6 +227,7 @@ class CartesianGraphTest(unittest.TestCase):
                          "A new parameter=%s of %s must be 123" % (test_node.params["new_key"], test_object.name))
 
     def test_object_node_overwrite_scope(self):
+        """Check the scope of application of overwriting preselected configuration."""
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -266,6 +271,7 @@ class CartesianGraphTest(unittest.TestCase):
                          "The second %s of %s should be preserved" % (default_object_param, test_node.name))
 
     def test_object_node_incompatible(self):
+        """Check incompatibility of parsed tests and preselected available objects."""
         self.config["tests_str"] += "only tutorial1\n"
         self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
         with self.assertRaises(param.EmptyCartesianProduct):
@@ -274,6 +280,7 @@ class CartesianGraphTest(unittest.TestCase):
                                                    prefix=self.prefix)
 
     def test_one_leaf(self):
+        """Check one test running without any reusable setup."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -292,6 +299,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_one_leaf_with_off_setup(self):
+        """Check one test running with a reusable off setup."""
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_dict"].update({"get_type": "off", "set_type": "off"})
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -311,6 +319,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_one_leaf_with_on_setup(self):
+        """Check one test running without a reusable on setup."""
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_dict"].update({"get_type": "on", "set_type": "on"})
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -331,6 +340,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_one_leaf_with_path_setup(self):
+        """Check one test running with a reusable setup path."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -349,6 +359,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_one_leaf_with_step_setup(self):
+        """Check one test running with a single reusable setup test node."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -366,6 +377,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_one_leaf_validations(self):
+        """Check graph retrieval methods and component validation."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -390,6 +402,7 @@ class CartesianGraphTest(unittest.TestCase):
                                                    prefix=self.prefix)
 
     def test_one_leaf_dry_run(self):
+        """Check dry run of a single leaf test where no test should end up really running."""
         self.config["param_dict"]["dry_run"] = "yes"
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -403,6 +416,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_two_objects_without_setup(self):
+        """Check a two-object test run without a reusable setup."""
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -429,6 +443,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_two_objects_with_setup(self):
+        """Check a two-object test run with reusable setup."""
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -445,6 +460,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_permanent_object_and_switch_and_cloning(self):
+        """Check a test run including complex setup."""
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_get\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -486,6 +502,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_deep_cloning(self):
+        """Check for correct deep cloning."""
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_finale\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -519,6 +536,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_complete_verbose_graph_dry_run(self):
+        """Check a complete dry run traversal of a verbose (visualized) graph."""
         self.config["tests_str"] = "only all\n"
         self.config["param_dict"]["dry_run"] = "yes"
         # this type of verbosity requires graphviz dependency
@@ -556,6 +574,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_abort_run(self):
+        """Check for aborted traversal through explicit configuration."""
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_dict"].update({"abort_on_error": "yes"})
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -574,6 +593,7 @@ class CartesianGraphTest(unittest.TestCase):
             self.runner.run_traversal(graph, self.config["param_dict"])
 
     def test_abort_objectless_node(self):
+        """Check for aborted traversal on objectless node detection."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -593,6 +613,7 @@ class CartesianGraphTest(unittest.TestCase):
             self.runner.run_traversal(graph, self.config["param_dict"])
 
     def test_trees_difference_zero(self):
+        """Check for proper node difference of two Cartesian graphs."""
         self.config["tests_str"] = "only nonleaves\n"
         self.config["tests_str"] += "only connect\n"
         self.main_vm = "vm1"
@@ -608,6 +629,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_trees_difference(self):
+        """Check for correct node difference of two Cartesian graphs."""
         self.config["tests_str"] = "only nonleaves\n"
         tests_str1 = self.config["tests_str"]
         tests_str1 += "only connect\n"
@@ -632,6 +654,7 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_loader_runner_entries(self):
+        """Check that the default loader and runner entries work as expected."""
         self.config["tests_str"] += "only tutorial1\n"
         references = "only=tutorial1 key1=val1"
         self.config["params"] = references.split()
