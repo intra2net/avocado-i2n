@@ -485,22 +485,6 @@ class CartesianGraphTest(unittest.TestCase):
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_without_permanent_object(self):
-        self.config["tests_str"] = "only leaves\n"
-        self.config["tests_str"] += "only tutorial_get\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
-        DummyStateCheck.present_states = []
-        with self.assertRaises(AssertionError):
-            graph.scan_object_states(None)
-        graph.load_setup_list.side_effect = FileNotFoundError("scan failed")
-        DummyTestRunning.asserted_tests = [
-        ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
-        self.runner.run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
-
     def test_deep_cloning(self):
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_finale\n"
@@ -551,6 +535,25 @@ class CartesianGraphTest(unittest.TestCase):
         ]
         DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
+
+    def test_abort_scan(self):
+        """Check aborted test run due to failed object state loading or other scanning problems."""
+        self.config["tests_str"] = "only leaves\n"
+        self.config["tests_str"] += "only tutorial_get\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        DummyStateCheck.present_states = []
+        graph.scan_object_states(None)
+        graph.load_setup_list.side_effect = FileNotFoundError("scan failed")
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.0scan.vm1", "vms": "^vm1 vm2 vm3$"},
+        ]
+        # TODO: test same on failed status by unify the fail switch and status mocking first
+        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
+        self.runner.run_traversal(graph, self.config["param_dict"])
+        graph.load_setup_list.side_effect = None
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_abort_run(self):
         self.config["tests_str"] += "only tutorial1\n"

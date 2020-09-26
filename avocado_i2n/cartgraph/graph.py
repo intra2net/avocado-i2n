@@ -248,9 +248,8 @@ class TestGraph(object):
                 if is_state_detected:
                     test_node.should_run = False
                 elif object_state == "root" and test_object.is_permanent():
-                    # abort traversal
-                    self.flag_children(flag=False)
-                    raise AssertionError("Missing permanent vm %s" % object_name)
+                    test_node.should_run = False
+                    logging.warning("Missing permanent vm %s" % object_name)
 
     def flag_children(self, node_name=None, object_name=None, flag_type="run", flag=True,
                       skip_roots=False):
