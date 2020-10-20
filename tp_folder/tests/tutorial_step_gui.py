@@ -23,7 +23,7 @@ from avocado.core import exceptions
 try:
     from guibot.guibot import GuiBot
     from guibot.config import GlobalConfig
-    from guibot.desktopcontrol import QemuDesktopControl, VNCDoToolDesktopControl
+    from guibot.controller import QemuController, VNCDoToolController
     BOT_AVAILABLE = True
 except ImportError:
     logging.warning("No virtual user backend found")
@@ -89,15 +89,15 @@ def initiate_vm_screen(vm, screen_type):
     :type vm: VM object
     :param str screen_type: 'qemu' or 'vncdotool'
     :returns: a desktop backend and its name (screen tuple)
-    :rtype: DesktopControl object
+    :rtype: Controller object
     """
     if screen_type == 'qemu':
-        dc = QemuDesktopControl(synchronize=False)
+        dc = QemuController(synchronize=False)
         dc.params["qemu"]["qemu_monitor"] = vm.monitors[0]
         dc.synchronize_backend()
         logging.debug("Initiating qemu monitor screen for vm %s", vm.name)
     elif screen_type == 'vncdotool':
-        dc = VNCDoToolDesktopControl(synchronize=False)
+        dc = VNCDoToolController(synchronize=False)
         # starting from 5900, i.e. :0 == 5900
         dc.params["vncdotool"]["vnc_port"] = vm.vnc_port - 5900
         dc.params["vncdotool"]["vnc_delay"] = 0.02

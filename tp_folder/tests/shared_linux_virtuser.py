@@ -43,7 +43,7 @@ def run(test, params, env):
     try:
         from guibot import GuiBot
         from guibot.config import GlobalConfig
-        from guibot.desktopcontrol import QemuDesktopControl, VNCDoToolDesktopControl
+        from guibot.controller import QemuController, VNCDoToolController
     except ImportError:
         # we would typically raise test error here to cancel all dependent tests
         # but we want the test suite to skip tests in the best case

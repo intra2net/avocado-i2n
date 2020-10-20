@@ -30,7 +30,7 @@ from avocado_i2n import state_setup
 # virtual user backend has to be available in order to use these tools at all
 from guibot.guibot import GuiBot
 from guibot.config import GlobalConfig
-from guibot.desktopcontrol import VNCDoToolDesktopControl
+from guibot.controller import VNCDoToolController
 
 
 class GUITestGenerator(QtGui.QWidget):
@@ -461,7 +461,7 @@ class SwitchThread(QtCore.QThread):
         GlobalConfig.image_logging_destination = os.path.join(self.gui.path, "imglogs")
 
         # initialize a desktop control backend for the selected vm
-        dc = VNCDoToolDesktopControl(synchronize=False)
+        dc = VNCDoToolControl(synchronize=False)
         # starting from 5900, i.e. :0 == 5900
         dc.params["vncdotool"]["vnc_port"] = self.gui.vm.vnc_port - 5900
         dc.params["vncdotool"]["vnc_delay"] = 0.02
@@ -495,7 +495,7 @@ class VisualObject(GuiBot):
 
         :param str imgroot: the image root location for the object
         :param dc: desktop control backend
-        :type dc: DesktopControl object
+        :type dc: Controller object
         :param cv: computer vision backend
         :type cv: Finder object
         """
