@@ -1450,7 +1450,7 @@ class VMNetwork(object):
         raise exceptions.TestFail("No client host name found")
 
     def _ssh_server_hostname(self, src_vm, dst_vm, ssh_ip, timeout=10):
-        logging.info("Retrieving host name of server %s from %s throught ip %s",
+        logging.info("Retrieving host name of server %s from %s through ip %s",
                      dst_vm.name, src_vm.name, ssh_ip)
         src_vm.session.sendline("ssh -o StrictHostKeyChecking=no "
                                 "-o UserKnownHostsFile=/dev/null "
