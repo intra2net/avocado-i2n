@@ -190,6 +190,10 @@ class StateBackend():
             logging.info("Removing image %s for %s", image_name, vm_name)
             image_params.update({"remove_image": "yes"})
             env_process.postprocess_image(None, image_params, image_name)
+            try:
+                os.rmdir(os.path.dirname(image_name))
+            except OSError as error:
+                logging.debug("Image directory not yet empty: %s", error)
 
 
 class LVMBackend(StateBackend):
