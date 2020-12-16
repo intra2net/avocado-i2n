@@ -141,14 +141,15 @@ def configure_unattended_kickstart(params):
     vm_params = params.object_params(params["main_vm"])
     vm_nics = vm_params.objects("nics")
 
-    for i, nic in reversed(list(enumerate(vm_nics))):
-        network_line = "network --device eth%i" % i
+    for nic in vm_nics:
+        nic_params = vm_params.object_params(nic)
+        network_line = "network --device %s" % nic_params["mac"]
         if nic == params["internet_nic"]:
             network_line = "%s --bootproto=dhcp --activate" % network_line
         else:
-            ip = vm_params.object_params(nic)["ip"]
-            netmask = vm_params.object_params(nic)["netmask"]
-            network_line = ("%s --bootproto=static --ip=%s --netmask=%s "
+            ip = nic_params["ip"]
+            netmask = nic_params["netmask"]
+            network_line = ("%s --bootproto=static --ip=%s --netmask=%s --bindto=mac "
                             "--activate --nodefroute" % (network_line, ip, netmask))
         logging.debug("Adding line '%s' to the unattended file", network_line)
         first_network_line = "network --hostname #VMNAME#"
