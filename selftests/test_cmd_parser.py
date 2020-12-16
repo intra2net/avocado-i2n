@@ -17,11 +17,13 @@ class CmdParserTest(unittest.TestCase):
         pass
 
     def test_param_dict(self):
-        self.config["params"] += ["ccc"]
         cmd.params_from_cmd(self.config)
         self.assertEqual(len(self.config["param_dict"].keys()), 1)
         self.assertIn("aaa", self.config["param_dict"].keys())
         self.assertEqual(self.config["param_dict"]["aaa"], "bbb")
+        self.config["params"] += ["ccc"]
+        with self.assertRaises(SystemExit):
+            cmd.params_from_cmd(self.config)
 
     def test_selected_vms(self):
         # test default (from config)
