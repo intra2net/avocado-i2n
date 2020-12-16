@@ -19,6 +19,7 @@ import re
 
 from avocado.core.settings import settings
 from avocado.core.output import LOG_JOB as log
+from avocado.core.output import LOG_UI as ui
 from virttest import env_process
 
 from . import params_parser as param
@@ -67,9 +68,9 @@ def params_from_cmd(config):
     for cmd_param in config["params"]:
         re_param = re.match(r"(\w+)=(.*)", cmd_param)
         if re_param is None:
-            log.error("Skipping malformed parameter on the command line '%s' - "
+            ui.error("Found malformed parameter on the command line '%s' - "
                       "must be of the form <key>=<val>", cmd_param)
-            continue
+            sys.exit(1)
         (key, value) = re_param.group(1, 2)
         if key == "only" or key == "no":
             # detect if this is the primary restriction to escape defaults
