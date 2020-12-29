@@ -666,11 +666,8 @@ on = QCOW2Backend
 ROOTS = ['root', '0root']
 #: keywords reserved for on root states
 BOOTS = ['boot', '0boot']
-# TODO: use "\d+\s+([\w\.]+)\s*([\w\. ]+)\s+\d{4}-\d\d-\d\d" to restore allowing
-# digits in the state name once the upstream Qemu handles the reported bug:
-# https://bugs.launchpad.net/qemu/+bug/1859989
 #: qemu states regex
-QEMU_STATES_REGEX = re.compile("\d+\s+([a-zA-Z_\.]+)\s*([\w\+\. ]+)\s+\d{4}-\d\d-\d\d")
+QEMU_STATES_REGEX = re.compile("\d+\s+([\w\.]+)\s*([\w\+\. ]+)\s+\d{4}-\d\d-\d\d")
 
 
 def enforce_check(vm_params, vm=None):
