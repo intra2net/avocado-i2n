@@ -6,4 +6,7 @@ simplejson==3.8.0
 netaddr>=0.7.18
 netifaces>=0.10.5
 
+# this is used only for the API doc, the CI installs local versions
+avocado-framework-plugin-vt==82.0
+
 graphviz==0.14.1

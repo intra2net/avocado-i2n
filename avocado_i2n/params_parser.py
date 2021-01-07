@@ -113,7 +113,7 @@ class ParsedContent():
 
         :returns: resulting report-compatible string
         :rtype: str
-        :raises :py:class:`NotImlementedError` as this is an abstract method
+        :raises: :py:class:`NotImlementedError` as this is an abstract method
         """
         raise NotImlementedError("Parsed content is an abstract class with no parsalbe form")
 
@@ -123,7 +123,7 @@ class ParsedContent():
 
         :returns: resulting parsable string
         :rtype: str
-        :raises :py:class:`NotImlementedError` as this is an abstract method
+        :raises: :py:class:`NotImlementedError` as this is an abstract method
         """
         raise NotImlementedError("Parsed content is an abstract class with no parsalbe form")
 

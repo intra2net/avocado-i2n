@@ -26,17 +26,10 @@ sys.path.insert(0, os.path.abspath('../..'))
 # platform which is understandable for security reasons. So we have to replace
 # them with mock modules in order for the build to succeed (we don't expect
 # these to be used for the documentation build in normal circumstances anyway).
-import mock
-# TODO: no recent version of avocado-vt is available on PyPI so use this as a
-# temporary workaround to provide the missing modules until either this or the
-# prescript support of readthedocs.yml improves
-MOCK_MODULES = ['virttest', 'virttest.utils_params', 'virttest.cartesian_config',
-                'avocado_vt', 'avocado_vt.test', 'avocado_vt.loader']
+from unittest import mock
+MOCK_MODULES = []
 for mod_name in MOCK_MODULES:
     sys.modules[mod_name] = mock.Mock()
-# TODO: this problem extends even further to classes
-sys.modules['avocado_vt.test'].VirtTest = mock.Mock
-sys.modules['avocado_vt.loader'].VirtTestLoader = mock.Mock
 
 # -- General configuration ------------------------------------------------
 
@@ -69,8 +62,8 @@ master_doc = 'source/modules'
 
 # General information about the project.
 project = 'avocado-i2n'
-copyright = '2019, Intra2net AG'
-author = 'Intra2net AG'
+copyright = '2020, Intra2net AG'
+author = 'Intra2net AG and contributors'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the

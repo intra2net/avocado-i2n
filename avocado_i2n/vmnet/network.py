@@ -971,7 +971,7 @@ class VMNetwork(object):
         Configure a VPN connection (tunnel) on a vm to play the role of a VPN
         server for any individual clients to access it from the internet.
 
-        Arguments are similar to the ones from :py:method:`configure_tunnel_between_vms`
+        Arguments are similar to the ones from :py:meth:`configure_tunnel_between_vms`
         with the exception of:
 
         :param server: vm which will be the VPN server for roadwarrior connections
@@ -1004,7 +1004,7 @@ class VMNetwork(object):
         Build a set of VPN connections using VPN forwarding to gain access from
         one vm to another.
 
-        Arguments are similar to the ones from :py:method:`configure_tunnel_between_vms`
+        Arguments are similar to the ones from :py:meth:`configure_tunnel_between_vms`
         with the exception of:
 
         :param vms: vms to participate in the VPN route
@@ -1234,7 +1234,7 @@ class VMNetwork(object):
         """
         Pings a vm from another vm to test basic ICMP connectivity and bails on nonzero status.
 
-        Arguments are similar to the ones from :py:method:`ping` with the exception of:
+        Arguments are similar to the ones from :py:meth:`ping` with the exception of:
 
         :raises: :py:class:`exceptions.TestError` if the performed ping failed
 

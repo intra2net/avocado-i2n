@@ -20,7 +20,7 @@ are:
    minimal set of configuration parameters and code
 
 2) *test reusability* - how to be reuse a maximum number of overlapping
-   steps which offers greater performance gain with the thouroughness
+   steps which offers greater performance gain with the thoroughness
 
 The first is the code/configuration reuse, while the second is the
 run/execution reuse. Combining optimally extensive testing of
@@ -108,10 +108,7 @@ depending on a user defined policy). It then also contains a set of
 children (outwards connections to other tests) where a DFS traversal
 rule guarantees that the setup gain from running a child test will not
 be lost but used until possible. The connection to/from another test
-node might be based on one or multiple provided/required objects
-although the simplified version requires that a test provides at most
-one object state to others and a test using more than one virtual
-machines is a leaf node.
+node might be based on one or multiple provided/required objects.
 
 3) *Running all interconnected tests in a way that should minimize the
    precious time lost by repeating test setup*
@@ -132,45 +129,70 @@ the Cartesian graph data structure for anyone that want to have fun with
 forward and backward DFS, the symmetrical pruning, and the reversing
 traversal path.
 
-Offline and on states, durable and ephemeral tests
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Off and on states, normal and ephemeral tests, normal and permanent vms
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The basic way to implement virtual machine states is LVM. However, since
-LVM requires the image to be inactive while reverting to the snapshot,
-this will introduce at least shutdown-boot performance penalty between
-each two tests. Actually, “live revert” is part of the future plans of
-LVM but right now its extra steps while switching test nodes might be
-even slower. Therefore, there is another type of states simply called
-here “on states” leaving the LVM an implementation of off states. The on
-states implementation lies in the QCOW2 image format and more
-specifically the QEMU-Monitor ability to take full and automatic virtual
-machine snapshots which will avoid these two steps - just freeze the vm
-state and eventually come back to it for another test that requires it.
-The QCOW2 format allows QEMU to take live snapshots of both the virtual
-machine and its image without a danger of saving image and ramdisk
-snapshots that are out of sync which is the case with another
-implementation of on states (still available as the “ramfile” state
-type). During a run with an automated vm state setup, a special
+A standard way to implement virtual machine states is LVM. However,
+since LVM requires the image to be inactive while reverting to the
+snapshot, this will introduce at least shutdown-boot performance penalty
+between each two tests. Actually, “live revert” is part of the future
+plans of LVM but right now its extra steps while switching test nodes
+might be even slower. Therefore, there is another type of states simply
+called here “on states” leaving the LVM an implementation of off states.
+A fairly standard on states implementation lies in the QCOW2 image
+format and more specifically the QEMU ability to take complete virtual
+machine snapshots on running machines which will avoid these two steps -
+just freeze the vm state and eventually come back to it for another test
+that requires it. The QCOW2 format allows QEMU to take live snapshots of
+both the virtual machine and its image without a danger of saving image
+and ramdisk snapshots that are out of sync which is the case with
+another implementation of on states (still available as a backend called
+“ramfile”). During a run with an automated vm state setup, a special
 dependency scan test checks for state availability once and uses this
 information for further decisions on test scheduling, order, and
 skipping.
 
-Each on state is based on an off state. The tests that produce on from
-off states are thus ephemeral as changing the off state would remove all
-on states and the test has to be repeated. Online states are however
-reusable within an off state transition and as many branches of on
-states transitions can span multiple tests without touching the off
-state. This is important in the test management as ephemeral tests
-provide states that can only be reused with protective scheduling.
+A test suite might use only off states (e.g. logical volume snapshots),
+only on states (e.g. QCOW2 snapshots) or a mixture of the two where vms’
+QCOW2 images are contained on top of logical volumes which could even be
+on top of RAM for a maximum speedup. Each approach has its advantages
+and drawbacks where LVM is imperfectly container-isolated and thus
+harder to parallelize, could have more difficult to debug errors on
+unclean process interruptions, etc. while QCOW2 might not support some
+cases of vm states like ones using pflash drives. In the case of
+mixture, each on state is based on an off state and the tests that
+produce on from off states are called ephemeral as changing the off
+state would remove all on states and the test has to be repeated. On
+states are however reusable within an off state transition and as many
+branches of on states transitions can span multiple tests without
+touching the off state. This is important in the test management as
+ephemeral tests provide states that can only be reused with protective
+scheduling.
 
-How to install and run
-----------------------
+A final additional concept to consider for test running is that of
+permanent vms. For a test requiring vms with highly sophisticated
+preparation sequences that sometimes might be only semi-automatable or
+requiring strictly human input it might be more preferable to add an
+external vm that could for instance only be manipulated via on states
+(thus without interfering with the original setup). Such a permanent vm
+might just be brought from outside to participate in the test suite
+orchestration with a minimal pre-set on state or could be fully prepared
+using the test suite tool set through an extra tool development. More
+information about it and ephemeral tests in general can be found in the
+test development documentation.
+
+How to install
+--------------
 
 In terms of installation, you may proceed analogically to other avocado
-plugins.
+plugins. One quick way is using PyPI:
 
-Currently, the plugin will only run with our own avocado(-vt) mods
-(*master* branches of avocado and avocado-vt forks here).
+::
+
+   pip install avocado-framework-plugin-i2n
+
+How to run
+----------
 
 In order to list a test set from the sample test suite, do
 
@@ -194,7 +216,8 @@ In order to run a manual step in the sample test suite, do
    avocado manu setup=full,update vms=vm1
 
 where any further overwriting parameters can be provided on the command
-line.
+line. In order to initate dry runs for instance you can use
+*dry_run=yes*.
 
 Tool options
 ~~~~~~~~~~~~
@@ -208,8 +231,8 @@ plugin where the following statements are equivalent
    avocado manu setup=run only=tutorial1 file_contents=testing
    avocado manu only=tutorial1 file_contents=testing
 
-but using the manu plugin is preferrable because of its simpler syntax
-as well generalization to many other tools implemented as manual steps.
+but using the manu plugin is preferable because of its simpler syntax as
+well generalization to many other tools implemented as manual steps.
 Thus, from here on we will only look at the manu plugin with default
 option *setup=run* unless explicitly stated at the command line.
 
@@ -239,8 +262,7 @@ steps) is the following:
 -  *install* - Prepare step files and install virtual machines
 -  *deploy* - Simply deploy changes on top of current state (will be
    lost after reverting to snapshot)
--  *internal* - Run a custom setup node otherwise inaccessible and part
-   of the automated setup
+-  *internal* - Run a custom setup node without any automated setup
 -  *boot* - Simply boot the registered virtual machines and run selected
    controls if any
 -  *list* - List selected tests
@@ -319,7 +341,7 @@ combinations:
       test that was run)
    -  *f.* - Overwrite (recreate and save) all existing setup for
       children (set_state)
-   -  *.a* - Abort if the set_state is missing (if for exampe the
+   -  *.a* - Abort if the set_state is missing (if for example the
       purpose was overwriting)
    -  *.f* - Create and save all missing setup for children (set_state)
 
@@ -350,8 +372,8 @@ automated setup steps is the following:
    avocado manu only=tutorial2..files
 
 Assuming that line one and two will create two vms and then simply reuse
-the first one whcih is a dependency for the given tutorial test. The
-third line will then elimitate the existing setup for vm1 (and vm1
+the first one which is a dependency for the given tutorial test. The
+third line will then eliminate the existing setup for vm1 (and vm1
 entirely). The final line would then still require vm1 although only vm2
 is available. The setup for this test will start by bringing vm1 to the
 state which is required for the tutorial test ignoring and not modifying
@@ -373,23 +395,39 @@ setup. Generally, performing manual setup is also no longer necessary.
 You can easily distinguish among all manual and automated steps by
 looking at the test IDs. The manual steps contain “m” in their short
 names while automated steps contain “a”. Cleanup tests contain “c” and
-“b” is reserved for duplicate tests due to multiple variants of their
+“d” is reserved for duplicate tests due to multiple variants of their
 setup. If you include only one *run* the tests executed within the run
 step will not contain any letters but if you include multiple *run*
 steps, in order to guarantee we can distinguish among the tests, they
 will contain “n” (with “s” for the shared root test for scanning all
 test dependencies and also “r” for an object-specific root or creation,
-“p” and “q” for preinstall and install test nodes). The typical approach
-to do this test tagging is in order of test discovery, i.e. 0m1n1a2
-stands for the test which is the second automated setup of the test
-which is the first test in a run step m1 and first run n1. These IDs are
-also used in all graphical descriptions of the Cartesian graph used for
-resolving all test dependencies.
+“p” and “q” for preinstall and install test nodes), and finally “b” for
+autogenerated ephemeral nodes. The typical approach to do this test
+tagging is compound and specifically in order of test discovery,
+i.e. 0m1n1a2 stands for the test which is the second automated setup of
+the test which is the first test in a run step m1 and first run n1.
+These IDs are also used in all graphical descriptions of the Cartesian
+graph used for resolving all test dependencies.
 
 **Note**: The order of regular (run/main) tests is not always
 guaranteed. Also, missing test numbers represent excluded tests due to
 guest variant restrictions (some tests run only on some OS, hardware, or
 vms in general).
+
+More details regarding the configuration necessary for creating the
+graph is available in the test development documentation but the
+essential ones are the *check*, *get*, *set*, and *unset* routines with
+additional parameters like
+
+-  \**_state\* - A vm state to perform the routine on
+-  \**_type\* - Type of the vm state: “on” or “off”
+-  \**_mode\* - Behaviors in case of present/absent setup defined above
+-  \**_opts\* - Secondary options, currently available ones are:
+
+   -  “check_opts=print_pos=yes/no print_neg=yes/no” to decide whether
+      to print positive or negative outcomes from the check
+   -  “get_opts=switch=on/off” to generate ephemeral tests and switch
+      retrieved state from an off state to an on state or vice versa
 
 An *only* argument can have any number of “.”, “..”, and “,” in between
 variant names where the first stands for *immediately followed by*, the
@@ -459,8 +497,8 @@ you can simply type
 **Note**: Be careful with the vm parameter generator, i.e. if you want
 to define some parameters for a single virtual machine which should not
 be generated make sure to do so. Making any parameter specific is easy -
-you only have to append ``_vmname`` to it, e.g. ``nic_vm2`` identically
-to the vm restriction.
+you only have to append ``_vmname`` to it, e.g. \ ``nic_vm2``
+identically to the vm restriction.
 
 Test debugging
 ~~~~~~~~~~~~~~
@@ -535,12 +573,12 @@ module next to the utility with the name ``<my-utility>_unittest.py``
 and it will be automatically discovered when you run the “unittest”
 manual step.
 
-Internal nodes
-~~~~~~~~~~~~~~
+Single node running
+~~~~~~~~~~~~~~~~~~~
 
-If you want to run a test “out of the law” of automated setup, i.e. an
-internal test node instead of a regular (leaf) test, you can use the
-*internal* tool or manual step
+If you want to run a test without automated setup from a complete graph,
+i.e. an internal (variant) test node, you can use the *internal* tool or
+manual step
 
 ::
 
@@ -552,9 +590,32 @@ automated setup or requiring any present state as well as setting any
 state. This implies that you can escape any automated setup/cleanup
 steps but are responsible for any setup/cleanup that is required by the
 test you are running (the test node). Use with care as this is mostly
-used for manual and semi-manual tests where part of the test is not
-legally or due to other external factors allowed to be executed by a
-machine.
+used for manual and semi-manual tests. All variants in the configuration
+can be parsed from the command line and the ones that are inaccessible
+will not be traversed as described in:
+
+https://github.com/intra2net/avocado-i2n/blob/master/doc/test_traversal_algorithm.pdf
+
+What this means is that all nodes we typically parse with *only leaves*
+will usually represent actual use cases of the product under QA
+connected to a scan traversal entry point through *nonleaves* and thus
+ultimately traversed. The most standard set *only normal* is an even
+smaller set of such nodes while the *only all* restriction will parse
+the complete graph but traverse only the part reachable from the shared
+root or scan node. Any internal tests that are not directly used remain
+disconnected and as such will not be run. They are then typically called
+only from (manual step) tools. Reading the graph from the config is thus
+mostly WYSIWYG and does not require any extra knowledge of the code
+parsing it.
+
+How to develop
+--------------
+
+While some users might only run a test suite for their own product QA,
+others are probably going to be writing tests to expand its coverage.
+This document concentrates only on the running part and the developing
+part is covered in multiple tutorials in the project wiki. Feel free to
+check it out.
 
 .. |Build Status| image:: https://travis-ci.org/intra2net/avocado-i2n.svg?branch=master
    :target: https://travis-ci.org/intra2net/avocado-i2n

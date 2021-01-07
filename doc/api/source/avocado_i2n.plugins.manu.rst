@@ -1,7 +1,7 @@
-avocado\_i2n.state\_setup module
+avocado\_i2n.plugins.manu module
 ================================
 
-.. automodule:: avocado_i2n.state_setup
+.. automodule:: avocado_i2n.plugins.manu
    :members:
    :undoc-members:
    :show-inheritance:

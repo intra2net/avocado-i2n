@@ -1,7 +1,7 @@
-avocado\_i2n.intertest\_setup module
+avocado\_i2n.cartgraph.object module
 ====================================
 
-.. automodule:: avocado_i2n.intertest_setup
+.. automodule:: avocado_i2n.cartgraph.object
    :members:
    :undoc-members:
    :show-inheritance:
