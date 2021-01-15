@@ -134,6 +134,15 @@ def params_from_cmd(config):
     # log into files for each major level the way it was done for autotest
     config["run.store_logging_stream"] = [":10", ":20", ":30", ":40"]
 
+    # set default off and on state backends
+    ss.off = settings.as_dict().get('i2n.states.off', 'lvm')
+    ss.on = settings.as_dict().get('i2n.states.on', 'qcow2')
+    # TODO: finish this
+    from .states import lvm
+    from .states import qcow2
+    ss.off = lvm.LVMBackend
+    ss.on = qcow2.QCOW2VTBackend
+
     # attach environment processing hooks
     env_process_hooks()
 

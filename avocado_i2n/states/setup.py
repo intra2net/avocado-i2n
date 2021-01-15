@@ -200,9 +200,9 @@ class StateBackend():
 
 
 #: off state implementation to use
-off = LVMBackend
+off = StateBackend
 #: on state implementation to use
-on = QCOW2Backend
+on = StateBackend
 #: keywords reserved for off root states
 ROOTS = ['root', '0root']
 #: keywords reserved for on root states
