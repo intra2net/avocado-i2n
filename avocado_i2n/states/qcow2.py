@@ -47,24 +47,6 @@ class QCOW2Backend(StateBackend):
 
     _require_running_object = False
 
-    def _get_image_path(self, params):
-        """
-        Get the absolute path to a QCOW2 image.
-
-        :param params: configuration parameters
-        :type params: {str, str}
-        :returns: mount location for the logical volume or empty string if a
-                  raw image device is used
-        :rtype: str
-        """
-        image_name = params["image_name"]
-        image_format = params.get("image_format", "qcow2")
-        if not os.path.isabs(image_name):
-            image_name = os.path.join(params["images_base_dir"], image_name)
-        image_format = "" if image_format == "raw" else "." + image_format
-        image_path = image_name + image_format
-        return image_path
-
     @classmethod
     def show(cls, params, object=None):
         """
@@ -76,7 +58,7 @@ class QCOW2Backend(StateBackend):
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
         for image in params.objects("images"):
             image_params = params.object_params(image)
-            image_path = self._get_image_path(image_params)
+            image_path = get_image_path(image_params)
             logging.debug("Showing %s snapshots for image %s", cls.state_type(), image_path)
             on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, image_path)).decode()
             pattern = QEMU_ON_STATES_REGEX if cls._require_running_object else QEMU_OFF_STATES_REGEX
@@ -126,7 +108,7 @@ class QCOW2Backend(StateBackend):
             image_params = params.object_params(image)
             if image_params["image_format"] != "qcow2" or image_params.get_boolean("image_readonly", False):
                 continue
-            image_path = self._get_image_path(image_params)
+            image_path = get_image_path(image_params)
             process.system("%s snapshot -a %s %s" % (qemu_img, state, image_path))
 
     @classmethod
@@ -143,7 +125,7 @@ class QCOW2Backend(StateBackend):
             image_params = params.object_params(image)
             if image_params["image_format"] != "qcow2" or image_params.get_boolean("image_readonly", False):
                 continue
-            image_path = self._get_image_path(image_params)
+            image_path = get_image_path(image_params)
             process.system("%s snapshot -c %s %s" % (qemu_img, state, image_path))
 
     @classmethod
@@ -160,7 +142,7 @@ class QCOW2Backend(StateBackend):
             image_params = params.object_params(image)
             if image_params["image_format"] != "qcow2" or image_params.get_boolean("image_readonly", False):
                 continue
-            image_path = self._get_image_path(image_params)
+            image_path = get_image_path(image_params)
             process.system("%s snapshot -d %s %s" % (qemu_img, state, image_path))
 
     @classmethod
@@ -234,3 +216,68 @@ class QCOW2VTBackend(QCOW2Backend):
         vm.monitor.send_args_cmd("delvm id=%s" % params["unset_state"])
         vm.verify_status('paused')
         vm.resume(timeout=3)
+
+
+def get_image_path(params):
+    """
+    Get the absolute path to a QCOW2 image.
+
+    :param params: configuration parameters
+    :type params: {str, str}
+    :returns: absolute path to the QCOW2 image
+    :rtype: str
+    """
+    image_name = params["image_name"]
+    image_format = params.get("image_format", "qcow2")
+    if not os.path.isabs(image_name):
+        image_name = os.path.join(params["images_base_dir"], image_name)
+    image_format = "" if image_format == "raw" else "." + image_format
+    image_path = image_name + image_format
+    return image_path
+
+
+def convert_image(params):
+    """
+    Convert a raw img to a QCOW2 or other image usable for virtual machines.
+
+    :param params: configuration parameters
+    :type params: {str, str}
+    :raises: py:class:`FileNotFoundError` if the source image doesn't exist
+    :raises: py:class:`AssertionError` when the source image is in use
+
+    .. note:: This function could be used with qemu-img for more general images
+        and not just the QCOW2 format.
+    """
+    qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
+    raw_directory = params.get("raw_image_dir", ".")
+    # allow the user to specify a path prefix for image files
+    logging.info(f"Using image prefix {raw_directory}")
+
+    source_image = os.path.join(raw_directory, params[f"raw_image"])
+    target_image = get_image_path(params)
+    target_format = params["image_format"]
+
+    if not os.path.isfile(source_image):
+        raise FileNotFoundError(f"Source image {source_image} doesn't exist")
+
+    # create the target directory if needed
+    target_directory = os.path.dirname(target_image)
+    os.makedirs(target_directory, exist_ok=True)
+
+    if os.path.isfile(target_image):
+        logging.debug(f"{target_image} already exists, checking if it's in use")
+        try:
+            process.run(f"{qemu_img} check {target_image}")
+            logging.debug(f"{target_image} not in use, integrity asserted")
+        except process.CmdError as ex:
+            # file is in use
+            if "\"write\" lock" in ex.result.stderr_text:
+                logging.error(f"{target_image} is in use, refusing to convert")
+                raise
+            logging.debug(f"{target_image} exists but cannot check integrity")
+        logging.info(f"Overwriting existing {target_image}")
+
+    logging.debug(f"Converting image {source_image} to {target_image} formatted to {target_format}")
+    process.run(f"{qemu_img} convert -c -p -O {target_format} \"{source_image}\" \"{target_image}\"",
+                timeout=params.get_numeric("conversion_timeout", 12000))
+    logging.debug("Conversion successful")

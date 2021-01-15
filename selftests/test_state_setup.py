@@ -1280,6 +1280,20 @@ class StateSetupTest(unittest.TestCase):
         expected = [mock.call("ramdisk_vm1", "LogVol"), mock.call("ramdisk_vm4", "launch4")]
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
 
+    @mock.patch('avocado_i2n.states.qcow2.process')
+    @mock.patch('avocado_i2n.states.qcow2.os.path.isfile', mock.Mock(return_value=True))
+    def test_extra_qcow2_convert(self, mock_process):
+        self._set_off_qcow2_params()
+        self.run_params["raw_image"] = "ext_image"
+        # set a generic one not restricted to vm1
+        self.run_params["image_name"] = "/vm1/image"
+        self._create_mock_vms()
+
+        mock_process.run.return_value = process.CmdResult("dummy-command")
+        qcow2.convert_image(self.run_params)
+        mock_process.run.assert_called_with('qemu-img convert -c -p -O qcow2 "./ext_image" "/vm1/image.qcow2"',
+                                            timeout=12000)
+
 
 if __name__ == '__main__':
     unittest.main()
