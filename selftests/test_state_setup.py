@@ -10,13 +10,14 @@ from avocado.utils import lv_utils
 from virttest import utils_params
 
 import unittest_importer
-from avocado_i2n import state_setup
+# use old name to reduce amount of changes in the unit tests
+from avocado_i2n.states import setup as ss
 
 
-@mock.patch('avocado_i2n.state_setup.os.mkdir', mock.Mock(return_value=0))
-@mock.patch('avocado_i2n.state_setup.os.rmdir', mock.Mock(return_value=0))
-@mock.patch('avocado_i2n.state_setup.os.unlink', mock.Mock(return_value=0))
-@mock.patch('avocado_i2n.state_setup.env_process', mock.Mock(return_value=0))
+@mock.patch('avocado_i2n.states.setup.os.mkdir', mock.Mock(return_value=0))
+@mock.patch('avocado_i2n.states.setup.os.rmdir', mock.Mock(return_value=0))
+@mock.patch('avocado_i2n.states.setup.os.unlink', mock.Mock(return_value=0))
+@mock.patch('avocado_i2n.states.setup.env_process', mock.Mock(return_value=0))
 class StateSetupTest(unittest.TestCase):
 
     @classmethod
@@ -31,7 +32,7 @@ class StateSetupTest(unittest.TestCase):
         self.env = mock.MagicMock(name='env')
         self.env.get_vm = mock.MagicMock(side_effect=self._get_mock_vm)
 
-        exists_patch = mock.patch('avocado_i2n.state_setup.os.path.exists', mock.MagicMock(side_effect=self._file_exists))
+        exists_patch = mock.patch('avocado_i2n.states.setup.os.path.exists', mock.MagicMock(side_effect=self._file_exists))
         exists_patch.start()
         self.addCleanup(exists_patch.stop)
 
@@ -39,8 +40,8 @@ class StateSetupTest(unittest.TestCase):
 
         self.exist_switch = True
 
-        state_setup.off = state_setup.LVMBackend
-        state_setup.on = state_setup.QCOW2Backend
+        ss.off = ss.LVMBackend
+        ss.on = ss.QCOW2Backend
 
     def _set_off_lvm_params(self):
         self.run_params["vg_name_vm1"] = "ramdisk_vm1"

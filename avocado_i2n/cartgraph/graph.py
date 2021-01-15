@@ -31,7 +31,7 @@ import os
 import re
 import logging
 
-from .. import state_setup
+from ..states import setup as ss
 
 
 def set_graph_logging_level(level=20):
@@ -243,7 +243,7 @@ class TestGraph(object):
                 object_params["check_type"] = object_params.get("set_type", "on")
                 object_params["check_opts"] = object_params.get("check_opts",
                                                                 "print_pos=yes print_neg=yes")
-                is_state_detected = state_setup.check_state(object_params, env)
+                is_state_detected = ss.check_state(object_params, env)
                 # the object state has to be defined to reach this stage
                 if is_state_detected:
                     test_node.should_run = False
