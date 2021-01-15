@@ -25,7 +25,7 @@ from PyQt4 import QtGui, QtCore
 from avocado.utils import process
 from avocado.core.settings import settings
 
-from avocado_i2n import state_setup
+from avocado_i2n.states import setup as ss
 
 # virtual user backend has to be available in order to use these tools at all
 from guibot.guibot import GuiBot
@@ -337,7 +337,7 @@ class StoreThread(QtCore.QThread):
         self.gui.vm.params["set_state"] = self.gui.line_state.text()
         self.gui.vm.params["set_type"] = "on"
         self.gui.vm.params["set_mode"] = "ff"
-        state_setup.set_state(self.gui.vm.params, self.gui.vmnet.env)
+        ss.set_state(self.gui.vm.params, self.gui.vmnet.env)
 
 
 class RetrieveThread(QtCore.QThread):
@@ -360,7 +360,7 @@ class RetrieveThread(QtCore.QThread):
             self.gui.vm.params["get_state"] = item.text()
             self.gui.vm.params["get_type"] = "on"
             self.gui.vm.params["get_mode"] = "ri"
-            state_setup.get_state(self.gui.vm.params, self.gui.vmnet.env)
+            ss.get_state(self.gui.vm.params, self.gui.vmnet.env)
 
 
 class RemoveThread(QtCore.QThread):
@@ -383,7 +383,7 @@ class RemoveThread(QtCore.QThread):
             self.gui.vm.params["unset_state"] = item.text()
             self.gui.vm.params["unset_type"] = "on"
             self.gui.vm.params["unset_mode"] = "fi"
-            state_setup.unset_state(self.gui.vm.params, self.gui.vmnet.env)
+            ss.unset_state(self.gui.vm.params, self.gui.vmnet.env)
             self.gui.list_view.takeItem(self.gui.list_view.row(item))
 
 
@@ -450,7 +450,7 @@ class SwitchThread(QtCore.QThread):
         # refresh the detected states
         self.gui.vm.params["vms"] = vmname
         self.gui.vm.params["check_type"] = "on"
-        states = state_setup.show_states(self.gui.vm.params, self.gui.vmnet.env)
+        states = ss.show_states(self.gui.vm.params, self.gui.vmnet.env)
         self.gui.list_view.clear()
         self.gui.list_view.addItems(states)
 
