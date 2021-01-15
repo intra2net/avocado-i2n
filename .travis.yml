@@ -22,7 +22,7 @@ branches:
   - master-experimental
   - tp-i2n
 os: linux
-dist: xenial
+dist: bionic
 install:
 - pip install -r requirements_pip.txt
 # Clone-install Avocado
