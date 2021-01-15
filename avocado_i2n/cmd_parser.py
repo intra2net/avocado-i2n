@@ -134,6 +134,16 @@ def params_from_cmd(config):
     # log into files for each major level the way it was done for autotest
     config["run.store_logging_stream"] = [":10", ":20", ":30", ":40"]
 
+    # set default off and on state backends
+    from .states import lvm, qcow2, lxc, btrfs, ramfile
+    off_backends = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
+                    "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend}
+    on_backends = {"qcow2vt": qcow2.QCOW2VTBackend,
+                   "ramfile": ramfile.RamfileBackend}
+    # TODO: implement separate backends per image
+    ss.off = off_backends[config["vms_params"].get("image1_off_backend", "lvm")]
+    ss.on = on_backends[config["vms_params"].get("image1_on_backend", "qcow2vt")]
+
     # attach environment processing hooks
     env_process_hooks()
 
