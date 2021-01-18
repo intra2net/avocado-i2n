@@ -39,8 +39,10 @@ from .setup import StateBackend
 class LVMBackend(StateBackend):
     """Backend manipulating off states as logical volumes."""
 
-    @staticmethod
-    def _get_images_mount_loc(params):
+    _require_running_object = False
+
+    @classmethod
+    def _get_images_mount_loc(cls, params):
         """
         Get the path to the mount location for the logical volume.
 
@@ -79,8 +81,8 @@ class LVMBackend(StateBackend):
                                        " %s with path %s" % (image, image_name))
         return mount_loc
 
-    @staticmethod
-    def show(params, object=None):
+    @classmethod
+    def show(cls, params, object=None):
         """
         Return a list of available states of a specific type.
 
@@ -88,8 +90,8 @@ class LVMBackend(StateBackend):
         """
         return lv_utils.lv_list(params["vg_name"])
 
-    @staticmethod
-    def check(params, object=None):
+    @classmethod
+    def check(cls, params, object=None):
         """
         Check whether a given state exists.
 
@@ -107,15 +109,15 @@ class LVMBackend(StateBackend):
             logging.info("Off snapshot '%s' of %s doesn't exist", params["check_state"], vm_name)
         return condition
 
-    @staticmethod
-    def get(params, object=None):
+    @classmethod
+    def get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.
 
         All arguments match the base class.
         """
         vm_name = params["vms"]
-        mount_loc = LVMBackend._get_images_mount_loc(params)
+        mount_loc = cls._get_images_mount_loc(params)
         params["lv_snapshot_name"] = params["get_state"]
         if mount_loc:
             # mount to avoid not-mounted errors
@@ -139,8 +141,8 @@ class LVMBackend(StateBackend):
                                   params["lv_pointer_name"],
                                   mount_loc)
 
-    @staticmethod
-    def set(params, object=None):
+    @classmethod
+    def set(cls, params, object=None):
         """
         Store a state saving the current changes.
 
@@ -153,8 +155,8 @@ class LVMBackend(StateBackend):
                                   params["lv_pointer_name"],
                                   params["lv_snapshot_name"])
 
-    @staticmethod
-    def unset(params, object=None):
+    @classmethod
+    def unset(cls, params, object=None):
         """
         Remove a state with previous changes.
 
@@ -170,8 +172,8 @@ class LVMBackend(StateBackend):
         logging.info("Removing snapshot %s of %s", params["lv_snapshot_name"], vm_name)
         lv_utils.lv_remove(params["vg_name"], params["lv_snapshot_name"])
 
-    @staticmethod
-    def check_root(params, object=None):
+    @classmethod
+    def check_root(cls, params, object=None):
         """
         Check whether a root state or essentially the object exists.
 
@@ -188,8 +190,8 @@ class LVMBackend(StateBackend):
             logging.info("The required virtual machine %s doesn't exist", vm_name)
         return condition
 
-    @staticmethod
-    def set_root(params, object=None):
+    @classmethod
+    def set_root(cls, params, object=None):
         """
         Set a root state to provide object existence.
 
@@ -199,7 +201,7 @@ class LVMBackend(StateBackend):
         for each object (all off).
         """
         vm_name = params["vms"]
-        mount_loc = LVMBackend._get_images_mount_loc(params)
+        mount_loc = cls._get_images_mount_loc(params)
         logging.info("Creating original logical volume for %s", vm_name)
         lv_utils.vg_ramdisk(None,
                             params["vg_name"],
@@ -224,8 +226,8 @@ class LVMBackend(StateBackend):
                               mount_loc, create_filesystem="ext4")
             super(LVMBackend, LVMBackend).set_root(params, object)
 
-    @staticmethod
-    def unset_root(params, object=None):
+    @classmethod
+    def unset_root(cls, params, object=None):
         """
         Unset a root state to prevent object existence.
 
@@ -237,7 +239,7 @@ class LVMBackend(StateBackend):
         of each object (all off).
         """
         vm_name = params["vms"]
-        mount_loc = LVMBackend._get_images_mount_loc(params)
+        mount_loc = cls._get_images_mount_loc(params)
         logging.info("Removing original logical volume for %s", vm_name)
         try:
             if mount_loc:

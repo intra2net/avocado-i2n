@@ -37,22 +37,15 @@ from virttest import env_process
 class StateBackend():
     """A general backend implementing state manipulation."""
 
-    def state_type(self):
+    _require_running_object = None
+
+    @classmethod
+    def state_type(cls):
         """State type string representation depending used for logging."""
-        return "on" if self._require_running_object else "off"
-    state_type = property(fget=state_type)
+        return "on" if cls._require_running_object else "off"
 
-    def __init__(self, require_running_object=False):
-        """
-        Construct a state backend.
-
-        :param bool require_running_object: whether to require running test object
-                                            whose state is being manipulated
-        """
-        self._require_running_object = require_running_object
-
-    @staticmethod
-    def show(params, object=None):
+    @classmethod
+    def show(cls, params, object=None):
         """
         Return a list of available states of a specific type.
 
@@ -65,8 +58,8 @@ class StateBackend():
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
-    @staticmethod
-    def check(params, object=None):
+    @classmethod
+    def check(cls, params, object=None):
         """
         Check whether a given state exists.
 
@@ -79,8 +72,8 @@ class StateBackend():
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
-    @staticmethod
-    def get(params, object=None):
+    @classmethod
+    def get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.
 
@@ -91,8 +84,8 @@ class StateBackend():
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
-    @staticmethod
-    def set(params, object=None):
+    @classmethod
+    def set(cls, params, object=None):
         """
         Store a state saving the current changes.
 
@@ -103,8 +96,8 @@ class StateBackend():
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
-    @staticmethod
-    def unset(params, object=None):
+    @classmethod
+    def unset(cls, params, object=None):
         """
         Remove a state with previous changes.
 
@@ -115,8 +108,8 @@ class StateBackend():
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
-    @staticmethod
-    def check_root(params, object=None):
+    @classmethod
+    def check_root(cls, params, object=None):
         """
         Check whether a root state or essentially the object exists.
 
@@ -149,8 +142,8 @@ class StateBackend():
                 break
         return condition
 
-    @staticmethod
-    def get_root(params, object=None):
+    @classmethod
+    def get_root(cls, params, object=None):
         """
         Get a root state or essentially due to pre-existence do nothing.
 
@@ -161,8 +154,8 @@ class StateBackend():
         """
         pass
 
-    @staticmethod
-    def set_root(params, object=None):
+    @classmethod
+    def set_root(cls, params, object=None):
         """
         Set a root state to provide object existence.
 
@@ -181,8 +174,8 @@ class StateBackend():
             image_params.update({"create_image": "yes", "force_create_image": "yes"})
             env_process.preprocess_image(None, image_params, image_name)
 
-    @staticmethod
-    def unset_root(params, object=None):
+    @classmethod
+    def unset_root(cls, params, object=None):
         """
         Unset a root state to prevent object existence.
 
