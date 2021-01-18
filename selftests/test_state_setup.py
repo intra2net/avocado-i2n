@@ -100,8 +100,8 @@ class StateSetupTest(unittest.TestCase):
         self.assertEqual(len(states), 0)
 
         mock_process.reset_mock()
-        mock_process.system_output.return_value = (b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
-                                                   b"2         with.dot   33.5G 2014-05-16 12:13:45   00:00:34.079")
+        mock_process.system_output.return_value = (b"5         launch         684 MiB 2021-01-18 21:24:22   00:00:44.478\n"
+                                                   b"7         with.dot       0.977 GiB 2020-12-08 10:51:49   00:02:00.006")
         states = state_setup.show_states(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
  
@@ -169,7 +169,7 @@ class StateSetupTest(unittest.TestCase):
         self.assertFalse(exists)
 
         mock_process.reset_mock()
-        mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"5         launch         684 MiB 2021-01-18 21:24:22   00:00:44.478"
         exists = state_setup.check_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
         self.assertTrue(exists)
@@ -207,7 +207,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["check_type_vm1"] = "on"
         self._create_mock_vms()
 
-        mock_process.system_output.return_value = b"1         with.dot   33.5G 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"7         with.dot       0.977 GiB 2020-12-08 10:51:49   00:02:00.006"
         exists = state_setup.check_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
         self.assertTrue(exists)
@@ -219,7 +219,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["check_state_vm1"] = "launch"
         self._create_mock_vms()
 
-        mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"5         launch         684 MiB 2021-01-18 21:24:22   00:00:44.478"
         exists = state_setup.check_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
         self.assertTrue(exists)
@@ -380,7 +380,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["get_mode_vm1"] = "rx"
         self._create_mock_vms()
 
-        mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"5         launch         684 MiB 2021-01-18 21:24:22   00:00:44.478"
         self.mock_vms["vm1"].is_alive.return_value = True
         # switch check if vm has to be booted
         state_setup.get_state(self.run_params, self.env)
@@ -417,7 +417,7 @@ class StateSetupTest(unittest.TestCase):
         self._create_mock_vms()
 
         # if >= 1 states prefer on
-        mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"5         launch         684 MiB 2021-01-18 21:24:22   00:00:44.478"
         # this time the on switch asks so confirm for it as well
         self.mock_vms["vm1"].is_alive.return_value = True
         state_setup.get_state(self.run_params, self.env)
@@ -575,7 +575,7 @@ class StateSetupTest(unittest.TestCase):
 
         # NOTE: setting an on state assumes that the vm is on just like
         # setting an off state assumes that the vm already exists
-        mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"5         launch         684 MiB 2021-01-18 21:24:22   00:00:44.478"
         state_setup.set_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
         self.mock_vms["vm1"].savevm.assert_called_once_with('launch')
@@ -611,7 +611,7 @@ class StateSetupTest(unittest.TestCase):
         self._create_mock_vms()
 
         # if no skipping and too many states prefer on
-        mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"5         launch         684 MiB 2021-01-18 21:24:22   00:00:44.478"
         state_setup.set_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
         self.mock_vms["vm1"].savevm.assert_called_once_with('launch')
@@ -664,7 +664,7 @@ class StateSetupTest(unittest.TestCase):
         self._create_mock_vms()
 
         # skip setting the state since on is available but we skip on by parameters
-        mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"5         launch         684 MiB 2021-01-18 21:24:22   00:00:44.478"
         state_setup.set_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
 
@@ -772,7 +772,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["unset_mode_vm1"] = "fi"
         self._create_mock_vms()
 
-        mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"5         launch         684 MiB 2021-01-18 21:24:22   00:00:44.478"
         self.mock_vms["vm1"].monitor.send_args_cmd.return_value = ""
         state_setup.unset_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
@@ -807,7 +807,7 @@ class StateSetupTest(unittest.TestCase):
         self._create_mock_vms()
 
         # if >= 1 states prefer on
-        mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"5         launch         684 MiB 2021-01-18 21:24:22   00:00:44.478"
         self.mock_vms["vm1"].monitor.send_args_cmd.return_value = ""
         state_setup.unset_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
@@ -1128,7 +1128,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["pop_type_vm1"] = "on"
         self._create_mock_vms()
 
-        mock_process.system_output.return_value = b"1         launch   338M 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"5         launch         684 MiB 2021-01-18 21:24:22   00:00:44.478"
         self.mock_vms["vm1"].is_alive.return_value = True
         self.mock_vms["vm1"].monitor.send_args_cmd.return_value = ""
 
@@ -1195,7 +1195,7 @@ class StateSetupTest(unittest.TestCase):
         def lv_check_side_effect(_vgname, lvname):
             return True if lvname == "launch1" else False if lvname == "launch2" else False
         mock_lv_utils.lv_check.side_effect = lv_check_side_effect
-        mock_process.system_output.return_value = b"1         launchX   338M 2014-05-16 12:13:45   00:00:34.079"
+        mock_process.system_output.return_value = b"5         launchX         684 MiB 2021-01-18 21:24:22   00:00:44.478"
         self.mock_vms["vm1"].is_alive.return_value = False
         self.mock_vms["vm3"].is_alive.return_value = True
 

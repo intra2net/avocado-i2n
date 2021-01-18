@@ -36,8 +36,10 @@ from avocado.utils import process
 from .setup import StateBackend
 
 
-#: qemu states regex
-QEMU_STATES_REGEX = re.compile("\d+\s+([\w\.]+)\s*([\w\+\. ]+)\s+\d{4}-\d\d-\d\d")
+#: off qemu states regex (0 vm size)
+QEMU_OFF_STATES_REGEX = re.compile(r"^\d+\s+([\w\.]+)\s*(0 B)\s+\d{4}-\d\d-\d\d", flags=re.MULTILINE)
+#: on qemu states regex (>0 vm size)
+QEMU_ON_STATES_REGEX = re.compile(r"^\d+\s+([\w\.]+)\s*(?!0 B)(\d+e?[\-\+]?[\.\d]* \w+)\s+\d{4}-\d\d-\d\d", flags=re.MULTILINE)
 
 
 class QCOW2Backend(StateBackend):
@@ -77,7 +79,8 @@ class QCOW2Backend(StateBackend):
             image_path = self._get_image_path(image_params)
             logging.debug("Showing %s snapshots for image %s", cls.state_type(), image_path)
             on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, image_path)).decode()
-            state_tuples = re.findall(QEMU_STATES_REGEX, on_snapshots_dump)
+            pattern = QEMU_ON_STATES_REGEX if cls._require_running_object else QEMU_OFF_STATES_REGEX
+            state_tuples = re.findall(pattern, on_snapshots_dump)
             for state_tuple in state_tuples:
                 logging.info("Detected %s state '%s' of size %s", cls.state_type(), state_tuple[0], state_tuple[1])
                 states.append(state_tuple[0])
