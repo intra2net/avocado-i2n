@@ -38,11 +38,13 @@ class RamfileBackend(StateBackend):
     """
     Backend manipulating on states as ram dump files.
 
-    ..note:: This "on" bakcend is available and still supported but not recommended.
+    ..note:: This "on" backend is available and still supported but not recommended.
     """
 
-    @staticmethod
-    def _get_state_dir(params):
+    _require_running_object = True
+
+    @classmethod
+    def _get_state_dir(cls, params):
         """
         Get the path to the ramfile dumps directory.
 
@@ -65,8 +67,8 @@ class RamfileBackend(StateBackend):
                     "must be located in the same statefile dump directory"
         return state_dir
 
-    @staticmethod
-    def show(params, object=None):
+    @classmethod
+    def show(cls, params, object=None):
         """
         Return a list of available states of a specific type.
 
@@ -76,8 +78,8 @@ class RamfileBackend(StateBackend):
         state_path = os.path.join(state_dir, "*.state")
         return glob.glob(state_path)
 
-    @staticmethod
-    def check(params, object=None):
+    @classmethod
+    def check(cls, params, object=None):
         """
         Check whether a given state exists.
 
@@ -95,8 +97,8 @@ class RamfileBackend(StateBackend):
             logging.info("Ramfile snapshot '%s' of %s doesn't exist", params["check_state"], vm_name)
         return condition
 
-    @staticmethod
-    def get(params, object=None):
+    @classmethod
+    def get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.
 
@@ -110,8 +112,8 @@ class RamfileBackend(StateBackend):
         vm.restore_from_file(state_file)
         vm.resume(timeout=3)
 
-    @staticmethod
-    def set(params, object=None):
+    @classmethod
+    def set(cls, params, object=None):
         """
         Store a state saving the current changes.
 
@@ -129,8 +131,8 @@ class RamfileBackend(StateBackend):
         vm.restore_from_file(state_file)
         vm.resume(timeout=3)
 
-    @staticmethod
-    def unset(params, object=None):
+    @classmethod
+    def unset(cls, params, object=None):
         """
         Remove a state with previous changes.
 

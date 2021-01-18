@@ -43,6 +43,8 @@ QEMU_STATES_REGEX = re.compile("\d+\s+([\w\.]+)\s*([\w\+\. ]+)\s+\d{4}-\d\d-\d\d
 class QCOW2Backend(StateBackend):
     """Backend manipulating off states as qcow2 snapshots."""
 
+    _require_running_object = False
+
     def _get_image_path(self, params):
         """
         Get the absolute path to a QCOW2 image.
@@ -61,8 +63,8 @@ class QCOW2Backend(StateBackend):
         image_path = image_name + image_format
         return image_path
 
-    @staticmethod
-    def show(params, object=None):
+    @classmethod
+    def show(cls, params, object=None):
         """
         Return a list of available states of a specific type.
 
@@ -73,16 +75,16 @@ class QCOW2Backend(StateBackend):
         for image in params.objects("images"):
             image_params = params.object_params(image)
             image_path = self._get_image_path(image_params)
-            logging.debug("Showing %s snapshots for image %s", self.state_type, image_path)
+            logging.debug("Showing %s snapshots for image %s", cls.state_type(), image_path)
             on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, image_path)).decode()
             state_tuples = re.findall(QEMU_STATES_REGEX, on_snapshots_dump)
             for state_tuple in state_tuples:
-                logging.info("Detected %s state '%s' of size %s", self.state_type, state_tuple[0], state_tuple[1])
+                logging.info("Detected %s state '%s' of size %s", cls.state_type(), state_tuple[0], state_tuple[1])
                 states.append(state_tuple[0])
         return states
 
-    @staticmethod
-    def check(params, object=None):
+    @classmethod
+    def check(cls, params, object=None):
         """
         Check whether a given state exists.
 
@@ -91,24 +93,24 @@ class QCOW2Backend(StateBackend):
         vm_name = params["vms"]
         check_opts = params.get_dict("check_opts")
         print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
-        logging.debug("Checking %s for %s state '%s'", vm_name, self.state_type, params["check_state"])
-        if not QCOW2Backend.check_root(params, object):
+        logging.debug("Checking %s for %s state '%s'", vm_name, cls.state_type(), params["check_state"])
+        if not cls.check_root(params, object):
             return False
-        states = QCOW2Backend.show(params, object)
+        states = cls.show(params, object)
         for state in states:
             if state == params["check_state"]:
                 if print_pos:
                     logging.info("The %s snapshot '%s' of %s exists",
-                                 self.state_type, params["check_state"], vm_name)
+                                 cls.state_type(), params["check_state"], vm_name)
                 return True
         # at this point we didn't find the on state in the listed ones
         if print_neg:
             logging.info("The %s snapshot '%s' of %s doesn't exist",
-                         self.state_type, params["check_state"], vm_name)
+                         cls.state_type(), params["check_state"], vm_name)
         return False
 
-    @staticmethod
-    def get(params, object=None):
+    @classmethod
+    def get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.
 
@@ -116,14 +118,14 @@ class QCOW2Backend(StateBackend):
         """
         vm, vm_name, state = object, params["vms"], params["get_state"]
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
-        logging.info("Reusing %s state '%s' of %s", self.state_type, params["get_state"], vm_name)
+        logging.info("Reusing %s state '%s' of %s", cls.state_type(), params["get_state"], vm_name)
         for image in params.objects("images"):
             image_params = params.object_params(image)
             image_path = self._get_image_path(image_params)
-            process.system("%s snapshot -a %s %s -U" % (qemu_img, state, image_path))
+            process.system("%s snapshot -a %s %s" % (qemu_img, state, image_path))
 
-    @staticmethod
-    def set(params, object=None):
+    @classmethod
+    def set(cls, params, object=None):
         """
         Store a state saving the current changes.
 
@@ -131,14 +133,14 @@ class QCOW2Backend(StateBackend):
         """
         vm, vm_name, state = object, params["vms"], params["set_state"]
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
-        logging.info("Creating %s state '%s' of %s", self.state_type, params["set_state"], vm_name)
+        logging.info("Creating %s state '%s' of %s", cls.state_type(), params["set_state"], vm_name)
         for image in params.objects("images"):
             image_params = params.object_params(image)
             image_path = self._get_image_path(image_params)
-            process.system("%s snapshot -c %s %s -U" % (qemu_img, state, image_path))
+            process.system("%s snapshot -c %s %s" % (qemu_img, state, image_path))
 
-    @staticmethod
-    def unset(params, object=None):
+    @classmethod
+    def unset(cls, params, object=None):
         """
         Remove a state with previous changes.
 
@@ -146,14 +148,14 @@ class QCOW2Backend(StateBackend):
         """
         vm, vm_name, state = object, params["vms"], params["unset_state"]
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
-        logging.info("Removing %s state '%s' of %s", self.state_type, params["unset_state"], vm_name)
+        logging.info("Removing %s state '%s' of %s", cls.state_type(), params["unset_state"], vm_name)
         for image in params.objects("images"):
             image_params = params.object_params(image)
             image_path = self._get_image_path(image_params)
-            process.system("%s snapshot -d %s %s -U" % (qemu_img, state, image_path))
+            process.system("%s snapshot -d %s %s" % (qemu_img, state, image_path))
 
-    @staticmethod
-    def check_root(params, object=None):
+    @classmethod
+    def check_root(cls, params, object=None):
         """
         Check whether a root state or essentially the object exists.
 
@@ -175,12 +177,10 @@ class QCOW2Backend(StateBackend):
 class QCOW2VTBackend(QCOW2Backend):
     """Backend manipulating on states as qcow2 snapshots using VT's VM bindings."""
 
-    def __init__(self):
-        """Construct a state backend."""
-        super().__init__(require_running_object=True)
+    _require_running_object = True
 
-    @staticmethod
-    def get(params, object=None):
+    @classmethod
+    def get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.
 
@@ -192,8 +192,8 @@ class QCOW2VTBackend(QCOW2Backend):
         vm.loadvm(params["get_state"])
         vm.resume(timeout=3)
 
-    @staticmethod
-    def set(params, object=None):
+    @classmethod
+    def set(cls, params, object=None):
         """
         Store a state saving the current changes.
 
@@ -205,8 +205,8 @@ class QCOW2VTBackend(QCOW2Backend):
         vm.savevm(params["set_state"])
         vm.resume(timeout=3)
 
-    @staticmethod
-    def unset(params, object=None):
+    @classmethod
+    def unset(cls, params, object=None):
         """
         Remove a state with previous changes.
 
