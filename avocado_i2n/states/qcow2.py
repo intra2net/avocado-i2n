@@ -37,7 +37,7 @@ from .setup import StateBackend
 
 
 #: qemu states regex
-QEMU_STATES_REGEX = re.compile("\d+\s+([\w\.]+)\s*([\w\+\. ]+)\s+\d{4}-\d\d-\d\d")
+QEMU_STATES_REGEX = re.compile("\n\d+\s+([\w\.]+)\s*([\w\+\. ]+)\s+\d{4}-\d\d-\d\d")
 
 
 class QCOW2Backend(StateBackend):
