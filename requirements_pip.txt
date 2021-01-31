@@ -8,7 +8,7 @@ netifaces>=0.10.5
 # TODO: fix for avocado not controlling their setuptools dependency version
 setuptools==81.0
 aexpect==1.8.0
-avocado-framework==109.0
-avocado-framework-plugin-vt==109.0
+avocado-framework
+avocado-framework-plugin-vt
 
 graphviz==0.14.1
