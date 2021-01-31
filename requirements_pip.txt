@@ -6,7 +6,7 @@ netaddr>=0.7.18
 netifaces>=0.10.5
 
 aexpect==1.8.0
-avocado-framework==109.0
-avocado-framework-plugin-vt==109.0
+avocado-framework
+avocado-framework-plugin-vt
 
 graphviz==0.14.1
