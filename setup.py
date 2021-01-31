@@ -84,7 +84,7 @@ setup(name='avocado-framework-plugin-i2n',
                 'avocado_i2n.cartgraph', 'avocado_i2n.vmnet',
                 'avocado_i2n.states'],
       package_data={'avocado_i2n.vmnet': ['templates/*.template']},
-      install_requires=['avocado-framework-plugin-vt>=103.0', 'aexpect'],
+      install_requires=['avocado-framework-plugin-vt', 'aexpect'],
       data_files=get_data_files(),
       include_package_data=True,
       entry_points={
