@@ -124,6 +124,8 @@ class QCOW2Backend(StateBackend):
         logging.info("Reusing %s state '%s' of %s", cls.state_type(), params["get_state"], vm_name)
         for image in params.objects("images"):
             image_params = params.object_params(image)
+            if image_params["image_format"] != "qcow2" or image_params.get_boolean("image_readonly", False):
+                continue
             image_path = self._get_image_path(image_params)
             process.system("%s snapshot -a %s %s" % (qemu_img, state, image_path))
 
@@ -139,6 +141,8 @@ class QCOW2Backend(StateBackend):
         logging.info("Creating %s state '%s' of %s", cls.state_type(), params["set_state"], vm_name)
         for image in params.objects("images"):
             image_params = params.object_params(image)
+            if image_params["image_format"] != "qcow2" or image_params.get_boolean("image_readonly", False):
+                continue
             image_path = self._get_image_path(image_params)
             process.system("%s snapshot -c %s %s" % (qemu_img, state, image_path))
 
@@ -154,6 +158,8 @@ class QCOW2Backend(StateBackend):
         logging.info("Removing %s state '%s' of %s", cls.state_type(), params["unset_state"], vm_name)
         for image in params.objects("images"):
             image_params = params.object_params(image)
+            if image_params["image_format"] != "qcow2" or image_params.get_boolean("image_readonly", False):
+                continue
             image_path = self._get_image_path(image_params)
             process.system("%s snapshot -d %s %s" % (qemu_img, state, image_path))
 
@@ -169,6 +175,9 @@ class QCOW2Backend(StateBackend):
         """
         for image in params.objects("images"):
             image_params = params.object_params(image)
+            if image_params.get_boolean("image_readonly", False):
+                logging.warning("Skip validation of readonly image %s", image)
+                continue
             if image_params.get("image_format") is None:
                 raise ValueError("Unspecified image format for %s - must be qcow2" % image)
             if image_params["image_format"] != "qcow2":
