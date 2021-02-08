@@ -43,9 +43,9 @@ class GUITestGenerator(QtGui.QWidget):
         Construct the main control window of the GUI test generator.
 
         :param vmnet: network of available vms
-        :type vmnet: VMNet object
+        :type vmnet: :py:class:`avocado_i2n.vmnet.network.VMNetwork`
         :param parent: parent widget
-        :type parent: QWidget object
+        :type parent: :py:class:`QWidget`
         """
         QtGui.QWidget.__init__(self, parent)
 

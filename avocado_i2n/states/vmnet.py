@@ -105,7 +105,7 @@ class VMNetBackend(StateBackend):
         :param params: configuration parameters
         :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: VM object or None
+        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         cls.get(params, object=object)
 

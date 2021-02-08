@@ -53,7 +53,7 @@ class StateBackend():
         :param params: configuration parameters
         :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: VM object or None
+        :type object: :py:class:`virttest.qemu_vm.VM` or None
         :returns: list of detected states
         :rtype: [str]
         """
@@ -67,7 +67,7 @@ class StateBackend():
         :param params: configuration parameters
         :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: VM object or None
+        :type object: :py:class:`virttest.qemu_vm.VM` or None
         :returns: whether the state is exists
         :rtype: bool
         """
@@ -81,7 +81,7 @@ class StateBackend():
         :param params: configuration parameters
         :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: VM object or None
+        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
@@ -93,7 +93,7 @@ class StateBackend():
         :param params: configuration parameters
         :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: VM object or None
+        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
@@ -105,7 +105,7 @@ class StateBackend():
         :param params: configuration parameters
         :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: VM object or None
+        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
@@ -117,7 +117,7 @@ class StateBackend():
         :param params: configuration parameters
         :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: VM object or None
+        :type object: :py:class:`virttest.qemu_vm.VM` or None
         :returns: whether the object (root state) is exists
         :rtype: bool
         """
@@ -148,7 +148,7 @@ class StateBackend():
         :param params: configuration parameters
         :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: VM object or None
+        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         pass
 
@@ -160,7 +160,7 @@ class StateBackend():
         :param params: configuration parameters
         :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: VM object or None
+        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         vm_name = params["vms"]
         if object is not None and object.is_alive():
@@ -184,7 +184,7 @@ class StateBackend():
         :param params: configuration parameters
         :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: VM object or None
+        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         vm_name = params["vms"]
         if object is not None and object.is_alive():
