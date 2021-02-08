@@ -116,7 +116,7 @@ class VMNode(object):
         Construct a vm node from a vm platform.
 
         :param platform: the vm platform that communicates in the vm network
-        :type platform: VM object
+        :type platform: :py:class:`virttest.qemu_vm.VM`
         :param bool ephemeral: whether the node is ephemeral (spawned in a network)
         """
         self._interfaces = {}

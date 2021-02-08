@@ -92,7 +92,7 @@ def initiate_vm_screen(vm, screen_type):
     Helper for screen instantiation.
 
     :param vm: vm whose screen the virtual user is initialized on
-    :type vm: VM object
+    :type vm: :py:class:`virttest.qemu_vm.VM`
     :param str screen_type: 'qemu' or 'vncdotool'
     :returns: a desktop backend and its name (screen tuple)
     :rtype: Controller object

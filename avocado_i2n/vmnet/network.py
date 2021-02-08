@@ -150,7 +150,7 @@ class VMNetwork(object):
         Get the only vm in the network.
 
         :returns: only vm in the network
-        :rtype: VM object
+        :rtype: :py:class:`virttest.qemu_vm.VM`
         """
         node = self._get_single_node()
         return node.platform
@@ -160,7 +160,7 @@ class VMNetwork(object):
         Get the only vm in the network and its only session.
 
         :returns: vm and its last session
-        :rtype: (VM object, Session object)
+        :rtype: (:py:class:`virttest.qemu_vm.VM`, Session object)
         """
         node = self._get_single_node()
         if node.last_session is None:
@@ -173,7 +173,7 @@ class VMNetwork(object):
         as well as configuration (to replace the test configuration).
 
         :returns: vm, its last session, and its params
-        :rtype: (VM object, Session object, Params object)
+        :rtype: (:py:class:`virttest.qemu_vm.VM`, Session object, Params object)
         """
         node = self._get_single_node()
         if node.last_session is None:
@@ -186,7 +186,7 @@ class VMNetwork(object):
 
         :param int vm_num: number N of vms
         :returns: ordered vms
-        :rtype: (VM object)
+        :rtype: (:py:class:`virttest.qemu_vm.VM`)
         :raises: :py:class:`exceptions.TestError` if # of vms != N
         """
         if vm_num is not None and len(self.nodes.values()) != vm_num:
@@ -278,9 +278,9 @@ class VMNetwork(object):
         interface's network config.
 
         :param client: vm whose interace will be rattached
-        :type client: VM object
+        :type client: :py:class:`virttest.qemu_vm.VM`
         :param server: vm whose network will the interface be attached to
-        :type server: VM object
+        :type server: :py:class:`virttest.qemu_vm.VM`
         :param str client_nic: role of the nic of the client
         :param str server_nic: role of the nic of the server
         :param str proxy_nic: name of a proxyARP nic of the server
@@ -728,7 +728,7 @@ class VMNetwork(object):
         :param int clients_num: number of ephemeral clients to spawn
         :param str nic: name of the nic of the server
         :returns: generated ephemeral clients
-        :rtype: (VM object)
+        :rtype: (:py:class:`virttest.qemu_vm.VM`)
         """
         server = self.nodes[server_name].platform
         inherited_server_params = server.params.copy()
@@ -818,7 +818,7 @@ class VMNetwork(object):
         :param interface: network interface containing the new configuration
         :type interface: :py:class:`VMInterface`
         :param server: server where the (DHCP) client will be registered
-        :type server: VM object
+        :type server: :py:class:`virttest.qemu_vm.VM`
         :param bool enable_dhcp: whether to use DHCP or static IP
         """
         raise NotImplementedError("Need implementation for some OS")
@@ -830,7 +830,7 @@ class VMNetwork(object):
         :param interface: network interface containing the new configuration
         :type interface: :py:class:`VMInterface`
         :param vm: vm whose nic will be reconfigured
-        :type vm: VM object
+        :type vm: :py:class:`virttest.qemu_vm.VM`
         :raises: :py:class:`exceptions.TestError` if the client is an Android device
         :raises: :py:class:`exceptions.NotImplementedError` if the client is not compatible
         """
@@ -905,9 +905,9 @@ class VMNetwork(object):
         Set a static IP address on a client vm.
 
         :param client: vm whose nic will get static IP
-        :type client: VM object
+        :type client: :py:class:`virttest.qemu_vm.VM`
         :param server: vm whose network will provide a free static IP
-        :type server: VM object
+        :type server: :py:class:`virttest.qemu_vm.VM`
         :param str client_nic: role of the nic of the client
         :param str server_nic: role of the nic of the server
 
@@ -927,9 +927,9 @@ class VMNetwork(object):
 
         :param str name: name of the tunnel
         :param vm1: left side vm of the tunnel
-        :type vm1: VM object
+        :type vm1: :py:class:`virttest.qemu_vm.VM`
         :param vm2: right side vm of the tunnel
-        :type vm2: VM object
+        :type vm2: :py:class:`virttest.qemu_vm.VM`
         :param local1: left local type as in tunnel constructor
         :type local1: {str, str}
         :param remote1: left remote type as in tunnel constructor
@@ -954,7 +954,7 @@ class VMNetwork(object):
 
         :param str name: name of the tunnel
         :param vm: vm where the tunnel will be configured
-        :type vm: VM object
+        :type vm: :py:class:`virttest.qemu_vm.VM`
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
         :type apply_extra_options: {str, any}
         :raises: :py:class:`exceptions.KeyError` if not all tunnel parameters are present
@@ -979,9 +979,9 @@ class VMNetwork(object):
         with the exception of:
 
         :param server: vm which will be the VPN server for roadwarrior connections
-        :type server: VM object
+        :type server: :py:class:`virttest.qemu_vm.VM`
         :param client: vm which will be connecting individual device
-        :type client: VM object
+        :type client: :py:class:`virttest.qemu_vm.VM`
 
         Regarding the client, only its parameters will be updated by this method.
         """
@@ -1012,7 +1012,7 @@ class VMNetwork(object):
         with the exception of:
 
         :param vms: vms to participate in the VPN route
-        :type vms: [VM object]
+        :type vms: [:py:class:`virttest.qemu_vm.VM`]
         :param vpns: VPNs over which the route will be constructed
         :type vpns: [str]
         :raises: :py:class:`exceptions.TestError` if #vpns < #vms - 1 or #vpns < 2 or #vms < 2
@@ -1061,9 +1061,9 @@ class VMNetwork(object):
         the tunnels and netconfigs of the entire vm network.
 
         :param src_vm: source vm whose IPs are starting points
-        :type src_vm: VM object
+        :type src_vm: :py:class:`virttest.qemu_vm.VM`
         :param dst_vm: destination vm whose IPs are ending points
-        :type dst_vm: VM object
+        :type dst_vm: :py:class:`virttest.qemu_vm.VM`
         :param str dst_nic: network interface for the destination vm
         :returns: the IP with which the destination vm can be accessed from the source vm
         :rtype: str
@@ -1114,9 +1114,9 @@ class VMNetwork(object):
         the tunnels and netconfigs of the entire vm network.
 
         :param src_vm: source vm whose IPs are starting points
-        :type src_vm: VM object
+        :type src_vm: :py:class:`virttest.qemu_vm.VM`
         :param dst_vm: destination vm whose IPs are ending points
-        :type dst_vm: VM object
+        :type dst_vm: :py:class:`virttest.qemu_vm.VM`
         :param str dst_nic: network interface role for the destination vm
         :returns: the IP with which the destination vm can be accessed from the source vm
         :rtype: str
@@ -1154,11 +1154,11 @@ class VMNetwork(object):
         Search for the appropriate message in the vpn log file.
 
         :param src_vm: source vm whose packets will be logged
-        :type src_vm: VM object
+        :type src_vm: :py:class:`virttest.qemu_vm.VM`
         :param dst_vm: destination vm whose packets will be logged
-        :type dst_vm: VM object
+        :type dst_vm: :py:class:`virttest.qemu_vm.VM`
         :param log_vm: vm where all packets are logged
-        :type log_vm: VM object
+        :type log_vm: :py:class:`virttest.qemu_vm.VM`
         :param bool require_blocked: whether to expect access message or deny message
         :raises: :py:class:`exceptions.TestError` if the source or destination vms are not on the network
         :raises: :py:class:`exceptions.TestFail` if the VPN packets were not logged properly
@@ -1214,9 +1214,9 @@ class VMNetwork(object):
         Pings a vm from another vm to test basic ICMP connectivity.
 
         :param src_vm: source vm which will ping
-        :type src_vm: VM object
+        :type src_vm: :py:class:`virttest.qemu_vm.VM`
         :param dst_vm: destination vm which will be pinged
-        :type dst_vm: VM object
+        :type dst_vm: :py:class:`virttest.qemu_vm.VM`
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
         :param str address: explicit IP or domain to use for pinging
         :returns: the status and output of the performed ping
@@ -1485,9 +1485,9 @@ class VMNetwork(object):
         using the SSH protocol.
 
         :param src_vm: source vm with the SSH client
-        :type src_vm: VM object
+        :type src_vm: :py:class:`virttest.qemu_vm.VM`
         :param dst_vm: destination vm with the SSH server
-        :type dst_vm: VM object
+        :type dst_vm: :py:class:`virttest.qemu_vm.VM`
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
         :param int timeout: timeout for the SSH connection
         :returns: the hostname of the SSH server
@@ -1509,9 +1509,9 @@ class VMNetwork(object):
         :param str src_path: source path for the securely copied files
         :param str dst_path: destination path for the securely copied files
         :param src_vm: source vm with the ssh client
-        :type src_vm: VM object
+        :type src_vm: :py:class:`virttest.qemu_vm.VM`
         :param dst_vm: destination vm with the ssh server
-        :type dst_vm: VM object
+        :type dst_vm: :py:class:`virttest.qemu_vm.VM`
         :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
         :param int timeout: timeout for the SSH connection
         :raises: :py:class:`exceptions.TestFail` if the files couldn't be copied
