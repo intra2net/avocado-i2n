@@ -1119,7 +1119,7 @@ class StateSetupTest(unittest.TestCase):
         state_setup.pop_state(self.run_params, self.env)
 
         mock_lv_utils.lv_check.assert_called_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.mock_vms["vm1"].is_alive.assert_called_with()
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'launch', 'current_state')
         expected = [mock.call('disk_vm1', 'current_state'), mock.call('disk_vm1', 'launch')]
         self.assertListEqual(mock_lv_utils.lv_remove.call_args_list, expected)
@@ -1146,7 +1146,7 @@ class StateSetupTest(unittest.TestCase):
         state_setup.pop_state(self.run_params, self.env)
 
         mock_process.system_output.assert_called_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.mock_vms["vm1"].is_alive.assert_called_with()
         self.mock_vms["vm1"].loadvm.assert_called_once_with('launch')
         self.mock_vms["vm1"].monitor.send_args_cmd.assert_called_once_with("delvm id=launch")
 

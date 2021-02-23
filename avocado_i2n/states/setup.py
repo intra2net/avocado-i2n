@@ -303,6 +303,42 @@ def enforce_unset(vm_params, vm=None):
         backend.unset(vm_params, vm)
 
 
+def on_off_switch(do, skip_types, vm, vm_name, vm_params):
+    """
+    An on/off switch for on/off state transitions.
+
+    :param str do: get, set, or unset
+    :param skip_types: types to skip in this switch passthrough
+    :type skip_types: [str]
+    :param vm: vm to switch on/off if any is already available
+    :type vm: VM object or None
+    :param str vm_name: name of the vm to switch on/off
+    :param vm_params: vm parameters of the vm to switch on/off
+    :type vm_params: {str, str}
+    :returns: whether the vm is ready for the state operation
+    :rtype: bool
+
+    ..todo:: study better the environment pre/postprocessing details necessary
+             for flawless vm destruction and creation to improve this switch
+    """
+    if vm_params[f"{do}_type"] in skip_types:
+        logging.debug(f"Skip {do}ting states of types {', '.join(skip_types)}")
+        return False
+
+    if vm_params[f"{do}_type"] == "off":
+        if vm is not None and vm.is_alive():
+            vm.destroy(gracefully=do!="get")
+    else:
+        if vm is None:
+            vm = env.create_vm(vm_params.get('vm_type'), vm_params.get('target'),
+                               vm_name, vm_params, None)
+        # on states require manual update of the vm parameters
+        vm.params = vm_params
+        if not vm.is_alive():
+            vm.create()
+    return True
+
+
 def show_states(run_params, env):
     """
     Return a list of available states of a specific type.
@@ -404,24 +440,10 @@ def get_state(run_params, env):
         state_exists = check_state(vm_params, env)
         # if too many or no matches default to most performant type
         vm_params["get_type"] = vm_params["found_type_%s" % vm_name]
-        if state_exists:
-            # on/off switch
-            if vm_params["get_type"] in run_params.get("skip_types", []):
-                logging.debug("Skip getting states of types %s" % ", ".join(run_params.objects("skip_types")))
-                continue
-            if vm is None:
-                vm = env.create_vm(vm_params.get('vm_type'), vm_params.get('target'),
-                                   vm_name, vm_params, None)
-            # TODO: study better the environment pre/postprocessing details necessary for flawless
-            # vm destruction and creation to improve the on/off switch
-            if vm_params["get_type"] == "off":
-                if vm.is_alive():
-                    vm.destroy(gracefully=False)
-            else:
-                # on states require manual update of the vm parameters
-                vm.params = vm_params
-                if not vm.is_alive():
-                    vm.create()
+        enforce = on_off_switch(do="get", skip_types=run_params.objects('skip_types'),
+                                vm=vm, vm_name=vm_name, vm_params=vm_params)
+        if not enforce:
+            continue
 
         action_if_exists = vm_params["get_mode"][0]
         action_if_doesnt_exist = vm_params["get_mode"][1]
@@ -473,14 +495,10 @@ def set_state(run_params, env):
         state_exists = check_state(vm_params, env)
         # if too many or no matches default to most performant type
         vm_params["set_type"] = vm_params["found_type_%s" % vm_name]
-        # on/off filter
-        if vm_params["set_type"] in run_params.get("skip_types", []):
-            logging.debug("Skip setting states of types %s" % ", ".join(run_params.objects("skip_types")))
+        enforce = on_off_switch(do="set", skip_types=run_params.objects('skip_types'),
+                                vm=vm, vm_name=vm_name, vm_params=vm_params)
+        if not enforce:
             continue
-        if vm_params["set_type"] == "off":
-            vm.destroy(gracefully=True)
-        # NOTE: setting an on state assumes that the vm is on just like
-        # setting an off state assumes that the vm already exists
 
         action_if_exists = vm_params["set_mode"][0]
         action_if_doesnt_exist = vm_params["set_mode"][1]
@@ -542,7 +560,10 @@ def unset_state(run_params, env):
         state_exists = check_state(vm_params, env)
         # if too many or no matches default to most performant type
         vm_params["unset_type"] = vm_params["found_type_%s" % vm_name]
-        # NOTE: no custom handling needed here
+        enforce = on_off_switch(do="unset", skip_types=run_params.objects('skip_types'),
+                                vm=vm, vm_name=vm_name, vm_params=vm_params)
+        if not enforce:
+            continue
 
         action_if_exists = vm_params["unset_mode"][0]
         action_if_doesnt_exist = vm_params["unset_mode"][1]
