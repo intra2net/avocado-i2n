@@ -99,7 +99,7 @@ class TestNode(object):
         test_constructor_params = {'name': test.TestID(self.id, self.params["shortname"]),
                                    'vt_params': self.params}
         if job is not None:
-            test_constructor_params['job'] = job
+            test_constructor_params['config'] = job.config
             test_constructor_params['base_logdir'] = job.logdir
         return (VirtTest, test_constructor_params)
 

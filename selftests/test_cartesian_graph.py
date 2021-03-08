@@ -55,12 +55,13 @@ class DummyTestRunning(object):
             self.add_test_result(shortname, "FAIL" if self.expected_test_fail else "PASS")
             return not self.expected_test_fail
 
-    def add_test_result(self, shortname, status):
+    def add_test_result(self, shortname, status, logdir="."):
         name = mock.MagicMock()
         name.name = shortname
         self.test_results.append({
             "name": name,
-            "status": status
+            "status": status,
+            "logdir": logdir,
         })
 
 

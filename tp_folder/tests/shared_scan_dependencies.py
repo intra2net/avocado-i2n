@@ -58,6 +58,6 @@ def run(test, params, env):
     try:
         trees.scan_object_states(env)
     finally:
-        trees.save_setup_list(test.job.logdir)
+        trees.save_setup_list(test.logdir)
 
     logging.info("Scan completed successfully")

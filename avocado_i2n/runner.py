@@ -248,9 +248,10 @@ class CartesianRunner(TestRunner):
         assert len(nodes) == 1, "There can only be one shared root"
         test_node = nodes[0]
         status = self.run_test_node(test_node)
+        logdir = self.job.result.tests[-1]["logdir"]
 
         try:
-            graph.load_setup_list(self.job.logdir)
+            graph.load_setup_list(logdir)
         except FileNotFoundError as e:
             logging.error("Could not parse scanned available setup, aborting as it "
                           "might be dangerous to overwrite existing undetected such")
@@ -258,7 +259,6 @@ class CartesianRunner(TestRunner):
 
         if not status:
             graph.flag_children(flag=False)
-
         for node in graph.nodes:
             self.job.result.cancelled += 1 if not node.should_run else 0
 
