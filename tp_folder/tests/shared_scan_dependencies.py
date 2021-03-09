@@ -35,7 +35,6 @@ from avocado.core import exceptions
 from virttest import error_context
 
 # custom imports
-from avocado_i2n import state_setup
 from avocado_i2n.cartgraph import TestGraph
 
 
