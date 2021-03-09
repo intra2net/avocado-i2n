@@ -41,7 +41,7 @@ from .setup import StateBackend
 
 
 class LVMBackend(StateBackend):
-    """Backend manipulating off states as logical volumes."""
+    """Backend manipulating off states as logical volume snapshots."""
 
     _require_running_object = False
 

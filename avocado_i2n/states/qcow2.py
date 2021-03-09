@@ -43,7 +43,13 @@ QEMU_ON_STATES_REGEX = re.compile(r"^\d+\s+([\w\.]+)\s*(?!0 B)(\d+e?[\-\+]?[\.\d
 
 
 class QCOW2Backend(StateBackend):
-    """Backend manipulating off states as qcow2 snapshots."""
+    """
+    Backend manipulating off states as QCOW2 snapshots.
+
+    ..todo:: There are utilities providing access to the Qemu image binary
+             provided by Avocado VT similarly to the LV utilities used for the
+             LVM backend instead of independently implemented here.
+    """
 
     _require_running_object = False
 
@@ -169,7 +175,7 @@ class QCOW2Backend(StateBackend):
 
 
 class QCOW2VTBackend(QCOW2Backend):
-    """Backend manipulating on states as qcow2 snapshots using VT's VM bindings."""
+    """Backend manipulating on states as QCOW2 snapshots using VT's VM bindings."""
 
     _require_running_object = True
 
