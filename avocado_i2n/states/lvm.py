@@ -28,9 +28,13 @@ INTERFACE
 """
 
 import os
+import re
 import logging
+import shutil
+import time
 
 from avocado.core import exceptions
+from avocado.utils import process
 from avocado.utils import lv_utils
 
 from .setup import StateBackend
@@ -203,12 +207,11 @@ class LVMBackend(StateBackend):
         vm_name = params["vms"]
         mount_loc = cls._get_images_mount_loc(params)
         logging.info("Creating original logical volume for %s", vm_name)
-        lv_utils.vg_ramdisk(None,
-                            params["vg_name"],
-                            params["ramdisk_vg_size"],
-                            params["ramdisk_basedir"],
-                            params["ramdisk_sparse_filename"],
-                            params["use_tmpfs"] == "yes")
+        vg_ramdisk(params["vg_name"],
+                   params["ramdisk_vg_size"],
+                   params["ramdisk_basedir"],
+                   params["ramdisk_sparse_filename"],
+                   params["use_tmpfs"] == "yes")
         lv_utils.lv_create(params["vg_name"],
                            params["lv_name"],
                            params["lv_size"],
@@ -261,11 +264,174 @@ class LVMBackend(StateBackend):
                                         "this is not a permanent test object, see the debug.")
                         raise exceptions.TestWarn("Permanent vm %s was detected but cannot be "
                                                   "removed automatically" % vm_name)
-            lv_utils.vg_ramdisk_cleanup(params["ramdisk_sparse_filename"],
-                                        os.path.join(params["ramdisk_basedir"],
-                                                     params["vg_name"]),
-                                        params["vg_name"],
-                                        None,
-                                        params["use_tmpfs"] == "yes")
+            vg_ramdisk_cleanup(params["ramdisk_sparse_filename"],
+                               os.path.join(params["ramdisk_basedir"],
+                                            params["vg_name"]),
+                               params["vg_name"],
+                               None,
+                               params["use_tmpfs"] == "yes")
         except exceptions.TestError as ex:
             logging.error(ex)
+
+
+def vg_ramdisk(vg_name, ramdisk_vg_size,
+               ramdisk_basedir, ramdisk_sparse_filename,
+               use_tmpfs=True):
+    """
+    Create volume group on top of ram memory to speed up LV performance.
+
+    When disk is specified the size of the physical volume is taken from
+    existing disk space.
+
+    :param str vg_name: name of the volume group
+    :param str ramdisk_vg_size: size of the ramdisk virtual group (MB)
+    :param str ramdisk_basedir: base directory for the ramdisk sparse file
+    :param str ramdisk_sparse_filename: name of the ramdisk sparse file
+    :param bool use_tmpfs: whether to use RAM or slower storage
+    :returns: ramdisk_filename, vg_ramdisk_dir, vg_name, loop_device
+    :rtype: (str, str, str, str)
+    :raises: :py:class:`lv_utils.LVException` on failure at any stage
+
+    Sample ramdisk params:
+    - ramdisk_vg_size = "40000"
+    - ramdisk_basedir = "/tmp"
+    - ramdisk_sparse_filename = "virtual_hdd"
+
+    Sample general params:
+    - vg_name='autotest_vg',
+    - lv_name='autotest_lv',
+    - lv_size='1G',
+    - lv_snapshot_name='autotest_sn',
+    - lv_snapshot_size='1G'
+
+    The ramdisk volume group size is in MB.
+    """
+    vg_size = ramdisk_vg_size
+    vg_ramdisk_dir = os.path.join(ramdisk_basedir, vg_name)
+    ramdisk_filename = os.path.join(vg_ramdisk_dir,
+                                    ramdisk_sparse_filename)
+    # Try to cleanup the ramdisk before defining it
+    try:
+        vg_ramdisk_cleanup(ramdisk_filename, vg_ramdisk_dir,
+                           vg_name, use_tmpfs)
+    except lv_utils.LVException:
+        pass
+    if not os.path.exists(vg_ramdisk_dir):
+        os.makedirs(vg_ramdisk_dir)
+    try:
+        if use_tmpfs:
+            logging.debug("Mounting tmpfs")
+            process.run("mount -t tmpfs tmpfs %s" % vg_ramdisk_dir,
+                        sudo=True)
+
+        logging.debug("Converting and copying /dev/zero")
+
+        # Initializing sparse file with extra few bytes
+        cmd = ("dd if=/dev/zero of=%s bs=1M count=1 seek=%s" %
+               (ramdisk_filename, vg_size))
+        process.run(cmd)
+        logging.debug("Finding free loop device")
+        result = process.run("losetup --find", sudo=True)
+    except process.CmdError as ex:
+        logging.error(ex)
+        vg_ramdisk_cleanup(ramdisk_filename, vg_ramdisk_dir,
+                           vg_name, use_tmpfs)
+        raise lv_utils.LVException("Fail to create vg_ramdisk: %s" % ex)
+    loop_device = result.stdout_text.rstrip()
+    try:
+        logging.debug("Creating loop device")
+        process.run("losetup %s %s" %
+                    (loop_device, ramdisk_filename), sudo=True)
+        logging.debug("Creating physical volume %s", loop_device)
+        process.run("pvcreate -y %s" % loop_device, sudo=True)
+        logging.debug("Creating volume group %s", vg_name)
+        process.run("vgcreate %s %s" %
+                    (vg_name, loop_device), sudo=True)
+    except process.CmdError as ex:
+        logging.error(ex)
+        vg_ramdisk_cleanup(ramdisk_filename, vg_ramdisk_dir,
+                           vg_name, loop_device, use_tmpfs)
+        raise lv_utils.LVException("Fail to create vg_ramdisk: %s" % ex)
+    return ramdisk_filename, vg_ramdisk_dir, vg_name, loop_device
+
+
+def vg_ramdisk_cleanup(ramdisk_filename=None, vg_ramdisk_dir=None,
+                       vg_name=None, loop_device=None, use_tmpfs=True):
+    """
+    Clean up any stage of the VG ramdisk setup in case of test error.
+
+    This detects whether the components were initialized and if so tries
+    to remove them. In case of failure it raises summary exception.
+
+    :param str ramdisk_filename: name of the ramdisk sparse file
+    :param str vg_ramdisk_dir: location of the ramdisk file
+    :param str vg_name: name of the volume group
+    :param str loop_device: name of the disk or loop device
+    :param bool use_tmpfs: whether to use RAM or slower storage
+    :returns: ramdisk_filename, vg_ramdisk_dir, vg_name, loop_device
+    :rtype: (str, str, str, str)
+    :raises: :py:class:`lv_utils.LVException` on intolerable failure at any stage
+    """
+    errs = []
+    if vg_name is not None:
+        loop_device = re.search(r"([/\w-]+) +%s +lvm2" % vg_name,
+                                process.run("pvs", sudo=True).stdout_text)
+        if loop_device is not None:
+            loop_device = loop_device.group(1)
+        process.run("vgremove -f %s" %
+                    vg_name, ignore_status=True, sudo=True)
+
+    if loop_device is not None:
+        result = process.run("pvremove %s" % loop_device,
+                             ignore_status=True, sudo=True)
+        if result.exit_status != 0:
+            errs.append("wipe pv")
+            logging.error("Failed to wipe pv from %s: %s", loop_device, result)
+
+        losetup_all = process.run("losetup --all", sudo=True).stdout_text
+        if loop_device in losetup_all:
+            ramdisk_filename = re.search(r"%s: \[\d+\]:\d+ \(([/\w]+)\)" %
+                                         loop_device, losetup_all)
+            if ramdisk_filename is not None:
+                ramdisk_filename = ramdisk_filename.group(1)
+
+            for _ in range(10):
+                result = process.run("losetup -d %s" % loop_device,
+                                     ignore_status=True, sudo=True)
+                if b"resource busy" not in result.stderr:
+                    if result.exit_status != 0:
+                        errs.append("remove loop device")
+                        logging.error("Unexpected failure when removing loop"
+                                      "device %s, check the log", loop_device)
+                    break
+                time.sleep(0.1)
+
+    if ramdisk_filename is not None:
+        if os.path.exists(ramdisk_filename):
+            os.unlink(ramdisk_filename)
+            logging.debug("Ramdisk filename %s deleted", ramdisk_filename)
+            vg_ramdisk_dir = os.path.dirname(ramdisk_filename)
+
+    if vg_ramdisk_dir is not None:
+        if use_tmpfs and not process.system("mountpoint %s" % vg_ramdisk_dir,
+                                            ignore_status=True):
+            for _ in range(10):
+                result = process.run("umount %s" % vg_ramdisk_dir,
+                                     ignore_status=True, sudo=True)
+                time.sleep(0.1)
+                if result.exit_status == 0:
+                    break
+            else:
+                errs.append("umount")
+                logging.error("Unexpected failure unmounting %s, check the "
+                              "log", vg_ramdisk_dir)
+
+        if os.path.exists(vg_ramdisk_dir):
+            try:
+                shutil.rmtree(vg_ramdisk_dir)
+                logging.debug("Ramdisk directory %s deleted", vg_ramdisk_dir)
+            except OSError as details:
+                errs.append("rm-ramdisk-dir")
+                logging.error("Failed to remove ramdisk_dir: %s", details)
+    if errs:
+        raise lv_utils.LVException("vg_ramdisk_cleanup failed: %s" % ", ".join(errs))

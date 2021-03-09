@@ -965,7 +965,9 @@ class StateSetupTest(unittest.TestCase):
         state_setup.get_state(self.run_params, self.env)
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
-    def test_set_root_off(self, mock_lv_utils):
+    @mock.patch('avocado_i2n.states.lvm.vg_cleanup')
+    @mock.patch('avocado_i2n.states.lvm.vg_setup')
+    def test_set_root_off(self, mock_vg_setup, mock_vg_cleanup, mock_lv_utils):
         self._set_off_lvm_params()
         self.run_params["set_state_vm1"] = "root"
         self.run_params["set_type_vm1"] = "off"
@@ -982,14 +984,18 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["image_raw_device_vm1"] = "no"
         self._create_mock_vms()
 
+        mock_vg_setup.reset_mock()
+        mock_vg_cleanup.reset_mock()
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         state_setup.set_state(self.run_params, self.env)
         mock_lv_utils.lv_check.assert_called_with('ramdisk_vm1', 'LogVol')
-        mock_lv_utils.vg_ramdisk.assert_called_once_with(None, 'ramdisk_vm1', '40000', '/tmp', 'virtual_hdd_vm1', True)
+        mock_vg_setup.assert_called_once_with('ramdisk_vm1', '40000', '/tmp', 'virtual_hdd_vm1', True)
         mock_lv_utils.lv_create.assert_called_once_with('ramdisk_vm1', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm1', 'LogVol', 'current_state')
 
+        mock_vg_setup.reset_mock()
+        mock_vg_cleanup.reset_mock()
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
         with self.assertRaises(exceptions.TestSkipError):
@@ -998,13 +1004,15 @@ class StateSetupTest(unittest.TestCase):
 
         # force create case
         self.run_params["set_mode_vm1"] = "ff"
+        mock_vg_setup.reset_mock()
+        mock_vg_cleanup.reset_mock()
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
         #mock_lv_utils.vg_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
         mock_lv_utils.lv_check.assert_called_with('ramdisk_vm1', 'LogVol')
-        mock_lv_utils.vg_ramdisk_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/ramdisk_vm1', 'ramdisk_vm1', None, True)
-        mock_lv_utils.vg_ramdisk.assert_called_once_with(None, 'ramdisk_vm1', '40000', '/tmp', 'virtual_hdd_vm1', True)
+        mock_vg_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/ramdisk_vm1', 'ramdisk_vm1', None, True)
+        mock_vg_setup.assert_called_once_with('ramdisk_vm1', '40000', '/tmp', 'virtual_hdd_vm1', True)
         mock_lv_utils.lv_create.assert_called_once_with('ramdisk_vm1', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm1', 'LogVol', 'current_state')
 
@@ -1026,7 +1034,8 @@ class StateSetupTest(unittest.TestCase):
         state_setup.set_state(self.run_params, self.env)
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
-    def test_unset_root_off(self, mock_lv_utils):
+    @mock.patch('avocado_i2n.states.lvm.vg_cleanup')
+    def test_unset_root_off(self, mock_vg_cleanup, mock_lv_utils):
         self._set_off_lvm_params()
         self.run_params["unset_state_vm1"] = "root"
         self.run_params["unset_type_vm1"] = "off"
@@ -1037,19 +1046,21 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["image_raw_device_vm1"] = "no"
         self._create_mock_vms()
 
+        mock_vg_cleanup.reset_mock()
         mock_lv_utils.reset_mock()
         mock_lv_utils.vg_check.return_value = True
         state_setup.unset_state(self.run_params, self.env)
         mock_lv_utils.vg_check.assert_called_once_with('ramdisk_vm1')
-        mock_lv_utils.vg_ramdisk_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/ramdisk_vm1', 'ramdisk_vm1', None, True)
+        mock_vg_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/ramdisk_vm1', 'ramdisk_vm1', None, True)
 
         # test tolerance to cleanup errors
+        mock_vg_cleanup.reset_mock()
         mock_lv_utils.reset_mock()
         mock_lv_utils.vg_check.return_value = True
-        mock_lv_utils.vg_ramdisk_cleanup.side_effect = exceptions.TestError("cleanup failed")
+        mock_vg_cleanup.side_effect = exceptions.TestError("cleanup failed")
         state_setup.unset_state(self.run_params, self.env)
         mock_lv_utils.vg_check.assert_called_once_with('ramdisk_vm1')
-        mock_lv_utils.vg_ramdisk_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/ramdisk_vm1', 'ramdisk_vm1', None, True)
+        mock_vg_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/ramdisk_vm1', 'ramdisk_vm1', None, True)
 
     def test_unset_root_on(self):
         self._set_on_qcow2_params()
@@ -1210,7 +1221,8 @@ class StateSetupTest(unittest.TestCase):
 
     @mock.patch('avocado_i2n.states.qcow2.process')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
-    def test_set_multivm(self, mock_lv_utils, _mock_process):
+    @mock.patch('avocado_i2n.states.lvm.vg_setup')
+    def test_set_multivm(self, mock_vg_setup, mock_lv_utils, _mock_process):
         self._set_off_lvm_params()
         self.run_params["vms"] = "vm2 vm3 vm4"
         self.run_params["set_state"] = "launch2"
@@ -1250,7 +1262,7 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm2"].destroy.assert_called_once_with(gracefully=True)
         self.mock_vms["vm3"].destroy.assert_called_once_with(gracefully=True)
         self.mock_vms["vm4"].destroy.assert_called_once_with(gracefully=True)
-        mock_lv_utils.vg_ramdisk.assert_called_once_with(None, 'ramdisk_vm3', '40000', '/tmp', 'virtual_hdd_vm3', True)
+        mock_vg_setup.assert_called_once_with('ramdisk_vm3', '40000', '/tmp', 'virtual_hdd_vm3', True)
         mock_lv_utils.lv_create.assert_called_once_with('ramdisk_vm3', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm3', 'LogVol', 'current_state')
 
