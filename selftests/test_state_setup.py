@@ -47,7 +47,7 @@ class StateSetupTest(unittest.TestCase):
         ss.on = qcow2.QCOW2VTBackend
 
     def _set_off_lvm_params(self):
-        self.run_params["vg_name_vm1"] = "ramdisk_vm1"
+        self.run_params["vg_name_vm1"] = "disk_vm1"
         self.run_params["lv_name"] = "LogVol"
         self.run_params["lv_pointer_name"] = "current_state"
 
@@ -79,7 +79,7 @@ class StateSetupTest(unittest.TestCase):
 
         mock_lv_utils.lv_list.return_value = ["launch1", "launch2"]
         states = state_setup.show_states(self.run_params, self.env)
-        mock_lv_utils.lv_list.assert_called_once_with("ramdisk_vm1")
+        mock_lv_utils.lv_list.assert_called_once_with("disk_vm1")
 
         self.assertIn("launch1", states)
         self.assertIn("launch2", states)
@@ -146,13 +146,13 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
         exists = state_setup.check_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.assertTrue(exists)
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         exists = state_setup.check_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.assertFalse(exists)
 
     @mock.patch('avocado_i2n.states.qcow2.process')
@@ -236,7 +236,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         exists = state_setup.check_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.assertTrue(exists)
 
     @mock.patch('avocado_i2n.states.qcow2.process')
@@ -253,7 +253,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = False
         exists = state_setup.check_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.assertFalse(exists)
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
@@ -269,7 +269,7 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].is_alive.return_value = False
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         # test on/off switch as well
         self.mock_vms["vm1"].is_alive.assert_called_once_with()
 
@@ -277,7 +277,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_get_off_rx(self, mock_lv_utils):
@@ -294,16 +294,16 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         self.mock_vms["vm1"].is_alive.return_value = False
         state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].is_alive.assert_called_once_with()
-        mock_lv_utils.lv_remove.assert_called_once_with('ramdisk_vm1', 'current_state')
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm1', 'launch', 'current_state')
+        mock_lv_utils.lv_remove.assert_called_once_with('disk_vm1', 'current_state')
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'launch', 'current_state')
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestError):
             state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_get_off_ii(self, mock_lv_utils):
@@ -317,13 +317,13 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         self.mock_vms["vm1"].is_alive.return_value = False
         state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].is_alive.assert_called_once_with()
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_get_off_xx(self, mock_lv_utils):
@@ -338,14 +338,14 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].is_alive.return_value = False
         with self.assertRaises(exceptions.TestError):
             state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].is_alive.assert_called_once_with()
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestError):
             state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_get_type_switch(self, mock_lv_utils):
@@ -360,7 +360,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         self.mock_vms["vm1"].is_alive.return_value = True
         state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].is_alive.assert_called_once_with()
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=False)
 
@@ -369,7 +369,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         self.mock_vms["vm1"].is_alive.return_value = False
         state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].is_alive.assert_called_once_with()
 
     @mock.patch('avocado_i2n.states.qcow2.process')
@@ -442,10 +442,10 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].is_alive.return_value = False
         state_setup.get_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].is_alive.assert_called_once_with()
-        mock_lv_utils.lv_remove.assert_called_once_with('ramdisk_vm1', 'current_state')
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm1', 'launch', 'current_state')
+        mock_lv_utils.lv_remove.assert_called_once_with('disk_vm1', 'current_state')
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'launch', 'current_state')
 
     @mock.patch('avocado_i2n.states.qcow2.process')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
@@ -462,7 +462,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = False
         state_setup.get_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_set_off_aa(self, mock_lv_utils):
@@ -478,7 +478,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
 
         mock_lv_utils.reset_mock()
@@ -486,7 +486,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
@@ -502,7 +502,7 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
 
         mock_lv_utils.reset_mock()
@@ -510,7 +510,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestError):
             state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
@@ -526,18 +526,18 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
-        mock_lv_utils.lv_remove.assert_called_once_with("ramdisk_vm1", "launch")
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm1', 'current_state', 'launch')
+        mock_lv_utils.lv_remove.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
 
         mock_lv_utils.reset_mock()
         self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = False
         state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm1', 'current_state', 'launch')
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_set_off_xx(self, mock_lv_utils):
@@ -553,7 +553,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         with self.assertRaises(exceptions.TestError):
             state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
 
         mock_lv_utils.reset_mock()
@@ -561,7 +561,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestError):
             state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
 
     @mock.patch('avocado_i2n.states.qcow2.process')
@@ -631,10 +631,10 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
-        mock_lv_utils.lv_remove.assert_called_once_with('ramdisk_vm1', 'launch')
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm1', 'current_state', 'launch')
+        mock_lv_utils.lv_remove.assert_called_once_with('disk_vm1', 'launch')
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
 
     @mock.patch('avocado_i2n.states.qcow2.process')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
@@ -651,7 +651,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = False
         state_setup.set_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].savevm.assert_called_once_with('launch')
 
     @mock.patch('avocado_i2n.states.qcow2.process')
@@ -683,10 +683,10 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
-        mock_lv_utils.lv_remove.assert_called_once_with("ramdisk_vm1", "launch")
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm1', 'current_state', 'launch')
+        mock_lv_utils.lv_remove.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
 
     @mock.patch('avocado_i2n.states.qcow2.process')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
@@ -703,7 +703,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_unset_off_ra(self, mock_lv_utils):
@@ -716,13 +716,13 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
         state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_unset_off_fi(self, mock_lv_utils):
@@ -736,13 +736,13 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
         state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
-        mock_lv_utils.lv_remove.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_remove.assert_called_once_with("disk_vm1", "launch")
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_unset_off_xx(self, mock_lv_utils):
@@ -756,13 +756,13 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         with self.assertRaises(exceptions.TestError):
             state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestError):
             state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.qcow2.process')
     def test_unset_on_fi(self, mock_process):
@@ -828,8 +828,8 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         state_setup.unset_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
-        mock_lv_utils.lv_remove.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_remove.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_unset_keep_pointer(self, mock_lv_utils):
@@ -845,7 +845,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         with self.assertRaises(ValueError):
             state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "current_state")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "current_state")
 
     @mock.patch('avocado_i2n.states.qcow2.process')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
@@ -861,7 +861,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = False
         state_setup.unset_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_check_root_off(self, mock_lv_utils):
@@ -873,13 +873,13 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
         exists = state_setup.check_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "LogVol")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "LogVol")
         self.assertTrue(exists)
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         exists = state_setup.check_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "LogVol")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "LogVol")
         self.assertFalse(exists)
 
     def test_check_root_on(self):
@@ -977,10 +977,10 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["pool_size"] = "30G"
         self.run_params["lv_size"] = "30G"
         self.run_params["image_name_vm1"] = "/vm1/image"
-        self.run_params["ramdisk_sparse_filename_vm1"] = "virtual_hdd_vm1"
+        self.run_params["disk_sparse_filename_vm1"] = "virtual_hdd_vm1"
         self.run_params["use_tmpfs"] = "yes"
-        self.run_params["ramdisk_basedir_vm1"] = "/tmp"
-        self.run_params["ramdisk_vg_size_vm1"] = "40000"
+        self.run_params["disk_basedir_vm1"] = "/tmp"
+        self.run_params["disk_vg_size_vm1"] = "40000"
         self.run_params["image_raw_device_vm1"] = "no"
         self._create_mock_vms()
 
@@ -989,10 +989,10 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_with('ramdisk_vm1', 'LogVol')
-        mock_vg_setup.assert_called_once_with('ramdisk_vm1', '40000', '/tmp', 'virtual_hdd_vm1', True)
-        mock_lv_utils.lv_create.assert_called_once_with('ramdisk_vm1', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm1', 'LogVol', 'current_state')
+        mock_lv_utils.lv_check.assert_called_with('disk_vm1', 'LogVol')
+        mock_vg_setup.assert_called_once_with('disk_vm1', '40000', '/tmp', 'virtual_hdd_vm1', True)
+        mock_lv_utils.lv_create.assert_called_once_with('disk_vm1', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'LogVol', 'current_state')
 
         mock_vg_setup.reset_mock()
         mock_vg_cleanup.reset_mock()
@@ -1000,7 +1000,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_with('ramdisk_vm1', 'LogVol')
+        mock_lv_utils.lv_check.assert_called_with('disk_vm1', 'LogVol')
 
         # force create case
         self.run_params["set_mode_vm1"] = "ff"
@@ -1010,11 +1010,11 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         #mock_lv_utils.vg_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_with('ramdisk_vm1', 'LogVol')
-        mock_vg_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/ramdisk_vm1', 'ramdisk_vm1', None, True)
-        mock_vg_setup.assert_called_once_with('ramdisk_vm1', '40000', '/tmp', 'virtual_hdd_vm1', True)
-        mock_lv_utils.lv_create.assert_called_once_with('ramdisk_vm1', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm1', 'LogVol', 'current_state')
+        mock_lv_utils.lv_check.assert_called_with('disk_vm1', 'LogVol')
+        mock_vg_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/disk_vm1', 'disk_vm1', None, True)
+        mock_vg_setup.assert_called_once_with('disk_vm1', '40000', '/tmp', 'virtual_hdd_vm1', True)
+        mock_lv_utils.lv_create.assert_called_once_with('disk_vm1', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'LogVol', 'current_state')
 
     def test_set_root_on(self):
         self._set_on_qcow2_params()
@@ -1040,9 +1040,9 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["unset_state_vm1"] = "root"
         self.run_params["unset_type_vm1"] = "off"
         self.run_params["image_name_vm1"] = "/vm1/image"
-        self.run_params["ramdisk_sparse_filename_vm1"] = "virtual_hdd_vm1"
+        self.run_params["disk_sparse_filename_vm1"] = "virtual_hdd_vm1"
         self.run_params["use_tmpfs"] = "yes"
-        self.run_params["ramdisk_basedir_vm1"] = "/tmp"
+        self.run_params["disk_basedir_vm1"] = "/tmp"
         self.run_params["image_raw_device_vm1"] = "no"
         self._create_mock_vms()
 
@@ -1050,8 +1050,8 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         mock_lv_utils.vg_check.return_value = True
         state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.vg_check.assert_called_once_with('ramdisk_vm1')
-        mock_vg_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/ramdisk_vm1', 'ramdisk_vm1', None, True)
+        mock_lv_utils.vg_check.assert_called_once_with('disk_vm1')
+        mock_vg_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/disk_vm1', 'disk_vm1', None, True)
 
         # test tolerance to cleanup errors
         mock_vg_cleanup.reset_mock()
@@ -1059,8 +1059,8 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.vg_check.return_value = True
         mock_vg_cleanup.side_effect = exceptions.TestError("cleanup failed")
         state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.vg_check.assert_called_once_with('ramdisk_vm1')
-        mock_vg_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/ramdisk_vm1', 'ramdisk_vm1', None, True)
+        mock_lv_utils.vg_check.assert_called_once_with('disk_vm1')
+        mock_vg_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/disk_vm1', 'disk_vm1', None, True)
 
     def test_unset_root_on(self):
         self._set_on_qcow2_params()
@@ -1092,9 +1092,9 @@ class StateSetupTest(unittest.TestCase):
 
         mock_lv_utils.lv_check.return_value = False
         state_setup.push_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm1', 'current_state', 'launch')
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
 
         # test push disabled for root/boot states
         self.run_params["push_state_vm1"] = "root"
@@ -1118,10 +1118,10 @@ class StateSetupTest(unittest.TestCase):
 
         state_setup.pop_state(self.run_params, self.env)
 
-        mock_lv_utils.lv_check.assert_called_with("ramdisk_vm1", "launch")
+        mock_lv_utils.lv_check.assert_called_with("disk_vm1", "launch")
         self.mock_vms["vm1"].is_alive.assert_called_once_with()
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm1', 'launch', 'current_state')
-        expected = [mock.call('ramdisk_vm1', 'current_state'), mock.call('ramdisk_vm1', 'launch')]
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'launch', 'current_state')
+        expected = [mock.call('disk_vm1', 'current_state'), mock.call('disk_vm1', 'launch')]
         self.assertListEqual(mock_lv_utils.lv_remove.call_args_list, expected)
 
         # test pop disabled for root/boot states
@@ -1157,14 +1157,14 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["check_state"] = "launch"
         self.run_params["check_state_vm2"] = "launcher"
         self.run_params["check_type"] = "off"
-        self.run_params["vg_name_vm1"] = "ramdisk_vm1"
-        self.run_params["vg_name_vm2"] = "ramdisk_vm2"
+        self.run_params["vg_name_vm1"] = "disk_vm1"
+        self.run_params["vg_name_vm2"] = "disk_vm2"
         self._create_mock_vms()
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
         exists = state_setup.check_state(self.run_params, self.env)
-        expected = [mock.call("ramdisk_vm1", "launch"), mock.call("ramdisk_vm2", "launcher")]
+        expected = [mock.call("disk_vm1", "launch"), mock.call("disk_vm2", "launcher")]
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
         self.assertTrue(exists)
 
@@ -1172,7 +1172,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         exists = state_setup.check_state(self.run_params, self.env)
-        expected = [mock.call("ramdisk_vm1", "launch")]
+        expected = [mock.call("disk_vm1", "launch")]
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
         self.assertFalse(exists)
 
@@ -1194,9 +1194,9 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["get_mode_vm2"] = "ii"
         self.run_params["get_mode_vm3"] = "aa"
         self.run_params["image_name_vm3"] = "/vm3/image"
-        self.run_params["vg_name_vm1"] = "ramdisk_vm1"
-        self.run_params["vg_name_vm2"] = "ramdisk_vm2"
-        self.run_params["vg_name_vm3"] = "ramdisk_vm3"
+        self.run_params["vg_name_vm1"] = "disk_vm1"
+        self.run_params["vg_name_vm2"] = "disk_vm2"
+        self.run_params["vg_name_vm3"] = "disk_vm3"
         self.run_params["image_name_vm1"] = "/vm1/image"
         self.run_params["image_name_vm2"] = "/vm2/image"
         self.run_params["image_raw_device"] = "no"
@@ -1213,7 +1213,7 @@ class StateSetupTest(unittest.TestCase):
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.get_state(self.run_params, self.env)
 
-        expected = [mock.call("ramdisk_vm1", "launch1"), mock.call("ramdisk_vm2", "launch2")]
+        expected = [mock.call("disk_vm1", "launch1"), mock.call("disk_vm2", "launch2")]
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm3/image.qcow2 -U")
         # switch check if vm has to be booted
@@ -1236,15 +1236,15 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["lv_size"] = "30G"
         self.run_params["pool_name"] = "thin_pool"
         self.run_params["pool_size"] = "30G"
-        self.run_params["vg_name_vm2"] = "ramdisk_vm2"
-        self.run_params["vg_name_vm3"] = "ramdisk_vm3"
-        self.run_params["vg_name_vm4"] = "ramdisk_vm4"
+        self.run_params["vg_name_vm2"] = "disk_vm2"
+        self.run_params["vg_name_vm3"] = "disk_vm3"
+        self.run_params["vg_name_vm4"] = "disk_vm4"
         self.run_params["image_name_vm3"] = "/vm3/image"
         self.run_params["image_raw_device"] = "no"
-        self.run_params["ramdisk_sparse_filename_vm3"] = "virtual_hdd_vm3"
+        self.run_params["disk_sparse_filename_vm3"] = "virtual_hdd_vm3"
         self.run_params["use_tmpfs"] = "yes"
-        self.run_params["ramdisk_basedir"] = "/tmp"
-        self.run_params["ramdisk_vg_size"] = "40000"
+        self.run_params["disk_basedir"] = "/tmp"
+        self.run_params["disk_vg_size"] = "40000"
         self.run_params["skip_types"] = "on"
         self._create_mock_vms()
         self.exist_switch = False
@@ -1257,14 +1257,14 @@ class StateSetupTest(unittest.TestCase):
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.set_state(self.run_params, self.env)
 
-        expected = [mock.call("ramdisk_vm2", "launch2"), mock.call("ramdisk_vm3", "LogVol"), mock.call("ramdisk_vm4", "launch4")]
+        expected = [mock.call("disk_vm2", "launch2"), mock.call("disk_vm3", "LogVol"), mock.call("disk_vm4", "launch4")]
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
         self.mock_vms["vm2"].destroy.assert_called_once_with(gracefully=True)
         self.mock_vms["vm3"].destroy.assert_called_once_with(gracefully=True)
         self.mock_vms["vm4"].destroy.assert_called_once_with(gracefully=True)
-        mock_vg_setup.assert_called_once_with('ramdisk_vm3', '40000', '/tmp', 'virtual_hdd_vm3', True)
-        mock_lv_utils.lv_create.assert_called_once_with('ramdisk_vm3', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('ramdisk_vm3', 'LogVol', 'current_state')
+        mock_vg_setup.assert_called_once_with('disk_vm3', '40000', '/tmp', 'virtual_hdd_vm3', True)
+        mock_lv_utils.lv_create.assert_called_once_with('disk_vm3', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm3', 'LogVol', 'current_state')
 
     @mock.patch('avocado_i2n.states.qcow2.process')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
@@ -1276,8 +1276,8 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["unset_mode_vm1"] = "ra"
         self.run_params["unset_mode_vm4"] = "fi"
         self.run_params["lv_name"] = "LogVol"
-        self.run_params["vg_name_vm1"] = "ramdisk_vm1"
-        self.run_params["vg_name_vm4"] = "ramdisk_vm4"
+        self.run_params["vg_name_vm1"] = "disk_vm1"
+        self.run_params["vg_name_vm4"] = "disk_vm4"
         self.run_params["image_name_vm1"] = "/vm1/image"
         self.run_params["image_raw_device"] = "no"
         self._create_mock_vms()
@@ -1289,7 +1289,7 @@ class StateSetupTest(unittest.TestCase):
 
         state_setup.unset_state(self.run_params, self.env)
 
-        expected = [mock.call("ramdisk_vm1", "LogVol"), mock.call("ramdisk_vm4", "launch4")]
+        expected = [mock.call("disk_vm1", "LogVol"), mock.call("disk_vm4", "launch4")]
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
 
     @mock.patch('avocado_i2n.states.qcow2.process')
