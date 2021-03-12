@@ -430,7 +430,7 @@ class CartesianRunner(TestRunner):
                         # the unset manual step behaves differently now (all this extra complexity starts from
                         # the fact that it has different default value which is noninvasive
                         setup_dict.update({"unset_state": vm_params["set_state"],
-                                           "unset_type": vm_params.get("set_type", "off"),
+                                           "unset_type": vm_params.get("set_type", "any"),
                                            "unset_mode": vm_params.get("unset_mode", "ri")})
                         setup_dict["vm_action"] = "unset"
                         # TODO: find more flexible way to pass identical test node parameters for cleanup
