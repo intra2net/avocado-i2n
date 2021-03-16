@@ -201,63 +201,20 @@ ROOTS = ['root', '0root']
 BOOTS = ['boot', '0boot']
 
 
-def enforce_check(image_params, vm=None):
-    """
-    Check for an on/off state of a vm object without any policy conditions.
-
-    :param image_params: configuration parameters for a particular image
-    :type image_params: {str, str}
-    :param vm: object whose states are manipulated
-    :type vm: VM object or None
-    :returns: whether the state is exists
-    :rtype: bool
-    """
-    backend = OFF_BACKENDS[image_params["off_states"]] if image_params["check_type"] == "off" \
-        else ON_BACKENDS[image_params["on_states"]]
-
-    image_params["check_opts"] = image_params.get("check_opts", "print_pos=no print_neg=no")
-    check_opts = image_params.get_dict("check_opts")
-    print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
-    if image_params["check_state"] in ROOTS:
-        return backend.check_root(image_params, vm)
-    elif image_params["check_state"] in BOOTS:
-        vm_name = image_params["vms"]
-        logging.debug("Checking whether %s is on (boot state requested)", vm_name)
-        try:
-            state_exists = vm.is_alive()
-        except ValueError:
-            state_exists = False
-        if state_exists and print_pos:
-            logging.info("The required virtual machine %s is on", vm_name)
-        elif not state_exists and print_neg:
-            logging.info("The required virtual machine %s is off", vm_name)
-        return state_exists
-    else:
-        return backend.check(image_params, vm)
-
-
-def on_off_switch(do, skip_types, vm, vm_name, vm_params):
+def _on_off_switch(do, vm, vm_name, vm_params):
     """
     An on/off switch for on/off state transitions.
 
     :param str do: get, set, or unset
-    :param skip_types: types to skip in this switch passthrough
-    :type skip_types: [str]
     :param vm: vm to switch on/off if any is already available
     :type vm: VM object or None
     :param str vm_name: name of the vm to switch on/off
     :param vm_params: vm parameters of the vm to switch on/off
     :type vm_params: {str, str}
-    :returns: whether the vm is ready for the state operation
-    :rtype: bool
 
     ..todo:: study better the environment pre/postprocessing details necessary
              for flawless vm destruction and creation to improve this switch
     """
-    if vm_params[f"{do}_type"] in skip_types:
-        logging.debug(f"Skip {do}ting states of types {', '.join(skip_types)}")
-        return False
-
     if vm_params[f"{do}_type"] == "off":
         if vm is not None and vm.is_alive():
             vm.destroy(gracefully=do!="get")
@@ -269,7 +226,41 @@ def on_off_switch(do, skip_types, vm, vm_name, vm_params):
         vm.params = vm_params
         if not vm.is_alive():
             vm.create()
-    return True
+
+
+def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
+    """
+    State check chain from on/off states to their respective roots.
+
+    :param str do: get, set, or unset
+    :param env: test environment
+    :type env: Env object
+    :param str vm_name: name of the vm to switch on/off
+    :param vm_params: vm parameters of the vm to switch on/off
+    :type vm_params: {str, str}
+    :param str image_name: name of the vm's image which is processed
+    :param image_params: image parameters of the vm's image which is processed
+    :type image_params: {str, str}
+    """
+    image_params["vms"] = vm_name
+    image_params["images"] = image_name
+    image_params["check_type"] = image_params[f"{do}_type"]
+    image_params["check_opts"] = "print_pos=no print_neg=yes"
+    image_params["check_state"] = image_params[f"{do}_state"]
+
+    # always check the corresponding root state as a prerequisite
+    if image_params["check_state"] not in ROOTS:
+        image_params["check_state"] = ROOTS[0]
+        root_exists = check_state(image_params, env)
+        if not root_exists:
+            return False
+
+    image_params["check_state"] = image_params[f"{do}_state"]
+    state_exists = check_state(image_params, env)
+    # if too many or no matches default to most performant type
+    image_params[f"{do}_type"] = image_params[f"found_type_{image_name}_{vm_name}"]
+    vm_params[f"{do}_type"] = image_params[f"{do}_type"]
+    return state_exists
 
 
 def show_states(run_params, env):
@@ -315,6 +306,40 @@ def check_state(run_params, env):
         more than one are present, the setup for all will be evaluated through
         bitwise AND, i.e. it will determine the existence of a given state configuration.
     """
+    def enforce_check(image_params, vm=None):
+        """
+        Check for an on/off state of a vm object without any policy conditions.
+
+        :param image_params: configuration parameters for a particular image
+        :type image_params: {str, str}
+        :param vm: object whose states are manipulated
+        :type vm: VM object or None
+        :returns: whether the state is exists
+        :rtype: bool
+        """
+        backend = OFF_BACKENDS[image_params["off_states"]] if image_params["check_type"] == "off" \
+            else ON_BACKENDS[image_params["on_states"]]
+
+        image_params["check_opts"] = image_params.get("check_opts", "print_pos=no print_neg=no")
+        check_opts = image_params.get_dict("check_opts")
+        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
+        if image_params["check_state"] in ROOTS:
+            return backend.check_root(image_params, vm)
+        elif image_params["check_state"] in BOOTS:
+            vm_name = image_params["vms"]
+            logging.debug("Checking whether %s is on (boot state requested)", vm_name)
+            try:
+                state_exists = vm.is_alive()
+            except ValueError:
+                state_exists = False
+            if state_exists and print_pos:
+                logging.info("The required virtual machine %s is on", vm_name)
+            elif not state_exists and print_neg:
+                logging.info("The required virtual machine %s is off", vm_name)
+            return state_exists
+        else:
+            return backend.check(image_params, vm)
+
     exists = True
     for vm_name in run_params.objects("vms"):
         vm = env.get_vm(vm_name)
@@ -376,23 +401,18 @@ def get_state(run_params, env):
             image_params["get_type"] = image_params.get("get_type", "any")
             image_params["get_mode"] = image_params.get("get_mode", "ar")
 
+            # minimal filters
+            skip_types = run_params.objects('skip_types')
+            if image_params["get_type"] in skip_types:
+                logging.debug(f"Skip getting states of types {', '.join(skip_types)}")
+                continue
+            state = image_params["get_state"]
             if image_params.get_boolean("image_readonly", False):
                 raise ValueError(f"Incorrect configuration: cannot use any state "
-                                 f"{image_params['get_type']} as {image_name} is readonly")
+                                 f"{state} as {image_name} is readonly")
 
-            image_params["vms"] = vm_name
-            image_params["images"] = image_name
-            image_params["check_type"] = image_params["get_type"]
-            image_params["check_state"] = image_params["get_state"]
-            image_params["check_opts"] = "print_pos=no print_neg=yes"
-            state_exists = check_state(image_params, env)
-            # if too many or no matches default to most performant type
-            image_params["get_type"] = image_params[f"found_type_{image_name}_{vm_name}"]
-            vm_params["get_type"] = image_params["get_type"]
-            enforce = on_off_switch(do="get", skip_types=run_params.objects('skip_types'),
-                                    vm=vm, vm_name=vm_name, vm_params=vm_params)
-            if not enforce:
-                continue
+            state_exists = _state_check_chain("get", env, vm_name, vm_params, image_name, image_params)
+            _on_off_switch("get", vm, vm_name, vm_params)
 
             action_if_exists = image_params["get_mode"][0]
             action_if_doesnt_exist = image_params["get_mode"][1]
@@ -453,21 +473,18 @@ def set_state(run_params, env):
             image_params["set_type"] = image_params.get("set_type", "any")
             image_params["set_mode"] = image_params.get("set_mode", "ff")
 
+            # minimal filters
+            skip_types = run_params.objects('skip_types')
+            if image_params["set_type"] in skip_types:
+                logging.debug(f"Skip setting states of types {', '.join(skip_types)}")
+                continue
+            state = image_params["set_state"]
             if image_params.get_boolean("image_readonly", False):
                 raise ValueError(f"Incorrect configuration: cannot use any state "
-                                 f"{image_params['set_type']} as {image_name} is readonly")
+                                 f"{state} as {image_name} is readonly")
 
-            image_params["vms"] = vm_name
-            image_params["check_type"] = image_params["set_type"]
-            image_params["check_state"] = image_params["set_state"]
-            state_exists = check_state(image_params, env)
-            # if too many or no matches default to most performant type
-            image_params["set_type"] = image_params[f"found_type_{image_name}_{vm_name}"]
-            vm_params["set_type"] = image_params["set_type"]
-            enforce = on_off_switch(do="set", skip_types=run_params.objects('skip_types'),
-                                    vm=vm, vm_name=vm_name, vm_params=vm_params)
-            if not enforce:
-                continue
+            state_exists = _state_check_chain("set", env, vm_name, vm_params, image_name, image_params)
+            _on_off_switch("set", vm, vm_name, vm_params)
 
             action_if_exists = image_params["set_mode"][0]
             action_if_doesnt_exist = image_params["set_mode"][1]
@@ -537,22 +554,18 @@ def unset_state(run_params, env):
             image_params["unset_type"] = image_params.get("unset_type", "any")
             image_params["unset_mode"] = image_params.get("unset_mode", "fi")
 
+            # minimal filters
+            skip_types = run_params.objects('skip_types')
+            if image_params["unset_type"] in skip_types:
+                logging.debug(f"Skip unsetting states of types {', '.join(skip_types)}")
+                continue
+            state = image_params["unset_state"]
             if image_params.get_boolean("image_readonly", False):
                 raise ValueError(f"Incorrect configuration: cannot use any state "
-                                 f"{image_params['unset_type']} as {image_name} is readonly")
+                                 f"{state} as {image_name} is readonly")
 
-            image_params["vms"] = vm_name
-            image_params["check_type"] = image_params["unset_type"]
-            image_params["check_state"] = image_params["unset_state"]
-            image_params["check_opts"] = "print_pos=no print_neg=yes"
-            state_exists = check_state(image_params, env)
-            # if too many or no matches default to most performant type
-            image_params["unset_type"] = image_params[f"found_type_{image_name}_{vm_name}"]
-            vm_params["unset_type"] = image_params["unset_type"]
-            enforce = on_off_switch(do="unset", skip_types=run_params.objects('skip_types'),
-                                    vm=vm, vm_name=vm_name, vm_params=vm_params)
-            if not enforce:
-                continue
+            state_exists = _state_check_chain("unset", env, vm_name, vm_params, image_name, image_params)
+            _on_off_switch("unset", vm, vm_name, vm_params)
 
             action_if_exists = image_params["unset_mode"][0]
             action_if_doesnt_exist = image_params["unset_mode"][1]
