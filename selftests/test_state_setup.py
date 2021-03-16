@@ -185,6 +185,7 @@ class StateSetupTest(unittest.TestCase):
         # restore some unmocked parts of the os module
         mock_os.path.dirname = os.path.dirname
         mock_os.path.join = os.path.join
+        mock_os.path.isabs.return_value = False
         # we cannot use the exist switch because we also want to assert calls
         # mock_os.path.exists = self._file_exists
 
@@ -400,6 +401,7 @@ class StateSetupTest(unittest.TestCase):
         # restore some unmocked parts of the os module
         mock_os.path.dirname = os.path.dirname
         mock_os.path.join = os.path.join
+        mock_os.path.isabs.return_value = False
         # we cannot use the exist switch because we also want to assert calls
         # mock_os.path.exists = self._file_exists
 
@@ -593,6 +595,7 @@ class StateSetupTest(unittest.TestCase):
         # restore some unmocked parts of the os module
         mock_os.path.dirname = os.path.dirname
         mock_os.path.join = os.path.join
+        mock_os.path.isabs.return_value = False
         # we cannot use the exist switch because we also want to assert calls
         # mock_os.path.exists = self._file_exists
 
@@ -790,6 +793,7 @@ class StateSetupTest(unittest.TestCase):
         # restore some unmocked parts of the os module
         mock_os.path.dirname = os.path.dirname
         mock_os.path.join = os.path.join
+        mock_os.path.isabs.return_value = False
         # we cannot use the exist switch because we also want to assert calls
         # mock_os.path.exists = self._file_exists
 

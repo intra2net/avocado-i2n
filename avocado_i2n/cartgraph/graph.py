@@ -252,7 +252,10 @@ class TestGraph(object):
                 object_params["check_opts"] = object_params.get("check_opts",
                                                                 "print_pos=yes print_neg=yes")
 
-                all_states_available &= ss.check_state(object_params, env)
+                all_states_available &= ss._state_check_chain("check", env,
+                                                              object_name, object_params,
+                                                              object_name, object_params)
+                #all_states_available &= ss.check_state(object_params, env)
             else:
                 test_node.should_run = not all_states_available
 

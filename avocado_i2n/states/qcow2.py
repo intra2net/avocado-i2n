@@ -60,18 +60,16 @@ class QCOW2Backend(StateBackend):
 
         All arguments match the base class.
         """
-        states = []
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
-        for image in params.objects("images"):
-            image_params = params.object_params(image)
-            image_path = get_image_path(image_params)
-            logging.debug("Showing %s snapshots for image %s", cls.state_type(), image_path)
-            on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, image_path)).decode()
-            pattern = QEMU_ON_STATES_REGEX if cls._require_running_object else QEMU_OFF_STATES_REGEX
-            state_tuples = re.findall(pattern, on_snapshots_dump)
-            for state_tuple in state_tuples:
-                logging.info("Detected %s state '%s' of size %s", cls.state_type(), state_tuple[0], state_tuple[1])
-                states.append(state_tuple[0])
+        image_path = get_image_path(params)
+        logging.debug("Showing %s snapshots for image %s", cls.state_type(), image_path)
+        on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, image_path)).decode()
+        pattern = QEMU_ON_STATES_REGEX if cls._require_running_object else QEMU_OFF_STATES_REGEX
+        state_tuples = re.findall(pattern, on_snapshots_dump)
+        states = []
+        for state_tuple in state_tuples:
+            logging.info("Detected %s state '%s' of size %s", cls.state_type(), state_tuple[0], state_tuple[1])
+            states.append(state_tuple[0])
         return states
 
     @classmethod
@@ -110,12 +108,10 @@ class QCOW2Backend(StateBackend):
         vm, vm_name, state = object, params["vms"], params["get_state"]
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
         logging.info("Reusing %s state '%s' of %s", cls.state_type(), params["get_state"], vm_name)
-        for image in params.objects("images"):
-            image_params = params.object_params(image)
-            if image_params["image_format"] != "qcow2" or image_params.get_boolean("image_readonly", False):
-                continue
-            image_path = get_image_path(image_params)
-            process.system("%s snapshot -a %s %s" % (qemu_img, state, image_path))
+        if params["image_format"] != "qcow2" or params.get_boolean("image_readonly", False):
+            return
+        image_path = get_image_path(params)
+        process.system("%s snapshot -a %s %s" % (qemu_img, state, image_path))
 
     @classmethod
     def set(cls, params, object=None):
@@ -127,12 +123,10 @@ class QCOW2Backend(StateBackend):
         vm, vm_name, state = object, params["vms"], params["set_state"]
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
         logging.info("Creating %s state '%s' of %s", cls.state_type(), params["set_state"], vm_name)
-        for image in params.objects("images"):
-            image_params = params.object_params(image)
-            if image_params["image_format"] != "qcow2" or image_params.get_boolean("image_readonly", False):
-                continue
-            image_path = get_image_path(image_params)
-            process.system("%s snapshot -c %s %s" % (qemu_img, state, image_path))
+        if params["image_format"] != "qcow2" or params.get_boolean("image_readonly", False):
+            return
+        image_path = get_image_path(params)
+        process.system("%s snapshot -c %s %s" % (qemu_img, state, image_path))
 
     @classmethod
     def unset(cls, params, object=None):
@@ -144,12 +138,10 @@ class QCOW2Backend(StateBackend):
         vm, vm_name, state = object, params["vms"], params["unset_state"]
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
         logging.info("Removing %s state '%s' of %s", cls.state_type(), params["unset_state"], vm_name)
-        for image in params.objects("images"):
-            image_params = params.object_params(image)
-            if image_params["image_format"] != "qcow2" or image_params.get_boolean("image_readonly", False):
-                continue
-            image_path = get_image_path(image_params)
-            process.system("%s snapshot -d %s %s" % (qemu_img, state, image_path))
+        if params["image_format"] != "qcow2" or params.get_boolean("image_readonly", False):
+            return
+        image_path = get_image_path(params)
+        process.system("%s snapshot -d %s %s" % (qemu_img, state, image_path))
 
     @classmethod
     def check_root(cls, params, object=None):
@@ -161,16 +153,15 @@ class QCOW2Backend(StateBackend):
         :raises: :py:class:`ValueError` if the used image format is either
                  unspecified or not the required QCOW2
         """
-        for image in params.objects("images"):
-            image_params = params.object_params(image)
-            if image_params.get_boolean("image_readonly", False):
-                logging.warning("Skip validation of readonly image %s", image)
-                continue
-            if image_params.get("image_format") is None:
-                raise ValueError("Unspecified image format for %s - must be qcow2" % image)
-            if image_params["image_format"] != "qcow2":
-                raise ValueError("Incompatible image format %s for %s - must be qcow2"
-                                 % (params["image_format"], image))
+        image = params["image_name"]
+        if params.get_boolean("image_readonly", False):
+            logging.warning("Skip validation of readonly image %s", image)
+            return
+        if params.get("image_format") is None:
+            raise ValueError("Unspecified image format for %s - must be qcow2" % image)
+        if params["image_format"] != "qcow2":
+            raise ValueError("Incompatible image format %s for %s - must be qcow2"
+                             % (params["image_format"], image))
         return super(QCOW2Backend, QCOW2Backend).check_root(params, object)
 
 

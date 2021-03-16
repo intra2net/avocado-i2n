@@ -53,19 +53,10 @@ class RamfileBackend(StateBackend):
         :returns: validated to be the same directory to dump ramfile states
         :rtype: str
         """
-        state_dir = None
-        assert "images" in params.keys(), "Need 'images' definition for state directory"
-        for image in params.objects("images"):
-            image_params = params.object_params(image)
-            image_name = image_params["image_name"]
-            if not os.path.isabs(image_name):
-                image_name = os.path.join(image_params["images_base_dir"], image_name)
-            if state_dir is None:
-                state_dir = os.path.dirname(image_name)
-            else:
-                assert state_dir == os.path.dirname(image_name), "All vm images "\
-                    "must be located in the same statefile dump directory"
-        return state_dir
+        image_name = params["image_name"]
+        if not os.path.isabs(image_name):
+            image_name = os.path.join(params["images_base_dir"], image_name)
+        return os.path.dirname(image_name)
 
     @classmethod
     def show(cls, params, object=None):
