@@ -136,13 +136,10 @@ def params_from_cmd(config):
 
     # set default off and on state backends
     from .states import lvm, qcow2, lxc, btrfs, ramfile
-    off_backends = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
-                    "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend}
-    on_backends = {"qcow2vt": qcow2.QCOW2VTBackend,
-                   "ramfile": ramfile.RamfileBackend}
-    # TODO: implement separate backends per image
-    ss.off = off_backends[config["vms_params"].get("image1_off_backend", "lvm")]
-    ss.on = on_backends[config["vms_params"].get("image1_on_backend", "qcow2vt")]
+    ss.OFF_BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
+                       "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend}
+    ss.ON_BACKENDS = {"qcow2vt": qcow2.QCOW2VTBackend,
+                      "ramfile": ramfile.RamfileBackend}
 
     # attach environment processing hooks
     env_process_hooks()

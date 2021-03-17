@@ -14,6 +14,9 @@ import unittest_importer
 from avocado_i2n.states import setup as ss
 from avocado_i2n.states import qcow2
 from avocado_i2n.states import lvm
+from avocado_i2n.states import ramfile
+from avocado_i2n.states import lxc
+from avocado_i2n.states import btrfs
 from avocado_i2n import state_setup
 
 
@@ -31,6 +34,8 @@ class StateSetupTest(unittest.TestCase):
         self.run_params = utils_params.Params()
         self.run_params["vms"] = "vm1"
         self.run_params["images"] = "image1"
+        self.run_params["off_states"] = "lvm"
+        self.run_params["on_states"] = "qcow2vt"
 
         self.env = mock.MagicMock(name='env')
         self.env.get_vm = mock.MagicMock(side_effect=self._get_mock_vm)
@@ -43,8 +48,10 @@ class StateSetupTest(unittest.TestCase):
 
         self.exist_switch = True
 
-        ss.off = lvm.LVMBackend
-        ss.on = qcow2.QCOW2VTBackend
+        ss.OFF_BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
+                           "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend}
+        ss.ON_BACKENDS = {"qcow2vt": qcow2.QCOW2VTBackend,
+                          "ramfile": ramfile.RamfileBackend}
 
     def _set_off_lvm_params(self):
         self.run_params["vg_name_vm1"] = "disk_vm1"
@@ -115,8 +122,8 @@ class StateSetupTest(unittest.TestCase):
     def test_show_states_on_ramfile(self, mock_glob):
         self._set_on_ramfile_params()
         self.run_params["check_type_vm1"] = "on"
+        self.run_params["on_states_vm1"] = "ramfile"
         self._create_mock_vms()
-        ss.on = state_setup.RamfileBackend
 
         mock_glob.reset_mock()
         mock_glob.glob.return_value = []
@@ -179,8 +186,8 @@ class StateSetupTest(unittest.TestCase):
         self._set_on_ramfile_params()
         self.run_params["check_state_vm1"] = "launch"
         self.run_params["check_type_vm1"] = "on"
+        self.run_params["on_states_vm1"] = "ramfile"
         self._create_mock_vms()
-        ss.on = state_setup.RamfileBackend
 
         # restore some unmocked parts of the os module
         mock_os.path.dirname = os.path.dirname
@@ -395,8 +402,8 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["get_state_vm1"] = "launch"
         self.run_params["get_type_vm1"] = "on"
         self.run_params["get_mode_vm1"] = "rx"
+        self.run_params["on_states_vm1"] = "ramfile"
         self._create_mock_vms()
-        ss.on = state_setup.RamfileBackend
 
         # restore some unmocked parts of the os module
         mock_os.path.dirname = os.path.dirname
@@ -589,8 +596,8 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["set_type_vm1"] = "on"
         self.run_params["set_mode_vm1"] = "ff"
         self.run_params["skip_types"] = "off"
+        self.run_params["on_states_vm1"] = "ramfile"
         self._create_mock_vms()
-        ss.on = state_setup.RamfileBackend
 
         # restore some unmocked parts of the os module
         mock_os.path.dirname = os.path.dirname
@@ -787,8 +794,8 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["unset_state_vm1"] = "launch"
         self.run_params["unset_type_vm1"] = "on"
         self.run_params["unset_mode_vm1"] = "fi"
+        self.run_params["on_states_vm1"] = "ramfile"
         self._create_mock_vms()
-        ss.on = state_setup.RamfileBackend
 
         # restore some unmocked parts of the os module
         mock_os.path.dirname = os.path.dirname
@@ -910,8 +917,8 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["images_vm1"] = "image1 image2"
         self.run_params["image_name_image1_vm1"] = "/vm1/image1"
         self.run_params["image_name_image2_vm1"] = "/vm1/image2"
+        self.run_params["on_states_vm1"] = "ramfile"
         self._create_mock_vms()
-        ss.on = state_setup.RamfileBackend
 
         self.exist_switch = True
         for image_format in ["qcow2", "raw", "something-else"]:
@@ -963,8 +970,8 @@ class StateSetupTest(unittest.TestCase):
         self._set_on_ramfile_params()
         self.run_params["check_state_vm1"] = "root"
         self.run_params["check_type_vm1"] = "on"
+        self.run_params["on_states_vm1"] = "ramfile"
         self._create_mock_vms()
-        ss.on = state_setup.RamfileBackend
 
         state_setup.get_state(self.run_params, self.env)
 
@@ -1032,8 +1039,8 @@ class StateSetupTest(unittest.TestCase):
         self._set_on_ramfile_params()
         self.run_params["set_state_vm1"] = "root"
         self.run_params["set_type_vm1"] = "on"
+        self.run_params["on_states_vm1"] = "ramfile"
         self._create_mock_vms()
-        ss.on = state_setup.RamfileBackend
 
         state_setup.set_state(self.run_params, self.env)
 
@@ -1078,8 +1085,8 @@ class StateSetupTest(unittest.TestCase):
         self._set_on_ramfile_params()
         self.run_params["unset_state_vm1"] = "root"
         self.run_params["unset_type_vm1"] = "on"
+        self.run_params["on_states_vm1"] = "ramfile"
         self._create_mock_vms()
-        ss.on = state_setup.RamfileBackend
 
         state_setup.unset_state(self.run_params, self.env)
 

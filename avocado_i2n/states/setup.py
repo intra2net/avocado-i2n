@@ -191,10 +191,10 @@ class StateBackend():
             logging.debug("Image directory not yet empty: %s", error)
 
 
-#: off state implementation to use
-off = StateBackend
-#: on state implementation to use
-on = StateBackend
+#: available off state implementations
+OFF_BACKENDS = {}
+#: available on state implementations
+ON_BACKENDS = {}
 #: keywords reserved for off root states
 ROOTS = ['root', '0root']
 #: keywords reserved for on root states
@@ -212,7 +212,9 @@ def enforce_check(image_params, vm=None):
     :returns: whether the state is exists
     :rtype: bool
     """
-    backend = off if image_params["check_type"] == "off" else on
+    backend = OFF_BACKENDS[image_params["off_states"]] if image_params["check_type"] == "off" \
+        else ON_BACKENDS[image_params["on_states"]]
+
     image_params["check_opts"] = image_params.get("check_opts", "print_pos=no print_neg=no")
     check_opts = image_params.get_dict("check_opts")
     print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
@@ -288,10 +290,9 @@ def show_states(run_params, env):
             image_params = vm_params.object_params(image_name)
             image_params["check_type"] = image_params.get("check_type", "off")
             logging.debug("Checking %s for available %s states", vm_name, image_params["check_type"])
-            if image_params["check_type"] == "off":
-                states += off.show(image_params, env)
-            else:
-                states += on.show(image_params, env)
+            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["check_type"] == "off" \
+                else ON_BACKENDS[image_params["on_states"]]
+            states += backend.show(image_params, env)
         logging.info("Detected %s states for %s: %s", image_params["check_type"], vm_name, ", ".join(states))
     return states
 
@@ -418,7 +419,8 @@ def get_state(run_params, env):
                 raise exceptions.TestError("Invalid policy %s: The start action on present state can be "
                                            "either of 'abort', 'reuse', 'ignore'." % image_params["get_mode"])
 
-            backend = off if image_params["get_type"] == "off" else on
+            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["get_type"] == "off" \
+                else ON_BACKENDS[image_params["on_states"]]
             if image_params["get_state"] in ROOTS:
                 backend.get_root(image_params, vm)
             elif image_params["get_state"] in BOOTS:
@@ -478,7 +480,8 @@ def set_state(run_params, env):
                 continue
             elif state_exists and "f" == action_if_exists:
                 logging.info("Overwriting the already existing snapshot")
-                backend = off if image_params["set_type"] == "off" else on
+                backend = OFF_BACKENDS[image_params["off_states"]] if image_params["set_type"] == "off" \
+                    else ON_BACKENDS[image_params["on_states"]]
                 image_params["unset_state"] = image_params["set_state"]
                 if image_params["set_state"] in ROOTS:
                     backend.unset_root(image_params, vm)
@@ -499,7 +502,8 @@ def set_state(run_params, env):
                 raise exceptions.TestError("Invalid policy %s: The end action on missing state can be "
                                            "either of 'abort', 'force'." % image_params["set_mode"])
 
-            backend = off if image_params["set_type"] == "off" else on
+            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["set_type"] == "off" \
+                else ON_BACKENDS[image_params["on_states"]]
             if image_params["set_state"] in ROOTS:
                 backend.set_root(image_params, vm)
             elif image_params["set_state"] in BOOTS:
@@ -571,7 +575,8 @@ def unset_state(run_params, env):
                 raise exceptions.TestError("Invalid policy %s: The unset action on present state can be "
                                            "either of 'reuse', 'force'." % image_params["unset_mode"])
 
-            backend = off if image_params["unset_type"] == "off" else on
+            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["unset_type"] == "off" \
+                else ON_BACKENDS[image_params["on_states"]]
             if image_params["unset_state"] in ROOTS:
                 # off switch to protect from on leftover state
                 if vm is not None and vm.is_alive():
