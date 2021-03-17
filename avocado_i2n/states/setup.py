@@ -201,36 +201,9 @@ ROOTS = ['root', '0root']
 BOOTS = ['boot', '0boot']
 
 
-def _on_off_switch(do, vm, vm_name, vm_params):
-    """
-    An on/off switch for on/off state transitions.
-
-    :param str do: get, set, or unset
-    :param vm: vm to switch on/off if any is already available
-    :type vm: VM object or None
-    :param str vm_name: name of the vm to switch on/off
-    :param vm_params: vm parameters of the vm to switch on/off
-    :type vm_params: {str, str}
-
-    ..todo:: study better the environment pre/postprocessing details necessary
-             for flawless vm destruction and creation to improve this switch
-    """
-    if vm_params[f"{do}_type"] == "off":
-        if vm is not None and vm.is_alive():
-            vm.destroy(gracefully=do!="get")
-    else:
-        if vm is None:
-            vm = env.create_vm(vm_params.get('vm_type'), vm_params.get('target'),
-                               vm_name, vm_params, None)
-        # on states require manual update of the vm parameters
-        vm.params = vm_params
-        if not vm.is_alive():
-            vm.create()
-
-
 def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
     """
-    State check chain from on/off states to their respective roots.
+    State check/provision chain from on/off states to their respective roots.
 
     :param str do: get, set, or unset
     :param env: test environment
@@ -241,21 +214,66 @@ def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
     :param str image_name: name of the vm's image which is processed
     :param image_params: image parameters of the vm's image which is processed
     :type image_params: {str, str}
+
+    ..todo:: study better the environment pre/postprocessing details necessary
+             for flawless vm destruction and creation to improve these
     """
+    vm = env.get_vm(vm_name)
+    state = image_params[f"{do}_state"]
+
     image_params["vms"] = vm_name
     image_params["images"] = image_name
+
+    image_params["check_state"] = image_params[f"{do}_state"]
     image_params["check_type"] = image_params[f"{do}_type"]
     image_params["check_opts"] = "print_pos=no print_neg=yes"
-    image_params["check_state"] = image_params[f"{do}_state"]
+    # TODO: document after experimental period
+    # - first position is for root, second for boot
+    # - each position could either be reuse check result or force existence
+    image_params["check_mode"] = image_params.get("check_mode", "rf")
+
+    action_if_root_exists = image_params["check_mode"][0]
+    action_if_boot_exists = image_params["check_mode"][1]
 
     # always check the corresponding root state as a prerequisite
-    if image_params["check_state"] not in ROOTS:
+    if state not in ROOTS:
         image_params["check_state"] = ROOTS[0]
         root_exists = check_state(image_params, env)
         if not root_exists:
-            return False
+            if action_if_root_exists == "f":
+                image_params["set_state"] = image_params["check_state"]
+                set_state(image_params, env)
+            elif action_if_root_exists == "r":
+                return False
+            else:
+                raise exceptions.TestError(f"Invalid policy {action_if_root_exists}: The root "
+                                           "check action can be either of 'reuse' or 'force'.")
 
-    image_params["check_state"] = image_params[f"{do}_state"]
+    # optionally check a corresponding boot state as a prerequisite
+    if state not in ROOTS + BOOTS:
+        image_params["check_state"] = BOOTS[0]
+        boot_exists = check_state(image_params, env)
+        if not boot_exists and image_params["check_type"] == "on":
+            if action_if_boot_exists == "f" and vm is None:
+                vm = env.create_vm(vm_params.get('vm_type'), vm_params.get('target'),
+                                   vm_name, vm_params, None)
+            elif action_if_boot_exists == "f":
+                # on states require manual update of the vm parameters
+                vm.params = vm_params
+                if not vm.is_alive():
+                    vm.create()
+            elif action_if_boot_exists == "r":
+                return False
+            else:
+                raise exceptions.TestError(f"Invalid policy {action_if_boot_exists}: The boot "
+                                           "check action can be either of 'reuse' or 'force'.")
+
+        # bonus: switch off the vm if the requested state is an off state
+        if boot_exists and image_params["check_type"] == "off":
+            if action_if_boot_exists == "f" and vm is not None and vm.is_alive():
+                vm.destroy(gracefully=do!="get")
+
+    image_params["check_state"] = state
     state_exists = check_state(image_params, env)
     # if too many or no matches default to most performant type
     image_params[f"{do}_type"] = image_params[f"found_type_{image_name}_{vm_name}"]
@@ -401,6 +419,8 @@ def get_state(run_params, env):
             image_params["get_type"] = image_params.get("get_type", "any")
             image_params["get_mode"] = image_params.get("get_mode", "ar")
 
+            state_exists = _state_check_chain("get", env, vm_name, vm_params, image_name, image_params)
+
             # minimal filters
             skip_types = run_params.objects('skip_types')
             if image_params["get_type"] in skip_types:
@@ -410,9 +430,6 @@ def get_state(run_params, env):
             if image_params.get_boolean("image_readonly", False):
                 raise ValueError(f"Incorrect configuration: cannot use any state "
                                  f"{state} as {image_name} is readonly")
-
-            state_exists = _state_check_chain("get", env, vm_name, vm_params, image_name, image_params)
-            _on_off_switch("get", vm, vm_name, vm_params)
 
             action_if_exists = image_params["get_mode"][0]
             action_if_doesnt_exist = image_params["get_mode"][1]
@@ -473,6 +490,8 @@ def set_state(run_params, env):
             image_params["set_type"] = image_params.get("set_type", "any")
             image_params["set_mode"] = image_params.get("set_mode", "ff")
 
+            state_exists = _state_check_chain("set", env, vm_name, vm_params, image_name, image_params)
+
             # minimal filters
             skip_types = run_params.objects('skip_types')
             if image_params["set_type"] in skip_types:
@@ -482,9 +501,6 @@ def set_state(run_params, env):
             if image_params.get_boolean("image_readonly", False):
                 raise ValueError(f"Incorrect configuration: cannot use any state "
                                  f"{state} as {image_name} is readonly")
-
-            state_exists = _state_check_chain("set", env, vm_name, vm_params, image_name, image_params)
-            _on_off_switch("set", vm, vm_name, vm_params)
 
             action_if_exists = image_params["set_mode"][0]
             action_if_doesnt_exist = image_params["set_mode"][1]
@@ -554,6 +570,8 @@ def unset_state(run_params, env):
             image_params["unset_type"] = image_params.get("unset_type", "any")
             image_params["unset_mode"] = image_params.get("unset_mode", "fi")
 
+            state_exists = _state_check_chain("unset", env, vm_name, vm_params, image_name, image_params)
+
             # minimal filters
             skip_types = run_params.objects('skip_types')
             if image_params["unset_type"] in skip_types:
@@ -563,9 +581,6 @@ def unset_state(run_params, env):
             if image_params.get_boolean("image_readonly", False):
                 raise ValueError(f"Incorrect configuration: cannot use any state "
                                  f"{state} as {image_name} is readonly")
-
-            state_exists = _state_check_chain("unset", env, vm_name, vm_params, image_name, image_params)
-            _on_off_switch("unset", vm, vm_name, vm_params)
 
             action_if_exists = image_params["unset_mode"][0]
             action_if_doesnt_exist = image_params["unset_mode"][1]
