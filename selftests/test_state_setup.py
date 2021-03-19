@@ -321,8 +321,7 @@ class StateSetupTest(unittest.TestCase):
             state_setup.get_state(self.run_params, self.env)
         mock_lv_utils.lv_remove.assert_not_called()
         mock_lv_utils.lv_take_snapshot.assert_not_called()
-        # test on/off switch as well
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.mock_vms["vm1"].is_alive.assert_called()
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
@@ -342,11 +341,10 @@ class StateSetupTest(unittest.TestCase):
         self._create_mock_vms()
 
         mock_lv_utils.reset_mock()
-        # test on/off switch as well
         mock_lv_utils.lv_check.return_value = True
         self.mock_vms["vm1"].is_alive.return_value = False
         state_setup.get_state(self.run_params, self.env)
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.mock_vms["vm1"].is_alive.assert_called()
         mock_lv_utils.lv_remove.assert_called_once_with('disk_vm1', 'current_state')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'launch', 'current_state')
 
@@ -371,7 +369,7 @@ class StateSetupTest(unittest.TestCase):
         state_setup.get_state(self.run_params, self.env)
         mock_lv_utils.lv_remove.assert_not_called()
         mock_lv_utils.lv_take_snapshot.assert_not_called()
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.mock_vms["vm1"].is_alive.assert_called()
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
@@ -394,7 +392,7 @@ class StateSetupTest(unittest.TestCase):
             state_setup.get_state(self.run_params, self.env)
         mock_lv_utils.lv_remove.assert_not_called()
         mock_lv_utils.lv_take_snapshot.assert_not_called()
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.mock_vms["vm1"].is_alive.assert_called()
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
@@ -404,7 +402,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_take_snapshot.assert_not_called()
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
-    def test_get_type_switch(self, mock_lv_utils):
+    def test_get_type_off_switch(self, mock_lv_utils):
         self._set_off_lvm_params()
         self.run_params["get_state_vm1"] = "launch"
         self.run_params["get_type_vm1"] = "off"
@@ -420,7 +418,7 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].is_alive.return_value = True
         state_setup.get_state(self.run_params, self.env)
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks)
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.mock_vms["vm1"].is_alive.assert_called()
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=False)
 
         mock_lv_utils.reset_mock()
@@ -429,7 +427,8 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].is_alive.return_value = False
         state_setup.get_state(self.run_params, self.env)
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks)
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.mock_vms["vm1"].is_alive.assert_called()
+        self.mock_vms["vm1"].destroy.assert_not_called()
 
     @mock.patch('avocado_i2n.states.qcow2.process')
     def test_get_on_rx(self, mock_process):
@@ -482,7 +481,7 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].is_alive.return_value = True
         state_setup.get_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.mock_vms["vm1"].is_alive.assert_called()
         self.mock_vms["vm1"].loadvm.assert_called_once_with('launch')
 
     @mock.patch('avocado_i2n.states.qcow2.process')
@@ -499,12 +498,12 @@ class StateSetupTest(unittest.TestCase):
         mock_process.system_output.return_value = b"NOT HERE"
         mock_lv_utils.lv_check.return_value = True
         # this time the off switch asks so confirm for it as well
-        self.mock_vms["vm1"].is_alive.return_value = False
+        self.mock_vms["vm1"].is_alive.return_value = True
         state_setup.get_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
         mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].is_alive.assert_called()
-        self.mock_vms["vm1"].destroy.assert_not_called()
+        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=False)
         mock_lv_utils.lv_remove.assert_called_once_with('disk_vm1', 'current_state')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'launch', 'current_state')
 
