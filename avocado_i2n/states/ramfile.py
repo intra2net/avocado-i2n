@@ -31,10 +31,10 @@ import os
 import logging
 import glob
 
-from .setup import StateBackend
+from .setup import StateOnBackend
 
 
-class RamfileBackend(StateBackend):
+class RamfileBackend(StateOnBackend):
     """
     Backend manipulating on states as ram dump files.
 

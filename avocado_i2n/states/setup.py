@@ -191,14 +191,68 @@ class StateBackend():
             logging.debug("Image directory not yet empty: %s", error)
 
 
+class StateOnBackend(StateBackend):
+    """A general backend implementing on state manipulation."""
+
+    _require_running_object = True
+
+    @classmethod
+    def check_root(cls, params, object=None):
+        """
+        Check whether a root state or essentially the object is running.
+
+        All arguments match the base class.
+        """
+        vm_name = params["vms"]
+        check_opts = params.get_dict("check_opts")
+        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
+        logging.debug("Checking whether %s is on (boot state requested)", vm_name)
+        vm = object
+        condition = vm is not None and vm.is_alive()
+        if condition and print_pos:
+            logging.info("The required virtual machine %s is on", vm_name)
+        elif not condition and print_neg:
+            logging.info("The required virtual machine %s is off", vm_name)
+        return condition
+
+    @classmethod
+    def set_root(cls, params, object=None):
+        """
+        Set a root state to provide running object.
+
+        All arguments match the base class.
+
+        ..todo:: study better the environment pre/postprocessing details necessary
+                 for flawless vm destruction and creation to improve these
+        """
+        vm_name = params["vms"]
+        logging.info("Booting %s to provide boot state", vm_name)
+        vm = object
+        if vm is None:
+            raise ValueError("Need an environmental object to boot")
+        if not vm.is_alive():
+            vm.create()
+
+    @classmethod
+    def unset_root(cls, params, object=None):
+        """
+        Unset a root state to prevent object from running.
+
+        All arguments match the base class.
+        """
+        vm_name = params["vms"]
+        logging.info("Shutting down %s to prevent boot state", vm_name)
+        vm = object
+        if vm is not None and vm.is_alive():
+            vm.destroy(gracefully=False)
+
+
 #: available off state implementations
 OFF_BACKENDS = {}
 #: available on state implementations
 ON_BACKENDS = {}
-#: keywords reserved for off root states
-ROOTS = ['root', '0root']
-#: keywords reserved for on root states
-BOOTS = ['boot', '0boot']
+#: keywords reserved for root states
+ROOTS = ['root', '0root', 'boot', '0boot']
 
 
 def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
@@ -214,20 +268,16 @@ def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
     :param str image_name: name of the vm's image which is processed
     :param image_params: image parameters of the vm's image which is processed
     :type image_params: {str, str}
-
-    ..todo:: study better the environment pre/postprocessing details necessary
-             for flawless vm destruction and creation to improve these
     """
     vm = env.get_vm(vm_name)
-    state = image_params[f"{do}_state"]
 
     # restrict inner calls
     image_params["vms"] = vm_name
     image_params["images"] = image_name
 
-    image_params["check_state"] = image_params[f"{do}_state"]
-    image_params["check_type"] = image_params[f"{do}_type"]
-    image_params["check_opts"] = "print_pos=no print_neg=yes"
+    state = image_params["check_state"] = image_params[f"{do}_state"]
+    stype = image_params["check_type"] = image_params[f"{do}_type"]
+    image_params["check_opts"] = image_params.get("check_opts", "print_pos=no print_neg=yes")
     # TODO: document after experimental period
     # - first position is for root, second for boot
     # - each position could either be reuse check result or force existence
@@ -237,12 +287,14 @@ def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
     action_if_boot_exists = image_params["check_mode"][1]
 
     # always check the corresponding root state as a prerequisite
-    if state not in ROOTS:
+    if state not in ROOTS or stype != "off":
         image_params["check_state"] = ROOTS[0]
+        image_params["check_type"] = "off"
         root_exists = check_state(image_params, env)
         if not root_exists:
             if action_if_root_exists == "f":
                 image_params["set_state"] = image_params["check_state"]
+                image_params["set_type"] = image_params["check_type"]
                 set_state(image_params, env)
             elif action_if_root_exists == "r":
                 return False
@@ -251,13 +303,15 @@ def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
                                            "check action can be either of 'reuse' or 'force'.")
 
     # optionally check a corresponding boot state as a prerequisite
-    if state not in BOOTS:
-        image_params["check_state"] = BOOTS[0]
+    if state not in ROOTS or stype != "on":
+        image_params["check_state"] = ROOTS[0]
+        image_params["check_type"] = "on"
         boot_exists = check_state(image_params, env)
 
         # need to passively detect type in order to support provision for boot states
         image_params["check_state"] = state
-        if image_params["check_type"] == "any" and state not in ROOTS:
+        image_params["check_type"] = stype
+        if stype == "any" and state not in ROOTS:
             state_exists = True
             initial_type = image_params["check_type"]
             image_params["check_type"] = "on"
@@ -293,6 +347,7 @@ def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
 
     else:
         image_params["check_state"] = state
+        image_params["check_type"] = stype
         state_exists = check_state(image_params, env)
 
     # if too many or no matches default to most performant type
@@ -357,26 +412,12 @@ def check_state(run_params, env):
             image_params["check_type"] = image_params.get("check_type", "any")
             image_params["check_opts"] = image_params.get("check_opts", "print_pos=no print_neg=no")
 
-            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["check_type"] == "off" \
-                else ON_BACKENDS[image_params["on_states"]]
+            off_backend = OFF_BACKENDS[image_params["off_states"]]
+            on_backend = ON_BACKENDS[image_params["on_states"]]
+            backend = off_backend if image_params["check_type"] == "off" else on_backend
 
-            image_params["check_opts"] = image_params.get("check_opts", "print_pos=no print_neg=no")
-            check_opts = image_params.get_dict("check_opts")
-            print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
             if image_params["check_state"] in ROOTS:
                 if not backend.check_root(image_params, vm):
-                    return False
-            elif image_params["check_state"] in BOOTS:
-                logging.debug("Checking whether %s is on (boot state requested)", vm_name)
-                try:
-                    state_exists = vm.is_alive()
-                except ValueError:
-                    state_exists = False
-                if state_exists and print_pos:
-                    logging.info("The required virtual machine %s is on", vm_name)
-                elif not state_exists and print_neg:
-                    logging.info("The required virtual machine %s is off", vm_name)
-                if not state_exists:
                     return False
             else:
                 if not backend.check(image_params, vm):
@@ -450,9 +491,6 @@ def get_state(run_params, env):
                 else ON_BACKENDS[image_params["on_states"]]
             if image_params["get_state"] in ROOTS:
                 backend.get_root(image_params, vm)
-            elif image_params["get_state"] in BOOTS:
-                # reusing both root and boot states is analogical to not doing anything
-                continue
             else:
                 backend.get(image_params, vm)
 
@@ -529,10 +567,6 @@ def set_state(run_params, env):
                 else ON_BACKENDS[image_params["on_states"]]
             if image_params["set_state"] in ROOTS:
                 backend.set_root(image_params, vm)
-            elif image_params["set_state"] in BOOTS:
-                # set boot state
-                if vm is None or not vm.is_alive():
-                    vm.create()
             else:
                 backend.set(image_params, vm)
 
@@ -596,13 +630,7 @@ def unset_state(run_params, env):
             backend = OFF_BACKENDS[image_params["off_states"]] if image_params["unset_type"] == "off" \
                 else ON_BACKENDS[image_params["on_states"]]
             if image_params["unset_state"] in ROOTS:
-                # off switch to protect from on leftover state
-                if vm is not None and vm.is_alive():
-                    vm.destroy(gracefully=False)
                 backend.unset_root(image_params, vm)
-            elif image_params["unset_state"] in BOOTS:
-                if vm is not None and vm.is_alive():
-                    vm.destroy(gracefully=False)
             else:
                 backend.unset(image_params, vm)
 
@@ -621,7 +649,7 @@ def push_state(run_params, env):
         for image_name in vm_params.objects("images"):
             image_params = vm_params.object_params(image_name)
 
-            if image_params["push_state"] in ROOTS + BOOTS:
+            if image_params["push_state"] in ROOTS:
                 # cannot be done with root states
                 continue
 
@@ -649,7 +677,7 @@ def pop_state(run_params, env):
         for image_name in vm_params.objects("images"):
             image_params = vm_params.object_params(image_name)
 
-            if image_params["pop_state"] in ROOTS + BOOTS:
+            if image_params["pop_state"] in ROOTS:
                 # cannot be done with root states
                 continue
 

@@ -33,7 +33,7 @@ import logging
 
 from avocado.utils import process
 
-from .setup import StateBackend
+from .setup import StateBackend, StateOnBackend
 
 
 #: off qemu states regex (0 vm size)
@@ -163,7 +163,7 @@ class QCOW2Backend(StateBackend):
         return super(QCOW2Backend, QCOW2Backend).check_root(params, object)
 
 
-class QCOW2VTBackend(QCOW2Backend):
+class QCOW2VTBackend(StateOnBackend, QCOW2Backend):
     """Backend manipulating on states as QCOW2 snapshots using VT's VM bindings."""
 
     _require_running_object = True
