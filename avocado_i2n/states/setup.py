@@ -257,7 +257,7 @@ ROOTS = ['root', '0root', 'boot', '0boot']
 
 def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
     """
-    State check/provision chain from on/off states to their respective roots.
+    State chain from set/set/unset states to check states.
 
     :param str do: get, set, or unset
     :param env: test environment
@@ -269,90 +269,23 @@ def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
     :param image_params: image parameters of the vm's image which is processed
     :type image_params: {str, str}
     """
-    vm = env.get_vm(vm_name)
+    image_params["check_state"] = image_params[f"{do}_state"]
+    image_params["check_type"] = image_params[f"{do}_type"]
+    image_params["check_opts"] = image_params.get("check_opts", "print_pos=no print_neg=yes")
+    if do == "set":
+        image_params["check_opts"] += " soft_boot=yes"
+    else:
+        image_params["check_opts"] += " soft_boot=no"
 
     # restrict inner calls
     image_params["vms"] = vm_name
     image_params["images"] = image_name
-
-    state = image_params["check_state"] = image_params[f"{do}_state"]
-    stype = image_params["check_type"] = image_params[f"{do}_type"]
-    image_params["check_opts"] = image_params.get("check_opts", "print_pos=no print_neg=yes")
-    # TODO: document after experimental period
-    # - first position is for root, second for boot
-    # - each position could either be reuse check result or force existence
-    image_params["check_mode"] = image_params.get("check_mode", "rf")
-
-    action_if_root_exists = image_params["check_mode"][0]
-    action_if_boot_exists = image_params["check_mode"][1]
-
-    # always check the corresponding root state as a prerequisite
-    if state not in ROOTS or stype != "off":
-        image_params["check_state"] = ROOTS[0]
-        image_params["check_type"] = "off"
-        root_exists = check_state(image_params, env)
-        if not root_exists:
-            if action_if_root_exists == "f":
-                image_params["set_state"] = image_params["check_state"]
-                image_params["set_type"] = image_params["check_type"]
-                set_state(image_params, env)
-            elif action_if_root_exists == "r":
-                return False
-            else:
-                raise exceptions.TestError(f"Invalid policy {action_if_root_exists}: The root "
-                                           "check action can be either of 'reuse' or 'force'.")
-
-    # optionally check a corresponding boot state as a prerequisite
-    if state not in ROOTS or stype != "on":
-        image_params["check_state"] = ROOTS[0]
-        image_params["check_type"] = "on"
-        boot_exists = check_state(image_params, env)
-
-        # need to passively detect type in order to support provision for boot states
-        image_params["check_state"] = state
-        image_params["check_type"] = stype
-        if stype == "any" and state not in ROOTS:
-            state_exists = True
-            initial_type = image_params["check_type"]
-            image_params["check_type"] = "on"
-            if not boot_exists or not check_state(image_params, env):
-                image_params["check_type"] = "off"
-                if not check_state(image_params, env):
-                    # default type to treat in case of no result
-                    image_params["check_type"] = initial_type
-                    state_exists = False
-        else:
-            state_exists = check_state(image_params, env)
-
-        if image_params["check_type"] in image_params.objects('skip_types'):
-            pass
-        elif not boot_exists and image_params["check_type"] == "on":
-            if action_if_boot_exists == "f" and vm is None:
-                vm = env.create_vm(vm_params.get('vm_type'), vm_params.get('target'),
-                                   vm_name, vm_params, None)
-            elif action_if_boot_exists == "f":
-                # on states require manual update of the vm parameters
-                vm.params = vm_params
-                if not vm.is_alive():
-                    vm.create()
-            elif action_if_boot_exists == "r":
-                return False
-            else:
-                raise exceptions.TestError(f"Invalid policy {action_if_boot_exists}: The boot "
-                                           "check action can be either of 'reuse' or 'force'.")
-        # bonus: switch off the vm if the requested state is an off state
-        elif boot_exists and image_params["check_type"] == "off":
-            if action_if_boot_exists == "f" and vm is not None and vm.is_alive():
-                vm.destroy(gracefully=do!="get")
-
-    else:
-        image_params["check_state"] = state
-        image_params["check_type"] = stype
-        state_exists = check_state(image_params, env)
+    state_exists = check_state(image_params, env)
 
     # if too many or no matches default to most performant type
     image_params[f"{do}_type"] = image_params["check_type"]
     vm_params[f"{do}_type"] = image_params["check_type"]
+
     return state_exists
 
 
@@ -410,18 +343,81 @@ def check_state(run_params, env):
                 continue
             # NOTE: there is no concept of "check_mode" here
             image_params["check_type"] = image_params.get("check_type", "any")
-            image_params["check_opts"] = image_params.get("check_opts", "print_pos=no print_neg=no")
+            image_params["check_opts"] = image_params.get("check_opts", "print_pos=no print_neg=no soft_boot=yes")
+            # TODO: document after experimental period
+            # - first position is for root, second for boot
+            # - each position could either be reuse check result or force existence
+            image_params["check_mode"] = image_params.get("check_mode", "rf")
+
+            state = image_params["check_state"]
+            stype = image_params["check_type"]
 
             off_backend = OFF_BACKENDS[image_params["off_states"]]
             on_backend = ON_BACKENDS[image_params["on_states"]]
             backend = off_backend if image_params["check_type"] == "off" else on_backend
 
-            if image_params["check_state"] in ROOTS:
-                if not backend.check_root(image_params, vm):
-                    return False
+            action_if_root_exists = image_params["check_mode"][0]
+            action_if_boot_exists = image_params["check_mode"][1]
+
+            # always check the corresponding root state as a prerequisite
+            if state not in ROOTS or stype != "off":
+                root_exists = off_backend.check_root(image_params, vm)
+                if not root_exists:
+                    if action_if_root_exists == "f":
+                        off_backend.set_root(image_params, vm)
+                    elif action_if_root_exists == "r":
+                        return False
+                    else:
+                        raise exceptions.TestError(f"Invalid policy {action_if_root_exists}: The root "
+                                                   "check action can be either of 'reuse' or 'force'.")
+
+            # optionally check a corresponding boot state as a prerequisite
+            if state not in ROOTS or stype != "on":
+                boot_exists = on_backend.check_root(image_params, vm)
+
+                # need to passively detect type in order to support provision for boot states
+                if stype == "any" and state not in ROOTS:
+                    state_exists = True
+                    initial_type = image_params["check_type"]
+                    stype = "on"
+                    if not boot_exists or not on_backend.check(image_params, vm):
+                        stype = "off"
+                        if not off_backend.check(image_params, vm):
+                            # default type to treat in case of no result
+                            stype = initial_type
+                            state_exists = False
+                    # set this for external reporting of detected type
+                    run_params["check_type"] = stype
+                elif state in ROOTS:
+                    state_exists = backend.check_root(image_params, vm)
+                else:
+                    state_exists = backend.check(image_params, vm)
+
+                if stype in image_params.objects('skip_types'):
+                    pass
+                elif not boot_exists and stype == "on":
+                    if action_if_boot_exists == "f" and vm is None:
+                        vm = env.create_vm(vm_params.get('vm_type'), vm_params.get('target'),
+                                           vm_name, vm_params, None)
+                    elif action_if_boot_exists == "f":
+                        # on states require manual update of the vm parameters
+                        vm.params = vm_params
+                        on_backend.set_root(image_params, vm)
+                    elif action_if_boot_exists == "r":
+                        return False
+                    else:
+                        raise exceptions.TestError(f"Invalid policy {action_if_boot_exists}: The boot "
+                                                   "check action can be either of 'reuse' or 'force'.")
+                # bonus: switch off the vm if the requested state is an off state
+                elif boot_exists and stype == "off":
+                    if action_if_boot_exists == "f" and vm is not None and vm.is_alive():
+                        vm.destroy(gracefully=image_params.get_dict("check_opts").get("soft_boot", "yes")=="yes")
+
             else:
-                if not backend.check(image_params, vm):
-                    return False
+                state_exists = on_backend.check_root(image_params, vm)
+
+            if not state_exists:
+                return False
 
     return True
 
