@@ -78,6 +78,9 @@ class StateSetupTest(unittest.TestCase):
     def _file_exists(self, filepath):
         return self.exist_switch
 
+    def _only_root_exists(self, vg_name, lv_name):
+        return True if lv_name == "LogVol" else False
+
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_show_states_off(self, mock_lv_utils):
         self._set_off_lvm_params()
@@ -265,6 +268,45 @@ class StateSetupTest(unittest.TestCase):
         self.assertFalse(exists)
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
+    def test_get_off(self, mock_lv_utils):
+        self._set_off_lvm_params()
+        self.run_params["get_state_vm1"] = "launch"
+        self.run_params["get_type_vm1"] = "off"
+        self.run_params["get_mode_vm1"] = "ri"
+        self.run_params["skip_types"] = "on"
+        self._create_mock_vms()
+
+        expected_checks = [mock.call("disk_vm1", "LogVol"),
+                           mock.call("disk_vm1", "launch")]
+
+        mock_lv_utils.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        mock_lv_utils.lv_check.return_value = True
+        state_setup.get_state(self.run_params, self.env)
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks)
+        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=False)
+        mock_lv_utils.lv_remove.assert_called_once_with('disk_vm1', 'current_state')
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'launch', 'current_state')
+
+        mock_lv_utils.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        mock_lv_utils.lv_check.side_effect = self._only_root_exists
+        state_setup.get_state(self.run_params, self.env)
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks)
+        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=False)
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
+
+        mock_lv_utils.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        mock_lv_utils.lv_check.return_value = False
+        mock_lv_utils.lv_check.side_effect = None
+        state_setup.get_state(self.run_params, self.env)
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks[:1])
+        self.mock_vms["vm1"].destroy.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
+
+    @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_get_off_aa(self, mock_lv_utils):
         self._set_off_lvm_params()
         self.run_params["get_state_vm1"] = "launch"
@@ -277,15 +319,16 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].is_alive.return_value = False
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        # test on/off switch as well
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
+        self.mock_vms["vm1"].is_alive.assert_called()
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_get_off_rx(self, mock_lv_utils):
@@ -298,12 +341,10 @@ class StateSetupTest(unittest.TestCase):
         self._create_mock_vms()
 
         mock_lv_utils.reset_mock()
-        # test on/off switch as well
         mock_lv_utils.lv_check.return_value = True
         self.mock_vms["vm1"].is_alive.return_value = False
         state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.mock_vms["vm1"].is_alive.assert_called()
         mock_lv_utils.lv_remove.assert_called_once_with('disk_vm1', 'current_state')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'launch', 'current_state')
 
@@ -311,7 +352,8 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestError):
             state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_get_off_ii(self, mock_lv_utils):
@@ -325,13 +367,15 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         self.mock_vms["vm1"].is_alive.return_value = False
         state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
+        self.mock_vms["vm1"].is_alive.assert_called()
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_get_off_xx(self, mock_lv_utils):
@@ -346,30 +390,35 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].is_alive.return_value = False
         with self.assertRaises(exceptions.TestError):
             state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
+        self.mock_vms["vm1"].is_alive.assert_called()
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestError):
             state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
-    def test_get_type_switch(self, mock_lv_utils):
+    def test_get_type_off_switch(self, mock_lv_utils):
         self._set_off_lvm_params()
         self.run_params["get_state_vm1"] = "launch"
         self.run_params["get_type_vm1"] = "off"
         self.run_params["get_mode_vm1"] = "ii"
         self._create_mock_vms()
 
+        expected_checks = [mock.call("disk_vm1", "LogVol"),
+                           mock.call("disk_vm1", "launch")]
+
         mock_lv_utils.reset_mock()
         self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = True
         self.mock_vms["vm1"].is_alive.return_value = True
         state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks)
+        self.mock_vms["vm1"].is_alive.assert_called()
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=False)
 
         mock_lv_utils.reset_mock()
@@ -377,8 +426,9 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         self.mock_vms["vm1"].is_alive.return_value = False
         state_setup.get_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks)
+        self.mock_vms["vm1"].is_alive.assert_called()
+        self.mock_vms["vm1"].destroy.assert_not_called()
 
     @mock.patch('avocado_i2n.states.qcow2.process')
     def test_get_on_rx(self, mock_process):
@@ -431,7 +481,7 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].is_alive.return_value = True
         state_setup.get_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.mock_vms["vm1"].is_alive.assert_called()
         self.mock_vms["vm1"].loadvm.assert_called_once_with('launch')
 
     @mock.patch('avocado_i2n.states.qcow2.process')
@@ -448,11 +498,12 @@ class StateSetupTest(unittest.TestCase):
         mock_process.system_output.return_value = b"NOT HERE"
         mock_lv_utils.lv_check.return_value = True
         # this time the off switch asks so confirm for it as well
-        self.mock_vms["vm1"].is_alive.return_value = False
+        self.mock_vms["vm1"].is_alive.return_value = True
         state_setup.get_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
         mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].is_alive.assert_called_once_with()
+        self.mock_vms["vm1"].is_alive.assert_called()
+        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=False)
         mock_lv_utils.lv_remove.assert_called_once_with('disk_vm1', 'current_state')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'launch', 'current_state')
 
@@ -474,6 +525,44 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
+    def test_set_off(self, mock_lv_utils):
+        self._set_off_lvm_params()
+        self.run_params["set_state_vm1"] = "launch"
+        self.run_params["set_type_vm1"] = "off"
+        self.run_params["set_mode_vm1"] = "ff"
+        self.run_params["skip_types"] = "on"
+        self._create_mock_vms()
+
+        expected_checks = [mock.call("disk_vm1", "LogVol"),
+                           mock.call("disk_vm1", "launch")]
+
+        mock_lv_utils.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        mock_lv_utils.lv_check.return_value = True
+        state_setup.set_state(self.run_params, self.env)
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks)
+        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+        mock_lv_utils.lv_remove.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
+
+        mock_lv_utils.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        mock_lv_utils.lv_check.side_effect = self._only_root_exists
+        state_setup.set_state(self.run_params, self.env)
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks)
+        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
+
+        mock_lv_utils.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        mock_lv_utils.lv_check.return_value = False
+        mock_lv_utils.lv_check.side_effect = None
+        state_setup.set_state(self.run_params, self.env)
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks[:1])
+        self.mock_vms["vm1"].destroy.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
+
+    @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_set_off_aa(self, mock_lv_utils):
         self._set_off_lvm_params()
         self.run_params["set_state_vm1"] = "launch"
@@ -483,20 +572,18 @@ class StateSetupTest(unittest.TestCase):
         self._create_mock_vms()
 
         mock_lv_utils.reset_mock()
-        self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = True
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
 
         mock_lv_utils.reset_mock()
-        self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_set_off_rx(self, mock_lv_utils):
@@ -508,19 +595,15 @@ class StateSetupTest(unittest.TestCase):
         self._create_mock_vms()
 
         mock_lv_utils.reset_mock()
-        self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+        mock_lv_utils.lv_remove.assert_not_called()
 
         mock_lv_utils.reset_mock()
-        self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestError):
             state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+        mock_lv_utils.lv_remove.assert_not_called()
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_set_off_ff(self, mock_lv_utils):
@@ -532,20 +615,15 @@ class StateSetupTest(unittest.TestCase):
         self._create_mock_vms()
 
         mock_lv_utils.reset_mock()
-        self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
         mock_lv_utils.lv_remove.assert_called_once_with("disk_vm1", "launch")
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
 
         mock_lv_utils.reset_mock()
-        self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = False
         state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+        mock_lv_utils.lv_remove.assert_not_called()
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
@@ -558,20 +636,18 @@ class StateSetupTest(unittest.TestCase):
         self._create_mock_vms()
 
         mock_lv_utils.reset_mock()
-        self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = True
         with self.assertRaises(exceptions.TestError):
             state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
 
         mock_lv_utils.reset_mock()
-        self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestError):
             state_setup.set_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
-        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
 
     @mock.patch('avocado_i2n.states.qcow2.process')
     def test_set_on_ff(self, mock_process):
@@ -639,9 +715,11 @@ class StateSetupTest(unittest.TestCase):
         # if no skipping with only off state available
         mock_process.system_output.return_value = b"NOT HERE"
         mock_lv_utils.lv_check.return_value = True
+        self.mock_vms["vm1"].is_alive.return_value = True
         state_setup.set_state(self.run_params, self.env)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm1/image.qcow2 -U")
         mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
+        self.mock_vms["vm1"].is_alive.assert_called()
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
         mock_lv_utils.lv_remove.assert_called_once_with('disk_vm1', 'launch')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
@@ -716,6 +794,43 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
+    def test_unset_off(self, mock_lv_utils):
+        self._set_off_lvm_params()
+        self.run_params["unset_state_vm1"] = "launch"
+        self.run_params["unset_type_vm1"] = "off"
+        self.run_params["unset_mode_vm1"] = "fi"
+        self.run_params["lv_pointer_name"] = "current_state"
+        self._create_mock_vms()
+
+        expected_checks = [mock.call("disk_vm1", "LogVol"),
+                           mock.call("disk_vm1", "launch")]
+
+        mock_lv_utils.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        mock_lv_utils.lv_check.return_value = True
+        state_setup.unset_state(self.run_params, self.env)
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks)
+        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+        mock_lv_utils.lv_remove.assert_called_once_with("disk_vm1", "launch")
+
+        mock_lv_utils.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        mock_lv_utils.lv_check.side_effect = self._only_root_exists
+        state_setup.unset_state(self.run_params, self.env)
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks)
+        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+        mock_lv_utils.lv_remove.assert_not_called()
+
+        mock_lv_utils.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        mock_lv_utils.lv_check.return_value = False
+        mock_lv_utils.lv_check.side_effect = None
+        state_setup.unset_state(self.run_params, self.env)
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks[:1])
+        self.mock_vms["vm1"].destroy.assert_not_called()
+        mock_lv_utils.lv_remove.assert_not_called()
+
+    @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_unset_off_ra(self, mock_lv_utils):
         self._set_off_lvm_params()
         self.run_params["unset_state_vm1"] = "launch"
@@ -726,13 +841,13 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
         state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_remove.assert_not_called()
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_remove.assert_not_called()
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_unset_off_fi(self, mock_lv_utils):
@@ -746,13 +861,12 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
         state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         mock_lv_utils.lv_remove.assert_called_once_with("disk_vm1", "launch")
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_remove.assert_not_called()
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_unset_off_xx(self, mock_lv_utils):
@@ -766,13 +880,13 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         with self.assertRaises(exceptions.TestError):
             state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_remove.assert_not_called()
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
         with self.assertRaises(exceptions.TestError):
             state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
+        mock_lv_utils.lv_remove.assert_not_called()
 
     @mock.patch('avocado_i2n.states.qcow2.process')
     def test_unset_on_fi(self, mock_process):
@@ -856,7 +970,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_check.return_value = True
         with self.assertRaises(ValueError):
             state_setup.unset_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "current_state")
+        mock_lv_utils.lv_remove.assert_not_called()
 
     @mock.patch('avocado_i2n.states.qcow2.process')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
@@ -1101,9 +1215,9 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["lv_pointer_name"] = "current_state"
         self._create_mock_vms()
 
-        mock_lv_utils.lv_check.return_value = False
+        mock_lv_utils.lv_check.side_effect = self._only_root_exists
+
         state_setup.push_state(self.run_params, self.env)
-        mock_lv_utils.lv_check.assert_called_once_with("disk_vm1", "launch")
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
 
@@ -1215,7 +1329,7 @@ class StateSetupTest(unittest.TestCase):
 
         # test on/off switch as well
         def lv_check_side_effect(_vgname, lvname):
-            return True if lvname == "launch1" else False if lvname == "launch2" else False
+            return True if lvname in ["LogVol", "launch1"] else False if lvname == "launch2" else False
         mock_lv_utils.lv_check.side_effect = lv_check_side_effect
         mock_process.system_output.return_value = b"5         launchX         684 MiB 2021-01-18 21:24:22   00:00:44.478"
         self.mock_vms["vm1"].is_alive.return_value = False
@@ -1224,7 +1338,10 @@ class StateSetupTest(unittest.TestCase):
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.get_state(self.run_params, self.env)
 
-        expected = [mock.call("disk_vm1", "launch1"), mock.call("disk_vm2", "launch2")]
+        expected = [mock.call("disk_vm1", "LogVol"),
+                    mock.call("disk_vm1", "launch1"),
+                    mock.call("disk_vm2", "LogVol"),
+                    mock.call("disk_vm2", "launch2")]
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
         mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /vm3/image.qcow2 -U")
         # switch check if vm has to be booted
@@ -1261,14 +1378,18 @@ class StateSetupTest(unittest.TestCase):
         self.exist_switch = False
 
         def lv_check_side_effect(_vgname, lvname):
-            return True if lvname == "launch2" else False if lvname == "launch4" else False
+            return True if lvname in ["LogVol", "launch2"] else False if lvname == "launch4" else False
         mock_lv_utils.lv_check.side_effect = lv_check_side_effect
         mock_lv_utils.vg_check.return_value = False
 
         with self.assertRaises(exceptions.TestSkipError):
             state_setup.set_state(self.run_params, self.env)
 
-        expected = [mock.call("disk_vm2", "launch2"), mock.call("disk_vm3", "LogVol"), mock.call("disk_vm4", "launch4")]
+        expected = [mock.call("disk_vm2", "LogVol"),
+                    mock.call("disk_vm2", "launch2"),
+                    mock.call("disk_vm3", "LogVol"),
+                    mock.call("disk_vm4", "LogVol"),
+                    mock.call("disk_vm4", "launch4")]
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
         self.mock_vms["vm2"].destroy.assert_called_once_with(gracefully=True)
         self.mock_vms["vm3"].destroy.assert_called_once_with(gracefully=True)
@@ -1294,13 +1415,13 @@ class StateSetupTest(unittest.TestCase):
         self._create_mock_vms()
         self.exist_switch = False
 
-        def lv_check_side_effect(_vgname, lvname):
-            return True if lvname == "LogVol" else False
-        mock_lv_utils.lv_check.side_effect = lv_check_side_effect
+        mock_lv_utils.lv_check.side_effect = self._only_root_exists
 
         state_setup.unset_state(self.run_params, self.env)
 
-        expected = [mock.call("disk_vm1", "LogVol"), mock.call("disk_vm4", "launch4")]
+        expected = [mock.call("disk_vm1", "LogVol"),
+                    mock.call("disk_vm4", "LogVol"),
+                    mock.call("disk_vm4", "launch4")]
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
 
     @mock.patch('avocado_i2n.states.qcow2.process')

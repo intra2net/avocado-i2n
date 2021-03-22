@@ -83,8 +83,6 @@ class QCOW2Backend(StateBackend):
         check_opts = params.get_dict("check_opts")
         print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
         logging.debug("Checking %s for %s state '%s'", vm_name, cls.state_type(), params["check_state"])
-        if not cls.check_root(params, object):
-            return False
         states = cls.show(params, object)
         for state in states:
             if state == params["check_state"]:
