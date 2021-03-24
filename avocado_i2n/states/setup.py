@@ -164,6 +164,7 @@ class StateBackend():
         image_name = params["image_name"]
         if not os.path.isabs(image_name):
             image_name = os.path.join(params["images_base_dir"], image_name)
+        os.makedirs(os.path.dirname(image_name), exist_ok=True)
         logging.info("Creating image %s for %s", image_name, vm_name)
         params.update({"create_image": "yes", "force_create_image": "yes"})
         env_process.preprocess_image(None, params, image_name)
