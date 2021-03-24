@@ -593,14 +593,13 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["skip_types"] = "on"
         self._create_mock_vms()
 
-        expected_checks = [mock.call("disk_vm1", "LogVol"),
-                           mock.call("disk_vm1", "launch")]
-
         mock_lv_utils.reset_mock()
         self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = True
         state_setup.set_state(self.run_params, self.env)
-        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks)
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list,
+                             [mock.call("disk_vm1", "LogVol"),
+                              mock.call("disk_vm1", "launch")])
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
         mock_lv_utils.lv_remove.assert_called_once_with("disk_vm1", "launch")
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
@@ -609,7 +608,11 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.side_effect = self._only_root_exists
         state_setup.set_state(self.run_params, self.env)
-        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks)
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list,
+                             [mock.call("disk_vm1", "LogVol"),
+                              mock.call("disk_vm1", "launch"),
+                              # extra root check to prevent forced setting without root
+                              mock.call("disk_vm1", "LogVol")])
         self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
 
@@ -617,10 +620,14 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].reset_mock()
         mock_lv_utils.lv_check.return_value = False
         mock_lv_utils.lv_check.side_effect = None
-        state_setup.set_state(self.run_params, self.env)
-        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected_checks[:1])
+        with self.assertRaises(exceptions.TestError):
+            state_setup.set_state(self.run_params, self.env)
+        self.assertListEqual(mock_lv_utils.lv_check.call_args_list,
+                             [mock.call("disk_vm1", "LogVol"),
+                              # extra root check to prevent forced setting without root
+                              mock.call("disk_vm1", "LogVol")])
         self.mock_vms["vm1"].destroy.assert_not_called()
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_set_off_aa(self, mock_lv_utils):
@@ -681,10 +688,18 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
 
         mock_lv_utils.reset_mock()
-        mock_lv_utils.lv_check.return_value = False
+        mock_lv_utils.lv_check.side_effect = self._only_root_exists
         state_setup.set_state(self.run_params, self.env)
         mock_lv_utils.lv_remove.assert_not_called()
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', 'launch')
+
+        mock_lv_utils.reset_mock()
+        mock_lv_utils.lv_check.side_effect = None
+        mock_lv_utils.lv_check.return_value = False
+        with self.assertRaises(exceptions.TestError):
+            state_setup.set_state(self.run_params, self.env)
+        mock_lv_utils.lv_remove.assert_not_called()
+        mock_lv_utils.lv_take_snapshot.assert_not_called()
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_set_off_xx(self, mock_lv_utils):

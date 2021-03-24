@@ -440,7 +440,9 @@ class CartesianRunner(TestRunner):
                             setup_dict["image_name_" + image] = image_params["image_name"]
                             setup_dict["image_format_" + image] = image_params["image_format"]
                             # if any extra images were created these have to be removed now
-                            if image_params.get_boolean("create_image", False):
+                            # this needs extra fix now
+                            if (image_params.get_boolean("create_image", False)
+                                    or image_params.get("check_mode", "rr")[0] == "f"):
                                 setup_dict["remove_image_" + image] = "yes"
                                 setup_dict["skip_image_processing"] = "no"
                         setup_str = param.re_str("all..internal..manage.unchanged")
