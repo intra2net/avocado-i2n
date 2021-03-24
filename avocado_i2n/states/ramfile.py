@@ -77,16 +77,14 @@ class RamfileBackend(StateOnBackend):
         All arguments match the base class.
         """
         vm, vm_name = object, params["vms"]
-        check_opts = params.get_dict("check_opts")
-        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
         state_dir = RamfileBackend._get_state_dir(params)
         state_file = os.path.join(state_dir, params["check_state"] + ".state")
-        condition = os.path.exists(state_file)
-        if condition and print_pos:
+        if os.path.exists(state_file):
             logging.info("Ramfile snapshot '%s' of %s exists", params["check_state"], vm_name)
-        if not condition and print_neg:
+            return True
+        else:
             logging.info("Ramfile snapshot '%s' of %s doesn't exist", params["check_state"], vm_name)
-        return condition
+            return False
 
     @classmethod
     def get(cls, params, object=None):

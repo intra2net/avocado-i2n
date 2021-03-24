@@ -102,16 +102,14 @@ class LVMBackend(StateBackend):
         All arguments match the base class.
         """
         vm_name = params["vms"]
-        check_opts = params.get_dict("check_opts")
-        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
         params["lv_snapshot_name"] = params["check_state"]
         logging.debug("Checking %s for off state '%s'", vm_name, params["check_state"])
-        condition = lv_utils.lv_check(params["vg_name"], params["lv_snapshot_name"])
-        if condition and print_pos:
+        if lv_utils.lv_check(params["vg_name"], params["lv_snapshot_name"]):
             logging.info("Off snapshot '%s' of %s exists", params["check_state"], vm_name)
-        if not condition and print_neg:
+            return True
+        else:
             logging.info("Off snapshot '%s' of %s doesn't exist", params["check_state"], vm_name)
-        return condition
+            return False
 
     @classmethod
     def get(cls, params, object=None):
@@ -184,15 +182,16 @@ class LVMBackend(StateBackend):
         All arguments match the base class.
         """
         vm_name = params["vms"]
-        check_opts = params.get_dict("check_opts")
-        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
+        image_name = params["image_name"]
         logging.debug("Checking whether %s exists (root off state requested)", vm_name)
-        condition = lv_utils.lv_check(params["vg_name"], params["lv_name"])
-        if condition and print_pos:
-            logging.info("The required virtual machine %s exists", vm_name)
-        if not condition and print_neg:
-            logging.info("The required virtual machine %s doesn't exist", vm_name)
-        return condition
+        if lv_utils.lv_check(params["vg_name"], params["lv_name"]):
+            logging.info("The required virtual machine %s's %s (%s) exists",
+                         vm_name, image_name, params["lv_name"])
+            return True
+        else:
+            logging.info("The required virtual machine %s's %s (%s) doesn't exist",
+                         vm_name, image_name, params["lv_name"])
+            return False
 
     @classmethod
     def set_root(cls, params, object=None):

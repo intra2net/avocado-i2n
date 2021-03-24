@@ -157,7 +157,7 @@ class StateSetupTest(unittest.TestCase):
         self._set_off_lvm_params()
         self.run_params["check_state_vm1"] = "launch"
         self.run_params["check_type_vm1"] = "off"
-        self.run_params["check_opts_vm1"] = "print_pos=yes print_neg=yes soft_boot=yes"
+        self.run_params["check_opts_vm1"] = "soft_boot=yes"
         self._create_mock_vms()
 
         expected_checks = [mock.call("disk_vm1", "LogVol"),
@@ -194,7 +194,7 @@ class StateSetupTest(unittest.TestCase):
         self._set_on_qcow2_params()
         self.run_params["check_state_vm1"] = "launch"
         self.run_params["check_type_vm1"] = "on"
-        self.run_params["check_opts_vm1"] = "print_pos=yes print_neg=yes soft_boot=yes"
+        self.run_params["check_opts_vm1"] = "soft_boot=yes"
         self.run_params["off_states_vm1"] = "qcow2"
         self._create_mock_vms()
 

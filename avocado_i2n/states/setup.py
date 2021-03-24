@@ -121,22 +121,20 @@ class StateBackend():
         :rtype: bool
         """
         vm_name = params["vms"]
-        check_opts = params.get_dict("check_opts")
-        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
-        logging.debug("Checking whether %s exists (root state requested)", vm_name)
-        condition = True
         image_name = params["image_name"]
+        logging.debug("Checking whether %s's %s exists (root state requested)",
+                      vm_name, image_name)
         if not os.path.isabs(image_name):
             image_name = os.path.join(params["images_base_dir"], image_name)
         image_format = params.get("image_format", "qcow2")
         logging.debug("Checking for %s image %s", image_format, image_name)
         image_format = "" if image_format == "raw" else "." + image_format
-        condition = os.path.exists(image_name + image_format)
-        if condition and print_pos:
-            logging.info("The required virtual machine %s exists", vm_name)
-        if not condition and print_neg:
-            logging.info("The required virtual machine %s doesn't exist", vm_name)
-        return condition
+        if os.path.exists(image_name + image_format):
+            logging.info("The required virtual machine %s's %s exists", vm_name, image_name)
+            return True
+        else:
+            logging.info("The required virtual machine %s's %s doesn't exist", vm_name, image_name)
+            return False
 
     @classmethod
     def get_root(cls, params, object=None):
@@ -205,16 +203,14 @@ class StateOnBackend(StateBackend):
         All arguments match the base class.
         """
         vm_name = params["vms"]
-        check_opts = params.get_dict("check_opts")
-        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
         logging.debug("Checking whether %s is on (boot state requested)", vm_name)
         vm = object
-        condition = vm is not None and vm.is_alive()
-        if condition and print_pos:
+        if vm is not None and vm.is_alive():
             logging.info("The required virtual machine %s is on", vm_name)
-        elif not condition and print_neg:
+            return True
+        else:
             logging.info("The required virtual machine %s is off", vm_name)
-        return condition
+            return False
 
     @classmethod
     def set_root(cls, params, object=None):
@@ -272,11 +268,10 @@ def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
     """
     image_params["check_state"] = image_params[f"{do}_state"]
     image_params["check_type"] = image_params[f"{do}_type"]
-    image_params["check_opts"] = image_params.get("check_opts", "print_pos=no print_neg=yes")
     if do == "set":
-        image_params["check_opts"] += " soft_boot=yes"
+        image_params["check_opts"] = "soft_boot=yes"
     else:
-        image_params["check_opts"] += " soft_boot=no"
+        image_params["check_opts"] = "soft_boot=no"
 
     # restrict inner calls
     image_params["vms"] = vm_name
@@ -344,7 +339,7 @@ def check_state(run_params, env):
                 continue
             # NOTE: there is no concept of "check_mode" here
             image_params["check_type"] = image_params.get("check_type", "any")
-            image_params["check_opts"] = image_params.get("check_opts", "print_pos=no print_neg=no soft_boot=yes")
+            image_params["check_opts"] = image_params.get("check_opts", "soft_boot=yes")
             # TODO: document after experimental period
             # - first position is for root, second for boot
             # - each position could either be reuse check result or force existence

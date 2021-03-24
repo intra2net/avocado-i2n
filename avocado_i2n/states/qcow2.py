@@ -80,20 +80,16 @@ class QCOW2Backend(StateBackend):
         All arguments match the base class.
         """
         vm_name = params["vms"]
-        check_opts = params.get_dict("check_opts")
-        print_pos, print_neg = check_opts["print_pos"] == "yes", check_opts["print_neg"] == "yes"
         logging.debug("Checking %s for %s state '%s'", vm_name, cls.state_type(), params["check_state"])
         states = cls.show(params, object)
         for state in states:
             if state == params["check_state"]:
-                if print_pos:
-                    logging.info("The %s snapshot '%s' of %s exists",
-                                 cls.state_type(), params["check_state"], vm_name)
+                logging.info("The %s snapshot '%s' of %s exists",
+                             cls.state_type(), params["check_state"], vm_name)
                 return True
         # at this point we didn't find the on state in the listed ones
-        if print_neg:
-            logging.info("The %s snapshot '%s' of %s doesn't exist",
-                         cls.state_type(), params["check_state"], vm_name)
+        logging.info("The %s snapshot '%s' of %s doesn't exist",
+                     cls.state_type(), params["check_state"], vm_name)
         return False
 
     @classmethod

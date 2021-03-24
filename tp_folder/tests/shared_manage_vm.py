@@ -73,7 +73,6 @@ def run(test, params, env):
     # state manipulation
     elif params.get("vm_action", "run") == "check":
         logging.info("Checking for %s's state '%s'", params["main_vm"], params["check_state"])
-        params["check_opts"] = params.get("check_opts", "print_pos=yes print_neg=yes")
         ss.check_state(params, env)
     elif params.get("vm_action", "run") == "push":
         logging.info("Pushing %s's state '%s'", params["main_vm"], params["push_state"])
