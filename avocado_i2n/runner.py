@@ -440,7 +440,8 @@ class CartesianRunner(TestRunner):
                             setup_dict["image_name_" + image] = image_params["image_name"]
                             setup_dict["image_format_" + image] = image_params["image_format"]
                             # if any extra images were created these have to be removed now
-                            # this needs extra fix now
+                            # TODO: this only supports QCOW2 state backends and no LVM cleanup
+                            # -> combine with the TODO for unset root unification in the states setup
                             if (image_params.get_boolean("create_image", False)
                                     or image_params.get("check_mode", "rr")[0] == "f"):
                                 setup_dict["remove_image_" + image] = "yes"

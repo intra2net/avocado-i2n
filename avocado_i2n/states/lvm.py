@@ -205,6 +205,9 @@ class LVMBackend(StateBackend):
                 os.mkdir(mount_loc)
             lv_utils.lv_mount(params["vg_name"], params["lv_pointer_name"],
                               mount_loc, create_filesystem="ext4")
+            # TODO: it is not correct for the LVM backend to expect QCOW2 images
+            # but at the moment we have no better way to provide on states with
+            # base image to take snapshots of
             super(LVMBackend, LVMBackend).set_root(params, object)
 
     @classmethod

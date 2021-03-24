@@ -358,6 +358,7 @@ def check_states(run_params, env=None):
             # minimal filters
             # TODO: partially implemented backends imply we cannot check all images
             # at once for on states as we would do with get/set/unset operations
+            # -> implement true on state check for on state backends
             if image_params.get_boolean("image_readonly", False):
                 logging.warning(f"Incorrect configuration: cannot use any state "
                                  f"{state} as {image_name} is readonly - skipping")
@@ -391,7 +392,10 @@ def check_states(run_params, env=None):
                     state_exists = True
                     initial_type = image_params["check_type"]
                     stype = "on"
-                    if not boot_exists or not on_backend.check(image_params, vm):
+                    # TODO: on root existence is handled and enforced differently
+                    # than off root existence at the moment - need more unification
+                    #if not boot_exists or not on_backend.check(image_params, vm):
+                    if not on_backend.check(image_params, vm):
                         stype = "off"
                         if not off_backend.check(image_params, vm):
                             # default type to treat in case of no result
@@ -426,7 +430,7 @@ def check_states(run_params, env=None):
                 elif boot_exists and stype == "off":
                     # TODO: this could be unified with the unset on root and we could
                     # eventually implement unset off root for the off root case above
-                    if action_if_boot_exists == "f" and vm is not None and vm.is_alive():
+                    if action_if_boot_exists == "f":
                         vm.destroy(gracefully=image_params.get_dict("check_opts").get("soft_boot", "yes")=="yes")
 
             else:

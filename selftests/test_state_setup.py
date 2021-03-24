@@ -257,7 +257,10 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].is_alive.return_value = False
         exists = ss.check_states(self.run_params, self.env)
         self.mock_vms["vm1"].is_alive.assert_called_with()
-        mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /images/vm1/image.qcow2 -U")
+        # TODO: on root existence is handled and enforced differently
+        # than off root existence at the moment - need more unification
+        #mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /images/vm1/image.qcow2 -U")
+        mock_process.system_output.assert_called_with("qemu-img snapshot -l /images/vm1/image.qcow2 -U")
         self.assertFalse(exists)
 
     @mock.patch('avocado_i2n.states.ramfile.os')
