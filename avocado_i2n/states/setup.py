@@ -410,6 +410,8 @@ def check_state(run_params, env):
                                                    "check action can be either of 'reuse' or 'force'.")
                 # bonus: switch off the vm if the requested state is an off state
                 elif boot_exists and stype == "off":
+                    # TODO: this could be unified with the unset on root and we could
+                    # eventually implement unset off root for the off root case above
                     if action_if_boot_exists == "f" and vm is not None and vm.is_alive():
                         vm.destroy(gracefully=image_params.get_dict("check_opts").get("soft_boot", "yes")=="yes")
 
