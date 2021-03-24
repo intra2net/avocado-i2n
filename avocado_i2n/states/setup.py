@@ -34,6 +34,13 @@ from avocado.core import exceptions
 from virttest import env_process
 
 
+#: list of all available state backends and operations
+__all__ = ["OFF_BACKENDS", "ON_BACKENDS", "ROOTS",
+           "show_states", "check_states",
+           "get_states", "set_states", "unset_states",
+           "push_states", "pop_states"]
+
+
 class StateBackend():
     """A general backend implementing state manipulation."""
 
@@ -276,7 +283,7 @@ def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
     # restrict inner calls
     image_params["vms"] = vm_name
     image_params["images"] = image_name
-    state_exists = check_state(image_params, env)
+    state_exists = check_states(image_params, env)
 
     # if too many or no matches default to most performant type
     image_params[f"{do}_type"] = image_params["check_type"]
@@ -285,14 +292,14 @@ def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
     return state_exists
 
 
-def show_states(run_params, env):
+def show_states(run_params, env=None):
     """
     Return a list of available states of a specific type.
 
     :param run_params: configuration parameters
     :type run_params: {str, str}
-    :param env: test environment
-    :type env: Env object
+    :param env: test environment or nothing if not needed
+    :type env: Env object or None
     :returns: list of detected states
     :rtype: [str]
     """
@@ -310,14 +317,14 @@ def show_states(run_params, env):
     return states
 
 
-def check_state(run_params, env):
+def check_states(run_params, env=None):
     """
     Check whether a given state exits.
 
     :param run_params: configuration parameters
     :type run_params: {str, str}
-    :param env: test environment
-    :type env: Env object
+    :type env: Env object or None
+    :returns: list of detected states
     :returns: whether the given state exists
     :rtype: bool
 
@@ -329,7 +336,7 @@ def check_state(run_params, env):
         bitwise AND, i.e. it will determine the existence of a given state configuration.
     """
     for vm_name in run_params.objects("vms"):
-        vm = env.get_vm(vm_name)
+        vm = env.get_vm(vm_name) if env is not None else None
         vm_params = run_params.object_params(vm_name)
         for image_name in vm_params.objects("images"):
             image_params = vm_params.object_params(image_name)
@@ -401,6 +408,9 @@ def check_state(run_params, env):
                     pass
                 elif not boot_exists and stype == "on":
                     if action_if_boot_exists == "f" and vm is None:
+                        if env is None:
+                            raise exceptions.TestError(f"Creating boot states requires an "
+                                                       "environment object to be provided.")
                         vm = env.create_vm(vm_params.get('vm_type'), vm_params.get('target'),
                                            vm_name, vm_params, None)
                     elif action_if_boot_exists == "f":
@@ -428,20 +438,20 @@ def check_state(run_params, env):
     return True
 
 
-def get_state(run_params, env):
+def get_states(run_params, env=None):
     """
     Retrieve a state disregarding the current changes.
 
     :param run_params: configuration parameters
     :type run_params: {str, str}
-    :param env: test environment
-    :type env: Env object
+    :type env: Env object or None
+    :returns: list of detected states
     :raises: :py:class:`exceptions.TestSkipError` if the retrieved state doesn't exist,
         the vm is unavailable from the env, or snapshot exists in passive mode (abort)
     :raises: :py:class:`exceptions.TestError` if invalid policy was used
     """
     for vm_name in run_params.objects("vms"):
-        vm = env.get_vm(vm_name)
+        vm = env.get_vm(vm_name) if env is not None else None
         vm_params = run_params.object_params(vm_name)
         all_images_at_once = False
         for image_name in vm_params.objects("images"):
@@ -506,19 +516,19 @@ def get_state(run_params, env):
                 backend.get(image_params, vm)
 
 
-def set_state(run_params, env):
+def set_states(run_params, env=None):
     """
     Store a state saving the current changes.
 
     :param run_params: configuration parameters
     :type run_params: {str, str}
-    :param env: test environment
-    :type env: Env object
+    :type env: Env object or None
+    :returns: list of detected states
     :raises: :py:class:`exceptions.TestSkipError` if unexpected/missing snapshot in passive mode (abort)
     :raises: :py:class:`exceptions.TestError` if invalid policy was used
     """
     for vm_name in run_params.objects("vms"):
-        vm = env.get_vm(vm_name)
+        vm = env.get_vm(vm_name) if env is not None else None
         vm_params = run_params.object_params(vm_name)
         all_images_at_once = False
         for image_name in vm_params.objects("images"):
@@ -591,19 +601,19 @@ def set_state(run_params, env):
                 backend.set(image_params, vm)
 
 
-def unset_state(run_params, env):
+def unset_states(run_params, env=None):
     """
     Remove a state with previous changes.
 
     :param run_params: configuration parameters
     :type run_params: {str, str}
-    :param env: test environment
-    :type env: Env object
+    :type env: Env object or None
+    :returns: list of detected states
     :raises: :py:class:`exceptions.TestSkipError` if missing snapshot in passive mode (abort)
     :raises: :py:class:`exceptions.TestError` if invalid policy was used
     """
     for vm_name in run_params.objects("vms"):
-        vm = env.get_vm(vm_name)
+        vm = env.get_vm(vm_name) if env is not None else None
         vm_params = run_params.object_params(vm_name)
         all_images_at_once = False
         for image_name in vm_params.objects("images"):
@@ -665,14 +675,14 @@ def unset_state(run_params, env):
                 backend.unset(image_params, vm)
 
 
-def push_state(run_params, env):
+def push_states(run_params, env=None):
     """
     Identical to the set operation but used within the push/pop pair.
 
     :param run_params: configuration parameters
     :type run_params: {str, str}
-    :param env: test environment
-    :type env: Env object
+    :type env: Env object or None
+    :returns: list of detected states
     """
     for vm_name in run_params.objects("vms"):
         vm_params = run_params.object_params(vm_name)
@@ -690,17 +700,17 @@ def push_state(run_params, env):
             image_params["set_type"] = image_params.get("push_type", "any")
             image_params["set_mode"] = image_params.get("push_mode", "af")
 
-            set_state(image_params, env)
+            set_states(image_params, env)
 
 
-def pop_state(run_params, env):
+def pop_states(run_params, env=None):
     """
     Retrieve and remove a state/snapshot.
 
     :param run_params: configuration parameters
     :type run_params: {str, str}
-    :param env: test environment
-    :type env: Env object
+    :type env: Env object or None
+    :returns: list of detected states
     """
     for vm_name in run_params.objects("vms"):
         vm_params = run_params.object_params(vm_name)
@@ -717,9 +727,9 @@ def pop_state(run_params, env):
             image_params["get_state"] = image_params["pop_state"]
             image_params["get_type"] = image_params.get("pop_type", "any")
             image_params["get_mode"] = image_params.get("pop_mode", "ra")
-            get_state(image_params, env)
+            get_states(image_params, env)
 
             image_params["unset_state"] = image_params["pop_state"]
             image_params["unset_type"] = image_params.get("pop_type", "any")
             image_params["unset_mode"] = image_params.get("pop_mode", "fa")
-            unset_state(image_params, env)
+            unset_states(image_params, env)

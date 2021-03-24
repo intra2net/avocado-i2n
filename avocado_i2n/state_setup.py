@@ -21,3 +21,10 @@ from .states.ramfile import *
 import logging
 logging.getLogger().warn("The `state_setup` module is deprecated, please use "
                          "the `states` subpackage.")
+
+check_state = check_states
+get_state = get_states
+set_state = set_states
+unset_state = unset_states
+push_state = push_states
+pop_state = pop_states

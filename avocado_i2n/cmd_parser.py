@@ -233,7 +233,7 @@ def env_process_hooks():
             fn(params, env)
             del params["skip_types"]
         return wrapper
-    env_process.preprocess_vm_off_hook = off_state(ss.get_state)
-    env_process.preprocess_vm_on_hook = network_state(on_state(ss.get_state))
-    env_process.postprocess_vm_on_hook = on_state(ss.set_state)
-    env_process.postprocess_vm_off_hook = off_state(ss.set_state)
+    env_process.preprocess_vm_off_hook = off_state(ss.get_states)
+    env_process.preprocess_vm_on_hook = network_state(on_state(ss.get_states))
+    env_process.postprocess_vm_on_hook = on_state(ss.set_states)
+    env_process.postprocess_vm_off_hook = off_state(ss.set_states)
