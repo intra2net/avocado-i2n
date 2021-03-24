@@ -460,6 +460,9 @@ def get_state(run_params, env):
                 raise ValueError(f"Incorrect configuration: cannot use any state "
                                  f"{state} as {image_name} is readonly")
 
+            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["get_type"] == "off" \
+                else ON_BACKENDS[image_params["on_states"]]
+
             action_if_exists = image_params["get_mode"][0]
             action_if_doesnt_exist = image_params["get_mode"][1]
             if not state_exists and "a" == action_if_doesnt_exist:
@@ -485,8 +488,6 @@ def get_state(run_params, env):
                 raise exceptions.TestError("Invalid policy %s: The start action on present state can be "
                                            "either of 'abort', 'reuse', 'ignore'." % image_params["get_mode"])
 
-            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["get_type"] == "off" \
-                else ON_BACKENDS[image_params["on_states"]]
             if image_params["get_state"] in ROOTS:
                 backend.get_root(image_params, vm)
             else:
@@ -528,6 +529,9 @@ def set_state(run_params, env):
                 raise ValueError(f"Incorrect configuration: cannot use any state "
                                  f"{state} as {image_name} is readonly")
 
+            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["set_type"] == "off" \
+                else ON_BACKENDS[image_params["on_states"]]
+
             action_if_exists = image_params["set_mode"][0]
             action_if_doesnt_exist = image_params["set_mode"][1]
             if state_exists and "a" == action_if_exists:
@@ -539,8 +543,6 @@ def set_state(run_params, env):
                 continue
             elif state_exists and "f" == action_if_exists:
                 logging.info("Overwriting the already existing snapshot")
-                backend = OFF_BACKENDS[image_params["off_states"]] if image_params["set_type"] == "off" \
-                    else ON_BACKENDS[image_params["on_states"]]
                 image_params["unset_state"] = image_params["set_state"]
                 if image_params["set_state"] in ROOTS:
                     backend.unset_root(image_params, vm)
@@ -556,13 +558,13 @@ def set_state(run_params, env):
                 raise exceptions.TestSkipError("Snapshot '%s' of %s doesn't exist. Aborting "
                                                "due to passive mode." % (image_params["set_state"], vm_name))
             elif not state_exists and "f" == action_if_doesnt_exist:
-                pass
+                if not image_params["set_state"] in ROOTS and not backend.check_root(image_params, vm):
+                    raise exceptions.TestError("Cannot force set state without a root state, use enforcing check "
+                                               "policy to also force root (existing stateful object) creation.")
             elif not state_exists:
                 raise exceptions.TestError("Invalid policy %s: The end action on missing state can be "
                                            "either of 'abort', 'force'." % image_params["set_mode"])
 
-            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["set_type"] == "off" \
-                else ON_BACKENDS[image_params["on_states"]]
             if image_params["set_state"] in ROOTS:
                 backend.set_root(image_params, vm)
             else:
@@ -604,6 +606,9 @@ def unset_state(run_params, env):
                 raise ValueError(f"Incorrect configuration: cannot use any state "
                                  f"{state} as {image_name} is readonly")
 
+            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["unset_type"] == "off" \
+                else ON_BACKENDS[image_params["on_states"]]
+
             action_if_exists = image_params["unset_mode"][0]
             action_if_doesnt_exist = image_params["unset_mode"][1]
             if not state_exists and "a" == action_if_doesnt_exist:
@@ -625,8 +630,6 @@ def unset_state(run_params, env):
                 raise exceptions.TestError("Invalid policy %s: The unset action on present state can be "
                                            "either of 'reuse', 'force'." % image_params["unset_mode"])
 
-            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["unset_type"] == "off" \
-                else ON_BACKENDS[image_params["on_states"]]
             if image_params["unset_state"] in ROOTS:
                 backend.unset_root(image_params, vm)
             else:
