@@ -352,6 +352,14 @@ def check_state(run_params, env):
             state = image_params["check_state"]
             stype = image_params["check_type"]
 
+            # minimal filters
+            # TODO: partially implemented backends imply we cannot check all images
+            # at once for on states as we would do with get/set/unset operations
+            if image_params.get_boolean("image_readonly", False):
+                logging.warning(f"Incorrect configuration: cannot use any state "
+                                 f"{state} as {image_name} is readonly - skipping")
+                continue
+
             off_backend = OFF_BACKENDS[image_params["off_states"]]
             on_backend = ON_BACKENDS[image_params["on_states"]]
             backend = off_backend if image_params["check_type"] == "off" else on_backend
@@ -439,26 +447,34 @@ def get_state(run_params, env):
     for vm_name in run_params.objects("vms"):
         vm = env.get_vm(vm_name)
         vm_params = run_params.object_params(vm_name)
+        all_images_at_once = False
         for image_name in vm_params.objects("images"):
             image_params = vm_params.object_params(image_name)
 
             # if the state is not defined skip (leaf tests that are no setup)
             if not image_params.get("get_state"):
                 continue
+            else:
+                state = image_params["get_state"]
             image_params["get_type"] = image_params.get("get_type", "any")
             image_params["get_mode"] = image_params.get("get_mode", "ar")
 
-            state_exists = _state_check_chain("get", env, vm_name, vm_params, image_name, image_params)
-
             # minimal filters
+            if all_images_at_once:
+                logging.debug(f"Skip getting {state} separately, one get is for all {vm_name}")
+                continue
+            if image_params.get_boolean("image_readonly", False):
+                logging.warning(f"Incorrect configuration: cannot use any state "
+                                 f"{state} as {image_name} is readonly - skipping")
+                continue
+
+            state_exists = _state_check_chain("get", env, vm_name, vm_params, image_name, image_params)
             skip_types = run_params.objects('skip_types')
             if image_params["get_type"] in skip_types:
                 logging.debug(f"Skip getting states of types {', '.join(skip_types)}")
                 continue
-            state = image_params["get_state"]
-            if image_params.get_boolean("image_readonly", False):
-                raise ValueError(f"Incorrect configuration: cannot use any state "
-                                 f"{state} as {image_name} is readonly")
+            if image_params["get_type"] == "on":
+                all_images_at_once = True
 
             backend = OFF_BACKENDS[image_params["off_states"]] if image_params["get_type"] == "off" \
                 else ON_BACKENDS[image_params["on_states"]]
@@ -508,26 +524,34 @@ def set_state(run_params, env):
     for vm_name in run_params.objects("vms"):
         vm = env.get_vm(vm_name)
         vm_params = run_params.object_params(vm_name)
+        all_images_at_once = False
         for image_name in vm_params.objects("images"):
             image_params = vm_params.object_params(image_name)
 
             # if the state is not defined skip (leaf tests that are no setup)
             if not image_params.get("set_state"):
                 continue
+            else:
+                state = image_params["set_state"]
             image_params["set_type"] = image_params.get("set_type", "any")
             image_params["set_mode"] = image_params.get("set_mode", "ff")
 
-            state_exists = _state_check_chain("set", env, vm_name, vm_params, image_name, image_params)
-
             # minimal filters
+            if all_images_at_once:
+                logging.debug(f"Skip setting {state} separately, one set is for all {vm_name}")
+                continue
+            if image_params.get_boolean("image_readonly", False):
+                logging.warning(f"Incorrect configuration: cannot use any state "
+                                 f"{state} as {image_name} is readonly - skipping")
+                continue
+
+            state_exists = _state_check_chain("set", env, vm_name, vm_params, image_name, image_params)
             skip_types = run_params.objects('skip_types')
             if image_params["set_type"] in skip_types:
                 logging.debug(f"Skip setting states of types {', '.join(skip_types)}")
                 continue
-            state = image_params["set_state"]
-            if image_params.get_boolean("image_readonly", False):
-                raise ValueError(f"Incorrect configuration: cannot use any state "
-                                 f"{state} as {image_name} is readonly")
+            if image_params["set_type"] == "on":
+                all_images_at_once = True
 
             backend = OFF_BACKENDS[image_params["off_states"]] if image_params["set_type"] == "off" \
                 else ON_BACKENDS[image_params["on_states"]]
@@ -585,26 +609,35 @@ def unset_state(run_params, env):
     for vm_name in run_params.objects("vms"):
         vm = env.get_vm(vm_name)
         vm_params = run_params.object_params(vm_name)
+        all_images_at_once = False
         for image_name in vm_params.objects("images"):
             image_params = vm_params.object_params(image_name)
 
             # if the state is not defined skip (leaf tests that are no setup)
             if not image_params.get("unset_state"):
                 continue
+            else:
+                state = image_params["unset_state"]
             image_params["unset_type"] = image_params.get("unset_type", "any")
             image_params["unset_mode"] = image_params.get("unset_mode", "fi")
 
+            # minimal filters
+            if all_images_at_once:
+                logging.debug(f"Skip unsetting {state} separately, one unset is for all {vm_name}")
+                continue
+            if image_params.get_boolean("image_readonly", False):
+                logging.warning(f"Incorrect configuration: cannot use any state "
+                                 f"{state} as {image_name} is readonly - skipping")
+                continue
+
             state_exists = _state_check_chain("unset", env, vm_name, vm_params, image_name, image_params)
 
-            # minimal filters
             skip_types = run_params.objects('skip_types')
             if image_params["unset_type"] in skip_types:
                 logging.debug(f"Skip unsetting states of types {', '.join(skip_types)}")
                 continue
-            state = image_params["unset_state"]
-            if image_params.get_boolean("image_readonly", False):
-                raise ValueError(f"Incorrect configuration: cannot use any state "
-                                 f"{state} as {image_name} is readonly")
+            if image_params["unset_type"] == "on":
+                all_images_at_once = True
 
             backend = OFF_BACKENDS[image_params["off_states"]] if image_params["unset_type"] == "off" \
                 else ON_BACKENDS[image_params["on_states"]]
