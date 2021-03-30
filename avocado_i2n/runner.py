@@ -30,22 +30,62 @@ INTERFACE
 import os
 import logging
 import signal
+import asyncio
 from multiprocessing import SimpleQueue
 
-from avocado.plugins.runner import TestRunner
+from avocado.core import nrunner
+from avocado.core.dispatcher import SpawnerDispatcher
+from avocado.core.plugin_interfaces import Runner as RunnerInterface
+from avocado.core.task.runtime import RuntimeTask
+from avocado.core.task.statemachine import TaskStateMachine, Worker
 from virttest import utils_misc
 
 from . import params_parser as param
 from .cartgraph import TestGraph, TestNode
 
 
-class CartesianRunner(TestRunner):
+class CartesianRunner(RunnerInterface):
     """Test runner for Cartesian graph traversal."""
 
     name = 'traverser'
     description = 'Runs tests through a Cartesian graph traversal'
 
     """running functionality"""
+    def run_test(self, job, test_factory, queue, summary, job_deadline=0):
+        """
+        Run a test instance inside a subprocess.
+
+        :param test_factory: Test factory (test class and parameters).
+        :type test_factory: tuple of :class:`avocado.core.test.Test` and dict.
+        :param queue: Multiprocess queue.
+        :type queue: :class`multiprocessing.Queue` instance.
+        :param summary: Contains types of test failures.
+        :type summary: set.
+        :param job_deadline: Maximum time to execute.
+        :type job_deadline: int.
+        """
+        self.tasks = self._get_all_runtime_tasks(test_suite)
+        tsm = TaskStateMachine(self.tasks)
+        spawner_name = job.config.get('nrunner.spawner')
+        spawner = SpawnerDispatcher(job.config)[spawner_name].obj
+        max_running = 1
+        timeout = job.config.get('task.timeout.running')
+        workers = [Worker(state_machine=tsm,
+                          spawner=spawner,
+                          max_running=max_running,
+                          task_timeout=timeout).run()
+                   for _ in range(max_running)]
+        # TODO: no support for test status reporting for now
+        #asyncio.ensure_future(self._update_status(job))
+        loop = asyncio.get_event_loop()
+        try:
+            loop.run_until_complete(asyncio.wait_for(asyncio.gather(*workers),
+                                                     job.timeout or None))
+        except (KeyboardInterrupt, asyncio.TimeoutError):
+            summary.add("INTERRUPTED")
+
+        return summary
+
     def run_test_node(self, node, can_retry=False):
         """
         Run a node once, and optionally re-run it depending on the parameters.
@@ -90,13 +130,13 @@ class CartesianRunner(TestRunner):
             if r > 0:
                 node.params["shortname"] = f"{original_shortname}.r{r}"
 
-            # TODO: in the future we better inherit from the Runner interface in
-            # avocado.core.plugin_interfaces and implement our own test node running
-            # like most of the other runners do
             retval = self.run_test(self.job, node.get_test_factory(self.job), SimpleQueue(), set())
 
-            test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))
-            test_status = test_result["status"]
+            # TODO: no support for test status reporting for now
+            #test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))
+            # TODO: test retrying is disabled for now
+            test_status = "PASS"
+            #test_status = test_result["status"]
             if test_status not in ["PASS", "WARN", "ERROR", "FAIL"]:
                 # it doesn't make sense to retry with other status
                 logging.info(f"Will not attempt to retry test with status {test_status}")
