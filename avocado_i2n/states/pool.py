@@ -31,7 +31,7 @@ import os
 import shutil
 import logging
 
-from .qcow2 import QCOW2Backend
+from .qcow2 import QCOW2Backend, get_image_path
 
 
 class QCOW2PoolBackend(QCOW2Backend):
@@ -46,31 +46,98 @@ class QCOW2PoolBackend(QCOW2Backend):
 
         All arguments match the base class.
         """
-        if super(QCOW2PoolBackend, cls).check_root(params, object):
+        if (params.get_boolean("update_pool", False) and
+                not super(QCOW2PoolBackend, cls).check_root(params, object)):
+            raise RuntimeError("Updating state pool requires local root states")
+        elif (not params.get_boolean("update_pool", False) and
+                super(QCOW2PoolBackend, cls).check_root(params, object)):
             return True
 
         vm_name = params["vms"]
         image_name = params["image_name"]
+        target_image = get_image_path(params)
+        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        image_base_name = os.path.basename(target_image)
 
-        image_format = params.get("image_format", "qcow2")
-        if image_format != "qcow2":
-            raise ValueError(f"Incompatible image format {image_format} for"
-                             f" {image_name} - must be qcow2")
-        if not os.path.isabs(image_name):
-            image_name = os.path.join(params["images_base_dir"], image_name)
-        image_name += "." + image_format
-
-        shared_pool = params.get("image_pool", "/mnt/local/images")
-        image_base_name = os.path.basename(image_name)
-        logging.debug(f"Checking for shared {vm_name}/{image_base_name} existence"
+        logging.debug(f"Checking for shared {vm_name}/{image_name} existence"
                       f" in the shared pool {shared_pool}")
         src_image_name = os.path.join(shared_pool, image_base_name)
         if os.path.exists(src_image_name):
-            # proactive step: download available root
-            os.makedirs(os.path.dirname(image_name), exist_ok=True)
-            shutil.copy(src_image_name, image_name)
+            cls.get_root(params, object)
             logging.info("The shared %s image exists", src_image_name)
             return True
         else:
             logging.info("The shared %s image doesn't exist", src_image_name)
             return False
+
+    @classmethod
+    def get_root(cls, params, object=None):
+        """
+        Get a root state or essentially due to pre-existence do nothing.
+
+        All arguments match the base class.
+        """
+        if super(QCOW2PoolBackend, cls).check_root(params, object):
+            super(QCOW2PoolBackend, cls).get_root(params, object)
+            return
+
+        vm_name = params["vms"]
+        image_name = params["image_name"]
+        target_image = get_image_path(params)
+        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        image_base_name = os.path.basename(target_image)
+
+        logging.info(f"Downloading shared {vm_name}/{image_name} "
+                     f"from the shared pool {shared_pool}")
+        src_image_name = os.path.join(shared_pool, image_base_name)
+        os.makedirs(os.path.dirname(target_image), exist_ok=True)
+        shutil.copy(src_image_name, target_image)
+
+    @classmethod
+    def set_root(cls, params, object=None):
+        """
+        Set a root state to provide object existence.
+
+        All arguments match the base class.
+        """
+        # local and pool root setting are mutually exclusive as we usually want
+        # to set the pool root from an existing local root with some states on it
+        if not params.get_boolean("update_pool", False):
+            super(QCOW2PoolBackend, cls).set_root(params, object)
+            return
+
+        vm_name = params["vms"]
+        image_name = params["image_name"]
+        target_image = get_image_path(params)
+        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        image_base_name = os.path.basename(target_image)
+
+        logging.info(f"Uploading shared {vm_name}/{image_name} "
+                     f"to the shared pool {shared_pool}")
+        dst_image_name = os.path.join(shared_pool, image_base_name)
+        os.makedirs(shared_pool, exist_ok=True)
+        shutil.copy(target_image, dst_image_name)
+
+    @classmethod
+    def unset_root(cls, params, object=None):
+        """
+        Unset a root state to prevent object existence.
+
+        All arguments match the base class and in addition:
+        """
+        # local and pool root setting are mutually exclusive as we usually want
+        # to set the pool root from an existing local root with some states on it
+        if not params.get_boolean("update_pool", False):
+            super(QCOW2PoolBackend, cls).unset_root(params, object)
+            return
+
+        vm_name = params["vms"]
+        image_name = params["image_name"]
+        target_image = get_image_path(params)
+        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        image_base_name = os.path.basename(target_image)
+
+        logging.info(f"Removing shared {vm_name}/{image_name} "
+                     f"from the shared pool {shared_pool}")
+        dst_image_name = os.path.join(shared_pool, image_base_name)
+        os.unlink(dst_image_name)
