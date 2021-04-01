@@ -59,11 +59,11 @@ class QCOW2PoolBackend(QCOW2Backend):
         image_name = params["image_name"]
         target_image = get_image_path(params)
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
-        image_base_name = os.path.basename(target_image)
+        image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.debug(f"Checking for shared {vm_name}/{image_name} existence"
                       f" in the shared pool {shared_pool}")
-        src_image_name = os.path.join(shared_pool, image_base_name)
+        src_image_name = os.path.join(shared_pool, image_base_names)
         if os.path.exists(src_image_name):
             cls.get_root(params, object)
             logging.info("The shared %s image exists", src_image_name)
@@ -88,11 +88,11 @@ class QCOW2PoolBackend(QCOW2Backend):
         image_name = params["image_name"]
         target_image = get_image_path(params)
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
-        image_base_name = os.path.basename(target_image)
+        image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Downloading shared {vm_name}/{image_name} "
                      f"from the shared pool {shared_pool}")
-        src_image_name = os.path.join(shared_pool, image_base_name)
+        src_image_name = os.path.join(shared_pool, image_base_names)
         os.makedirs(os.path.dirname(target_image), exist_ok=True)
         shutil.copy(src_image_name, target_image)
 
@@ -113,11 +113,11 @@ class QCOW2PoolBackend(QCOW2Backend):
         image_name = params["image_name"]
         target_image = get_image_path(params)
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
-        image_base_name = os.path.basename(target_image)
+        image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Uploading shared {vm_name}/{image_name} "
                      f"to the shared pool {shared_pool}")
-        dst_image_name = os.path.join(shared_pool, image_base_name)
+        dst_image_name = os.path.join(shared_pool, image_base_names)
         os.makedirs(shared_pool, exist_ok=True)
         shutil.copy(target_image, dst_image_name)
 
@@ -138,9 +138,9 @@ class QCOW2PoolBackend(QCOW2Backend):
         image_name = params["image_name"]
         target_image = get_image_path(params)
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
-        image_base_name = os.path.basename(target_image)
+        image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Removing shared {vm_name}/{image_name} "
                      f"from the shared pool {shared_pool}")
-        dst_image_name = os.path.join(shared_pool, image_base_name)
+        dst_image_name = os.path.join(shared_pool, image_base_names)
         os.unlink(dst_image_name)
