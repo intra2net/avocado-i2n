@@ -46,7 +46,7 @@ class LVMBackend(StateBackend):
     _require_running_object = False
 
     @classmethod
-    def _get_images_mount_loc(cls, params):
+    def _get_image_mount_loc(cls, params):
         """
         Get the path to the mount location for the logical volume.
 
@@ -58,32 +58,11 @@ class LVMBackend(StateBackend):
         """
         if params.get_boolean("image_raw_device", True):
             return ""
-        mount_loc = None
-        assert "images" in params.keys(), "Need 'images' definition for mounting"
-        for image in params.objects("images"):
-            image_params = params.object_params(image)
-            image_name = image_params["image_name"]
-            if mount_loc is None:
-                if os.path.isabs(image_name):
-                    mount_loc = os.path.dirname(image_name)
-                else:
-                    mount_loc = image_params["images_base_dir"]
-            else:
-                if os.path.isabs(image_name):
-                    has_different_values = mount_loc != os.path.dirname(image_name)
-                else:
-                    has_different_values = mount_loc != image_params.get("images_base_dir")
-                if has_different_values:
-                    # it would be best to assert this but let's be more permissive
-                    # to allow for stranger configuration hoping that the user knows
-                    # what they are doing
-                    logging.warning("Not all vm images are located in the same logical"
-                                    " volume mount directory - choosing the first one"
-                                    " as the actual mount location")
-        if mount_loc is None:
-            raise exceptions.TestError("Cannot identify LV mount location for the image"
-                                       " %s with path %s" % (image, image_name))
-        return mount_loc
+        image_name = params["image_name"]
+        if os.path.isabs(image_name):
+            return os.path.dirname(image_name)
+        else:
+            return params["images_base_dir"]
 
     @classmethod
     def show(cls, params, object=None):
@@ -119,7 +98,7 @@ class LVMBackend(StateBackend):
         All arguments match the base class.
         """
         vm_name = params["vms"]
-        mount_loc = cls._get_images_mount_loc(params)
+        mount_loc = cls._get_image_mount_loc(params)
         params["lv_snapshot_name"] = params["get_state"]
         if mount_loc:
             # mount to avoid not-mounted errors
@@ -204,7 +183,7 @@ class LVMBackend(StateBackend):
         for each object (all off).
         """
         vm_name = params["vms"]
-        mount_loc = cls._get_images_mount_loc(params)
+        mount_loc = cls._get_image_mount_loc(params)
         logging.info("Creating original logical volume for %s", vm_name)
         vg_setup(params["vg_name"],
                  params["disk_vg_size"],
@@ -241,7 +220,7 @@ class LVMBackend(StateBackend):
         of each object (all off).
         """
         vm_name = params["vms"]
-        mount_loc = cls._get_images_mount_loc(params)
+        mount_loc = cls._get_image_mount_loc(params)
         logging.info("Removing original logical volume for %s", vm_name)
         try:
             if mount_loc:

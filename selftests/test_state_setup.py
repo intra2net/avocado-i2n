@@ -34,6 +34,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params = utils_params.Params()
         self.run_params["vms"] = "vm1"
         self.run_params["images"] = "image1"
+        self.run_params["image_name_vm1"] = "/vm1/image"
         self.run_params["off_states"] = "lvm"
         self.run_params["on_states"] = "qcow2vt"
 
@@ -59,17 +60,15 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["lv_pointer_name"] = "current_state"
 
     def _set_off_qcow2_params(self):
-        self.run_params["image_name_vm1"] = "/vm1/image"
         self.run_params["image_format"] = "qcow2"
         self.run_params["qemu_img_binary"] = "qemu-img"
 
     def _set_on_qcow2_params(self):
-        self.run_params["image_name_vm1"] = "/vm1/image"
         self.run_params["image_format"] = "qcow2"
         self.run_params["qemu_img_binary"] = "qemu-img"
 
     def _set_on_ramfile_params(self):
-        self.run_params["image_name_vm1"] = "/vm1/image"
+        pass
 
     def _get_mock_vm(self, vm_name):
         return self.mock_vms[vm_name]
@@ -1434,6 +1433,8 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["check_type"] = "off"
         self.run_params["vg_name_vm1"] = "disk_vm1"
         self.run_params["vg_name_vm2"] = "disk_vm2"
+        self.run_params["image_name_vm1"] = "/vm1/image"
+        self.run_params["image_name_vm2"] = "/vm2/image"
         self._create_mock_vms()
 
         mock_lv_utils.reset_mock()
@@ -1521,7 +1522,9 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["vg_name_vm2"] = "disk_vm2"
         self.run_params["vg_name_vm3"] = "disk_vm3"
         self.run_params["vg_name_vm4"] = "disk_vm4"
+        self.run_params["image_name_vm2"] = "/vm2/image"
         self.run_params["image_name_vm3"] = "/vm3/image"
+        self.run_params["image_name_vm4"] = "/vm4/image"
         self.run_params["image_raw_device"] = "no"
         self.run_params["disk_sparse_filename_vm3"] = "virtual_hdd_vm3"
         self.run_params["use_tmpfs"] = "yes"
@@ -1565,6 +1568,7 @@ class StateSetupTest(unittest.TestCase):
         self.run_params["vg_name_vm1"] = "disk_vm1"
         self.run_params["vg_name_vm4"] = "disk_vm4"
         self.run_params["image_name_vm1"] = "/vm1/image"
+        self.run_params["image_name_vm4"] = "/vm4/image"
         self.run_params["image_raw_device"] = "no"
         self._create_mock_vms()
         self.exist_switch = False
