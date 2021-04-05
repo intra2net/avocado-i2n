@@ -458,7 +458,7 @@ def get_state(run_params, env):
             else:
                 state = image_params["get_state"]
             image_params["get_type"] = image_params.get("get_type", "any")
-            image_params["get_mode"] = image_params.get("get_mode", "ar")
+            image_params["get_mode"] = image_params.get("get_mode", "ra")
 
             # minimal filters
             if all_images_at_once:
