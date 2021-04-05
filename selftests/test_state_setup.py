@@ -65,6 +65,7 @@ class StateSetupTest(unittest.TestCase):
 
     def _set_on_qcow2_params(self):
         self.run_params["image_name_vm1"] = "/vm1/image"
+        self.run_params["image_format"] = "qcow2"
         self.run_params["qemu_img_binary"] = "qemu-img"
 
     def _set_on_ramfile_params(self):

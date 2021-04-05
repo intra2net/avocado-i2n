@@ -102,8 +102,6 @@ class QCOW2Backend(StateBackend):
         vm, vm_name, state = object, params["vms"], params["get_state"]
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
         logging.info("Reusing %s state '%s' of %s", cls.state_type(), params["get_state"], vm_name)
-        if params["image_format"] not in ["qcow2", "raw"]:
-            return
         image_path = get_image_path(params)
         process.system("%s snapshot -a %s %s" % (qemu_img, state, image_path))
 
@@ -117,8 +115,6 @@ class QCOW2Backend(StateBackend):
         vm, vm_name, state = object, params["vms"], params["set_state"]
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
         logging.info("Creating %s state '%s' of %s", cls.state_type(), params["set_state"], vm_name)
-        if params["image_format"] not in ["qcow2", "raw"]:
-            return
         image_path = get_image_path(params)
         process.system("%s snapshot -c %s %s" % (qemu_img, state, image_path))
 
@@ -132,28 +128,8 @@ class QCOW2Backend(StateBackend):
         vm, vm_name, state = object, params["vms"], params["unset_state"]
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
         logging.info("Removing %s state '%s' of %s", cls.state_type(), params["unset_state"], vm_name)
-        if params["image_format"] not in ["qcow2", "raw"]:
-            return
         image_path = get_image_path(params)
         process.system("%s snapshot -d %s %s" % (qemu_img, state, image_path))
-
-    @classmethod
-    def check_root(cls, params, object=None):
-        """
-        Check whether a root state or essentially the object exists.
-
-        All arguments match the base class and in addition:
-
-        :raises: :py:class:`ValueError` if the used image format is either
-                 unspecified or not the required QCOW2
-        """
-        image = params["image_name"]
-        if params.get("image_format") is None:
-            raise ValueError("Unspecified image format for %s - must be qcow2 or raw" % image)
-        if params["image_format"] not in ["raw", "qcow2"]:
-            raise ValueError("Incompatible image format %s for %s - must be qcow2 or raw"
-                             % (params["image_format"], image))
-        return super(QCOW2Backend, QCOW2Backend).check_root(params, object)
 
 
 class QCOW2VTBackend(StateOnBackend, QCOW2Backend):
@@ -216,7 +192,9 @@ def get_image_path(params):
     :rtype: str
     """
     image_name = params["image_name"]
-    image_format = params.get("image_format", "qcow2")
+    image_format = params.get("image_format")
+    if image_format is None:
+        raise ValueError("Unspecified image format for %s - must be qcow2 or raw" % image_name)
     if image_format not in ["raw", "qcow2"]:
         raise ValueError(f"Incompatible image format {image_format} for"
                          f" {image_name} - must be qcow2 or raw")
