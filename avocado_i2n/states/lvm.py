@@ -195,8 +195,8 @@ class LVMBackend(StateBackend):
                            params["lv_size"],
                            # NOTE: call by key to keep good argument order which wasn't
                            # accepted upstream for backward API compatibility
-                           pool_name=params["pool_name"],
-                           pool_size=params["pool_size"])
+                           pool_name=params["lv_pool_name"],
+                           pool_size=params["lv_pool_size"])
         lv_utils.lv_take_snapshot(params["vg_name"],
                                   params["lv_name"],
                                   params["lv_pointer_name"])
