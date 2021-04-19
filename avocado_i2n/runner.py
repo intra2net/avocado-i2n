@@ -207,7 +207,7 @@ class CartesianRunner(RunnerInterface):
         Of course all possible children are restricted by the user-defined "only" and
         the number of internal test nodes is minimized for achieving this goal.
         """
-        shared_roots = graph.get_nodes_by("name", "(\.|^)0scan(\.|^)")
+        shared_roots = graph.get_nodes_by("shared_root", "yes")
         assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
         root = shared_roots[0]
 
@@ -231,11 +231,12 @@ class CartesianRunner(RunnerInterface):
                 continue
 
             logging.debug("At test node %s which is %sready with setup, %sready with cleanup,"
-                          " should %srun, and should %sbe cleaned", next.params["shortname"],
+                          " should %srun, should %sbe cleaned, and %sbe scanned", next.params["shortname"],
                           "not " if not next.is_setup_ready() else "",
                           "not " if not next.is_cleanup_ready() else "",
                           "not " if not next.should_run else "",
-                          "not " if not next.should_clean else "")
+                          "not " if not next.should_clean else "",
+                          "not " if not next.should_scan else "")
             logging.debug("Current traverse path/stack:\n%s",
                           "\n".join([n.params["shortname"] for n in traverse_path]))
             # if previous in path is the child of the next, then the path is reversed
@@ -329,36 +330,6 @@ class CartesianRunner(RunnerInterface):
         return summary
 
     """custom nodes"""
-    async def run_scan_node(self, graph):
-        """
-        Run the set of tests necessary for starting test traversal.
-
-        :param graph: test graph to run scan node from
-        :type graph: :py:class:`TestGraph`
-        """
-        # HACK: pass the constructed graph to the test using static attribute hack
-        # since there is absolutely no sane way to pass through the cloud of imports
-        # before executing a VT test (could be improved later on)
-        TestGraph.REFERENCE = graph
-
-        nodes = graph.get_nodes_by(param_key="name", param_val="(\.|^)0scan(\.|^)")
-        assert len(nodes) == 1, "There can only be one shared root"
-        test_node = nodes[0]
-        status = await self.run_test_node(test_node)
-        logdir = self.job.result.tests[-1]["logdir"]
-
-        try:
-            graph.load_setup_list(logdir)
-        except FileNotFoundError as e:
-            logging.error("Could not parse scanned available setup, aborting as it "
-                          "might be dangerous to overwrite existing undetected such")
-            status = False
-
-        if not status:
-            graph.flag_children(flag=False)
-        for node in graph.nodes:
-            self.job.result.cancelled += 1 if not node.should_run else 0
-
     async def run_terminal_node(self, graph, object_name, params):
         """
         Run the set of tests necessary for creating a given test object.
@@ -412,6 +383,9 @@ class CartesianRunner(RunnerInterface):
     """internals"""
     async def _traverse_test_node(self, graph, test_node, params):
         """Run a single test according to user defined policy and state availability."""
+        if test_node.should_scan:
+            test_node.scan_states()
+            test_node.should_scan = False
         if test_node.should_run:
 
             # the primary setup nodes need special treatment
@@ -419,9 +393,6 @@ class CartesianRunner(RunnerInterface):
                 logging.info("Running a dry %s", test_node.params["shortname"])
             elif test_node.is_scan_node():
                 logging.debug("Test run started from the shared root")
-                status = await self.run_scan_node(graph)
-                if not status:
-                    logging.error("Could not perform state scanning of %s", test_node)
             elif test_node.is_object_root():
                 status = await self.run_terminal_node(graph, test_node.params["object_root"], params)
                 if not status:
@@ -439,6 +410,7 @@ class CartesianRunner(RunnerInterface):
                 object_state = object_params.get("set_state", object_params.get("get_state"))
                 if object_state is not None and object_state != "":
                     test_object.current_state = object_state
+
             test_node.should_run = False
         else:
             logging.debug("Skipping test %s", test_node.params["shortname"])

@@ -31,8 +31,6 @@ import os
 import re
 import logging
 
-from ..states import setup as ss
-
 
 def set_graph_logging_level(level=20):
     """
@@ -203,42 +201,6 @@ class TestGraph(object):
         graph.render("%s/cg_%s_%s" % (dump_dir, id(self), n))
 
     """run/clean switching functionality"""
-    def scan_object_states(self, env):
-        """
-        Scan for present object states to reuse tests from previous runs
-
-        :param env: environment related to the test
-        :type env: Env object
-        """
-        for test_node in self.nodes:
-            test_node.should_run = True
-            node_params = test_node.params.copy()
-
-            is_leaf = True
-            for test_object in test_node.objects:
-                object_params = test_object.object_typed_params(test_node.params)
-                object_state = object_params.get("set_state")
-
-                # the test leaves an object undefined so it cannot be reused for this object
-                if object_state is None or object_state == "":
-                    continue
-                else:
-                    is_leaf = False
-
-                # the object state has to be defined to reach this stage
-                if object_state == "install" and test_object.is_permanent():
-                    test_node.should_run = False
-                    break
-
-                # ultimate consideration of whether the state is actually present
-                node_params[f"check_state_{test_object.key}_{test_object.name}"] = object_state
-                node_params[f"check_mode_{test_object.key}_{test_object.name}"] = object_params.get("check_mode", "rf")
-                node_params[f"soft_boot_{test_object.key}_{test_object.name}"] = "no"
-
-            if not is_leaf:
-                test_node.should_run = not ss.check_states(node_params, env)
-            logging.info("The test node %s %s run", test_node, "should" if test_node.should_run else "should not")
-
     def flag_children(self, node_name=None, object_name=None, flag_type="run", flag=True,
                       skip_roots=False):
         """
@@ -263,7 +225,7 @@ class TestGraph(object):
                                            param_val="(?:^|\s)%s(?:$|\s)" % object_name,
                                            subset=root_tests)
         else:
-            root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)0scan(?:\.|$)")
+            root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)noop(?:\.|$)")
         if len(root_tests) < 1:
             raise AssertionError("Could not retrieve node %s and flag all its children tests" % node_name)
         elif len(root_tests) > 1:

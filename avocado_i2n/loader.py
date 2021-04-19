@@ -392,8 +392,8 @@ class CartesianLoader(Resolver):
 
                 # connect and replicate children
                 if len(parents) > 0:
-                    assert parents[0] not in test_node.setup_nodes
-                    assert test_node not in parents[0].cleanup_nodes
+                    assert parents[0] not in test_node.setup_nodes, f"{parents[0]} not in {test_node.setup_nodes}"
+                    assert test_node not in parents[0].cleanup_nodes, f"{test_node} not in {parents[0].cleanup_nodes}"
                     test_node.setup_nodes.append(parents[0])
                     parents[0].cleanup_nodes.append(test_node)
                 if len(parents) > 1:
@@ -407,25 +407,25 @@ class CartesianLoader(Resolver):
             test_node.validate()
 
         # finally build the shared root node from used test objects (roots)
-        used_objects, used_roots = [], []
-        for test_object in graph.objects:
-            # TODO: only root nodes for suffixed objects are supported at the moment
-            if test_object.key != "vms":
-                continue
-            object_nodes = graph.get_nodes_by("vms", "^"+test_object.name+"$")
-            object_roots = graph.get_nodes_by("name", "(\.|^)0root(\.|$)", subset=object_nodes)
-            if len(object_roots) > 0:
-                used_objects.append(test_object)
-                used_roots.append(object_roots[0])
-        graph.objects[:] = used_objects
-        assert len(used_objects) > 0, "The parsed test nodes don't seem to use any vm objects"
-        for shared_root in graph.get_nodes_by("name", "(\.|^)0scan(\.|$)"):
-            graph.nodes.remove(shared_root)
-        root_for_all = self.parse_scan_node(graph, param_dict)
+        object_roots = []
+        for test_node in graph.nodes:
+            if len(test_node.setup_nodes) == 0:
+                if not test_node.is_object_root():
+                    logging.warning(f"{test_node} is not an object root but will be treated as such")
+                object_roots.append(test_node)
+        setup_dict = {} if param_dict is None else param_dict.copy()
+        setup_dict.update({"shared_root" : "yes",
+                           "vms": " ".join(set(o.name for o in graph.objects if o.key == "vms"))})
+        setup_str = param.re_str("all..internal..noop")
+        root_for_all = self.parse_node_from_object(NetObject("net0", param.Reparsable()),
+                                                   setup_dict, setup_str, prefix="0s")
+        logging.debug(f"Parsed shared root {root_for_all.params['shortname']}")
         graph.nodes.append(root_for_all)
-        for root_for_object in used_roots:
+        for root_for_object in object_roots:
             root_for_object.setup_nodes = [root_for_all]
             root_for_all.cleanup_nodes.append(root_for_object)
+        root_for_all.should_scan = False
+        root_for_all.should_run = False
 
         return graph
 
@@ -453,39 +453,6 @@ class CartesianLoader(Resolver):
         TestGraph.REFERENCE = graph
 
         return ReferenceResolution(reference, ReferenceResolutionResult.SUCCESS, runnables)
-
-    """custom nodes"""
-    def parse_scan_node(self, graph, param_dict=None, prefix=""):
-        """
-        Get the first test node for all objects.
-
-        :param graph: test graph to parse root node from
-        :type graph: :py:class:`TestGraph`
-        :param param_dict: runtime parameters used for extra customization
-        :type param_dict: {str, str} or None
-        :param str prefix: extra name identifier for the test to be run
-        :returns: parsed shared root node
-        :rtype: :py:class:`TestNode`
-
-        This assumes that there is only one shared root test node.
-        """
-        objects = sorted(graph.test_objects.keys())
-        setup_dict = {} if param_dict is None else param_dict.copy()
-        setup_dict.update({"abort_on_error": "yes", "set_state_on_error": "",
-                           # we need network root setup to provide vm root setup (e.g. bridges)
-                           "get_state_vms": "", "get_state_images": "",
-                           "skip_image_processing": "yes",
-                           "vms": " ".join(objects),
-                           "main_vm": objects[0]})
-        setup_str = param.re_str("all..internal..0scan")
-        nodes = self.parse_nodes(graph, setup_dict, setup_str)
-        assert len(nodes) == 1, "There can only be one shared root"
-        # TODO: scanning all test objects becomes increasingly monolithic and infeasible
-        main_net = [o for o in graph.objects if o.key == "nets"][0]
-        scan_node = TestNode(prefix + "0s", nodes[0].config, main_net)
-        scan_node.regenerate_params()
-        logging.debug("Parsed shared root %s", scan_node.params["shortname"])
-        return scan_node
 
     """internals"""
     def _parse_and_get_nets_from_node_params(self, graph, param_dict, d):

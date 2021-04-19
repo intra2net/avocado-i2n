@@ -28,10 +28,13 @@ INTERFACE
 """
 
 import re
+import logging
 
 from avocado.core.test_id import TestID
 from avocado.core.nrunner import Runnable
 from avocado.core.dispatcher import SpawnerDispatcher
+
+from ..states import setup as ss
 
 
 class TestNode(object):
@@ -83,6 +86,7 @@ class TestNode(object):
 
         self.should_run = True
         self.should_clean = True
+        self.should_scan = True
 
         self.spawner = None
 
@@ -152,7 +156,7 @@ class TestNode(object):
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
-        return self.name.endswith("0s")
+        return self.name.endswith("0s1")
 
     def is_terminal_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
@@ -160,7 +164,7 @@ class TestNode(object):
 
     def is_shared_root(self):
         """Check if the test node is the root of all test nodes for all test objects."""
-        return self.is_scan_node()
+        return self.params.get_boolean("shared_root", False)
 
     def is_object_root(self):
         """Check if the test node is the root of all test nodes for some test object."""
@@ -323,6 +327,41 @@ class TestNode(object):
         :param bool verbose: whether to show generated parameter dictionaries
         """
         self._params_cache = self.config.get_params(show_dictionaries=verbose)
+
+    def scan_states(self, env):
+        """
+        Scan for present object states to reuse the test from previous runs.
+
+        :param env: environment with registered pre-processed vms
+        :type env: :py:class:`virttest.utils_env.Env`
+        """
+        self.should_run = True
+        node_params = self.params.copy()
+
+        is_leaf = True
+        for test_object in self.objects:
+            object_params = test_object.object_typed_params(self.params)
+            object_state = object_params.get("set_state")
+
+            # the test leaves an object undefined so it cannot be reused for this object
+            if object_state is None or object_state == "":
+                continue
+            else:
+                is_leaf = False
+
+            # the object state has to be defined to reach this stage
+            if object_state == "install" and test_object.is_permanent():
+                self.should_run = False
+                break
+
+            # ultimate consideration of whether the state is actually present
+            node_params[f"check_state_{test_object.key}_{test_object.name}"] = object_state
+            node_params[f"check_mode_{test_object.key}_{test_object.name}"] = object_params.get("check_mode", "rf")
+            node_params[f"soft_boot_{test_object.key}_{test_object.name}"] = "no"
+
+        if not is_leaf:
+            self.should_run = not ss.check_states(node_params, env)
+        logging.info("The test node %s %s run", self, "should" if self.should_run else "should not")
 
     def validate(self):
         """Validate the test node for sane attribute-parameter correspondence."""
