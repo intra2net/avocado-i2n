@@ -28,10 +28,20 @@ INTERFACE
 """
 
 import os
-import shutil
+import time
 import logging
+import shutil
+import contextlib
+import fcntl
+import errno
 
 from .qcow2 import QCOW2Backend, get_image_path
+
+
+#: skip waiting on locks if we only read from the pool for all processes, i.e.
+#: use update_pool=no for all parallel operations
+#: WARNING: use it only if you know what you are doing
+SKIP_LOCKS = False
 
 
 class QCOW2PoolBackend(QCOW2Backend):
@@ -93,8 +103,10 @@ class QCOW2PoolBackend(QCOW2Backend):
         logging.info(f"Downloading shared {vm_name}/{image_name} "
                      f"from the shared pool {shared_pool}")
         src_image_name = os.path.join(shared_pool, image_base_names)
-        os.makedirs(os.path.dirname(target_image), exist_ok=True)
-        shutil.copy(src_image_name, target_image)
+        update_timeout = params.get_numeric("update_pool_timeout", 300)
+        with image_lock(src_image_name, update_timeout) as lock:
+            os.makedirs(os.path.dirname(target_image), exist_ok=True)
+            shutil.copy(src_image_name, target_image)
 
     @classmethod
     def set_root(cls, params, object=None):
@@ -118,8 +130,10 @@ class QCOW2PoolBackend(QCOW2Backend):
         logging.info(f"Uploading shared {vm_name}/{image_name} "
                      f"to the shared pool {shared_pool}")
         dst_image_name = os.path.join(shared_pool, image_base_names)
-        os.makedirs(shared_pool, exist_ok=True)
-        shutil.copy(target_image, dst_image_name)
+        update_timeout = params.get_numeric("update_pool_timeout", 300)
+        with image_lock(dst_image_name, update_timeout) as lock:
+            os.makedirs(shared_pool, exist_ok=True)
+            shutil.copy(target_image, dst_image_name)
 
     @classmethod
     def unset_root(cls, params, object=None):
@@ -143,4 +157,40 @@ class QCOW2PoolBackend(QCOW2Backend):
         logging.info(f"Removing shared {vm_name}/{image_name} "
                      f"from the shared pool {shared_pool}")
         dst_image_name = os.path.join(shared_pool, image_base_names)
-        os.unlink(dst_image_name)
+        update_timeout = params.get_numeric("update_pool_timeout", 300)
+        with image_lock(dst_image_name, update_timeout) as lock:
+            os.unlink(dst_image_name)
+
+
+@contextlib.contextmanager
+def image_lock(image_path, timeout=300):
+    """
+    Wait for a lock to free image for state pool operations.
+
+    :param str image_path: path to the potentially locked image
+    :param int timeout: timeout to wait before erroring out (default 5 mins)
+    """
+    if READONLY_MODE:
+        yield None
+        return
+    lockfile = image_path + ".lock"
+    os.makedirs(os.path.dirname(lockfile), exist_ok=True)
+    with open(lockfile, "wb") as fd:
+        for _ in range(timeout):
+            try:
+                fcntl.lockf(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except IOError as error:
+                # block here but still support a finite timeout
+                if error.errno != errno.EACCES and error.errno != errno.EAGAIN:
+                    raise
+            else:
+                break
+            logging.debug("Waiting for image to become available")
+            time.sleep(1)
+        else:
+            raise RuntimeError(f"Waiting to acquire {lockfile} took more than "
+                               f"the allowed {timeout} seconds")
+        try:
+            yield fd
+        finally:
+            fcntl.lockf(fd, fcntl.LOCK_UN)
