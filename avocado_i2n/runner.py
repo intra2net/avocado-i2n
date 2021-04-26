@@ -430,7 +430,7 @@ class CartesianRunner(TestRunner):
                         # the unset manual step behaves differently now (all this extra complexity starts from
                         # the fact that it has different default value which is noninvasive
                         setup_dict.update({"unset_state": vm_params["set_state"],
-                                           "unset_type": vm_params.get("set_type", "off"),
+                                           "unset_type": vm_params.get("set_type", "any"),
                                            "unset_mode": vm_params.get("unset_mode", "ri")})
                         setup_dict["vm_action"] = "unset"
                         # TODO: find more flexible way to pass identical test node parameters for cleanup
@@ -440,7 +440,10 @@ class CartesianRunner(TestRunner):
                             setup_dict["image_name_" + image] = image_params["image_name"]
                             setup_dict["image_format_" + image] = image_params["image_format"]
                             # if any extra images were created these have to be removed now
-                            if image_params.get_boolean("create_image", False):
+                            # TODO: this only supports QCOW2 state backends and no LVM cleanup
+                            # -> combine with the TODO for unset root unification in the states setup
+                            if (image_params.get_boolean("create_image", False)
+                                    or image_params.get("check_mode", "rr")[0] == "f"):
                                 setup_dict["remove_image_" + image] = "yes"
                                 setup_dict["skip_image_processing"] = "no"
                         setup_str = param.re_str("all..internal..manage.unchanged")

@@ -23,7 +23,7 @@ from avocado.core.output import LOG_UI as ui
 from virttest import env_process
 
 from . import params_parser as param
-from . import state_setup
+from .states import setup as ss
 from .vmnet import VMNetwork
 
 
@@ -134,6 +134,13 @@ def params_from_cmd(config):
     # log into files for each major level the way it was done for autotest
     config["run.store_logging_stream"] = [":10", ":20", ":30", ":40"]
 
+    # set default off and on state backends
+    from .states import lvm, qcow2, lxc, btrfs, ramfile
+    ss.OFF_BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
+                       "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend}
+    ss.ON_BACKENDS = {"qcow2vt": qcow2.QCOW2VTBackend,
+                      "ramfile": ramfile.RamfileBackend}
+
     # attach environment processing hooks
     env_process_hooks()
 
@@ -226,7 +233,7 @@ def env_process_hooks():
             fn(params, env)
             del params["skip_types"]
         return wrapper
-    env_process.preprocess_vm_off_hook = off_state(state_setup.get_state)
-    env_process.preprocess_vm_on_hook = network_state(on_state(state_setup.get_state))
-    env_process.postprocess_vm_on_hook = on_state(state_setup.set_state)
-    env_process.postprocess_vm_off_hook = off_state(state_setup.set_state)
+    env_process.preprocess_vm_off_hook = off_state(ss.get_states)
+    env_process.preprocess_vm_on_hook = network_state(on_state(ss.get_states))
+    env_process.postprocess_vm_on_hook = on_state(ss.set_states)
+    env_process.postprocess_vm_off_hook = off_state(ss.set_states)

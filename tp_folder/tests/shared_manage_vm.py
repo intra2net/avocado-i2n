@@ -20,7 +20,7 @@ import os
 # avocado imports
 from avocado.core import exceptions
 from virttest import error_context
-from avocado_i2n import state_setup
+from avocado_i2n.states import setup as ss
 
 # custom imports
 pass
@@ -73,18 +73,17 @@ def run(test, params, env):
     # state manipulation
     elif params.get("vm_action", "run") == "check":
         logging.info("Checking for %s's state '%s'", params["main_vm"], params["check_state"])
-        params["check_opts"] = params.get("check_opts", "print_pos=yes print_neg=yes")
-        state_setup.check_state(params, env)
+        ss.check_states(params, env)
     elif params.get("vm_action", "run") == "push":
         logging.info("Pushing %s's state '%s'", params["main_vm"], params["push_state"])
-        state_setup.push_state(params, env)
+        ss.push_states(params, env)
     elif params.get("vm_action", "run") == "pop":
         logging.info("Popping %s's state '%s'", params["main_vm"], params["pop_state"])
-        state_setup.pop_state(params, env)
+        ss.pop_states(params, env)
     elif params.get("vm_action", "run") in ["get", "set"]:
         # this operations are performed automatically by the environment process
         state_param = params["get_state"] if params["vm_action"] == "get" else params["set_state"]
         logging.info("%sting %s's state '%s'", params["vm_action"].title(), params["main_vm"], state_param)
     elif params.get("vm_action", "run") == "unset":
         logging.info("Unsetting %s's state '%s'", params["main_vm"], params["unset_state"])
-        state_setup.unset_state(params, env)
+        ss.unset_states(params, env)

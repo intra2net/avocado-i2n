@@ -31,7 +31,7 @@ import os
 import re
 import logging
 
-from .. import state_setup
+from ..states import setup as ss
 
 
 def set_graph_logging_level(level=20):
@@ -206,6 +206,7 @@ class TestGraph(object):
         for test_node in self.nodes:
             test_node.should_run = True
 
+            all_states_available = True
             for test_object in test_node.objects:
                 object_name = test_object.name
                 object_params = test_node.params.object_params(object_name)
@@ -215,7 +216,8 @@ class TestGraph(object):
                 # TODO: If at least one object state left after some of the test nodes
                 # is available, the test node can be reused *for that object*.
                 if object_state is None or object_state == "":
-                    continue
+                    test_node.should_run = True
+                    break
 
                 # the ephemeral states can be unset during the test run so cannot be counted on
                 if test_node.is_ephemeral():
@@ -235,21 +237,22 @@ class TestGraph(object):
                         logging.info("The state %s of %s is ephemeral (cannot be reused at any desired time)",
                                      object_state, object_name)
                         # test should be run regardless of further checks
-                        continue
+                        test_node.should_run = True
+                        break
+
+                # the object state has to be defined to reach this stage
+                if object_state == "root" and test_object.is_permanent():
+                    test_node.should_run = False
+                    break
 
                 # ultimate consideration of whether the state is actually present
                 object_params["vms"] = object_name
                 object_params["check_state"] = object_state
                 object_params["check_type"] = object_params.get("set_type", "on")
-                object_params["check_opts"] = object_params.get("check_opts",
-                                                                "print_pos=yes print_neg=yes")
-                is_state_detected = state_setup.check_state(object_params, env)
-                # the object state has to be defined to reach this stage
-                if is_state_detected:
-                    test_node.should_run = False
-                elif object_state == "root" and test_object.is_permanent():
-                    test_node.should_run = False
-                    logging.warning("Missing permanent vm %s" % object_name)
+
+                all_states_available &= ss.check_states(object_params, env)
+            else:
+                test_node.should_run = not all_states_available
 
     def flag_children(self, node_name=None, object_name=None, flag_type="run", flag=True,
                       skip_roots=False):

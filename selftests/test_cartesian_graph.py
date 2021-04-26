@@ -79,11 +79,11 @@ def mock_run_test(_self, _job, factory, _queue, _set):
     return DummyTestRunning(factory[1]['vt_params'], _self.job.result.tests).get_test_result()
 
 
-def mock_check_state(params, env):
+def mock_check_states(params, env):
     return DummyStateCheck(params, env).result
 
 
-@mock.patch('avocado_i2n.cartgraph.graph.state_setup.check_state', mock_check_state)
+@mock.patch('avocado_i2n.cartgraph.graph.ss.check_states', mock_check_states)
 @mock.patch.object(CartesianRunner, 'run_test', mock_run_test)
 @mock.patch.object(TestGraph, 'load_setup_list', mock.MagicMock())
 class CartesianGraphTest(unittest.TestCase):
