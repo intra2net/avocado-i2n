@@ -46,7 +46,9 @@ class QCOW2PoolBackend(QCOW2Backend):
 
         All arguments match the base class.
         """
-        if (params.get_boolean("update_pool", False) and
+        if not params.get_boolean("use_pool", True):
+            return super(QCOW2PoolBackend, cls).check_root(params, object)
+        elif (params.get_boolean("update_pool", False) and
                 not super(QCOW2PoolBackend, cls).check_root(params, object)):
             raise RuntimeError("Updating state pool requires local root states")
         elif (not params.get_boolean("update_pool", False) and
@@ -77,7 +79,8 @@ class QCOW2PoolBackend(QCOW2Backend):
 
         All arguments match the base class.
         """
-        if super(QCOW2PoolBackend, cls).check_root(params, object):
+        if (super(QCOW2PoolBackend, cls).check_root(params, object) or
+                not params.get_boolean("use_pool", True)):
             super(QCOW2PoolBackend, cls).get_root(params, object)
             return
 
