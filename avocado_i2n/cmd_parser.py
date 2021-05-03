@@ -135,9 +135,10 @@ def params_from_cmd(config):
     config["run.store_logging_stream"] = [":10", ":20", ":30", ":40"]
 
     # set default off and on state backends
-    from .states import lvm, qcow2, lxc, btrfs, ramfile
+    from .states import lvm, qcow2, lxc, btrfs, ramfile, pool
     ss.OFF_BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
-                       "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend}
+                       "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
+                       "pool": pool.QCOW2PoolBackend}
     ss.ON_BACKENDS = {"qcow2vt": qcow2.QCOW2VTBackend,
                       "ramfile": ramfile.RamfileBackend}
 

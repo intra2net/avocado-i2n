@@ -17,6 +17,7 @@ from avocado_i2n.states import lvm
 from avocado_i2n.states import ramfile
 from avocado_i2n.states import lxc
 from avocado_i2n.states import btrfs
+from avocado_i2n.states import pool
 
 
 @mock.patch('avocado_i2n.states.lvm.os.mkdir', mock.Mock(return_value=0))
@@ -24,12 +25,21 @@ from avocado_i2n.states import btrfs
 @mock.patch('avocado_i2n.states.lvm.os.rmdir', mock.Mock(return_value=0))
 @mock.patch('avocado_i2n.states.lvm.os.unlink', mock.Mock(return_value=0))
 @mock.patch('avocado_i2n.states.lvm.shutil.rmtree', mock.Mock(return_value=0))
-@mock.patch('avocado_i2n.states.setup.env_process', mock.Mock(return_value=0))
+@mock.patch('avocado_i2n.states.pool.os.makedirs', mock.Mock(return_value=0))
 class StateSetupTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
         cls.run_str = ""
+
+        ss.OFF_BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
+                           "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
+                           "pool": pool.QCOW2PoolBackend}
+        ss.ON_BACKENDS = {"qcow2vt": qcow2.QCOW2VTBackend,
+                          "ramfile": ramfile.RamfileBackend}
+
+        # disable pool locks for easier mocking
+        pool.SKIP_LOCKS = True
 
     def setUp(self):
         self.run_params = utils_params.Params()
@@ -50,11 +60,7 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms = {}
 
         self.exist_switch = True
-
-        ss.OFF_BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
-                           "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend}
-        ss.ON_BACKENDS = {"qcow2vt": qcow2.QCOW2VTBackend,
-                          "ramfile": ramfile.RamfileBackend}
+        self.exist_lambda = None
 
     def _set_off_lvm_params(self):
         self.run_params["off_states"] = "lvm"
@@ -64,6 +70,12 @@ class StateSetupTest(unittest.TestCase):
 
     def _set_off_qcow2_params(self):
         self.run_params["off_states"] = "qcow2"
+        self.run_params["image_format"] = "qcow2"
+        self.run_params["qemu_img_binary"] = "qemu-img"
+
+    def _set_off_pool_params(self):
+        self.run_params["off_states"] = "pool"
+        self.run_params["image_pool"] = "/data/pool"
         self.run_params["image_format"] = "qcow2"
         self.run_params["qemu_img_binary"] = "qemu-img"
 
@@ -85,6 +97,8 @@ class StateSetupTest(unittest.TestCase):
             self.mock_vms[vm_name].params = self.run_params.object_params(vm_name)
 
     def _file_exists(self, filepath):
+        if self.exist_lambda:
+            return self.exist_lambda(filepath)
         return self.exist_switch
 
     def _only_root_exists(self, vg_name, lv_name):
@@ -1319,7 +1333,6 @@ class StateSetupTest(unittest.TestCase):
 
     def test_check_root_off_qcow2(self):
         self._set_off_qcow2_params()
-        self._set_on_qcow2_params()
         self.run_params["check_state_vm1"] = "root"
         self.run_params["check_type_vm1"] = "off"
         self.run_params["images_vm1"] = "image1 image2"
@@ -1334,6 +1347,39 @@ class StateSetupTest(unittest.TestCase):
         self.exist_switch = False
         exists = ss.check_states(self.run_params, self.env)
         self.assertFalse(exists)
+
+    @mock.patch('avocado_i2n.states.pool.shutil')
+    def test_check_root_off_pool(self, mock_shutil):
+        self._set_off_pool_params()
+        self.run_params["check_state_vm1"] = "root"
+        self.run_params["check_type_vm1"] = "off"
+        self.run_params["images_vm1"] = "image1 image2"
+        self.run_params["image_name_image1_vm1"] = "vm1/image1"
+        self.run_params["image_name_image2_vm1"] = "vm1/image2"
+        self._create_mock_vms()
+
+        # consider local root with priority
+        mock_shutil.reset_mock()
+        self.exist_switch = True
+        exists = ss.check_states(self.run_params, self.env)
+        mock_shutil.copy.assert_not_called()
+        self.assertTrue(exists)
+
+        # consider pool root as well
+        mock_shutil.reset_mock()
+        self.exist_switch = False
+        exists = ss.check_states(self.run_params, self.env)
+        mock_shutil.copy.assert_not_called()
+        self.assertFalse(exists)
+
+        # the root state exists (and is downloaded) if its pool counterpart exists
+        mock_shutil.reset_mock()
+        self.exist_lambda = lambda filename: filename.startswith("/data/pool")
+        exists = ss.check_states(self.run_params, self.env)
+        expected_checks = [mock.call("/data/pool/vm1/image1.qcow2", "/images/vm1/image1.qcow2"),
+                           mock.call("/data/pool/vm1/image2.qcow2", "/images/vm1/image2.qcow2")]
+        self.assertListEqual(mock_shutil.copy.call_args_list, expected_checks)
+        self.assertTrue(exists)
 
     def test_check_root_on_qcow2vt(self):
         self._set_off_qcow2_params()
@@ -1384,23 +1430,59 @@ class StateSetupTest(unittest.TestCase):
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_get_root_off(self, mock_lv_utils):
-        self._set_off_lvm_params()
-        self.run_params["check_state_vm1"] = "root"
-        self.run_params["check_type_vm1"] = "off"
+        # only test with most default backends
+        self._set_off_qcow2_params()
+        self.run_params["get_state_vm1"] = "root"
+        self.run_params["get_type_vm1"] = "off"
         self._create_mock_vms()
 
+        # cannot verify that the operation is NOOP so simply run it for coverage
         ss.get_states(self.run_params, self.env)
+
+    @mock.patch('avocado_i2n.states.pool.shutil')
+    def test_get_root_off_pool(self, mock_shutil):
+        self._set_off_pool_params()
+        self.run_params["get_state_vm1"] = "root"
+        self.run_params["get_type_vm1"] = "off"
+        self._create_mock_vms()
+
+        # consider local root with priority
+        self.run_params["use_pool"] = "yes"
+        mock_shutil.reset_mock()
+        self.exist_switch = True
+        ss.get_states(self.run_params, self.env)
+        mock_shutil.copy.assert_not_called()
+
+        self.exist_lambda = lambda filename: filename.startswith("/data/pool")
+
+        # use pool root if enabled and no local root
+        self.run_params["use_pool"] = "yes"
+        mock_shutil.reset_mock()
+        ss.get_states(self.run_params, self.env)
+        mock_shutil.copy.assert_called_with("/data/pool/vm1/image.qcow2",
+                                            "/images/vm1/image.qcow2")
+
+        # do not use pool root if disabled and no local root
+        self.run_params["use_pool"] = "no"
+        mock_shutil.reset_mock()
+        with self.assertRaises(exceptions.TestSkipError):
+            ss.get_states(self.run_params, self.env)
+        mock_shutil.copy.assert_not_called()
 
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     def test_get_root_on(self, mock_lv_utils):
+        # only test with most default backends
         self._set_off_qcow2_params()
         self._set_on_qcow2_params()
-        self.run_params["check_state_vm1"] = "root"
-        self.run_params["check_type_vm1"] = "on"
+        self.run_params["get_state_vm1"] = "root"
+        self.run_params["get_type_vm1"] = "on"
         self._create_mock_vms()
 
+        # cannot verify that the operation is NOOP so simply run it for coverage
         ss.get_states(self.run_params, self.env)
 
+    # TODO: LVM is not supposed to reach to QCOW2 but we have in-code TODO about it
+    @mock.patch('avocado_i2n.states.setup.env_process', mock.Mock(return_value=0))
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     @mock.patch('avocado_i2n.states.lvm.process')
     def test_set_root_off_lvm(self, mock_process, mock_lv_utils):
@@ -1461,14 +1543,56 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.lv_create.assert_called_once_with('disk_vm1', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm1', 'LogVol', 'current_state')
 
-    def test_set_root_off_qcow2(self):
+    @mock.patch('avocado_i2n.states.setup.env_process')
+    def test_set_root_off_qcow2(self, mock_env_process):
         self._set_off_qcow2_params()
         self.run_params["set_state_vm1"] = "root"
         self.run_params["set_type_vm1"] = "off"
         self._create_mock_vms()
 
         ss.set_states(self.run_params, self.env)
-        # TODO: test env_process.preprocess_image is called
+        mock_env_process.preprocess_image.assert_called_once()
+
+    @mock.patch('avocado_i2n.states.pool.shutil')
+    @mock.patch('avocado_i2n.states.setup.env_process')
+    def test_set_root_off_pool(self, mock_env_process, mock_shutil):
+        self._set_off_pool_params()
+        self.run_params["set_state_vm1"] = "root"
+        self.run_params["set_type_vm1"] = "off"
+        self._create_mock_vms()
+
+        # not updating the state pool means setting the local root
+        self.run_params["update_pool"] = "no"
+        mock_env_process.reset_mock()
+        mock_shutil.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        ss.set_states(self.run_params, self.env)
+        mock_env_process.preprocess_image.assert_called_once()
+        mock_shutil.copy.assert_not_called()
+        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+
+        # updating the state pool means not setting the local root
+        self.run_params["update_pool"] = "yes"
+        mock_env_process.reset_mock()
+        mock_shutil.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        ss.set_states(self.run_params, self.env)
+        mock_env_process.preprocess_image.assert_not_called()
+        mock_shutil.copy.assert_called_with("/images/vm1/image.qcow2",
+                                            "/data/pool/vm1/image.qcow2")
+        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
+
+        # does the set update with/without local root (fail) keep remote root?
+        self.run_params["update_pool"] = "yes"
+        mock_env_process.reset_mock()
+        mock_shutil.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        self.exist_lambda = lambda filename: filename.startswith("/data/pool")
+        with self.assertRaises(RuntimeError):
+            ss.set_states(self.run_params, self.env)
+        mock_env_process.preprocess_image.assert_not_called()
+        mock_shutil.copy.assert_not_called()
+        self.mock_vms["vm1"].destroy.assert_not_called()
 
     def test_set_root_on_qcow2vt(self):
         self._set_off_qcow2_params()
@@ -1521,14 +1645,49 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.vg_check.assert_called_once_with('disk_vm1')
         mock_vg_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/disk_vm1', 'disk_vm1', None, True)
 
-    def test_unset_root_off_qcow2(self):
+    @mock.patch('avocado_i2n.states.setup.os')
+    @mock.patch('avocado_i2n.states.setup.env_process')
+    def test_unset_root_off_qcow2(self, mock_env_process, mock_os):
         self._set_off_qcow2_params()
         self.run_params["unset_state_vm1"] = "root"
         self.run_params["unset_type_vm1"] = "off"
         self._create_mock_vms()
 
         ss.unset_states(self.run_params, self.env)
-        # TODO: test env_process.postprocess_image is called
+        mock_env_process.postprocess_image.assert_called_once()
+        mock_os.rmdir.assert_called_once()
+
+    @mock.patch('avocado_i2n.states.pool.os')
+    @mock.patch('avocado_i2n.states.setup.env_process')
+    def test_unset_root_off_pool(self, mock_env_process, mock_os):
+        self._set_off_pool_params()
+        self.run_params["unset_state_vm1"] = "root"
+        self.run_params["unset_type_vm1"] = "off"
+        self._create_mock_vms()
+
+        # retore some path capabilities in our mock module
+        mock_os.path.join = os.path.join
+        mock_os.path.basename = os.path.basename
+
+        # not updating the state pool means unsetting the local root
+        self.run_params["update_pool"] = "no"
+        mock_env_process.reset_mock()
+        mock_os.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        ss.unset_states(self.run_params, self.env)
+        mock_env_process.postprocess_image.assert_called_once()
+        mock_os.unlink.assert_not_called()
+        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=False)
+
+        # updating the state pool means not unsetting the local root
+        self.run_params["update_pool"] = "yes"
+        mock_env_process.reset_mock()
+        mock_os.reset_mock()
+        self.mock_vms["vm1"].reset_mock()
+        ss.unset_states(self.run_params, self.env)
+        mock_env_process.postprocess_image.assert_not_called()
+        mock_os.unlink.assert_called_with("/data/pool/vm1/image.qcow2")
+        self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=False)
 
     def test_unset_root_on_qcow2vt(self):
         self._set_off_qcow2_params()
@@ -1702,6 +1861,8 @@ class StateSetupTest(unittest.TestCase):
         # switch check if vm has to be booted
         self.mock_vms["vm3"].is_alive.assert_called_once_with()
 
+    # TODO: LVM is not supposed to reach to QCOW2 but we have in-code TODO about it
+    @mock.patch('avocado_i2n.states.setup.env_process', mock.Mock(return_value=0))
     @mock.patch('avocado_i2n.states.qcow2.process')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     @mock.patch('avocado_i2n.states.lvm.process')
@@ -1842,6 +2003,29 @@ class StateSetupTest(unittest.TestCase):
             qcow2.convert_image(self.run_params)
         # no convert command was executed
         mock_process.run.assert_called_once_with('qemu-img check /images/vm1/image.qcow2')
+
+    @mock.patch('avocado_i2n.states.pool.SKIP_LOCKS', False)
+    @mock.patch('avocado_i2n.states.pool.fcntl')
+    def test_pool_locks(self, mock_fcntl):
+        self._set_off_pool_params()
+        self._create_mock_vms()
+
+        image_locked = False
+        with pool.image_lock("./image.qcow2", timeout=1) as lock:
+            mock_fcntl.lockf.assert_called_once()
+            image_locked = True
+            mock_fcntl.reset_mock()
+
+            # TODO: from a different process if we decide to from unit tests to
+            # functional tests that add more elaborate setup like this
+            #with pool.image_lock("./image.qcow2", timeout=1) as lock:
+            #    mock_fcntl.lockf.assert_called_once()
+            #    mock_fcntl.reset_mock()
+            #mock_fcntl.lockf.assert_called_once()
+            #mock_fcntl.reset_mock()
+
+        self.assertTrue(image_locked)
+        mock_fcntl.lockf.assert_called_once()
 
 
 if __name__ == '__main__':
