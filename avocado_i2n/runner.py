@@ -223,7 +223,6 @@ class CartesianRunner(TestRunner):
             graph.visualize(self.job.logdir)
             self.run_traversal(graph, params)
         except KeyboardInterrupt:
-            TEST_LOG.error('Job interrupted by ctrl+c.')
             summary.add('INTERRUPTED')
 
         self.job.result.end_tests()
