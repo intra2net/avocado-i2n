@@ -31,13 +31,14 @@ import os
 import re
 import logging
 
-from avocado_vt.loader import VirtTestLoader
+from avocado.core.plugin_interfaces import Resolver
+from avocado.core.resolver import ReferenceResolution, ReferenceResolutionResult
 
 from . import params_parser as param
 from .cartgraph import TestGraph, TestNode, TestObject
 
 
-class CartesianLoader(VirtTestLoader):
+class CartesianLoader(Resolver):
     """Test loader for Cartesian graph parsing."""
 
     name = 'cartesian_graph'
@@ -54,7 +55,7 @@ class CartesianLoader(VirtTestLoader):
         """
         extra_params = {} if not extra_params else extra_params
         self.logdir = extra_params.pop('logdir', ".")
-        super().__init__(config, extra_params)
+        super().__init__()
 
     """parsing functionality"""
     def parse_objects(self, param_dict=None, object_strs=None, verbose=False):
@@ -370,32 +371,30 @@ class CartesianLoader(VirtTestLoader):
 
         return graph
 
-    def discover(self, references, _which_tests=None):
+    def resolve(self, reference):
         """
         Discover (possible) tests from test references.
 
-        :param references: tests references used to produce tests
-        :type references: str or [str] or None
-        :param which_tests: display behavior for incompatible tests
-        :type which_tests: :py:class:`loader.DiscoverMode`
+        :param reference: tests reference used to produce tests
+        :type reference: str or None
         :returns: test factories as tuples of the test class and its parameters
         :rtype: [(type, {str, str})]
         """
-        if references is not None:
-            assert references.split() == self.config["params"]
+        if reference is not None:
+            assert reference.split() == self.config["params"]
         param_dict, nodes_str, object_strs = self.config["param_dict"], self.config["tests_str"], self.config["vm_strs"]
         prefix = self.config["prefix"]
 
         graph = self.parse_object_trees(param_dict, nodes_str, object_strs,
                                         prefix=prefix, verbose=self.config["subcommand"]!="list")
-        test_suite = [n.get_test_factory() for n in graph.nodes]
+        runnables = [n.get_runnable() for n in graph.nodes]
 
         # HACK: pass the constructed graph to the runner using static attribute hack
         # since the currently digested test suite contains factory arguments obtained
         # from an irreversible (information destructive) approach
         TestGraph.REFERENCE = graph
 
-        return test_suite
+        return ReferenceResolution(reference, ReferenceResolutionResult.SUCCESS, runnables)
 
     """custom nodes"""
     def parse_scan_node(self, graph, param_dict=None, prefix=""):

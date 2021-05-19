@@ -344,7 +344,8 @@ def run(config, tag=""):
 
         graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"],
                                           prefix=config["prefix"], verbose=config["subcommand"]!="list")
-        job.test_suites[0].tests = [n.get_test_factory() for n in graph.nodes]
+        runnables = [n.get_runnable() for n in graph.nodes]
+        job.test_suites[0].tests = runnables
 
         # HACK: pass the constructed graph to the runner using static attribute hack
         # since the currently digested test suite contains factory arguments obtained

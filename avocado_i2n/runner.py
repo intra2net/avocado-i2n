@@ -60,7 +60,6 @@ class CartesianRunner(RunnerInterface):
         :param node: test node to run
         :type node: :py:class:`TestNode`
         """
-        # TODO: has to be base Task from ReferenceResolution(reference, ReferenceResolutionResult.SUCCESS, runnables)
         raw_task = nrunner.Task(node.get_runnable(), node.id_long,
                                 [job.config.get('nrunner.status_server_uri')],
                                 nrunner.RUNNERS_REGISTRY_PYTHON_CLASS,
@@ -510,6 +509,6 @@ class CartesianRunner(RunnerInterface):
         # validate the test suite refers to the same test graph
         assert len(test_suite) == len(graph.nodes)
         for node1, node2 in zip(test_suite.tests, graph.nodes):
-            assert node1 == node2.get_test_factory()
+            assert node1.uri == node2.get_runnable().uri
 
         return graph
