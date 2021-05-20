@@ -28,6 +28,7 @@ INTERFACE
 """
 
 import os
+import time
 import logging
 import signal
 import asyncio
@@ -35,7 +36,10 @@ from multiprocessing import SimpleQueue
 
 from avocado.core import nrunner
 from avocado.core.dispatcher import SpawnerDispatcher
+from avocado.core.messages import MessageHandler
 from avocado.core.plugin_interfaces import Runner as RunnerInterface
+from avocado.core.status.repo import StatusRepo
+from avocado.core.status.server import StatusServer
 from avocado.core.task.runtime import RuntimeTask
 from avocado.core.task.statemachine import TaskStateMachine, Worker
 from virttest import utils_misc
@@ -51,6 +55,23 @@ class CartesianRunner(RunnerInterface):
     description = 'Runs tests through a Cartesian graph traversal'
 
     """running functionality"""
+    async def _update_status(self, job):
+        message_handler = MessageHandler()
+        while True:
+            try:
+                (task_id, _, _, index) = \
+                    self.status_repo.status_journal_summary.pop(0)
+
+            except IndexError:
+                await asyncio.sleep(0.05)
+                continue
+
+            message = self.status_repo.get_task_data(task_id, index)
+            tasks_by_id = {str(runtime_task.task.identifier): runtime_task.task
+                           for runtime_task in self.tasks}
+            task = tasks_by_id.get(task_id)
+            message_handler.process_message(message, task, job)
+
     def run_test(self, job, node):
         """
         Run a test instance inside a subprocess.
@@ -65,9 +86,10 @@ class CartesianRunner(RunnerInterface):
                                 nrunner.RUNNERS_REGISTRY_PYTHON_CLASS,
                                 job_id=self.job.unique_id)
         task = RuntimeTask(raw_task)
-        self.tasks = [task]
+        self.tasks += [task]
 
-        tsm = TaskStateMachine(self.tasks)
+        # TODO: use a single state machine for all test nodes
+        tsm = TaskStateMachine([task], self.status_repo)
         spawner_name = job.config.get('nrunner.spawner')
         spawner = SpawnerDispatcher(job.config)[spawner_name].obj
         max_running = 1
@@ -77,8 +99,6 @@ class CartesianRunner(RunnerInterface):
                           max_running=max_running,
                           task_timeout=timeout).run()
                    for _ in range(max_running)]
-        # TODO: no support for test status reporting for now
-        #asyncio.ensure_future(self._update_status(job))
         loop = asyncio.get_event_loop()
         loop.run_until_complete(asyncio.wait_for(asyncio.gather(*workers),
                                                  job.timeout or None))
@@ -120,20 +140,16 @@ class CartesianRunner(RunnerInterface):
         assert runs_left >= 1, "retry_attempts cannot be less than zero"
         assert retry_stop in ["none", "error", "success"], "retry_stop must be one of 'none', 'error' or 'success'"
 
-        retval = False
         original_shortname = node.params["shortname"]
         for r in range(runs_left):
             # appending a suffix to retries so we can tell them apart
             if r > 0:
                 node.params["shortname"] = f"{original_shortname}.r{r}"
 
-            retval = self.run_test(self.job, node)
+            self.run_test(self.job, node)
 
-            # TODO: no support for test status reporting for now
-            #test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))
-            # TODO: test retrying is disabled for now
-            test_status = "PASS"
-            #test_status = test_result["status"]
+            test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))
+            test_status = test_result["status"]
             if test_status not in ["PASS", "WARN", "ERROR", "FAIL"]:
                 # it doesn't make sense to retry with other status
                 logging.info(f"Will not attempt to retry test with status {test_status}")
@@ -148,10 +164,12 @@ class CartesianRunner(RunnerInterface):
         # no need to log when test was not repeated
         if runs_left > 1:
             logging.info(f"Finished running test {r} times")
+
         # FIX: as VT's retval is broken (always True), we fix its handling here
         if test_status in ["ERROR", "FAIL"]:
-            retval = False
-        return retval
+            return False
+        else:
+            return True
 
     def run_traversal(self, graph, params):
         """
@@ -252,18 +270,38 @@ class CartesianRunner(RunnerInterface):
         """
         self.job = job
 
+        self.status_repo = StatusRepo(job.unique_id)
+        self.status_server = StatusServer(job.config.get('nrunner.status_server_listen'),
+                                          self.status_repo)
+        asyncio.ensure_future(self.status_server.serve_forever())
+
         graph = self._graph_from_suite(test_suite)
         summary = set()
         params = self.job.config["param_dict"]
 
+        self.tasks = []
+        # TODO: this needs more customization
+        asyncio.ensure_future(self._update_status(job))
+
+        # TODO: fix other run_traversal calls
         try:
             graph.visualize(self.job.logdir)
             self.run_traversal(graph, params)
         except KeyboardInterrupt:
             summary.add('INTERRUPTED')
 
+        # TODO: the avocado implementation needs a workaround here:
+        # Wait until all messages may have been processed by the
+        # status_updater. This should be replaced by a mechanism
+        # that only waits if there are missing status messages to
+        # be processed, and, only for a given amount of time.
+        # Tests with non received status will always show as SKIP
+        # because of result reconciliation.
+        time.sleep(0.05)
+
         self.job.result.end_tests()
         self.job.funcatexit.run()
+        self.status_server.close()
         signal.signal(signal.SIGTSTP, signal.SIG_IGN)
         return summary
 
