@@ -51,20 +51,23 @@ class CartesianRunner(RunnerInterface):
     description = 'Runs tests through a Cartesian graph traversal'
 
     """running functionality"""
-    def run_test(self, job, test_factory, queue, summary, job_deadline=0):
+    def run_test(self, job, node):
         """
         Run a test instance inside a subprocess.
 
-        :param test_factory: Test factory (test class and parameters).
-        :type test_factory: tuple of :class:`avocado.core.test.Test` and dict.
-        :param queue: Multiprocess queue.
-        :type queue: :class`multiprocessing.Queue` instance.
-        :param summary: Contains types of test failures.
-        :type summary: set.
-        :param job_deadline: Maximum time to execute.
-        :type job_deadline: int.
+        :param job: job that includes the test suite
+        :type job: :py:class:`avocado.core.job.Job`
+        :param node: test node to run
+        :type node: :py:class:`TestNode`
         """
-        self.tasks = self._get_all_runtime_tasks(test_suite)
+        # TODO: has to be base Task from ReferenceResolution(reference, ReferenceResolutionResult.SUCCESS, runnables)
+        raw_task = nrunner.Task(node.get_runnable(), node.id_long,
+                                [job.config.get('nrunner.status_server_uri')],
+                                nrunner.RUNNERS_REGISTRY_PYTHON_CLASS,
+                                job_id=self.job.unique_id)
+        task = RuntimeTask(raw_task)
+        self.tasks = [task]
+
         tsm = TaskStateMachine(self.tasks)
         spawner_name = job.config.get('nrunner.spawner')
         spawner = SpawnerDispatcher(job.config)[spawner_name].obj
@@ -78,13 +81,8 @@ class CartesianRunner(RunnerInterface):
         # TODO: no support for test status reporting for now
         #asyncio.ensure_future(self._update_status(job))
         loop = asyncio.get_event_loop()
-        try:
-            loop.run_until_complete(asyncio.wait_for(asyncio.gather(*workers),
-                                                     job.timeout or None))
-        except (KeyboardInterrupt, asyncio.TimeoutError):
-            summary.add("INTERRUPTED")
-
-        return summary
+        loop.run_until_complete(asyncio.wait_for(asyncio.gather(*workers),
+                                                 job.timeout or None))
 
     def run_test_node(self, node, can_retry=False):
         """
@@ -130,7 +128,7 @@ class CartesianRunner(RunnerInterface):
             if r > 0:
                 node.params["shortname"] = f"{original_shortname}.r{r}"
 
-            retval = self.run_test(self.job, node.get_test_factory(self.job), SimpleQueue(), set())
+            retval = self.run_test(self.job, node)
 
             # TODO: no support for test status reporting for now
             #test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))

@@ -29,8 +29,8 @@ INTERFACE
 
 import re
 
-from avocado.core import test
-from avocado_vt.test import VirtTest
+from avocado.core.test_id import TestID
+from avocado.core.nrunner import Runnable
 
 
 class TestNode(object):
@@ -47,8 +47,14 @@ class TestNode(object):
     params = property(fget=params)
 
     def id(self):
+        """Sufficiently unique ID to identify a test node."""
         return self.name + "-" + self.params["vms"].replace(" ", "")
     id = property(fget=id)
+
+    def id_long(self):
+        """Long and still unique ID to use for state machine tasks."""
+        return TestID(self.id, self.params["shortname"])
+    id_long = property(fget=id_long)
 
     def count(self):
         """Node count property."""
@@ -87,21 +93,26 @@ class TestNode(object):
         obj_tuple = (self.id, self.params.get("shortname", "<unknown>"))
         return "[node] id='%s', name='%s'" % obj_tuple
 
-    def get_test_factory(self, job=None):
+    def get_runnable(self):
         """
         Get test factory from which the test loader will get a runnable test instance.
 
-        :param job: avocado job object to for running or None for reporting only
-        :type job: :py:class:`avocado.core.job.Job`
         :return: test class and constructor parameters
-        :rtype: (type, {str, obj})
+        :rtype: :py:class:`Runnable`
         """
-        test_constructor_params = {'name': test.TestID(self.id, self.params["shortname"]),
-                                   'vt_params': self.params}
-        if job is not None:
-            test_constructor_params['config'] = job.config
-            test_constructor_params['base_logdir'] = job.logdir
-        return (VirtTest, test_constructor_params)
+        self.params['short_id'] = self.id
+        self.params['id'] = self.id_long.str_uid + "_" + self.id_long.name
+
+        uri = self.params["shortname"]
+        vt_params = self.params.copy()
+
+        # Flatten the vt_params, discarding the attributes that are not
+        # scalars, and will not be used in the context of nrunner
+        for key in ('_name_map_file', '_short_name_map_file', 'dep'):
+            if key in self.params:
+                del(vt_params[key])
+
+        return Runnable('avocado-vt', uri, **vt_params)
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
