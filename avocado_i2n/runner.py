@@ -35,7 +35,6 @@ import asyncio
 from multiprocessing import SimpleQueue
 
 from avocado.core import nrunner
-from avocado.core.dispatcher import SpawnerDispatcher
 from avocado.core.messages import MessageHandler
 from avocado.core.plugin_interfaces import Runner as RunnerInterface
 from avocado.core.status.repo import StatusRepo
@@ -72,7 +71,7 @@ class CartesianRunner(RunnerInterface):
             task = tasks_by_id.get(task_id)
             message_handler.process_message(message, task, job)
 
-    def run_test(self, job, node):
+    def run_test(self, job, node, container):
         """
         Run a test instance inside a subprocess.
 
@@ -80,7 +79,11 @@ class CartesianRunner(RunnerInterface):
         :type job: :py:class:`avocado.core.job.Job`
         :param node: test node to run
         :type node: :py:class:`TestNode`
+        :param str container: id of a container to use as isolated environment
         """
+        if node.spawner is None:
+            node.set_environment(job, container)
+
         raw_task = nrunner.Task(node.get_runnable(), node.id_long,
                                 [job.config.get('nrunner.status_server_uri')],
                                 nrunner.RUNNERS_REGISTRY_PYTHON_CLASS,
@@ -90,12 +93,10 @@ class CartesianRunner(RunnerInterface):
 
         # TODO: use a single state machine for all test nodes
         tsm = TaskStateMachine([task], self.status_repo)
-        spawner_name = job.config.get('nrunner.spawner')
-        spawner = SpawnerDispatcher(job.config)[spawner_name].obj
         max_running = 1
         timeout = job.config.get('task.timeout.running')
         workers = [Worker(state_machine=tsm,
-                          spawner=spawner,
+                          spawner=node.spawner,
                           max_running=max_running,
                           task_timeout=timeout).run()
                    for _ in range(max_running)]
@@ -146,7 +147,8 @@ class CartesianRunner(RunnerInterface):
             if r > 0:
                 node.params["shortname"] = f"{original_shortname}.r{r}"
 
-            self.run_test(self.job, node)
+            # TODO: providing only an experimental hard-coded value for a single pre-existing container for now
+            self.run_test(self.job, node, "c1")
 
             try:
                 test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))

@@ -31,6 +31,7 @@ import re
 
 from avocado.core.test_id import TestID
 from avocado.core.nrunner import Runnable
+from avocado.core.dispatcher import SpawnerDispatcher
 
 
 class TestNode(object):
@@ -80,6 +81,8 @@ class TestNode(object):
 
         self.node_str = None
 
+        self.spawner = None
+
         # list of objects involved in the test
         self.objects = objects
 
@@ -113,6 +116,29 @@ class TestNode(object):
                 del(vt_params[key])
 
         return Runnable('avocado-vt', uri, **vt_params)
+
+    def set_environment(self, job, env_id):
+        """
+        Set the environment for executing the test node.
+
+        :param job: job that includes the test suite
+        :type job: :py:class:`avocado.core.job.Job`
+        :param str env_id: name or ID to uniquely identiy the environment
+
+        This isolating environment could be a container, a virtual machine, or
+        a less-isolated process and is managed by a specialized spawner.
+        """
+        spawner_name = job.config.get('nrunner.spawner', 'lxc')
+        # TODO: move cid in constructor in the upstream PR
+        self.spawner = SpawnerDispatcher(job.config)[spawner_name].obj
+        self.spawner.cid = env_id
+
+        hostname = self.params["hostname"]
+        # prepend affected test parameters
+        for key, value in self.params.items():
+            if isinstance(value, str):
+                self.params[key] = value.replace(hostname, hostname + env_id)
+        self.params["hostname"] = env_id if env_id else hostname
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
