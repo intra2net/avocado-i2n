@@ -164,30 +164,6 @@ class TestNode(object):
         """Check if the test node is not defined with any test object."""
         return len(self.objects) == 0 or self.params["vms"] == ""
 
-    def is_ephemeral(self):
-        """
-        If the test node is ephemeral its `set_state` cannot be preserved for
-        longer than one cycle, i.e. if the next test stops reverting to it.
-
-        Such test nodes are transitions from off to on states and
-        must be repeated to reuse the on states that are their end states.
-        """
-        for test_object in self.objects:
-            object_name = test_object.name
-            object_params = self.params.object_params(object_name)
-            object_state = object_params.get("set_state")
-
-            # count only test objects left with saved states
-            if object_state is None or object_state == "":
-                continue
-
-            # any off-on state transition marks the test as ephemeral
-            if (object_params.get("get_type", "on") == "off" and
-                    object_params.get("set_type", "on") == "on"):
-                return True
-
-        return False
-
     def is_setup_ready(self):
         """
         All dependencies of the test were run or there were none, so it can

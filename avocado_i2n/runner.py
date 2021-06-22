@@ -41,7 +41,6 @@ from avocado.core.status.repo import StatusRepo
 from avocado.core.status.server import StatusServer
 from avocado.core.task.runtime import RuntimeTask
 from avocado.core.task.statemachine import TaskStateMachine, Worker
-from virttest import utils_misc
 
 from . import params_parser as param
 from .cartgraph import TestGraph, TestNode
@@ -456,18 +455,6 @@ class CartesianRunner(RunnerInterface):
     """internals"""
     async def _traverse_test_node(self, graph, test_node, params):
         """Run a single test according to user defined policy and state availability."""
-        # ephemeral setup can get lost and if so must be repeated
-        if not test_node.should_run and test_node.is_ephemeral() and not test_node.is_cleanup_ready():
-            for test_object in test_node.objects:
-                object_name = test_object.name
-                object_params = test_node.params.object_params(object_name)
-                # if previous state is not known keep behavior assuming that the user knows what they are doing
-                required_state = object_params.get("set_state")
-                if required_state != test_object.current_state != "unknown":
-                    logging.debug("Re-running ephemeral setup %s since %s state was switched to %s but test requires %s",
-                                  test_node.params["shortname"], test_object.name, test_object.current_state, required_state)
-                    test_node.should_run = True
-                    break
         if test_node.should_run:
 
             # the primary setup nodes need special treatment
@@ -486,16 +473,6 @@ class CartesianRunner(RunnerInterface):
                 status = await self.run_install_node(graph, test_node.params.get("vms", ""), params)
                 if not status:
                     logging.error("Could not perform the installation from %s", test_node)
-
-            # re-runnable tests need unique variant names
-            elif test_node.is_ephemeral():
-                original_shortname = test_node.params["shortname"]
-                extra_variant = utils_misc.generate_random_string(6)
-                test_node.params["shortname"] += "." + extra_variant
-                status = await self.run_test_node(test_node)
-                test_node.params["shortname"] = original_shortname
-                if not status:
-                    logging.error("Could not run the ephemeral test %s", test_node)
 
             else:
                 # finally, good old running of an actual test

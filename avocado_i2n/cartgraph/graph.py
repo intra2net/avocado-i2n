@@ -219,27 +219,6 @@ class TestGraph(object):
                     test_node.should_run = True
                     break
 
-                # the ephemeral states can be unset during the test run so cannot be counted on
-                if test_node.is_ephemeral():
-                    if object_params.get("reuse_ephemeral_states", "no") == "yes":
-                        # NOTE: If you are running only tests that are descendants of this ephemeral test,
-                        # it won't be lost throughout the run so you might as well reuse it if available
-                        # before the test run commences. However, be warned that this is user responsibility.
-                        # TODO: If the states are on but not on a permanent test object,
-                        # we rely on the ephemeral tests. However, be warned that there is
-                        # no guarantee the ephemeral test concept (i.e. off to on
-                        # state transition) will guard all possible topologies of the Cartesian graph.
-                        # This works well for simple enough cases with no on states descending from
-                        # other on states unless we have a permanent object.
-                        logging.warning("The state %s of %s is ephemeral but will be forcibly reused",
-                                        object_state, object_name)
-                    else:
-                        logging.info("The state %s of %s is ephemeral (cannot be reused at any desired time)",
-                                     object_state, object_name)
-                        # test should be run regardless of further checks
-                        test_node.should_run = True
-                        break
-
                 # the object state has to be defined to reach this stage
                 if object_state == "root" and test_object.is_permanent():
                     test_node.should_run = False
