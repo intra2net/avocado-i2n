@@ -71,7 +71,7 @@ class CartesianRunner(RunnerInterface):
             task = tasks_by_id.get(task_id)
             message_handler.process_message(message, task, job)
 
-    async def run_test(self, job, node, container):
+    async def run_test(self, job, node):
         """
         Run a test instance inside a subprocess.
 
@@ -79,10 +79,9 @@ class CartesianRunner(RunnerInterface):
         :type job: :py:class:`avocado.core.job.Job`
         :param node: test node to run
         :type node: :py:class:`TestNode`
-        :param str container: id of a container to use as isolated environment
         """
         if node.spawner is None:
-            node.set_environment(job, container)
+            node.set_environment(job, self.slots[0])
 
         raw_task = nrunner.Task(node.get_runnable(), node.id_long,
                                 [job.config.get('nrunner.status_server_uri')],
@@ -140,8 +139,7 @@ class CartesianRunner(RunnerInterface):
             if r > 0:
                 node.params["shortname"] = f"{original_shortname}.r{r}"
 
-            # TODO: providing only an experimental hard-coded value for a single pre-existing container for now
-            await self.run_test(self.job, node, "c1")
+            await self.run_test(self.job, node)
 
             try:
                 test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))
@@ -168,6 +166,27 @@ class CartesianRunner(RunnerInterface):
             return False
         else:
             return True
+
+    def _run_available_children(self, node, graph, params):
+        loop = asyncio.get_event_loop()
+        # TODO: parallelize only leaf nodes with just this setup node as parent for now
+        # but later on run together also internal nodes if they don't modify the same vm
+        run_children = [n for n in node.cleanup_nodes if len(n.setup_nodes) == 1
+                        and len(n.cleanup_nodes) == 0 and n.should_run]
+        while len(run_children) > 0:
+            current_nodes = run_children[:len(self.slots)]
+            logging.debug("Traversal advance running in parallel the tests:\n%s",
+                          "\n".join([n.id_long.name for n in current_nodes]))
+            if len(current_nodes) == 0:
+                raise ValueError("Not enough container run slots")
+            for i, n in enumerate(current_nodes):
+                logging.debug(f"Running {current_nodes[i].id_long.name} in {self.slots[i]}")
+                current_nodes[i].set_environment(self.job, self.slots[i])
+                run_children.remove(current_nodes[i])
+            to_traverse = [self._traverse_test_node(graph, n, params)
+                           for n in current_nodes]
+            loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
+                                                     self.job.timeout or None))
 
     def run_traversal(self, graph, params):
         """
@@ -218,7 +237,7 @@ class CartesianRunner(RunnerInterface):
                           "not " if not next.is_cleanup_ready() else "",
                           "not " if not next.should_run else "",
                           "not " if not next.should_clean else "")
-            logging.debug("Current traverse path/stack:%s",
+            logging.debug("Current traverse path/stack:\n%s",
                           "\n".join([n.params["shortname"] for n in traverse_path]))
             # if previous in path is the child of the next, then the path is reversed
             # looking for setup so if the next is setup ready and already run, remove
@@ -248,6 +267,10 @@ class CartesianRunner(RunnerInterface):
                     traverse_path.pop()
                     graph.report_progress()
                 else:
+                    # parallel pocket lookahead
+                    if next != root:
+                        self._run_available_children(next, graph, params)
+                        graph.report_progress()
                     # normal DFS
                     traverse_path.append(next.pick_next_child())
             else:
@@ -280,6 +303,7 @@ class CartesianRunner(RunnerInterface):
         params = self.job.config["param_dict"]
 
         self.tasks = []
+        self.slots = params.get("slots").split(" ")
         # TODO: this needs more customization
         asyncio.ensure_future(self._update_status(job))
 
