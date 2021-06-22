@@ -148,8 +148,11 @@ class CartesianRunner(RunnerInterface):
 
             self.run_test(self.job, node)
 
-            test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))
-            test_status = test_result["status"]
+            try:
+                test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))
+                test_status = test_result["status"]
+            except StopIteration:
+                test_status = "ERROR"
             if test_status not in ["PASS", "WARN", "ERROR", "FAIL"]:
                 # it doesn't make sense to retry with other status
                 logging.info(f"Will not attempt to retry test with status {test_status}")
@@ -384,7 +387,8 @@ class CartesianRunner(RunnerInterface):
         status = self.run_test_node(test_node)
 
         if not status:
-            return
+            logging.error("Could not configure the installation for %s", test_object.name)
+            return status
 
         logging.info("Installing virtual machine %s", test_object.name)
         setup_dict = {} if params is None else params.copy()
@@ -412,7 +416,8 @@ class CartesianRunner(RunnerInterface):
         status = self.run_test_node(TestNode("0q", install_config, test_node.objects))
 
         if not status:
-            return
+            logging.error("Could not install %s", test_object.name)
+            return status
 
         if install_params["set_type"] == "on":
             setup_dict = {} if params is None else params.copy()
@@ -425,7 +430,7 @@ class CartesianRunner(RunnerInterface):
                                                 ovrwrt_file=param.tests_ovrwrt_file(),
                                                 ovrwrt_str=setup_str,
                                                 ovrwrt_dict=setup_dict)
-            self.run_test_node(TestNode("0qq", postinstall_config, test_node.objects))
+            return self.run_test_node(TestNode("0qq", postinstall_config, test_node.objects))
 
     """internals"""
     def _traverse_test_node(self, graph, test_node, params):
@@ -449,23 +454,33 @@ class CartesianRunner(RunnerInterface):
                 logging.info("Running a dry %s", test_node.params["shortname"])
             elif test_node.is_scan_node():
                 logging.debug("Test run started from the shared root")
-                self.run_scan_node(graph)
+                status = self.run_scan_node(graph)
+                if not status:
+                    logging.error("Could not perform state scanning of %s", test_node)
             elif test_node.is_create_node():
-                self.run_create_node(graph, test_node.params.get("vms", ""))
+                status = self.run_create_node(graph, test_node.params.get("vms", ""))
+                if not status:
+                    logging.error("Could not perform the root state creation of %s", test_node)
             elif test_node.is_install_node():
-                self.run_install_node(graph, test_node.params.get("vms", ""), params)
+                status = self.run_install_node(graph, test_node.params.get("vms", ""), params)
+                if not status:
+                    logging.error("Could not perform the installation from %s", test_node)
 
             # re-runnable tests need unique variant names
             elif test_node.is_ephemeral():
                 original_shortname = test_node.params["shortname"]
                 extra_variant = utils_misc.generate_random_string(6)
                 test_node.params["shortname"] += "." + extra_variant
-                self.run_test_node(test_node)
+                status = self.run_test_node(test_node)
                 test_node.params["shortname"] = original_shortname
+                if not status:
+                    logging.error("Could not run the ephemeral test %s", test_node)
 
             else:
                 # finally, good old running of an actual test
-                self.run_test_node(test_node, can_retry=True)
+                status = self.run_test_node(test_node, can_retry=True)
+                if not status:
+                    logging.error("Got nonzero status from the test %s", test_node)
 
             for test_object in test_node.objects:
                 object_name = test_object.name
