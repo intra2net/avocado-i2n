@@ -71,7 +71,7 @@ class CartesianRunner(RunnerInterface):
             task = tasks_by_id.get(task_id)
             message_handler.process_message(message, task, job)
 
-    def run_test(self, job, node, container):
+    async def run_test(self, job, node, container):
         """
         Run a test instance inside a subprocess.
 
@@ -91,20 +91,13 @@ class CartesianRunner(RunnerInterface):
         task = RuntimeTask(raw_task)
         self.tasks += [task]
 
-        # TODO: use a single state machine for all test nodes
-        tsm = TaskStateMachine([task], self.status_repo)
-        max_running = 1
-        timeout = job.config.get('task.timeout.running')
-        workers = [Worker(state_machine=tsm,
-                          spawner=node.spawner,
-                          max_running=max_running,
-                          task_timeout=timeout).run()
-                   for _ in range(max_running)]
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(asyncio.wait_for(asyncio.gather(*workers),
-                                                 job.timeout or None))
+        # TODO: use a single state machine for all test nodes when we are able
+        # to at least add requested tasks to it safely (using its locks)
+        await Worker(state_machine=TaskStateMachine([task], self.status_repo),
+                     spawner=node.spawner, max_running=1,
+                     task_timeout=job.config.get('task.timeout.running')).run()
 
-    def run_test_node(self, node, can_retry=False):
+    async def run_test_node(self, node, can_retry=False):
         """
         Run a node once, and optionally re-run it depending on the parameters.
 
@@ -148,7 +141,7 @@ class CartesianRunner(RunnerInterface):
                 node.params["shortname"] = f"{original_shortname}.r{r}"
 
             # TODO: providing only an experimental hard-coded value for a single pre-existing container for now
-            self.run_test(self.job, node, "c1")
+            await self.run_test(self.job, node, "c1")
 
             try:
                 test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))
@@ -206,6 +199,8 @@ class CartesianRunner(RunnerInterface):
                 os.makedirs(traverse_dir)
             step = 0
 
+        loop = asyncio.get_event_loop()
+
         traverse_path = [root]
         while not root.is_cleanup_ready():
             next = traverse_path[-1]
@@ -231,7 +226,7 @@ class CartesianRunner(RunnerInterface):
             if previous in next.cleanup_nodes or previous in next.visited_cleanup_nodes:
 
                 if next.is_setup_ready():
-                    self._traverse_test_node(graph, next, params)
+                    loop.run_until_complete(self._traverse_test_node(graph, next, params))
                     previous.visit_node(next)
                     traverse_path.pop()
                 else:
@@ -244,10 +239,10 @@ class CartesianRunner(RunnerInterface):
                     traverse_path.append(next.pick_next_parent())
                     continue
                 else:
-                    self._traverse_test_node(graph, next, params)
+                    loop.run_until_complete(self._traverse_test_node(graph, next, params))
 
                 if next.is_cleanup_ready():
-                    self._reverse_test_node(graph, next, params)
+                    loop.run_until_complete(self._reverse_test_node(graph, next, params))
                     for setup in next.visited_setup_nodes:
                         setup.visit_node(next)
                     traverse_path.pop()
@@ -311,7 +306,7 @@ class CartesianRunner(RunnerInterface):
         return summary
 
     """custom nodes"""
-    def run_scan_node(self, graph):
+    async def run_scan_node(self, graph):
         """
         Run the set of tests necessary for starting test traversal.
 
@@ -326,7 +321,7 @@ class CartesianRunner(RunnerInterface):
         nodes = graph.get_nodes_by(param_key="name", param_val="(\.|^)0scan(\.|^)")
         assert len(nodes) == 1, "There can only be one shared root"
         test_node = nodes[0]
-        status = self.run_test_node(test_node)
+        status = await self.run_test_node(test_node)
         logdir = self.job.result.tests[-1]["logdir"]
 
         try:
@@ -341,7 +336,7 @@ class CartesianRunner(RunnerInterface):
         for node in graph.nodes:
             self.job.result.cancelled += 1 if not node.should_run else 0
 
-    def run_create_node(self, graph, object_name):
+    async def run_create_node(self, graph, object_name):
         """
         Run the set of tests necessary for creating a given test object.
 
@@ -361,9 +356,9 @@ class CartesianRunner(RunnerInterface):
             raise AssertionError("Reached a permanent object root for %s due to incorrect setup"
                                  % test_object.name)
         else:
-            self.run_test_node(test_node)
+            await self.run_test_node(test_node)
 
-    def run_install_node(self, graph, object_name, params):
+    async def run_install_node(self, graph, object_name, params):
         """
         Run the set of tests necessary for installing a given test object.
 
@@ -386,7 +381,7 @@ class CartesianRunner(RunnerInterface):
         # parameters and the status from the install configuration determine the install test
         install_params = test_node.params.copy()
         test_node.params.update({"set_state": "", "skip_image_processing": "yes"})
-        status = self.run_test_node(test_node)
+        status = await self.run_test_node(test_node)
 
         if not status:
             logging.error("Could not configure the installation for %s", test_object.name)
@@ -415,7 +410,7 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_file=param.tests_ovrwrt_file(),
                                         ovrwrt_str=setup_str,
                                         ovrwrt_dict=setup_dict)
-        status = self.run_test_node(TestNode("0q", install_config, test_node.objects))
+        status = await self.run_test_node(TestNode("0q", install_config, test_node.objects))
 
         if not status:
             logging.error("Could not install %s", test_object.name)
@@ -432,10 +427,10 @@ class CartesianRunner(RunnerInterface):
                                                 ovrwrt_file=param.tests_ovrwrt_file(),
                                                 ovrwrt_str=setup_str,
                                                 ovrwrt_dict=setup_dict)
-            return self.run_test_node(TestNode("0qq", postinstall_config, test_node.objects))
+            return await self.run_test_node(TestNode("0qq", postinstall_config, test_node.objects))
 
     """internals"""
-    def _traverse_test_node(self, graph, test_node, params):
+    async def _traverse_test_node(self, graph, test_node, params):
         """Run a single test according to user defined policy and state availability."""
         # ephemeral setup can get lost and if so must be repeated
         if not test_node.should_run and test_node.is_ephemeral() and not test_node.is_cleanup_ready():
@@ -456,15 +451,15 @@ class CartesianRunner(RunnerInterface):
                 logging.info("Running a dry %s", test_node.params["shortname"])
             elif test_node.is_scan_node():
                 logging.debug("Test run started from the shared root")
-                status = self.run_scan_node(graph)
+                status = await self.run_scan_node(graph)
                 if not status:
                     logging.error("Could not perform state scanning of %s", test_node)
             elif test_node.is_create_node():
-                status = self.run_create_node(graph, test_node.params.get("vms", ""))
+                status = await self.run_create_node(graph, test_node.params.get("vms", ""))
                 if not status:
                     logging.error("Could not perform the root state creation of %s", test_node)
             elif test_node.is_install_node():
-                status = self.run_install_node(graph, test_node.params.get("vms", ""), params)
+                status = await self.run_install_node(graph, test_node.params.get("vms", ""), params)
                 if not status:
                     logging.error("Could not perform the installation from %s", test_node)
 
@@ -473,14 +468,14 @@ class CartesianRunner(RunnerInterface):
                 original_shortname = test_node.params["shortname"]
                 extra_variant = utils_misc.generate_random_string(6)
                 test_node.params["shortname"] += "." + extra_variant
-                status = self.run_test_node(test_node)
+                status = await self.run_test_node(test_node)
                 test_node.params["shortname"] = original_shortname
                 if not status:
                     logging.error("Could not run the ephemeral test %s", test_node)
 
             else:
                 # finally, good old running of an actual test
-                status = self.run_test_node(test_node, can_retry=True)
+                status = await self.run_test_node(test_node, can_retry=True)
                 if not status:
                     logging.error("Got nonzero status from the test %s", test_node)
 
@@ -495,7 +490,7 @@ class CartesianRunner(RunnerInterface):
         else:
             logging.debug("Skipping test %s", test_node.params["shortname"])
 
-    def _reverse_test_node(self, graph, test_node, params):
+    async def _reverse_test_node(self, graph, test_node, params):
         """
         Clean up any states that could be created by this node (will be skipped
         by default but the states can be removed with "unset_mode=f.").
@@ -547,7 +542,7 @@ class CartesianRunner(RunnerInterface):
                                                         ovrwrt_file=param.tests_ovrwrt_file(),
                                                         ovrwrt_str=setup_str,
                                                         ovrwrt_dict=setup_dict)
-                        self.run_test_node(TestNode("c" + test_node.name, forward_config, [test_object]))
+                        await self.run_test_node(TestNode("c" + test_node.name, forward_config, [test_object]))
 
         else:
             logging.debug("The test %s doesn't leave any states to be cleaned up", test_node.params["shortname"])
