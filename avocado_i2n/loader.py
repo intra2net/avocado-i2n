@@ -508,7 +508,7 @@ class CartesianLoader(VirtTestLoader):
             setup_dict = {} if param_dict is None else param_dict.copy()
             setup_dict.update({"get": setup_restr,
                                "get_state": object_params.get("get_state"),
-                               "set_state": object_params.get("get_state"),
+                               "set_state": "on_" + object_params.get("get_state"),
                                "get_type": reverse, "set_type": switch,
                                "main_vm": test_object.name, "require_existence": "yes"})
             setup_str = param.re_str("all..internal..manage.start")
