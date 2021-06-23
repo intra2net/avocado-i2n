@@ -624,29 +624,10 @@ def set(config, tag=""):
     methods but we use different approach for illustration.
     """
     operation = "set"
-    op_type = "set_type"
-    op_state = "set_state"
-
-    l, r = config["graph"].l, config["graph"].r
-    setup_dict = config["param_dict"].copy()
-    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
-        vm_op_type = op_type + "_" + vm.name
-        state_type = vm_op_type if vm_op_type in setup_dict else op_type
-        if state_type not in setup_dict:
-            vm_op_state = op_state + "_" + vm.name
-            state_name = setup_dict.get(vm_op_state, setup_dict.get(op_state))
-            if state_name == "root":
-                node = l.parse_create_node(vm, config["param_dict"], prefix=tag)
-                setup_dict[vm_op_type] = node.params["set_type"]
-            elif state_name == "install":
-                node = l.parse_install_node(vm, config["param_dict"], prefix=tag)
-                setup_dict[vm_op_type] = node.params["set_type"]
-            else:
-                pass  # will use default set type
-    setup_dict.update({"vm_action": operation, "skip_image_processing": "yes"})
-
     _parse_all_objects_then_iterate_for_nodes(config, tag,
-                                              setup_dict, "state " + operation)
+                                              {"vm_action": operation,
+                                               "skip_image_processing": "yes"},
+                                              "state " + operation)
 
 
 @with_cartesian_graph
@@ -663,8 +644,6 @@ def unset(config, tag=""):
     """
     operation = "unset"
     op_mode = "unset_mode"
-    op_type = "unset_type"
-    op_state = "unset_state"
 
     l, r = config["graph"].l, config["graph"].r
     setup_dict = config["param_dict"].copy()
@@ -676,20 +655,6 @@ def unset(config, tag=""):
         state_mode = vm_op_mode if vm_op_mode in setup_dict else op_mode
         if state_mode not in setup_dict:
             setup_dict[vm_op_mode] = "fi"
-
-        vm_op_type = op_type + "_" + vm.name
-        state_type = vm_op_type if vm_op_type in setup_dict else op_type
-        if state_type not in setup_dict:
-            vm_op_state = op_state + "_" + vm.name
-            state_name = setup_dict.get(vm_op_state, setup_dict.get(op_state))
-            if state_name == "root":
-                node = l.parse_create_node(vm, config["param_dict"], prefix=tag)
-                setup_dict[vm_op_type] = node.params["set_type"]
-            elif state_name == "install":
-                node = l.parse_install_node(vm, config["param_dict"], prefix=tag)
-                setup_dict[vm_op_type] = node.params["set_type"]
-            else:
-                pass  # will use default unset type
 
     setup_dict.update({"vm_action": operation, "skip_image_processing": "yes"})
 
@@ -706,8 +671,8 @@ def create(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     _reuse_tool_with_param_dict(config, tag,
-                                {"set_state": "root",
-                                 "set_mode": "af"},
+                                {"set_state_images": "root",
+                                 "set_mode_images": "af"},
                                 set)
 
 
@@ -720,8 +685,8 @@ def clean(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     _reuse_tool_with_param_dict(config, tag,
-                                {"unset_state": "root",
-                                 "unset_mode": "fa"},
+                                {"unset_state_images": "root",
+                                 "unset_mode_images": "fa"},
                                 unset)
 
 

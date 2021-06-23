@@ -48,11 +48,10 @@ env_process.preprocess_vm_on_hook = on_state(ss.get_states)
 env_process.postprocess_vm_on_hook = on_state(ss.set_states)
 env_process.postprocess_vm_off_hook = off_state(ss.set_states)
 logging.info(f"Adding default state backends")
-ss.OFF_BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
-                   "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
-                   "pool": pool.QCOW2PoolBackend}
-ss.ON_BACKENDS = {"qcow2vt": qcow2.QCOW2VTBackend,
-                  "ramfile": ramfile.RamfileBackend}
+ss.BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
+               "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
+               "pool": pool.QCOW2PoolBackend, "qcow2vt": qcow2.QCOW2VTBackend,
+               "ramfile": ramfile.RamfileBackend}
 
 
 logging.info("%s control file finished.", NAME)

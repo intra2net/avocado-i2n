@@ -41,9 +41,7 @@ from .setup import StateBackend
 
 
 class LVMBackend(StateBackend):
-    """Backend manipulating off states as logical volume snapshots."""
-
-    _require_running_object = False
+    """Backend manipulating states as logical volume snapshots."""
 
     @classmethod
     def _get_image_mount_loc(cls, params):
@@ -82,7 +80,7 @@ class LVMBackend(StateBackend):
         """
         vm_name = params["vms"]
         params["lv_snapshot_name"] = params["check_state"]
-        logging.debug("Checking %s for off state '%s'", vm_name, params["check_state"])
+        logging.debug("Checking %s for state '%s'", vm_name, params["check_state"])
         if lv_utils.lv_check(params["vg_name"], params["lv_snapshot_name"]):
             logging.info("Off snapshot '%s' of %s exists", params["check_state"], vm_name)
             return True
@@ -148,7 +146,7 @@ class LVMBackend(StateBackend):
         vm_name = params["vms"]
         lv_pointer = params["lv_pointer_name"]
         if params["unset_state"] == lv_pointer:
-            raise ValueError("Cannot unset built-in off state '%s'" % lv_pointer)
+            raise ValueError("Cannot unset built-in state '%s'" % lv_pointer)
         params["lv_snapshot_name"] = params["unset_state"]
         logging.info("Removing snapshot %s of %s", params["lv_snapshot_name"], vm_name)
         lv_utils.lv_remove(params["vg_name"], params["lv_snapshot_name"])
@@ -162,7 +160,7 @@ class LVMBackend(StateBackend):
         """
         vm_name = params["vms"]
         image_name = params["image_name"]
-        logging.debug("Checking whether %s exists (root off state requested)", vm_name)
+        logging.debug("Checking whether %s exists (root state requested)", vm_name)
         if lv_utils.lv_check(params["vg_name"], params["lv_name"]):
             logging.info("The required virtual machine %s's %s (%s) exists",
                          vm_name, image_name, params["lv_name"])
@@ -180,7 +178,7 @@ class LVMBackend(StateBackend):
         All arguments match the base class.
 
         Create a disk, virtual group, thin pool and logical volume
-        for each object (all off).
+        for each object.
         """
         vm_name = params["vms"]
         mount_loc = cls._get_image_mount_loc(params)
@@ -220,7 +218,7 @@ class LVMBackend(StateBackend):
         :raises: :py:class:`exceptions.TestWarn` if permanent vm was detected
 
         Remove the disk, virtual group, thin pool and logical volume
-        of each object (all off).
+        of each object.
         """
         vm_name = params["vms"]
         mount_loc = cls._get_image_mount_loc(params)

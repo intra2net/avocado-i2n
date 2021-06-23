@@ -45,9 +45,7 @@ SKIP_LOCKS = False
 
 
 class QCOW2PoolBackend(QCOW2Backend):
-    """Backend manipulating off states as from a shared pool of QCOW2 images."""
-
-    _require_running_object = False
+    """Backend manipulating image states as from a shared pool of QCOW2 images."""
 
     @classmethod
     def check_root(cls, params, object=None):

@@ -135,12 +135,11 @@ def params_from_cmd(config):
     config["run.store_logging_stream"] = [":10", ":20", ":30", ":40"]
 
     # set default off and on state backends
-    from .states import lvm, qcow2, lxc, btrfs, ramfile, pool
-    ss.OFF_BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
-                       "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
-                       "pool": pool.QCOW2PoolBackend}
-    ss.ON_BACKENDS = {"qcow2vt": qcow2.QCOW2VTBackend,
-                      "ramfile": ramfile.RamfileBackend}
+    from .states import lvm, qcow2, lxc, btrfs, ramfile, pool, vmnet
+    ss.BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
+                   "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
+                   "pool": pool.QCOW2PoolBackend, "qcow2vt": qcow2.QCOW2VTBackend,
+                   "ramfile": ramfile.RamfileBackend, "vmnet": vmnet.VMNetBackend}
 
     # attach environment processing hooks
     env_process_hooks()
@@ -224,13 +223,13 @@ def env_process_hooks():
         return wrapper
     def on_state(fn):
         def wrapper(test, params, env):
-            params["skip_types"] = "off"
+            params["skip_types"] = "nets/vms/images"
             fn(params, env)
             del params["skip_types"]
         return wrapper
     def off_state(fn):
         def wrapper(test, params, env):
-            params["skip_types"] = "on"
+            params["skip_types"] = "nets/vms"
             fn(params, env)
             del params["skip_types"]
         return wrapper
