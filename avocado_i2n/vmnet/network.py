@@ -1244,7 +1244,7 @@ class VMNetwork(object):
         status, output = self.ping(src_vm, dst_vm, dst_nic=dst_nic, address=address)
 
         if status != 0:
-            raise exceptions.TestError("Ping of %s (%s) from %s unsuccessful" % (dst_vm.name, address, src_vm.name))
+            raise exceptions.TestError("Ping of %s from %s unsuccessful" % (dst_vm.name, src_vm.name))
         else:
             logging.debug(output.split("\n")[-3])
 
