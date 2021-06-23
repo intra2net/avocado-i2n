@@ -228,7 +228,7 @@ class TestGraph(object):
                 object_params["vms"] = object_name
                 object_params["check_state"] = object_state
                 object_params["check_type"] = object_params.get("set_type", "on")
-                object_params["check_mode"] = object_params.get("check_mode", "rr")
+                object_params["check_mode"] = object_params.get("check_mode", "rf")
 
                 all_states_available &= ss.check_states(object_params, env)
             else:

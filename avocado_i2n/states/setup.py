@@ -128,7 +128,10 @@ class StateBackend():
             image_name = os.path.join(params["images_base_dir"], image_name)
         image_format = params.get("image_format", "qcow2")
         logging.debug("Checking for %s image %s", image_format, image_name)
-        image_format = "" if image_format == "raw" else "." + image_format
+        image_format = "" if image_format in ["raw", ""] else "." + image_format
+        if object is not None and object.is_alive():
+            logging.info("The required virtual machine %s is alive and it shouldn't be", vm_name)
+            return False
         if os.path.exists(image_name + image_format):
             logging.info("The required virtual machine %s's %s exists", vm_name, image_name)
             return True
@@ -159,13 +162,18 @@ class StateBackend():
         :type object: VM object or None
         """
         vm_name = params["vms"]
+        if object is not None and object.is_alive():
+            object.destroy(gracefully=params.get_boolean("soft_boot", True))
         image_name = params["image_name"]
         if not os.path.isabs(image_name):
             image_name = os.path.join(params["images_base_dir"], image_name)
-        os.makedirs(os.path.dirname(image_name), exist_ok=True)
-        logging.info("Creating image %s for %s", image_name, vm_name)
-        params.update({"create_image": "yes", "force_create_image": "yes"})
-        env_process.preprocess_image(None, params, image_name)
+        image_format = params.get("image_format")
+        image_format = "" if image_format in ["raw", ""] else "." + image_format
+        if not os.path.exists(image_name + image_format):
+            os.makedirs(os.path.dirname(image_name), exist_ok=True)
+            logging.info("Creating image %s for %s", image_name, vm_name)
+            params.update({"create_image": "yes", "force_create_image": "yes"})
+            env_process.preprocess_image(None, params, image_name)
 
     @classmethod
     def unset_root(cls, params, object=None):
@@ -178,6 +186,8 @@ class StateBackend():
         :type object: VM object or None
         """
         vm_name = params["vms"]
+        if object is not None and object.is_alive():
+            object.destroy(gracefully=params.get_boolean("soft_boot", True))
         image_name = params["image_name"]
         if not os.path.isabs(image_name):
             image_name = os.path.join(params["images_base_dir"], image_name)
@@ -201,6 +211,17 @@ class StateOnBackend(StateBackend):
         All arguments match the base class.
         """
         vm_name = params["vms"]
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            image_name = image_params["image_name"]
+            if not os.path.isabs(image_name):
+                image_name = os.path.join(image_params["images_base_dir"], image_name)
+            image_format = image_params.get("image_format", "qcow2")
+            image_format = "" if image_format in ["raw", ""] else "." + image_format
+            if not os.path.exists(image_name + image_format):
+                logging.info("The required virtual machine %s has a missing image %s",
+                             vm_name, image_name + image_format)
+                return False
         logging.debug("Checking whether %s is on (boot state requested)", vm_name)
         vm = object
         if vm is not None and vm.is_alive():
@@ -221,6 +242,19 @@ class StateOnBackend(StateBackend):
                  for flawless vm destruction and creation to improve these
         """
         vm_name = params["vms"]
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            image_name = image_params["image_name"]
+            if not os.path.isabs(image_name):
+                image_name = os.path.join(image_params["images_base_dir"], image_name)
+            image_format = image_params.get("image_format")
+            image_format = "" if image_format in ["raw", ""] else "." + image_format
+            if not os.path.exists(image_name + image_format):
+                logging.info("Creating image %s in order to boot %s",
+                             image_name + image_format, vm_name)
+                os.makedirs(os.path.dirname(image_name), exist_ok=True)
+                image_params.update({"create_image": "yes", "force_create_image": "yes"})
+                env_process.preprocess_image(None, image_params, image_name)
         logging.info("Booting %s to provide boot state", vm_name)
         vm = object
         if vm is None:
