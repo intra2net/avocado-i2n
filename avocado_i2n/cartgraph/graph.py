@@ -209,7 +209,7 @@ class TestGraph(object):
             all_states_available = True
             for test_object in test_node.objects:
                 object_name = test_object.name
-                object_params = test_node.params.object_params(object_name)
+                object_params = test_object.object_typed_params(test_node.params)
                 object_state = object_params.get("set_state")
 
                 # the test leaves an object undefined so it cannot be reused for this object
@@ -225,10 +225,9 @@ class TestGraph(object):
                     break
 
                 # ultimate consideration of whether the state is actually present
-                object_params["vms"] = object_name
-                object_params["check_state"] = object_state
-                object_params["check_type"] = object_params.get("set_type", "on")
-                object_params["check_mode"] = object_params.get("check_mode", "rf")
+                object_params[test_object.key] = object_name
+                object_params[f"check_state_{test_object.key}"] = object_state
+                object_params[f"check_mode_{test_object.key}"] = object_params.get("check_mode", "rf")
 
                 all_states_available &= ss.check_states(object_params, env)
             else:

@@ -35,7 +35,7 @@ from avocado.core.plugin_interfaces import Resolver
 from avocado.core.resolver import ReferenceResolution, ReferenceResolutionResult
 
 from . import params_parser as param
-from .cartgraph import TestGraph, TestNode, TestObject
+from .cartgraph import TestGraph, TestNode, NetObject, VMObject, ImageObject
 
 
 class CartesianLoader(Resolver):
@@ -89,7 +89,7 @@ class CartesianLoader(Resolver):
         _, object_strs = full_vm_params_and_strs(param_dict, available_object_strs,
                                                  use_vms_default=use_vms_default)
 
-        test_objects = []
+        test_objects = [NetObject("net1", param.Reparsable())]
         for vm_name in selected_vms:
             objstr = {vm_name: object_strs[vm_name]}
             # all possible hardware-software combinations for a given vm
@@ -103,13 +103,21 @@ class CartesianLoader(Resolver):
                                     base_dict={"main_vm": vm_name},
                                     ovrwrt_file=param.vms_ovrwrt_file())
 
-            test_object = TestObject(vm_name, config)
+            test_object = VMObject(vm_name, config)
             test_object.regenerate_params()
             if verbose:
                 print("vm    %s:  %s" % (test_object.name, test_object.params["shortname"]))
             # the original restriction is an optional but useful attribute
             test_object.object_str = object_strs[vm_name]
             test_objects.append(test_object)
+            test_objects[0].components.append(test_object)
+            test_object.composites.append(test_objects[0])
+
+            # an extra run for nested image test objects
+            for image_name in test_object.params.objects("images"):
+                test_objects.append(ImageObject(f"{vm_name}/{image_name}", config))
+                test_object.components.append(test_objects[-1])
+                test_objects[-1].composites.append(test_object)
 
         return test_objects
 
@@ -239,8 +247,8 @@ class CartesianLoader(Resolver):
         via the object strings (if set) on a test by test basis.
         """
         test_nodes, test_objects = [], []
-        selected_objects = [] if object_strs is None else object_strs.keys()
-        compatible_objects = {obj: False for obj in selected_objects}
+        selected_objects = set() if object_strs is None else set(object_strs.keys())
+        used_objects = set()
 
         initial_object_strs = {vm_name: "" for vm_name in param.all_vms()}
         initial_object_strs.update(object_strs)
@@ -249,6 +257,7 @@ class CartesianLoader(Resolver):
         for test_object in graph.objects:
             if test_object.name in selected_objects:
                 test_objects.append(test_object)
+                test_objects.extend(test_object.components)
 
         for test_node in self.parse_nodes(graph, param_dict, nodes_str,
                                           prefix=prefix, verbose=verbose):
@@ -258,9 +267,7 @@ class CartesianLoader(Resolver):
                     break
             else:
                 test_nodes.append(test_node)
-                for vm_name in test_vms:
-                    if vm_name in selected_objects:
-                        compatible_objects[vm_name] = True
+                used_objects.update(test_vms)
 
         if len(test_nodes) == 0:
             object_restrictions = param.ParsedDict(graph.test_objects).parsable_form()
@@ -276,11 +283,13 @@ class CartesianLoader(Resolver):
             print("%s selected test variant(s)" % len(test_nodes))
             graph.objects = test_objects.copy()
             for test_object in graph.objects:
-                if compatible_objects[test_object.name]:
+                if test_object.name in used_objects:
                     print("vm    %s:  %s" % (test_object.name, test_object.params["shortname"]))
-                else:
+                elif test_object.key == "vms":
                     test_objects.remove(test_object)
-            print("%s selected vm variant(s)" % len(test_objects))
+                    for component in test_object.components:
+                        test_objects.remove(component)
+            print("%s selected vm variant(s)" % len([t for t in test_objects if t.key == "vms"]))
 
         return test_nodes, test_objects
 
@@ -319,7 +328,7 @@ class CartesianLoader(Resolver):
             test_node = unresolved.pop()
             for test_object in test_node.objects:
                 logging.debug("Parsing dependencies of %s for object %s", test_node.params["shortname"], test_object.name)
-                object_params = test_node.params.object_params(test_object.name)
+                object_params = test_object.object_typed_params(test_node.params)
                 object_dependency = object_params.get("get", object_params.get("get_state", ""))
                 # handle nodes without dependency for the given object
                 if not object_dependency:
@@ -488,7 +497,7 @@ class CartesianLoader(Resolver):
         Generate (if necessary) all parent test nodes for a given test
         node and test object (including the object creation root test).
         """
-        object_params = test_node.params.object_params(test_object.name)
+        object_params = test_object.object_typed_params(test_node.params)
         # use get directive -> if not use get_state -> if not use root
         setup_restr = object_params.get("get", object_params.get("get_state", "0root"))
         logging.debug("Parsing Cartesian setup of %s through restriction %s",
@@ -567,12 +576,12 @@ class CartesianLoader(Resolver):
                     child = clone
                     clones.append(child)
 
-                parent_object_params = parent.params.object_params(copy_object.name)
+                parent_object_params = copy_object.object_typed_params(parent.params)
                 parent_state = parent_object_params.get("set_state", "")
                 child.params["shortname"] += "." + parent_state
                 child.params["name"] += "." + parent_state
                 child.params["get_state_" + copy_object.name] = parent_state
-                child_object_params = child.params.object_params(copy_object.name)
+                child_object_params = copy_object.object_typed_params(child.params)
                 child_state = child_object_params.get("set_state", "")
                 if child_state:
                     child.params["set_state_" + copy_object.name] += "." + parent_state

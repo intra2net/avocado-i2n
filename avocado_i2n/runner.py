@@ -481,8 +481,7 @@ class CartesianRunner(RunnerInterface):
                     logging.error("Got nonzero status from the test %s", test_node)
 
             for test_object in test_node.objects:
-                object_name = test_object.name
-                object_params = test_node.params.object_params(object_name)
+                object_params = test_object.object_typed_params(test_node.params)
                 # if a state was set it is final and the retrieved state was overwritten
                 object_state = object_params.get("set_state", object_params.get("get_state"))
                 if object_state is not None and object_state != "":

@@ -83,8 +83,13 @@ class TestNode(object):
 
         self.spawner = None
 
-        # list of objects involved in the test
-        self.objects = objects
+        # list of objects (in composition) involved in the test
+        self.objects = []
+        # TODO: the vm net objects are not currently dependency-traceable,
+        # only the vms and images are and are implicitly assumed here
+        for test_object in objects:
+            self.objects += [test_object]
+            self.objects += test_object.components
 
         # lists of parent and children test nodes
         self.setup_nodes = []
@@ -146,11 +151,11 @@ class TestNode(object):
 
     def is_create_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.name.endswith("0r") and len(self.objects) == 1
+        return self.name.endswith("0r")
 
     def is_install_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.name.endswith("0p") and len(self.objects) == 1
+        return self.name.endswith("0p")
 
     def is_shared_root(self):
         """Check if the test node is the root of all test nodes for all test objects."""
@@ -292,11 +297,13 @@ class TestNode(object):
 
     def validate(self):
         """Validate the test node for sane attribute-parameter correspondence."""
-        param_objects = set(self.params.objects("vms"))
+        param_vms = set(self.params.objects("vms"))
         attr_objects = set(o.name for o in self.objects)
-        if len(param_objects - attr_objects) > 0:
-            raise ValueError("Additional parametric objects %s not in %s" % (param_objects, attr_objects))
-        if len(attr_objects - param_objects) > 0:
-            raise ValueError("Missing parametric objects %s from %s" % (param_objects, attr_objects))
+        attr_vms = set(o.name for o in self.objects if o.key == "vms")
+        if len(param_vms - attr_vms) > 0:
+            raise ValueError("Additional parametric objects %s not in %s" % (param_vms, attr_vms))
+        if len(attr_vms - param_vms) > 0:
+            raise ValueError("Missing parametric objects %s from %s" % (param_vms, attr_vms))
+
         if self in self.setup_nodes or self in self.cleanup_nodes:
             raise ValueError("Detected reflexive dependency of %s to itself" % self)
