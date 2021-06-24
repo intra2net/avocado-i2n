@@ -40,6 +40,7 @@ from avocado.core.messages import MessageHandler
 from avocado.core.plugin_interfaces import Runner as RunnerInterface
 from avocado.core.status.repo import StatusRepo
 from avocado.core.status.server import StatusServer
+from avocado.core.teststatus import STATUSES_MAPPING
 from avocado.core.task.runtime import RuntimeTask
 from avocado.core.task.statemachine import TaskStateMachine, Worker
 
@@ -52,6 +53,17 @@ class CartesianRunner(RunnerInterface):
 
     name = 'traverser'
     description = 'Runs tests through a Cartesian graph traversal'
+
+    @property
+    def all_tests_ok(self):
+        """
+        Evaluate if all tests run under this runner have an ok status.
+
+        :returns: whether all tests ended with acceptable status
+        :rtype: bool
+        """
+        mapped_status = {STATUSES_MAPPING[t["status"]] for t in self.job.result.tests}
+        return all(mapped_status)
 
     def __init__(self):
         """Construct minimal attributes for the Cartesian runner."""
@@ -336,6 +348,9 @@ class CartesianRunner(RunnerInterface):
         try:
             graph.visualize(self.job.logdir)
             self.run_traversal(graph, params)
+            if not self.all_tests_ok:
+                # the summary is a set so only a single failed test is enough
+                summary.add('FAIL')
         except KeyboardInterrupt:
             summary.add('INTERRUPTED')
 
