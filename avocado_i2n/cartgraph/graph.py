@@ -201,23 +201,21 @@ class TestGraph(object):
 
         :param env: environment related to the test
         :type env: Env object
-        :raises: :py:class:`AssertionError` if a permanent (manual) vms doesn't exist
         """
         for test_node in self.nodes:
             test_node.should_run = True
+            node_params = test_node.params.copy()
 
-            all_states_available = True
+            is_leaf = True
             for test_object in test_node.objects:
-                object_name = test_object.name
                 object_params = test_object.object_typed_params(test_node.params)
                 object_state = object_params.get("set_state")
 
                 # the test leaves an object undefined so it cannot be reused for this object
-                # TODO: If at least one object state left after some of the test nodes
-                # is available, the test node can be reused *for that object*.
                 if object_state is None or object_state == "":
-                    test_node.should_run = True
-                    break
+                    continue
+                else:
+                    is_leaf = False
 
                 # the object state has to be defined to reach this stage
                 if object_state == "root" and test_object.is_permanent():
@@ -225,13 +223,13 @@ class TestGraph(object):
                     break
 
                 # ultimate consideration of whether the state is actually present
-                object_params[test_object.key] = object_name
-                object_params[f"check_state_{test_object.key}"] = object_state
-                object_params[f"check_mode_{test_object.key}"] = object_params.get("check_mode", "rf")
+                node_params[f"check_state_{test_object.key}_{test_object.name}"] = object_state
+                node_params[f"check_mode_{test_object.key}_{test_object.name}"] = object_params.get("check_mode", "rf")
+                node_params[f"soft_boot_{test_object.key}_{test_object.name}"] = "no"
 
-                all_states_available &= ss.check_states(object_params, env)
-            else:
-                test_node.should_run = not all_states_available
+            if not is_leaf:
+                test_node.should_run = not ss.check_states(node_params, env)
+            logging.info("The test node %s %s run", test_node, "should" if test_node.should_run else "should not")
 
     def flag_children(self, node_name=None, object_name=None, flag_type="run", flag=True,
                       skip_roots=False):

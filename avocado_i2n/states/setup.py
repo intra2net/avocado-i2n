@@ -389,10 +389,7 @@ def check_states(run_params, env=None):
     :returns: whether the given state exists
     :rtype: bool
 
-    .. note:: The presence of a state for all involved parametric objects will
-        be evaluated through bitwise OR, i.e. the existence of a single state
-        for any parametric object in the hierarchy will result in a positive
-        check. We can also check for multiple states of multiple objects at the
+    .. note:: We can check for multiple states of multiple objects at the
         same time through our choice of configuration.
     """
     for state_params in _parametric_object_iteration(run_params):
@@ -443,7 +440,7 @@ def check_states(run_params, env=None):
                     else:
                         state_backend.set_root(state_params, vm)
                 elif action_if_root_doesnt_exist == "r":
-                    continue
+                    return False
                 else:
                     raise exceptions.TestError(f"Invalid policy {action_if_root_doesnt_exist}: The root "
                                                "nonexistence action can be either of 'reuse' or 'force'.")
@@ -460,10 +457,10 @@ def check_states(run_params, env=None):
         else:
             state_exists = state_backend.check_root(state_params, vm)
 
-        if state_exists:
-            return True
+        if not state_exists:
+            return False
 
-    return False
+    return True
 
 
 def get_states(run_params, env=None):

@@ -43,7 +43,7 @@ class TestObject(object):
     params = property(fget=params)
 
     def id(self):
-        return self.name
+        return self._id
     id = property(fget=id)
 
     def __init__(self, name, config):
@@ -54,7 +54,8 @@ class TestObject(object):
         :param config: variant configuration for the test object
         :type config: :py:class:`param.Reparsable`
         """
-        self.name = name
+        self.name = name.split("/")[-1]
+        self._id = name
         self.config = config
         self._params_cache = None
 
@@ -66,7 +67,7 @@ class TestObject(object):
         self.components = []
 
     def __repr__(self):
-        obj_tuple = (self.id, self.params.get("shortname", "<unknown>"))
+        obj_tuple = (self.id, self.params.get("shortname", self.name))
         return "[object] id='%s', shortname='%s'" % obj_tuple
 
     def is_permanent(self):
