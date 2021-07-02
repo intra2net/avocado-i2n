@@ -59,7 +59,7 @@ class TestObject(object):
         self.config = config
         self._params_cache = None
 
-        self.object_str = None
+        self.object_str = ""
         # TODO: integrate these features better
         self.current_state = "unknown"
 

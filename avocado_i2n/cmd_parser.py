@@ -50,7 +50,7 @@ def params_from_cmd(config):
     sys.path.insert(1, os.path.join(suite_path, "utils"))
 
     # validate typed vm names and possible vm specific restrictions
-    available_vms = param.all_vms()
+    available_vms = param.all_objects("vms")
     available_restrictions = param.all_restrictions()
 
     # defaults usage vs command line overriding
@@ -166,7 +166,7 @@ def full_vm_params_and_strs(param_dict, vm_strs, use_vms_default):
                                 ovrwrt_file=param.vms_ovrwrt_file(),
                                 ovrwrt_dict=param_dict)
     vms_params = vms_config.get_params()
-    for vm_name in param.all_vms():
+    for vm_name in param.all_objects("vms"):
         if use_vms_default[vm_name]:
             default = vms_params.get("default_only_%s" % vm_name)
             if not default:

@@ -342,7 +342,8 @@ class TestGraph(object):
         The rest of the arguments are analogical to the plural version.
         """
         objects_selection = self.get_objects_by(param_key, param_val, subset)
-        assert len(objects_selection) == 1
+        assert len(objects_selection) == 1, "Test object with %s=%s not existing"\
+               " or unique in: %s" % (param_key, param_val, objects_selection)
         return objects_selection[0]
 
     def get_nodes_by(self, param_key="name", param_val="", subset=None):
