@@ -149,13 +149,9 @@ class TestNode(object):
         """Check if the test node is the root of all test nodes for all test objects."""
         return self.name.endswith("0s")
 
-    def is_create_node(self):
+    def is_terminal_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.name.endswith("0r")
-
-    def is_install_node(self):
-        """Check if the test node is the root of all test nodes for some test object."""
-        return self.name.endswith("0p")
+        return self.name.endswith("0t")
 
     def is_shared_root(self):
         """Check if the test node is the root of all test nodes for all test objects."""
@@ -163,7 +159,7 @@ class TestNode(object):
 
     def is_object_root(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.is_create_node()
+        return self.is_terminal_node()
 
     def is_objectless(self):
         """Check if the test node is not defined with any test object."""

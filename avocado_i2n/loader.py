@@ -190,10 +190,7 @@ class CartesianLoader(Resolver):
 
             # 0scan shared root is parsable through the default procedure here
             if "0root" in d["name"]:
-                test_nodes += [self.parse_create_node(obj, param_dict, prefix=prefix) for obj in objects if obj.key == "vms"]
-                continue
-            elif "0preinstall" in d["name"]:
-                test_nodes += [self.parse_install_node(obj, param_dict, prefix=prefix) for obj in objects if obj.key == "vms"]
+                test_nodes += [self.parse_terminal_node(obj, param_dict, prefix=prefix) for obj in objects if obj.key == "vms"]
                 continue
 
             # final variant multiplication to produce final test node configuration
@@ -451,30 +448,7 @@ class CartesianLoader(Resolver):
         logging.debug("Reached shared root %s", scan_node.params["shortname"])
         return scan_node
 
-    def parse_create_node(self, test_object, param_dict=None, prefix=""):
-        """
-        Get the first test node for the given object.
-
-        :param test_object: fully parsed test object to parse the node from
-        :type: test_object: :py:class:`TestObject`
-        :param param_dict: runtime parameters used for extra customization
-        :type param_dict: {str, str} or None
-        :param str prefix: extra name identifier for the test to be run
-        :returns: parsed object root node
-        :rtype: :py:class:`TestNode`
-
-        This assumes that there is only one root test node which is the one
-        with the 'root' start state.
-        """
-        setup_dict = {} if param_dict is None else param_dict.copy()
-        setup_dict.update({"set_state": "root",
-                           "vm_action": "set", "skip_image_processing": "yes"})
-        setup_str = param.re_str("all..internal..0root")
-        create_node = self.parse_node_from_object(test_object, setup_dict, setup_str, prefix=prefix+"0r")
-        logging.debug("Reached %s root %s", test_object.name, create_node.params["shortname"])
-        return create_node
-
-    def parse_install_node(self, test_object, param_dict=None, prefix=""):
+    def parse_terminal_node(self, test_object, param_dict=None, prefix=""):
         """
         Get the original install test node for the given object.
 
@@ -483,15 +457,18 @@ class CartesianLoader(Resolver):
         :param param_dict: runtime parameters used for extra customization
         :type param_dict: {str, str} or None
         :param str prefix: extra name identifier for the test to be run
-        :returns: original parsed object install node
+        :returns: original parsed object install node as object root node
         :rtype: :py:class:`TestNode`
+
+        This assumes that there is only one root test node which is the one
+        with the 'root' start state.
         """
         setup_dict = {} if param_dict is None else param_dict.copy()
-        setup_dict.update({"get": "0root", "set_state": "install"})
-        setup_str = param.re_str("all..internal..0preinstall")
-        install_node = self.parse_node_from_object(test_object, setup_dict, setup_str, prefix=prefix+"0p")
-        logging.debug("Reached %s install configured by %s", test_object.name, install_node.params["shortname"])
-        return install_node
+        setup_dict.update({"set_state_images": "install"})
+        setup_str = param.re_str("all..internal..0root")
+        terminal_node = self.parse_node_from_object(test_object, setup_dict, setup_str, prefix=prefix+"0t")
+        logging.debug("Reached %s root %s", test_object.name, terminal_node.params["shortname"])
+        return terminal_node
 
     """internals"""
     def _determine_objects_for_node_params(self, graph, d):
@@ -538,7 +515,7 @@ class CartesianLoader(Resolver):
         logging.debug("Parsing Cartesian setup of %s through restriction %s",
                       test_node.params["shortname"], setup_restr)
 
-        if setup_restr not in ["0root", "0preinstall"]:
+        if setup_restr != "0root":
             # speedup for handling already parsed unique parent cases
             get_parent = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
                                             # not unique enough for vm1/image1 and vm2/image1

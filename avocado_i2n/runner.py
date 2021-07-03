@@ -359,17 +359,24 @@ class CartesianRunner(RunnerInterface):
         for node in graph.nodes:
             self.job.result.cancelled += 1 if not node.should_run else 0
 
-    async def run_create_node(self, graph, object_name):
+    async def run_terminal_node(self, graph, object_name, params):
         """
         Run the set of tests necessary for creating a given test object.
 
         :param graph: test graph to run create node from
         :type graph: :py:class:`TestGraph`
         :param str object_name: name of the test object to be created
+        :param params: runtime parameters used for extra customization
+        :type params: {str, str}
+        :raises: :py:class:`NotImplementedError` if using incompatible installation variant
+
+        The current implementation with implicit knowledge on the types of test objects
+        internal spawns an original (otherwise unmodified) install test.
         """
         objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
         assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
         test_object = objects[0]
+
         nodes = graph.get_nodes_by("name", "(\.|^)0root(\.|$)",
                                    subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
         assert len(nodes) == 1, "There can only be one root for %s" % object_name
@@ -378,32 +385,14 @@ class CartesianRunner(RunnerInterface):
         if test_object.is_permanent() and not test_node.params.get_boolean("create_permanent_vm"):
             raise AssertionError("Reached a permanent object root for %s due to incorrect setup"
                                  % test_object.name)
-        else:
-            await self.run_test_node(test_node)
 
-    async def run_install_node(self, graph, object_name, params):
-        """
-        Run the set of tests necessary for installing a given test object.
-
-        :param graph: test graph to run install node from
-        :type graph: :py:class:`TestGraph`
-        :param str object_name: name of the test object to be installed
-        :param params: runtime parameters used for extra customization
-        :type params: {str, str}
-        :raises: :py:class:`NotImplementedError` if using incompatible installation variant
-        """
-        objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
-        assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
-        test_object = objects[0]
-        nodes = graph.get_nodes_by("name", "(\.|^)0preinstall(\.|$)",
-                                   subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
-        assert len(nodes) == 1, "There can only be one install node for %s" % object_name
-        test_node = nodes[0]
-
-        logging.info("Configuring installation for %s", test_object.name)
+        logging.info("Configuring creation/installation for %s", test_object.name)
         # parameters and the status from the install configuration determine the install test
         install_params = test_node.params.copy()
-        test_node.params.update({"set_state": "", "skip_image_processing": "yes"})
+        # unset any cleanup and prepare special setup to make this a terminal node for an image
+        test_node.params.update({"set_state_images": "", "skip_image_processing": "yes",
+                                 # this configuration reuses and possibly creates an image
+                                 "get_state_images": "install", "get_mode": "ri", "check_mode": "rf"})
         status = await self.run_test_node(test_node)
 
         if not status:
@@ -425,32 +414,13 @@ class CartesianRunner(RunnerInterface):
             setup_dict.update({"type": install_params.get("configure_install", "stepmaker")})
             setup_str = param.re_str("all..original..install")
 
-        if install_params["set_type"] == "off":
-            setup_dict.update({"set_state": install_params["set_state"],
-                               "set_type": install_params["set_type"]})
+        setup_dict.update({"set_state_images": install_params["set_state_images"]})
         install_config = test_object.config.get_copy()
         install_config.parse_next_batch(base_file="sets.cfg",
                                         ovrwrt_file=param.tests_ovrwrt_file(),
                                         ovrwrt_str=setup_str,
                                         ovrwrt_dict=setup_dict)
-        status = await self.run_test_node(TestNode("0q", install_config, test_node.objects))
-
-        if not status:
-            logging.error("Could not install %s", test_object.name)
-            return status
-
-        if install_params["set_type"] == "on":
-            setup_dict = {} if params is None else params.copy()
-            setup_dict.update({"set_state": install_params["set_state"],
-                               "set_type": install_params["set_type"],
-                               "skip_image_processing": "yes"})
-            setup_str = param.re_str("all..internal..manage.start")
-            postinstall_config = test_object.config.get_copy()
-            postinstall_config.parse_next_batch(base_file="sets.cfg",
-                                                ovrwrt_file=param.tests_ovrwrt_file(),
-                                                ovrwrt_str=setup_str,
-                                                ovrwrt_dict=setup_dict)
-            return await self.run_test_node(TestNode("0qq", postinstall_config, test_node.objects))
+        return await self.run_test_node(TestNode("0t", install_config, test_node.objects))
 
     """internals"""
     async def _traverse_test_node(self, graph, test_node, params):
@@ -465,12 +435,8 @@ class CartesianRunner(RunnerInterface):
                 status = await self.run_scan_node(graph)
                 if not status:
                     logging.error("Could not perform state scanning of %s", test_node)
-            elif test_node.is_create_node():
-                status = await self.run_create_node(graph, test_node.params.get("vms", ""))
-                if not status:
-                    logging.error("Could not perform the root state creation of %s", test_node)
-            elif test_node.is_install_node():
-                status = await self.run_install_node(graph, test_node.params.get("vms", ""), params)
+            elif test_node.is_terminal_node():
+                status = await self.run_terminal_node(graph, test_node.params.get("vms", ""), params)
                 if not status:
                     logging.error("Could not perform the installation from %s", test_node)
 
