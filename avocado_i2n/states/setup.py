@@ -303,6 +303,7 @@ def _parametric_object_iteration(params, composites=None):
     for params_obj_name in params.objects(params_obj_type):
         composites[-1] = (params_obj_name, params_obj_type)
         obj_params = params.object_params(params_obj_name)
+        obj_params[params_obj_type] = params_obj_name
         obj_params["object_name"] = "/".join([c[0] for c in composites])
         obj_params["object_type"] = "/".join([c[1] for c in composites])
         if params_obj_type != object_composition[-1]:
@@ -402,9 +403,6 @@ def check_states(run_params, env=None):
                             f"from readonly image {params_obj_name} - skipping")
             continue
 
-        # TODO: we don't support other parametric object instances
-        vm = env.get_vm(state_params["main_vm"]) if env is not None else None
-
         # if the snapshot is not defined skip (leaf tests that are no setup)
         if not state_params.get("check_state"):
             continue
@@ -416,12 +414,15 @@ def check_states(run_params, env=None):
         state_params["check_mode"] = state_params.get("check_mode", "rf")
 
         state_backend = BACKENDS[state_params["states"]]
+        # TODO: we don't support other parametric object instances
+        vm = env.get_vm(state_params["vms"]) if env is not None else None
+        state_object = env if params_obj_type == "nets" else vm
 
         action_if_root_exists = state_params["check_mode"][0]
         action_if_root_doesnt_exist = state_params["check_mode"][1]
 
         # always check the corresponding root state as a prerequisite
-        root_exists = state_backend.check_root(state_params, vm)
+        root_exists = state_backend.check_root(state_params, state_object)
         if not root_exists:
             if action_if_root_doesnt_exist == "f":
                 # TODO: implement set root for all parametric object types
@@ -435,9 +436,9 @@ def check_states(run_params, env=None):
                     else:
                         # vm states require manual update of the vm parameters
                         vm.params = run_params.object_params(vm.name)
-                        state_backend.set_root(state_params, vm)
+                        state_backend.set_root(state_params, state_object)
                 else:
-                    state_backend.set_root(state_params, vm)
+                    state_backend.set_root(state_params, state_object)
                 root_exists = True
             elif action_if_root_doesnt_exist == "r":
                 return False
@@ -449,13 +450,13 @@ def check_states(run_params, env=None):
             if params_obj_type == "nets/vms":
                 vm.destroy(gracefully=state_params.get_dict("check_opts").get("soft_boot", "yes")=="yes")
             else:
-                state_backend.unset_root(state_params, vm)
+                state_backend.unset_root(state_params, state_object)
             root_exists = False
 
         if state in ROOTS:
             state_exists = root_exists
         else:
-            state_exists = state_backend.check(state_params, vm)
+            state_exists = state_backend.check(state_params, state_object)
 
         if not state_exists:
             return False
@@ -486,9 +487,6 @@ def get_states(run_params, env=None):
                             f"from readonly image {params_obj_name} - skipping")
             continue
 
-        # TODO: we don't support other parametric object instances
-        vm = env.get_vm(state_params["main_vm"]) if env is not None else None
-
         # if the state is not defined skip (leaf tests that are no setup)
         if not state_params.get("get_state"):
             continue
@@ -501,6 +499,9 @@ def get_states(run_params, env=None):
                                           params_obj_type, params_obj_name,
                                           state_params)
         state_backend = BACKENDS[state_params["states"]]
+        # TODO: we don't support other parametric object instances
+        vm = env.get_vm(state_params["vms"]) if env is not None else None
+        state_object = env if params_obj_type == "nets" else vm
 
         action_if_exists = state_params["get_mode"][0]
         action_if_doesnt_exist = state_params["get_mode"][1]
@@ -528,9 +529,9 @@ def get_states(run_params, env=None):
                                        "either of 'abort', 'reuse', 'ignore'." % state_params["get_mode"])
 
         if state_params["get_state"] in ROOTS:
-            state_backend.get_root(state_params, vm)
+            state_backend.get_root(state_params, state_object)
         else:
-            state_backend.get(state_params, vm)
+            state_backend.get(state_params, state_object)
 
 
 def set_states(run_params, env=None):
@@ -555,9 +556,6 @@ def set_states(run_params, env=None):
                             f"from readonly image {params_obj_name} - skipping")
             continue
 
-        # TODO: we don't support other parametric object instances
-        vm = env.get_vm(state_params["main_vm"]) if env is not None else None
-
         # if the state is not defined skip (leaf tests that are no setup)
         if not state_params.get("set_state"):
             continue
@@ -570,6 +568,9 @@ def set_states(run_params, env=None):
                                           params_obj_type, params_obj_name,
                                           state_params)
         state_backend = BACKENDS[state_params["states"]]
+        # TODO: we don't support other parametric object instances
+        vm = env.get_vm(state_params["vms"]) if env is not None else None
+        state_object = env if params_obj_type == "nets" else vm
 
         action_if_exists = state_params["set_mode"][0]
         action_if_doesnt_exist = state_params["set_mode"][1]
@@ -584,9 +585,9 @@ def set_states(run_params, env=None):
             logging.info("Overwriting the already existing snapshot")
             state_params["unset_state"] = state_params["set_state"]
             if state_params["set_state"] in ROOTS:
-                state_backend.unset_root(state_params, vm)
+                state_backend.unset_root(state_params, state_object)
             else:
-                state_backend.unset(state_params, vm)
+                state_backend.unset(state_params, state_object)
         elif state_exists:
             raise exceptions.TestError("Invalid policy %s: The end action on present state can be "
                                        "either of 'abort', 'reuse', 'force'." % state_params["set_mode"])
@@ -595,7 +596,7 @@ def set_states(run_params, env=None):
             raise exceptions.TestSkipError("Snapshot '%s' of %s doesn't exist. Aborting "
                                            "due to passive mode." % (state_params["set_state"], params_obj_name))
         elif not state_exists and "f" == action_if_doesnt_exist:
-            if not state_params["set_state"] in ROOTS and not state_backend.check_root(state_params, vm):
+            if not state_params["set_state"] in ROOTS and not state_backend.check_root(state_params, state_object):
                 raise exceptions.TestError("Cannot force set state without a root state, use enforcing check "
                                            "policy to also force root (existing stateful object) creation.")
         elif not state_exists:
@@ -603,9 +604,9 @@ def set_states(run_params, env=None):
                                        "either of 'abort', 'force'." % state_params["set_mode"])
 
         if state_params["set_state"] in ROOTS:
-            state_backend.set_root(state_params, vm)
+            state_backend.set_root(state_params, state_object)
         else:
-            state_backend.set(state_params, vm)
+            state_backend.set(state_params, state_object)
 
 
 def unset_states(run_params, env=None):
@@ -630,9 +631,6 @@ def unset_states(run_params, env=None):
                             f"from readonly image {params_obj_name} - skipping")
             continue
 
-        # TODO: we don't support other parametric object instances
-        vm = env.get_vm(state_params["main_vm"]) if env is not None else None
-
         # if the state is not defined skip (leaf tests that are no setup)
         if not state_params.get("unset_state"):
             continue
@@ -645,6 +643,9 @@ def unset_states(run_params, env=None):
                                           params_obj_type, params_obj_name,
                                           state_params)
         state_backend = BACKENDS[state_params["states"]]
+        # TODO: we don't support other parametric object instances
+        vm = env.get_vm(state_params["vms"]) if env is not None else None
+        state_object = env if params_obj_type == "nets" else vm
 
         action_if_exists = state_params["unset_mode"][0]
         action_if_doesnt_exist = state_params["unset_mode"][1]
@@ -668,9 +669,9 @@ def unset_states(run_params, env=None):
                                        "either of 'reuse', 'force'." % state_params["unset_mode"])
 
         if state_params["unset_state"] in ROOTS:
-            state_backend.unset_root(state_params, vm)
+            state_backend.unset_root(state_params, state_object)
         else:
-            state_backend.unset(state_params, vm)
+            state_backend.unset(state_params, state_object)
 
 
 def push_states(run_params, env=None):

@@ -28,6 +28,7 @@ INTERFACE
 """
 
 from .setup import StateBackend
+from ..vmnet import VMNetwork
 
 
 class VMNetBackend(StateBackend):
@@ -58,7 +59,12 @@ class VMNetBackend(StateBackend):
 
         All arguments match the base class.
         """
-        pass
+        env = object
+        vmn = VMNetwork(None, params, env)
+        vmn.setup_host_bridges()
+        vmn.setup_host_services()
+        env.vmnet = vmn
+        type(env).get_vmnet = lambda self: self.vmnet
 
     @classmethod
     def set(cls, params, object=None):
