@@ -60,6 +60,7 @@ class VMNetBackend(StateBackend):
         All arguments match the base class.
         """
         env = object
+        env.start_ip_sniffing(params)
         vmn = VMNetwork(None, params, env)
         vmn.setup_host_bridges()
         vmn.setup_host_services()
