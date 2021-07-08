@@ -471,50 +471,67 @@ class CartesianRunner(RunnerInterface):
             elif test_node.is_shared_root():
                 logging.debug("Test run ended at the shared root")
 
-            else:
-                for vm_name in test_node.params.objects("vms"):
-                    vm_params = test_node.params.object_params(vm_name)
-                    # avoid running any test for unselected vms
-                    if vm_name not in params.get("vms", param.all_objects("vms")):
+            elif test_node.produces_setup():
+                setup_dict = {} if params is None else params.copy()
+                setup_dict["vm_action"] = "unset"
+                setup_dict["vms"] = test_node.params["vms"]
+                # the cleanup will be performed if at least one selected object has a cleanable state
+                has_selected_object_setup = False
+                for test_object in test_node.objects:
+                    object_params = test_object.object_typed_params(test_node.params)
+                    object_state = object_params.get("set_state")
+                    if not object_state:
                         continue
+
                     # avoid running any test unless the user really requires cleanup and such is needed
-                    if vm_params.get("unset_mode", "ri")[0] == "f" and vm_params.get("set_state"):
+                    if object_params.get("unset_mode", "ri")[0] != "f":
+                        continue
+                    # avoid running any test for unselected vms
+                    if test_object.key == "nets":
+                        logging.warning("Net state cleanup is not supported")
+                        continue
+                    vm_name = test_object.suffix if test_object.key == "vms" else test_object.composites[0].suffix
+                    if vm_name in params.get("vms", param.all_objects("vms")):
+                        has_selected_object_setup = True
+                    else:
+                        continue
 
-                        setup_dict = {} if params is None else params.copy()
-                        # NOTE: we are forcing the unset_mode to be the one defined for the test node because
-                        # the unset manual step behaves differently now (all this extra complexity starts from
-                        # the fact that it has different default value which is noninvasive
-                        setup_dict.update({"unset_state": vm_params["set_state"],
-                                           "unset_type": vm_params.get("set_type", "any"),
-                                           "unset_mode": vm_params.get("unset_mode", "ri")})
-                        setup_dict["vm_action"] = "unset"
-                        # TODO: find more flexible way to pass identical test node parameters for cleanup
+                    # TODO: cannot remove ad-hoc root states, is this even needed?
+                    if test_object.key == "vms":
+                        vm_params = object_params
                         setup_dict["images_" + vm_name] = vm_params["images"]
-                        for image in vm_params.objects("images"):
-                            image_params = vm_params.object_params(image)
-                            setup_dict["image_name_" + image] = image_params["image_name"]
-                            setup_dict["image_format_" + image] = image_params["image_format"]
-                            # if any extra images were created these have to be removed now
-                            # TODO: this only supports QCOW2 state backends and no LVM cleanup
-                            # -> combine with the TODO for unset root unification in the states setup
-                            if (image_params.get_boolean("create_image", False)
-                                    or image_params.get("check_mode", "rr")[0] == "f"):
-                                setup_dict["remove_image_" + image] = "yes"
+                        for image_name in vm_params.objects("images"):
+                            image_params = vm_params.object_params(image_name)
+                            setup_dict[f"image_name_{image_name}_{vm_name}"] = image_params["image_name"]
+                            setup_dict[f"image_format_{image_name}_{vm_name}"] = image_params["image_format"]
+                            if image_params.get_boolean("create_image", False):
+                                setup_dict[f"remove_image_{image_name}_{vm_name}"] = "yes"
                                 setup_dict["skip_image_processing"] = "no"
-                        setup_str = param.re_str("all..internal..manage.unchanged")
 
-                        objects = graph.get_objects_by(param_key="main_vm", param_val="^"+vm_name+"$")
-                        assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (vm_name, objects)
-                        test_object = objects[0]
-                        forward_config = test_object.config.get_copy()
-                        forward_config.parse_next_batch(base_file="sets.cfg",
-                                                        ovrwrt_file=param.tests_ovrwrt_file(),
-                                                        ovrwrt_str=setup_str,
-                                                        ovrwrt_dict=setup_dict)
-                        await self.run_test_node(TestNode("c" + test_node.name, forward_config, [test_object]))
+                    # reverse the state setup for the given test object
+                    unset_suffixes = f"_{test_object.key}_{test_object.suffix}"
+                    unset_suffixes += f"_{vm_name}" if test_object.key == "images" else ""
+                    # NOTE: we are forcing the unset_mode to be the one defined for the test node because
+                    # the unset manual step behaves differently now (all this extra complexity starts from
+                    # the fact that it has different default value which is noninvasive
+                    setup_dict.update({f"unset_state{unset_suffixes}": object_state,
+                                       f"unset_mode{unset_suffixes}": object_params.get("unset_mode", "ri")})
+
+                if has_selected_object_setup:
+                    logging.info("Cleaning up %s", test_node)
+                    setup_str = param.re_str("all..internal..manage.unchanged")
+                    net = test_node.objects[0]
+                    forward_config = net.config.get_copy()
+                    forward_config.parse_next_batch(base_file="sets.cfg",
+                                                    ovrwrt_file=param.tests_ovrwrt_file(),
+                                                    ovrwrt_str=setup_str,
+                                                    ovrwrt_dict=setup_dict)
+                    await self.run_test_node(TestNode(test_node.name + "c", forward_config, net))
+                else:
+                    logging.info("No need to clean up %s", test_node)
 
         else:
-            logging.debug("The test %s doesn't leave any states to be cleaned up", test_node.params["shortname"])
+            logging.debug("The test %s should not be cleaned up", test_node.params["shortname"])
 
     def _graph_from_suite(self, test_suite):
         """

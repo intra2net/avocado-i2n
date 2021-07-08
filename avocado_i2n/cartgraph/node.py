@@ -205,6 +205,20 @@ class TestNode(object):
             if test_object.id == object_root:
                 return test_object
 
+    def produces_setup(self):
+        """
+        Check if the test node produces any reusable setup state.
+
+        :returns: whether there are setup states to reuse from the test
+        :rtype: bool
+        """
+        for test_object in self.objects:
+            object_params = test_object.object_typed_params(self.params)
+            object_state = object_params.get("set_state")
+            if object_state:
+                return True
+        return False
+
     def has_dependency(self, state, test_object):
         """
         Check if the test node has a dependency parsed and available.
@@ -217,9 +231,9 @@ class TestNode(object):
         """
         for test_node in self.setup_nodes:
             if test_object in test_node.objects:
-                setup_object_params = test_node.params.object_params(test_object.name)
-                if re.search("(\.|^)" + state + "(\.|$)", setup_object_params.get("name")):
+                if re.search("(\.|^)" + state + "(\.|$)", test_node.params.get("name")):
                     return True
+                setup_object_params = test_object.object_typed_params(test_node.params)
                 if state == setup_object_params.get("set_state"):
                     return True
         return False
