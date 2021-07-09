@@ -421,41 +421,41 @@ def check_states(run_params, env=None):
         action_if_root_doesnt_exist = state_params["check_mode"][1]
 
         # always check the corresponding root state as a prerequisite
-        if state not in ROOTS:
-            root_exists = state_backend.check_root(state_params, vm)
-            if not root_exists:
-                if action_if_root_doesnt_exist == "f":
-                    # TODO: implement set root for all parametric object types
-                    if params_obj_type == "nets/vms":
-                        if vm is None:
-                            if env is None:
-                                raise exceptions.TestError(f"Creating boot states requires an "
-                                                           "environment object to be provided.")
-                            vm = env.create_vm(state_params.get('vm_type'), state_params.get('target'),
-                                               params_obj_name, state_params, None)
-                        else:
-                            # vm states require manual update of the vm parameters
-                            vm.params = run_params.object_params(vm.name)
-                            state_backend.set_root(state_params, vm)
-                    else:
-                        state_backend.set_root(state_params, vm)
-                elif action_if_root_doesnt_exist == "r":
-                    return False
-                else:
-                    raise exceptions.TestError(f"Invalid policy {action_if_root_doesnt_exist}: The root "
-                                               "nonexistence action can be either of 'reuse' or 'force'.")
-            elif action_if_root_exists == "f":
-                # TODO: implement unset root for all parametric object types
+        root_exists = state_backend.check_root(state_params, vm)
+        if not root_exists:
+            if action_if_root_doesnt_exist == "f":
+                # TODO: implement set root for all parametric object types
                 if params_obj_type == "nets/vms":
-                    vm.destroy(gracefully=state_params.get_dict("check_opts").get("soft_boot", "yes")=="yes")
+                    if vm is None:
+                        if env is None:
+                            raise exceptions.TestError(f"Creating boot states requires an "
+                                                       "environment object to be provided.")
+                        vm = env.create_vm(state_params.get('vm_type'), state_params.get('target'),
+                                           params_obj_name, state_params, None)
+                    else:
+                        # vm states require manual update of the vm parameters
+                        vm.params = run_params.object_params(vm.name)
+                        state_backend.set_root(state_params, vm)
                 else:
-                    state_backend.unset_root(state_params, vm)
+                    state_backend.set_root(state_params, vm)
+                root_exists = True
+            elif action_if_root_doesnt_exist == "r":
+                return False
+            else:
+                raise exceptions.TestError(f"Invalid policy {action_if_root_doesnt_exist}: The root "
+                                           "nonexistence action can be either of 'reuse' or 'force'.")
+        elif action_if_root_exists == "f":
+            # TODO: implement unset root for all parametric object types
+            if params_obj_type == "nets/vms":
+                vm.destroy(gracefully=state_params.get_dict("check_opts").get("soft_boot", "yes")=="yes")
+            else:
+                state_backend.unset_root(state_params, vm)
+            root_exists = False
 
-            # need to passively detect type in order to support provision for boot states
-            state_exists = state_backend.check(state_params, vm)
-
+        if state in ROOTS:
+            state_exists = root_exists
         else:
-            state_exists = state_backend.check_root(state_params, vm)
+            state_exists = state_backend.check(state_params, vm)
 
         if not state_exists:
             return False
