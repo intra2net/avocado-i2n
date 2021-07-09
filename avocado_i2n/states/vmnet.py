@@ -63,7 +63,7 @@ class VMNetBackend(StateBackend):
         """
         env = object
         env.start_ip_sniffing(params)
-        vmn = cls.network_class(None, params, env)
+        vmn = cls.network_class(params, env)
 
         vmn.setup_host_bridges()
         vmn.setup_host_services()

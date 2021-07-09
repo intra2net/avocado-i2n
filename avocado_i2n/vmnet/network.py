@@ -78,7 +78,7 @@ class VMNetwork(object):
     each of them.
     """
 
-    def __init__(self, test, params, env):
+    def __init__(self, params, env):
         """
         Construct a network data structure given the test parameters,
         the `env` and the `test` instance.
@@ -89,7 +89,6 @@ class VMNetwork(object):
         """
         self.params = params
         self.env = env
-        self.test = test
 
         # component types (could be replaced with extended ones)
         self.new_node = VMNode
@@ -112,7 +111,7 @@ class VMNetwork(object):
             vm_params = params.object_params(vm_name)
             if vm is None:
                 vm = env.create_vm(params.get('vm_type'), params.get('target'),
-                                   vm_name, vm_params, test.bindir)
+                                   vm_name, vm_params, "/tmp")
             else:
                 vm.params = vm_params
 
@@ -742,7 +741,7 @@ class VMNetwork(object):
             client = self.env.create_vm(client_params.get('vm_type'),
                                         client_params.get('target'),
                                         client_name, client_params,
-                                        self.test.bindir)
+                                        "/tmp")
 
             logging.debug("Integrating the ephemeral vm in the vm network")
             self.nodes[client_name] = self.new_node(client, ephemeral=True)
