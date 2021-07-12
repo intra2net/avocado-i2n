@@ -33,6 +33,9 @@ from avocado.core.test_id import TestID
 from avocado.core.nrunner import Runnable
 from avocado.core.dispatcher import SpawnerDispatcher
 
+from .. import params_parser as param
+from . import NetObject
+
 
 class TestNode(object):
     """
@@ -75,19 +78,18 @@ class TestNode(object):
         self.name = name
         self.config = config
         self._params_cache = None
+        self.node_str = None
 
         self.should_run = True
         self.should_clean = True
 
-        self.node_str = None
-
         self.spawner = None
 
         # list of objects (in composition) involved in the test
-        self.objects = []
-        # TODO: the vm net objects are not currently dependency-traceable,
-        # only the vms and images are and are implicitly assumed here
+        self.objects = [NetObject("net1", param.Reparsable())]
+        # the vms and images are implicitly assumed here
         for test_object in objects:
+            self.objects[0].components.append(test_object)
             self.objects += [test_object]
             self.objects += test_object.components
 
@@ -185,6 +187,20 @@ class TestNode(object):
         be run anymore.
         """
         return self.is_cleanup_ready() and not self.should_run
+
+    def is_terminal_node_for(self):
+        """
+        Determine any object that this node is a root of.
+
+        :returns: object that this node is a root of if any
+        :rtype: :py:class:`TestObject` or None
+        """
+        object_root = self.params.get("object_root")
+        if not object_root:
+            return object_root
+        for test_object in self.objects:
+            if test_object.id == object_root:
+                return test_object
 
     def has_dependency(self, state, test_object):
         """
@@ -293,13 +309,24 @@ class TestNode(object):
 
     def validate(self):
         """Validate the test node for sane attribute-parameter correspondence."""
+        param_nets = self.params.objects("nets")
+        attr_nets = list(o.name for o in self.objects if o.key == "nets")
+        if len(attr_nets) > 1 or len(param_nets) > 1:
+            raise AssertionError(f"Test node {self} can have only one net ({attr_nets}/{param_nets}")
+        param_net_name, attr_net_name = attr_nets[0], param_nets[0]
+        if self.objects[0].name != attr_net_name:
+            raise AssertionError(f"The net {attr_net_name} must be the first node object {self.objects[0]}")
+        if param_net_name != attr_net_name:
+            raise AssertionError(f"Parametric and attribute nets differ {param_net_name} != {attr_net_name}")
+
         param_vms = set(self.params.objects("vms"))
-        attr_objects = set(o.name for o in self.objects)
         attr_vms = set(o.name for o in self.objects if o.key == "vms")
         if len(param_vms - attr_vms) > 0:
             raise ValueError("Additional parametric objects %s not in %s" % (param_vms, attr_vms))
         if len(attr_vms - param_vms) > 0:
             raise ValueError("Missing parametric objects %s from %s" % (param_vms, attr_vms))
+
+        # TODO: images can currently be ad-hoc during run and thus cannot be validated
 
         if self in self.setup_nodes or self in self.cleanup_nodes:
             raise ValueError("Detected reflexive dependency of %s to itself" % self)

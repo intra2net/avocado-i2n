@@ -205,9 +205,11 @@ class CartesianLoader(Resolver):
                 # reuse trivial network from the parsed vm objects
                 test_node = self.parse_node_from_object(vm_objects[0], param_dict, param.re_str(d["name"]),
                                                         prefix=prefix + str(i+1))
+                net_config = test_node.config.get_copy()
             else:
                 # reuse custom network that isn't parsed yet
                 config = param.Reparsable()
+
                 # net parsing stage
                 config.parse_next_batch(base_file="objects.cfg",
                                         # TODO: the current suffix operators make it nearly impossible to overwrite
@@ -216,6 +218,8 @@ class CartesianLoader(Resolver):
                                         base_str=param.join_str(objstrs, param.ParsedDict(param_dict).parsable_form()),
                                         base_dict={"main_vm": main_object.name},
                                         ovrwrt_file=param.vms_ovrwrt_file())
+                net_config = config.get_copy()
+
                 # test parsing stage
                 config.parse_next_batch(base_file="sets.cfg",
                                         ovrwrt_file=param.tests_ovrwrt_file(),
@@ -226,6 +230,8 @@ class CartesianLoader(Resolver):
 
             # the original restriction is an optional but useful attribute
             test_node.node_str = nodes_str
+            # the test net config is the intermediary one here
+            test_node.objects[0].config = net_config
             try:
                 test_node.regenerate_params()
                 if verbose:
@@ -464,10 +470,28 @@ class CartesianLoader(Resolver):
         with the 'root' start state.
         """
         setup_dict = {} if param_dict is None else param_dict.copy()
-        setup_dict.update({"set_state_images": "install"})
-        setup_str = param.re_str("all..internal..0root")
+
+        object_name = setup_dict.get("object_name", test_object.id)
+        object_type = setup_dict.get("object_type", test_object.key)
+
+        if object_type == "images":
+            setup_dict.update({"get_images": "",
+                               "set_state_images": "install",
+                               "object_root": object_name})
+            setup_str = param.re_str("all..internal..0root")
+        elif object_type == "vms":
+            setup_dict.update({"get_vms": "",
+                               "object_root": object_name})
+            setup_str = param.re_str("all..internal..start")
+        elif object_type == "nets":
+            setup_dict.update({"get_nets": "",
+                               "set_state_nets": "default",
+                               "object_root": object_name})
+            setup_str = param.re_str("all..internal..unchanged")
+
         terminal_node = self.parse_node_from_object(test_object, setup_dict, setup_str, prefix=prefix+"0t")
-        logging.debug("Reached %s root %s", test_object.name, terminal_node.params["shortname"])
+        logging.debug("Reached %s terminal node for %s",
+                      object_name, terminal_node.params["shortname"])
         return terminal_node
 
     """internals"""
@@ -477,7 +501,7 @@ class CartesianLoader(Resolver):
         final selection of such and the main object for the test.
         """
         main_vm = d.get("main_vm", param.main_vm())
-        if d.get("object_name"):
+        if d.get("object_name") and d.get("object_type", "vms") != "nets":
             # as the object depending on this node might not be a vm
             # and thus a suffix, we have to obtain the relevant vm (suffix)
             main_vm = d.get("object_name").split("/")[0]
@@ -515,16 +539,16 @@ class CartesianLoader(Resolver):
         logging.debug("Parsing Cartesian setup of %s through restriction %s",
                       test_node.params["shortname"], setup_restr)
 
-        if setup_restr != "0root":
-            # speedup for handling already parsed unique parent cases
+        # speedup for handling already parsed unique parent cases
+        if setup_restr == "0root":
+            get_parent = graph.get_nodes_by("object_root", "^" + test_object.id + "$")
+        else:
             get_parent = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
                                             # not unique enough for vm1/image1 and vm2/image1
                                             subset=graph.get_nodes_by(test_object.key,
                                                                       "(^|\s)%s($|\s)" % test_object.name))
-            if len(get_parent) == 1:
-                return get_parent, []
-        else:
-            get_parent = []
+        if len(get_parent) == 1:
+            return get_parent, []
         setup_dict = {} if param_dict is None else param_dict.copy()
         setup_dict.update({"object_name": test_object.id,
                            "object_type": test_object.key,
