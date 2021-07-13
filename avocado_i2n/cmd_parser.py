@@ -24,7 +24,6 @@ from virttest import env_process
 
 from . import params_parser as param
 from .states import setup as ss
-from .vmnet import VMNetwork
 
 
 def params_from_cmd(config):
@@ -210,20 +209,9 @@ def env_process_hooks():
     Add env processing hooks to handle on/off state get/set operations
     and vmnet networking setup and instance attachment to environment.
     """
-    def get_network_state(test, params, env):
-        vmn = VMNetwork(test, params, env)
-        vmn.setup_host_bridges()
-        vmn.setup_host_services()
-        env.vmnet = vmn
-        type(env).get_vmnet = lambda self: self.vmnet
-    def network_state(fn):
-        def wrapper(test, params, env):
-            get_network_state(test, params, env)
-            fn(test, params, env)
-        return wrapper
     def on_state(fn):
         def wrapper(test, params, env):
-            params["skip_types"] = "nets/vms/images"
+            params["skip_types"] = "nets/vms/images nets"
             fn(params, env)
             del params["skip_types"]
         return wrapper
@@ -234,6 +222,6 @@ def env_process_hooks():
             del params["skip_types"]
         return wrapper
     env_process.preprocess_vm_off_hook = off_state(ss.get_states)
-    env_process.preprocess_vm_on_hook = network_state(on_state(ss.get_states))
+    env_process.preprocess_vm_on_hook = on_state(ss.get_states)
     env_process.postprocess_vm_on_hook = on_state(ss.set_states)
     env_process.postprocess_vm_off_hook = off_state(ss.set_states)

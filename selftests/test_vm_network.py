@@ -44,9 +44,6 @@ class VMNetworkTest(unittest.TestCase):
 
         self.mock_vms = {}
 
-        # inline class definition and instantiation
-        self.test = type('obj', (object,), {'outputdir': '', 'bindir': ''})()
-
     def _get_mock_vm(self, vm_name):
         return None if vm_name not in self.mock_vms else self.mock_vms[vm_name]
 
@@ -63,7 +60,7 @@ class VMNetworkTest(unittest.TestCase):
 
     def test_representation(self):
         """Check for correct vm network and component representations."""
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         repr = str(self.vmnet)
         self.assertIn("[vmnet]", repr)
         self.assertIn("[node]", repr)
@@ -73,7 +70,7 @@ class VMNetworkTest(unittest.TestCase):
     def test_get_vms(self):
         """Check all vm retrieval methods."""
         self.run_params["vms"] = "vm1"
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         vm = self.vmnet.get_single_vm()
         self.assertEqual(vm.name, "vm1")
         vm, session = self.vmnet.get_single_vm_with_session()
@@ -86,7 +83,7 @@ class VMNetworkTest(unittest.TestCase):
         self.assertEqual(vm.params, params)
 
         self.run_params["vms"] = "vm1 vm2"
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         with self.assertRaises(exceptions.TestError):
             self.vmnet.get_single_vm()
         vm1, vm2 = self.vmnet.get_ordered_vms()
@@ -109,14 +106,14 @@ class VMNetworkTest(unittest.TestCase):
     def test_integrate_node(self):
         """Check correct vm node integration and network generation."""
         # repeated vm node in the net
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         node1 = self.vmnet.nodes["vm1"]
         with self.assertRaises(AssertionError):
             self.vmnet.integrate_node(node1)
 
         # already initialized interfaces
         self.run_params["vms"] = "vm2"
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         with self.assertRaises(AssertionError):
             self.vmnet.integrate_node(node1)
 
@@ -126,7 +123,7 @@ class VMNetworkTest(unittest.TestCase):
 
         # repeated address in the netconfig
         self.run_params["ip_b1_vm2"] = "10.1.0.1"
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         node1.interfaces = {}
         # BUG: this test succeeds in full module run locally but not in the CI
         #with self.assertRaises(IndexError):
@@ -135,7 +132,7 @@ class VMNetworkTest(unittest.TestCase):
     def test_reattach_interface(self):
         """Check vm node reattachment to another vm node's interface."""
         self._create_mock_vms()
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         client, server = self.vmnet.get_vms()
         self.vmnet.reattach_interface(client, server)
         self.vmnet.reattach_interface(client, server, proxy_nic="b1")
@@ -155,7 +152,7 @@ class VMNetworkTest(unittest.TestCase):
         self._create_mock_vms()
 
         # nonauthoritative service setup
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         vmnet.network.DNSMASQ_CONFIG = "avocado.conf"
         vmnet.network.DNSMASQ_HOSTS = "avocado-hosts.conf"
         self.vmnet.setup_host_services()
@@ -168,12 +165,12 @@ class VMNetworkTest(unittest.TestCase):
         self.run_params["host_dns_authoritative"] = "yes"
         self.run_params["default_dns_forwarder"] = "8.8.8.8"
         self.run_params["domain_provider"] = "lan.net"
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         self.vmnet.setup_host_services()
 
         # additional ports could be added
         self.run_params["host_additional_ports"] = "22"
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         self.vmnet.setup_host_services()
         # blacklisted devices cannot be managed
         self.vmnet.params["host_dhcp_blacklist"] = "virbr0 virbr1"
@@ -185,7 +182,7 @@ class VMNetworkTest(unittest.TestCase):
         with self.assertRaises(exceptions.TestError):
             self.vmnet.setup_host_services()
 
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         utils_net.find_bridge_manager.get_structure.return_value = ["virbr0", "virbr2"]
         self.vmnet.setup_host_bridges()
         utils_net.find_bridge_manager.return_value = None
@@ -194,7 +191,7 @@ class VMNetworkTest(unittest.TestCase):
     def test_spawn_clients(self):
         """Check ephemeral client spawninig."""
         self._create_mock_vms()
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
 
         # TODO: this method still lacks complete noncustom (available) implementation
         with self.assertRaises(NotImplementedError):
@@ -206,7 +203,7 @@ class VMNetworkTest(unittest.TestCase):
     def test_change_network_address(self):
         """Check network address changing."""
         self.run_params["os_type"] = "windows"
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         netconfig = self.vmnet.netconfigs["10.1.0.0"]
         self.vmnet.change_network_address(netconfig, "10.3.0.1")
         netconfig = self.vmnet.netconfigs["10.2.0.0"]
@@ -215,7 +212,7 @@ class VMNetworkTest(unittest.TestCase):
     def test_set_static_address(self):
         """Check static network address setting."""
         self.run_params["os_type"] = "windows"
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         client, server = self.vmnet.get_vms()
         self.vmnet.set_static_address(client, server)
 
@@ -223,7 +220,7 @@ class VMNetworkTest(unittest.TestCase):
         self._create_mock_vms()
         self.run_params["os_type"] = "imaginary"
         self.run_params["os_variant"] = "i2"
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         client, server = self.vmnet.get_vms()
         with self.assertRaises(NotImplementedError):
             self.vmnet.set_static_address(client, server)
@@ -231,7 +228,7 @@ class VMNetworkTest(unittest.TestCase):
     def test_configure_tunnel_between_vms_basic(self):
         """Check a site-to-site tunnel setup and end-configuration between vms."""
         self._create_mock_vms()
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         self.vmnet.configure_tunnel_between_vms("vpn1", self.mock_vms["vm1"], self.mock_vms["vm2"],
                                                 local1={"type": "nic", "nic": "lan_nic"},
                                                 remote1={"type": "custom", "nic": "lan_nic"},
@@ -271,7 +268,7 @@ class VMNetworkTest(unittest.TestCase):
     def test_configure_tunnel_between_vms_internetip(self):
         """Check a point-to-site tunnel setup and end-configuration between vms."""
         self._create_mock_vms()
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         self.vmnet.configure_tunnel_between_vms("vpn1", self.mock_vms["vm1"], self.mock_vms["vm2"],
                                                 local1={"type": "internetip"},
                                                 remote1={"type": "custom", "nic": "lan_nic"},
@@ -292,7 +289,7 @@ class VMNetworkTest(unittest.TestCase):
     def test_configure_tunnel_between_vms_externalip(self):
         """Check a site-to-point tunnel setup and end-configuration between vms."""
         self._create_mock_vms()
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         self.vmnet.configure_tunnel_between_vms("vpn1", self.mock_vms["vm1"], self.mock_vms["vm2"],
                                                 local1={"type": "nic", "nic": "lan_nic"},
                                                 remote1={"type": "externalip"},
@@ -313,7 +310,7 @@ class VMNetworkTest(unittest.TestCase):
     def test_configure_tunnel_between_vms_dynip(self):
         """Check a roadwarrior tunnel setup and end-configuration between vms."""
         self._create_mock_vms()
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         self.vmnet.configure_tunnel_between_vms("vpn1", self.mock_vms["vm1"], self.mock_vms["vm2"],
                                                 local1={"type": "nic", "nic": "lan_nic"},
                                                 remote1={"type": "custom", "nic": "lan_nic"},
@@ -333,7 +330,7 @@ class VMNetworkTest(unittest.TestCase):
     def test_configure_tunnel_between_vms_psk_basic(self):
         """Check a PSK tunnel setup and end-configuration between vms."""
         self._create_mock_vms()
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         self.vmnet.configure_tunnel_between_vms("vpn1", self.mock_vms["vm1"], self.mock_vms["vm2"],
                                                 local1={"type": "nic", "nic": "lan_nic"},
                                                 remote1={"type": "custom", "nic": "lan_nic"},
@@ -360,7 +357,7 @@ class VMNetworkTest(unittest.TestCase):
     def test_configure_tunnel_between_vms_psk_ip(self):
         """Check a PSK (IP type) tunnel setup and end-configuration between vms."""
         self._create_mock_vms()
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         self.vmnet.configure_tunnel_between_vms("vpn1", self.mock_vms["vm1"], self.mock_vms["vm2"],
                                                 local1={"type": "nic", "nic": "lan_nic"},
                                                 remote1={"type": "custom", "nic": "lan_nic"},
@@ -387,7 +384,7 @@ class VMNetworkTest(unittest.TestCase):
     def test_configure_tunnel_between_vms_pubkey(self):
         """Check a public key tunnel setup and end-configuration between vms."""
         self._create_mock_vms()
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         try:
             self.vmnet.configure_tunnel_between_vms("vpn1", self.mock_vms["vm1"], self.mock_vms["vm2"],
                                                     local1={"type": "nic", "nic": "lan_nic"},
@@ -410,7 +407,7 @@ class VMNetworkTest(unittest.TestCase):
         """Check pure roadwarrior tunnel setup and end-configuration on the server."""
         self._create_mock_vms()
         self.run_params["ip_provider_b1_vm2"] = "10.2.0.1"
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         try:
             self.vmnet.configure_roadwarrior_vpn_on_server("vpn1", self.mock_vms["vm1"], self.mock_vms["vm2"],
                                                            local1={"type": "nic", "nic": "lan_nic"},
@@ -427,7 +424,7 @@ class VMNetworkTest(unittest.TestCase):
         self.run_params["ip_b2_vm3"] = "172.19.1.1"
 
         self._create_mock_vms()
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         self.vmnet.configure_tunnel_between_vms("vpn1", self.mock_vms["vm1"], self.mock_vms["vm2"],
                                                 local1={"type": "nic", "nic": "lan_nic"},
                                                 remote1={"type": "custom", "nic": "lan_nic"},
@@ -516,7 +513,7 @@ class VMNetworkTest(unittest.TestCase):
 
     def test_connectivity_validate(self):
         """Check all connectivity testing methods of the vm network."""
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         client, server = self.vmnet.get_vms()
 
         with self.assertRaises(exceptions.TestError):
@@ -541,7 +538,7 @@ class VMNetworkTest(unittest.TestCase):
 
         # TODO: have to make sure to update the gateway on reattaching
         self.run_params["ip_provider_b1_vm1"] = "172.18.0.1"
-        self.vmnet = VMNetwork(self.test, self.run_params, self.env)
+        self.vmnet = VMNetwork(self.run_params, self.env)
         self.vmnet.reattach_interface(client, server)
         client.session.cmd_status_output.return_value = (0, "")
         self.vmnet.ssh_connectivity(client, server)
