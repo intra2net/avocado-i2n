@@ -420,7 +420,7 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_file=param.tests_ovrwrt_file(),
                                         ovrwrt_str=setup_str,
                                         ovrwrt_dict=setup_dict)
-        return await self.run_test_node(TestNode("0t", install_config, test_node.objects))
+        return await self.run_test_node(TestNode("0t", install_config, test_node.objects[0]))
 
     """internals"""
     async def _traverse_test_node(self, graph, test_node, params):

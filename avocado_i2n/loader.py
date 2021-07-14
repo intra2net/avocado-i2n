@@ -141,20 +141,24 @@ class CartesianLoader(Resolver):
         Get the original install test node for the given object.
 
         :param test_object: fully parsed test object to parse the node from
-        :type: test_object: :py:class:`TestObject`
+        :type: test_object: :py:class:`NetObject`
         :param param_dict: extra parameters to be used as overwrite dictionary
         :type param_dict: {str, str} or None
         :param str param_str: string block of parameters to be used as overwrite string
         :param str prefix: extra name identifier for the test to be run
         :returns: parsed test node for the object
         :rtype: :py:class:`TestNode`
+        :raises: :py:class:`AssertionError` if the node is parsed from a non-net object
         """
+        if test_object.key != "nets":
+            raise AssertionError("Test node could be parsed only from test objects of the "
+                                 "same composition level, currently only test nets")
         config = test_object.config.get_copy()
         config.parse_next_batch(base_file="sets.cfg",
                                 ovrwrt_file=param.tests_ovrwrt_file(),
                                 ovrwrt_str=param_str,
                                 ovrwrt_dict=param_dict)
-        test_node = TestNode(prefix, config, [test_object])
+        test_node = TestNode(prefix, config, test_object)
         test_node.regenerate_params()
         return test_node
 
@@ -186,52 +190,22 @@ class CartesianLoader(Resolver):
         for i, d in enumerate(early_config.get_parser().get_dicts()):
 
             # get configuration of each participating object and choose the one to mix with the node
-            objects, main_object_name = self._determine_objects_for_node_params(test_graph, d)
+            test_net, main_object_name = self._fetch_net_from_node_params(test_graph, param_dict, d)
 
             # 0scan shared root is parsable through the default procedure here
             if "0root" in d["name"]:
-                test_nodes += [self.parse_terminal_node(obj, param_dict, prefix=prefix) for obj in objects if obj.key == "vms"]
+                test_nodes += [self.parse_terminal_node(test_net, param_dict, prefix=prefix)]
                 continue
 
             # final variant multiplication to produce final test node configuration
-            logging.debug("Multiplying the vm variants by the test variants using %s", main_object_name)
-            # each test node assumes one net object so combine vm configurations
-            vm_objects = [o for o in objects if o.key == "vms"]
-            objstrs = {}
-            for test_object in vm_objects:
-                objstrs[test_object.name] = test_object.object_str
+            logging.debug("Parsing a %s customization for %s", d["name"], test_net)
 
-            if len(vm_objects) == 1:
-                # reuse trivial network from the parsed vm objects
-                test_node = self.parse_node_from_object(vm_objects[0], param_dict, param.re_str(d["name"]),
-                                                        prefix=prefix + str(i+1))
-                net_config = test_node.config.get_copy()
-            else:
-                # reuse custom network that isn't parsed yet
-                config = param.Reparsable()
-
-                # net parsing stage
-                config.parse_next_batch(base_file="objects.cfg",
-                                        # TODO: the current suffix operators make it nearly impossible to overwrite
-                                        # object parameters with object specific values after the suffix operator is
-                                        # applied with the exception of special regex operator within the config
-                                        base_str=param.join_str(objstrs, param.ParsedDict(param_dict).parsable_form()),
-                                        base_dict={"main_vm": main_object_name},
-                                        ovrwrt_file=param.vms_ovrwrt_file())
-                net_config = config.get_copy()
-
-                # test parsing stage
-                config.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file(),
-                                        ovrwrt_str=param.re_str(d["name"]),
-                                        ovrwrt_dict=param_dict)
-                name = prefix + str(i+1)
-                test_node = TestNode(name, config, vm_objects)
+            # each test node assumes one net object that could be reused or should be initialy parsed
+            test_node = self.parse_node_from_object(test_net, param_dict, param.re_str(d["name"]),
+                                                    prefix=prefix + str(i+1))
 
             # the original restriction is an optional but useful attribute
             test_node.node_str = nodes_str
-            # the test net config is the intermediary one here
-            test_node.objects[0].config = net_config
             try:
                 test_node.regenerate_params()
                 if verbose:
@@ -273,6 +247,7 @@ class CartesianLoader(Resolver):
         graph.objects = self.parse_objects(param_dict, initial_object_strs, verbose=False)
         for test_object in graph.objects:
             if test_object.name in selected_objects:
+                # no networks are stored at this stage, just selected vms and their images
                 test_objects.append(test_object)
                 test_objects.extend(test_object.components)
 
@@ -283,6 +258,9 @@ class CartesianLoader(Resolver):
                 if vm_name not in selected_objects:
                     break
             else:
+                # reuse additionally parsed net (node-level) objects
+                if test_node.objects[0] not in test_objects:
+                    test_objects.append(test_node.objects[0])
                 test_nodes.append(test_node)
                 used_objects.update(test_vms)
 
@@ -451,7 +429,9 @@ class CartesianLoader(Resolver):
         setup_str = param.re_str("all..internal..0scan")
         nodes = self.parse_nodes(graph, setup_dict, setup_str)
         assert len(nodes) == 1, "There can only be one shared root"
-        scan_node = TestNode(prefix + "0s", nodes[0].config, graph.objects)
+        # TODO: scanning all test objects becomes increasingly monolithic and infeasible
+        main_net = [o for o in graph.objects if o.key == "nets"][0]
+        scan_node = TestNode(prefix + "0s", nodes[0].config, main_net)
         scan_node.regenerate_params()
         logging.debug("Parsed shared root %s", scan_node.params["shortname"])
         return scan_node
@@ -461,7 +441,7 @@ class CartesianLoader(Resolver):
         Get the original install test node for the given object.
 
         :param test_object: fully parsed test object to parse the node from
-        :type: test_object: :py:class:`TestObject`
+        :type: test_object: :py:class:`NetObject`
         :param param_dict: runtime parameters used for extra customization
         :type param_dict: {str, str} or None
         :param str prefix: extra name identifier for the test to be run
@@ -498,7 +478,7 @@ class CartesianLoader(Resolver):
         return terminal_node
 
     """internals"""
-    def _determine_objects_for_node_params(self, graph, d):
+    def _fetch_net_from_node_params(self, graph, param_dict, d):
         """
         Decide about test objects participating in the test node returning the
         final selection of such and the main object for the test.
@@ -521,22 +501,53 @@ class CartesianLoader(Resolver):
             assert main_vm in vms, "Main test object %s for test node '%s' not among:"\
                                    " %s" % (main_vm, d["shortname"], ", ".join(vms))
 
-        logging.debug("Fetching test objects %s to parse a test node", ", ".join(vms))
-        objects = []
+        logging.debug("Fetching a net composed of %s to parse %s nodes", ", ".join(vms), d["shortname"])
+        fetched_nets, fetched_vms = None, {}
         for vm_name in vms:
-            obj_str = "(\.|^)" + object_variant + "(\.|$)"
-            vm_restr = "(\.|^)" + d.get("only_%s" % vm_name, ".*") + "(\.|$)"
-            vm_objects = graph.get_objects_by(param_key="main_vm", param_val="^"+vm_name+"$",
-                                              subset=graph.get_objects_by(param_val=obj_str,
-                                                                          subset=graph.get_objects_by(param_val=vm_restr)))
-            objects.extend(vm_objects)
-            for vm in vm_objects:
-                objects.extend(vm.components)
-        if len(objects) == 0:
-            raise ValueError("No objects could be fetched among '%s' "
-                             "in the test '%s'" % (", ".join(vms), d["shortname"]))
+            vm_variant = object_variant if vm_name == object_name else ".*"
+            vm_name_restr = "(\.|^)" + vm_variant + "(\.|$)"
+            vm_node_restr = "(\.|^)" + d.get("only_%s" % vm_name, ".*") + "(\.|$)"
+            objects = graph.get_objects_by(param_key="main_vm", param_val="^"+vm_name+"$",
+                                           subset=graph.get_objects_by(param_val=vm_node_restr,
+                                                                       subset=graph.get_objects_by(param_val=vm_name_restr)))
+            net_objects = set(o for o in objects if o.key == "nets")
+            fetched_nets = net_objects if fetched_nets is None else fetched_nets.intersection(net_objects)
+            fetched_vms[vm_name] = [o for o in objects if o.key == "vms"]
+            if len(fetched_vms[vm_name]) == 0:
+                raise ValueError("Could not fetch any objects for '%s' "
+                                 "in the test '%s'" % (vm_name, d["shortname"]))
 
-        return objects, main_vm
+        if len(fetched_nets) > 1:
+            raise ValueError("No unique networks could be fetched using '%s' "
+                             "in the test '%s'" % (", ".join(vms), d["shortname"]))
+        elif len(fetched_nets) == 0:
+            logging.debug("No reusable network could be fetched using '%s' "
+                          "in the test '%s', parsing one" % (", ".join(vms), d["shortname"]))
+            objstrs = {}
+            for vm_name in vms:
+                if len(fetched_vms[vm_name]) == 1:
+                    objstrs[vm_name] = "only " + fetched_vms[vm_name][0].params["name"]
+                else:
+                    # TODO: we don't support restriction reuse for more elaborate cases
+                    objstrs[vm_name] = ""
+            # reuse custom network that isn't parsed yet
+            config = param.Reparsable()
+            config.parse_next_batch(base_file="objects.cfg",
+                                    # TODO: the current suffix operators make it nearly impossible to overwrite
+                                    # object parameters with object specific values after the suffix operator is
+                                    # applied with the exception of special regex operator within the config
+                                    base_str=param.join_str(objstrs, param.ParsedDict(param_dict).parsable_form()),
+                                    base_dict={"main_vm": main_vm},
+                                    ovrwrt_file=param.vms_ovrwrt_file())
+            main_net = NetObject("net1", config.get_copy())
+            for vm_name in vms:
+                # TODO: we don't support more than one variant atm
+                main_net.components.append(fetched_vms[vm_name][0])
+            main_net.regenerate_params()
+            graph.objects += [main_net]
+
+        main_net = list(fetched_nets)[0] if len(fetched_nets) == 1 else main_net
+        return main_net, main_vm
 
     def _parse_and_get_parents(self, graph, test_node, test_object, param_dict=None):
         """
@@ -611,7 +622,7 @@ class CartesianLoader(Resolver):
                 else:
                     clone_name = clone_source.name + "d" + str(i)
                     clone_config = clone_source.config.get_copy()
-                    clone = TestNode(clone_name, clone_config, list(clone_source.objects))
+                    clone = TestNode(clone_name, clone_config, clone_source.objects[0])
                     clone.regenerate_params()
 
                     # clone setup with the exception of unique parent copy
