@@ -168,9 +168,7 @@ def full_vm_params_and_strs(param_dict, vm_strs, use_vms_default):
     for vm_name in param.all_objects("vms"):
         if use_vms_default[vm_name]:
             default = vms_params.get("default_only_%s" % vm_name)
-            if not default:
-                raise ValueError("No default variant restriction found for %s!" % vm_name)
-            vm_strs[vm_name] += "only %s\n" % default
+            vm_strs[vm_name] += "only %s\n" % default if default else ""
     log.debug("Parsed vm strings '%s'", vm_strs)
     return vms_params, vm_strs
 

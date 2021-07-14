@@ -373,12 +373,15 @@ class CartesianRunner(RunnerInterface):
         The current implementation with implicit knowledge on the types of test objects
         internal spawns an original (otherwise unmodified) install test.
         """
-        objects = graph.get_objects_by(param_key="main_vm", param_val="^"+object_name+"$")
-        assert len(objects) == 1, "Test object %s not existing or unique in: %s" % (object_name, objects)
+        object_suffix, object_variant = object_name.split("-")[:1][0], "-".join(object_name.split("-")[1:])
+        object_image, object_vm = object_suffix.split("_")
+        objects = graph.get_objects_by(param_val="^"+object_variant+"$",
+                                       subset=graph.get_objects_by("images", object_suffix.split("_")[0]))
+        vms = [o for o in objects if o.key == "vms"]
+        assert len(vms) == 1, "Test object %s's vm not existing or unique in: %s" % (object_name, objects)
         test_object = objects[0]
 
-        nodes = graph.get_nodes_by("name", "(\.|^)0root(\.|$)",
-                                   subset=graph.get_nodes_by("vms", "(^|\s)%s($|\s)" % test_object.name))
+        nodes = graph.get_nodes_by("object_root", object_name)
         assert len(nodes) == 1, "There can only be one root for %s" % object_name
         test_node = nodes[0]
 
@@ -386,7 +389,7 @@ class CartesianRunner(RunnerInterface):
             raise AssertionError("Reached a permanent object root for %s due to incorrect setup"
                                  % test_object.name)
 
-        logging.info("Configuring creation/installation for %s", test_object.name)
+        logging.info("Configuring creation/installation for %s on %s", object_vm, object_image)
         # parameters and the status from the install configuration determine the install test
         install_params = test_node.params.copy()
         # unset any cleanup and prepare special setup to make this a terminal node for an image
@@ -436,7 +439,7 @@ class CartesianRunner(RunnerInterface):
                 if not status:
                     logging.error("Could not perform state scanning of %s", test_node)
             elif test_node.is_terminal_node():
-                status = await self.run_terminal_node(graph, test_node.params.get("vms", ""), params)
+                status = await self.run_terminal_node(graph, test_node.params["object_root"], params)
                 if not status:
                     logging.error("Could not perform the installation from %s", test_node)
 
