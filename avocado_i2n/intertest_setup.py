@@ -50,6 +50,7 @@ import re
 import logging
 import contextlib
 import importlib
+import asyncio
 from collections import namedtuple
 
 from avocado.core import job
@@ -285,13 +286,16 @@ def update(config, tag=""):
                                             config["available_vms"],
                                             prefix=tag, verbose=False)
         remove_graph.flag_children(flag_type="run", flag=False)
-        remove_graph.flag_children(flag_type="clean", flag=False)
+        remove_graph.flag_children(flag_type="clean", flag=False, skip_roots=True)
         remove_graph.flag_children(to_state, vm_name, flag_type="clean", flag=True, skip_roots=True)
         r.run_traversal(remove_graph, {"vms": vm_name, **config["param_dict"]})
 
         logging.info("Updating all states before '%s'", to_state)
         setup_dict = config["param_dict"].copy()
         setup_dict["vms"] = vm_name
+        # NOTE: this makes sure that no new states are created and the updated
+        # states are not removed, aborting in any other case
+        setup_dict.update({"get_mode": "ra", "set_mode": "fa", "unset_mode": "ra"})
         update_graph = l.parse_object_trees(setup_dict,
                                             param.re_str("all.." + to_state),
                                             {vm_name: config["vm_strs"][vm_name]}, prefix=tag)
@@ -309,12 +313,6 @@ def update(config, tag=""):
                                                {vm_name: config["vm_strs"][vm_name]},
                                                prefix=tag, verbose=False)
             update_graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
-
-        # NOTE: this makes sure that no new states are created and the updated
-        # states are not removed, aborting in any other case
-        setup_dict = config["param_dict"].copy()
-        setup_dict.update({"get_mode": "ra", "set_mode": "fa", "unset_mode": "ra"})
-        setup_dict["vms"] = vm_name
         r.run_traversal(update_graph, setup_dict)
 
     LOG_UI.info("Finished update setup")
@@ -396,7 +394,10 @@ def install(config, tag=""):
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
     graph = TestGraph()
     graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
-    for vm in graph.objects:
+    for test_object in graph.objects:
+        if test_object.key != "vms":
+            continue
+        vm = test_object
         graph.nodes.append(l.parse_install_node(vm, config["param_dict"], prefix=tag))
         r.run_install_node(graph, vm.suffix, config["param_dict"])
     LOG_UI.info("Finished installation")
@@ -417,7 +418,12 @@ def deploy(config, tag=""):
     selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Deploying data to %s (%s)",
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
-    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
+    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
+        if test_object.key != "vms":
+            continue
+        vm = test_object
+        # parse individual net only for the current vm
+        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
 
         states = vm.params.objects("states")
         if len(states) == 0:
@@ -429,8 +435,7 @@ def deploy(config, tag=""):
         for i, state in enumerate(states):
             setup_dict = config["param_dict"].copy()
             if state != "current_state":
-                setup_dict.update({"get_state": state, "set_state": state,
-                                   "get_type": "any", "set_type": "any"})
+                setup_dict.update({"get_state": state, "set_state": state})
             setup_dict.update({"skip_image_processing": "yes", "kill_vm": "no",
                                "redeploy_only": config["vms_params"].get("redeploy_only", "yes")})
             if stateless:
@@ -438,8 +443,9 @@ def deploy(config, tag=""):
                 setup_dict["set_state"] = ""
             setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
             setup_str = param.re_str("all..internal..customize")
-            test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=setup_tag)
-            r.run_test_node(test_node)
+            test_node = l.parse_node_from_object(net, setup_dict, setup_str, prefix=setup_tag)
+            to_run = r.run_test_node(test_node)
+            asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
 
     LOG_UI.info("Finished data deployment")
 
@@ -458,14 +464,20 @@ def internal(config, tag=""):
     selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Performing internal setup on %s (%s)",
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
-    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
+    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
+        if test_object.key != "vms":
+            continue
+        vm = test_object
+        # parse individual net only for the current vm
+        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
         setup_dict = config["param_dict"].copy()
         if vm.params.get("stateless", "yes") == "yes":
             setup_dict.update({"get_state": "", "set_state": "",
                                "skip_image_processing": "yes", "kill_vm": "no"})
         setup_str = param.re_str("all..internal.." + vm.params["node"])
-        test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
-        r.run_test_node(test_node)
+        test_node = l.parse_node_from_object(net, setup_dict, setup_str, prefix=tag)
+        to_run = r.run_test_node(test_node)
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
     LOG_UI.info("Finished internal setup")
 
 
@@ -647,7 +659,10 @@ def unset(config, tag=""):
 
     l, r = config["graph"].l, config["graph"].r
     setup_dict = config["param_dict"].copy()
-    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
+    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
+        if test_object.key != "vms":
+            continue
+        vm = test_object
 
         # since the default unset_mode is passive (ri) we need a better
         # default value for that case but still modifiable by the user
@@ -711,15 +726,16 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
     setup_str = param.re_str("all..internal..manage.%s" % verb[1])
-    tests, vms = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
+    tests, objects = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one %s test variant from %s" % (verb[2], tests)
-    r.run_test_node(TestNode(tag, tests[0].config, vms))
+    to_run = r.run_test_node(TestNode(tag, tests[0].config, objects[-1]))
+    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
     LOG_UI.info("%s complete", verb[3])
 
 
 def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation):
     """
-    Wrapper for setting state/snapshot, same as :py:func:`set`.
+    Wrapper for getting/setting/unsetting/... state/snapshot.
 
     :param param_dict: additional parameters to overwrite the previous dictionary with
     :type param_dict: {str, str}
@@ -731,12 +747,18 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
     LOG_UI.info("Starting %s for %s with job %s and params:\n%s", operation,
                 ", ".join(selected_vms), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form().rstrip("\n"))
-    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
+    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
+        if test_object.key != "vms":
+            continue
+        vm = test_object
+        # parse individual net only for the current vm
+        net = l.parse_object_from_objects([vm], param_dict=param_dict)
         setup_dict = config["param_dict"].copy()
         setup_dict.update(param_dict)
         setup_str = param.re_str("all..internal..manage.unchanged")
-        test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
-        r.run_test_node(test_node)
+        test_node = l.parse_node_from_object(net, setup_dict, setup_str, prefix=tag)
+        to_run = r.run_test_node(test_node)
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
     LOG_UI.info("Finished %s", operation)
 
 
