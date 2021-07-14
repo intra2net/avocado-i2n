@@ -186,7 +186,7 @@ class CartesianLoader(Resolver):
         for i, d in enumerate(early_config.get_parser().get_dicts()):
 
             # get configuration of each participating object and choose the one to mix with the node
-            objects, main_object = self._determine_objects_for_node_params(test_graph, d)
+            objects, main_object_name = self._determine_objects_for_node_params(test_graph, d)
 
             # 0scan shared root is parsable through the default procedure here
             if "0root" in d["name"]:
@@ -194,7 +194,7 @@ class CartesianLoader(Resolver):
                 continue
 
             # final variant multiplication to produce final test node configuration
-            logging.debug("Multiplying the vm variants by the test variants using %s", main_object.name)
+            logging.debug("Multiplying the vm variants by the test variants using %s", main_object_name)
             # each test node assumes one net object so combine vm configurations
             vm_objects = [o for o in objects if o.key == "vms"]
             objstrs = {}
@@ -216,7 +216,7 @@ class CartesianLoader(Resolver):
                                         # object parameters with object specific values after the suffix operator is
                                         # applied with the exception of special regex operator within the config
                                         base_str=param.join_str(objstrs, param.ParsedDict(param_dict).parsable_form()),
-                                        base_dict={"main_vm": main_object.name},
+                                        base_dict={"main_vm": main_object_name},
                                         ovrwrt_file=param.vms_ovrwrt_file())
                 net_config = config.get_copy()
 
@@ -237,14 +237,14 @@ class CartesianLoader(Resolver):
                 if verbose:
                     print("test    %s:  %s" % (test_node.name, test_node.params["shortname"]))
                 logging.debug("Parsed a test '%s' with main test object %s",
-                              d["shortname"], main_object.name)
+                              d["shortname"], main_object_name)
                 test_nodes.append(test_node)
             except param.EmptyCartesianProduct:
                 # empty product in cases like parent (dependency) nodes imply wrong configuration
                 if d.get("require_existence", "no") == "yes":
                     raise
                 logging.debug("Test '%s' not compatible with the %s configuration - skipping",
-                              d["shortname"], main_object.name)
+                              d["shortname"], main_object_name)
 
         return test_nodes
 
@@ -453,7 +453,7 @@ class CartesianLoader(Resolver):
         assert len(nodes) == 1, "There can only be one shared root"
         scan_node = TestNode(prefix + "0s", nodes[0].config, graph.objects)
         scan_node.regenerate_params()
-        logging.debug("Reached shared root %s", scan_node.params["shortname"])
+        logging.debug("Parsed shared root %s", scan_node.params["shortname"])
         return scan_node
 
     def parse_terminal_node(self, test_object, param_dict=None, prefix=""):
@@ -473,27 +473,28 @@ class CartesianLoader(Resolver):
         """
         setup_dict = {} if param_dict is None else param_dict.copy()
 
-        object_name = setup_dict.get("object_name", test_object.id)
+        object_suffix = setup_dict.get("object_suffix", test_object.id)
         object_type = setup_dict.get("object_type", test_object.key)
+        object_id = setup_dict.get("object_id", test_object.id_long)
 
         if object_type == "images":
             setup_dict.update({"get_images": "",
                                "set_state_images": "install",
-                               "object_root": object_name})
+                               "object_root": object_id})
             setup_str = param.re_str("all..internal..0root")
         elif object_type == "vms":
             setup_dict.update({"get_vms": "",
-                               "object_root": object_name})
+                               "object_root": object_id})
             setup_str = param.re_str("all..internal..start")
         elif object_type == "nets":
             setup_dict.update({"get_nets": "",
                                "set_state_nets": "default",
-                               "object_root": object_name})
+                               "object_root": object_id})
             setup_str = param.re_str("all..internal..unchanged")
 
         terminal_node = self.parse_node_from_object(test_object, setup_dict, setup_str, prefix=prefix+"0t")
-        logging.debug("Reached %s terminal node for %s",
-                      object_name, terminal_node.params["shortname"])
+        logging.debug("Parsed %s terminal node for %s",
+                      object_suffix, terminal_node.params["shortname"])
         return terminal_node
 
     """internals"""
@@ -502,11 +503,15 @@ class CartesianLoader(Resolver):
         Decide about test objects participating in the test node returning the
         final selection of such and the main object for the test.
         """
+        object_name = d.get("object_suffix", "")
+        object_type = d.get("object_type", "")
+        object_variant = d.get("object_id", ".*").replace(object_name + "-", "")
+
         main_vm = d.get("main_vm", param.main_vm())
-        if d.get("object_name") and d.get("object_type", "vms") != "nets":
+        if object_name and object_type != "nets":
             # as the object depending on this node might not be a vm
             # and thus a suffix, we have to obtain the relevant vm (suffix)
-            main_vm = d.get("object_name").split("/")[0]
+            main_vm = object_name.split("/")[0]
         # case of singleton test node
         if d.get("vms") is None:
             vms = [main_vm]
@@ -519,16 +524,19 @@ class CartesianLoader(Resolver):
         logging.debug("Fetching test objects %s to parse a test node", ", ".join(vms))
         objects = []
         for vm_name in vms:
-            vm = graph.get_object_by(param_key="main_vm", param_val="^"+vm_name+"$")
-            objects.append(vm)
-            objects.extend(vm.components)
-            if main_vm == vm.name:
-                main_object = vm
-        if main_object is None:
-            raise ValueError("Could not detect the main object among '%s' "
+            obj_str = "(\.|^)" + object_variant + "(\.|$)"
+            vm_restr = "(\.|^)" + d.get("only_%s" % vm_name, ".*") + "(\.|$)"
+            vm_objects = graph.get_objects_by(param_key="main_vm", param_val="^"+vm_name+"$",
+                                              subset=graph.get_objects_by(param_val=obj_str,
+                                                                          subset=graph.get_objects_by(param_val=vm_restr)))
+            objects.extend(vm_objects)
+            for vm in vm_objects:
+                objects.extend(vm.components)
+        if len(objects) == 0:
+            raise ValueError("No objects could be fetched among '%s' "
                              "in the test '%s'" % (", ".join(vms), d["shortname"]))
 
-        return objects, main_object
+        return objects, main_vm
 
     def _parse_and_get_parents(self, graph, test_node, test_object, param_dict=None):
         """
@@ -538,22 +546,23 @@ class CartesianLoader(Resolver):
         object_params = test_object.object_typed_params(test_node.params)
         # objects can appear within a test without any prior dependencies
         setup_restr = object_params["get"]
-        logging.debug("Parsing Cartesian setup of %s through restriction %s",
-                      test_node.params["shortname"], setup_restr)
+        setup_obj_resr = test_object.id_long.split("-")[1]
+        logging.debug("Cartesian setup of %s for %s uses restriction %s",
+                      test_object.id, test_node.params["shortname"], setup_restr)
 
         # speedup for handling already parsed unique parent cases
         if setup_restr == "0root":
-            get_parent = graph.get_nodes_by("object_root", "^" + test_object.id + "$")
+            get_parent = graph.get_nodes_by("object_root", "^" + test_object.id_long + "$")
         else:
             get_parent = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
-                                            # not unique enough for vm1/image1 and vm2/image1
-                                            subset=graph.get_nodes_by(test_object.key,
-                                                                      "(^|\s)%s($|\s)" % test_object.name))
+                                            subset=graph.get_nodes_by("name",
+                                                                      "(\.|^)%s(\.|$)" % setup_obj_resr))
         if len(get_parent) == 1:
             return get_parent, []
         setup_dict = {} if param_dict is None else param_dict.copy()
-        setup_dict.update({"object_name": test_object.id,
+        setup_dict.update({"object_suffix": test_object.id,
                            "object_type": test_object.key,
+                           "object_id": test_object.id_long,
                            "require_existence": "yes"})
         setup_str = param.re_str("all.." + setup_restr)
         name = test_node.name + "a"
@@ -568,8 +577,8 @@ class CartesianLoader(Resolver):
             # but this regex performs extremely slow (much slower than string replacement)
             parent_name = ".".join(new_parent.params["name"].split(".")[1:])
             old_parents = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % parent_name,
-                                             subset=graph.get_nodes_by(test_object.key,
-                                                                       "(^|\s)%s($|\s)" % test_object.name))
+                                             subset=graph.get_nodes_by("name",
+                                                                       "(\.|^)%s(\.|$)" % setup_obj_resr))
             if len(old_parents) > 0:
                 for old_parent in old_parents:
                     logging.debug("Found parsed dependency %s for %s through object %s",

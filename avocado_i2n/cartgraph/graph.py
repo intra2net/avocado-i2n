@@ -311,7 +311,7 @@ class TestGraph(object):
                     test_node.should_clean = flag
 
     """get queries"""
-    def get_objects_by(self, param_key="main_vm", param_val="", subset=None):
+    def get_objects_by(self, param_key="name", param_val="", subset=None):
         """
         Query all test objects by a value in a parameter, returning a set of objects.
 
@@ -332,7 +332,7 @@ class TestGraph(object):
                       len(objects_selection), len(subset), param_key, param_val)
         return objects_selection
 
-    def get_object_by(self, param_key="main_vm", param_val="", subset=None):
+    def get_object_by(self, param_key="name", param_val="", subset=None):
         """
         Query all test objects by a value in a parameter, returning a unique object.
 

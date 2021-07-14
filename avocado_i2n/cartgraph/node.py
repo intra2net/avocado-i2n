@@ -57,7 +57,7 @@ class TestNode(object):
 
     def id_long(self):
         """Long and still unique ID to use for state machine tasks."""
-        return TestID(self.id, self.params["shortname"])
+        return TestID(self.id, self.params["name"])
     id_long = property(fget=id_long)
 
     def count(self):

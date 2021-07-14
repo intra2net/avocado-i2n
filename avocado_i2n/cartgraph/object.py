@@ -43,8 +43,14 @@ class TestObject(object):
     params = property(fget=params)
 
     def id(self):
+        """Sufficiently unique ID to identify a test object suffix."""
         return self._id
     id = property(fget=id)
+
+    def id_long(self):
+        """Sufficiently unique ID to identify a test object."""
+        return self.name + "-" + self.params["name"]
+    id_long = property(fget=id_long)
 
     def __init__(self, name, config):
         """
@@ -134,6 +140,12 @@ class VMObject(TestObject):
 
 class ImageObject(TestObject):
     """An image wrapper for a test object used in one or more test nodes."""
+
+    def id_long(self):
+        """Sufficiently unique ID to identify a test object."""
+        assert len(self.composites) == 1, "Image objects need a unique composite"
+        return self.id + "-" + self.composites[0].params["name"]
+    id_long = property(fget=id_long)
 
     def __init__(self, name, config):
         """

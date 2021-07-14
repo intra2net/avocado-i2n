@@ -141,7 +141,7 @@ class CartesianRunner(RunnerInterface):
             await self.run_test(self.job, node)
 
             try:
-                test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))
+                test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["name"]))
                 test_status = test_result["status"]
             except StopIteration:
                 test_status = "ERROR"
