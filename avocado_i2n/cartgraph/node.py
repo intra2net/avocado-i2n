@@ -47,6 +47,11 @@ class TestNode(object):
         return self._params_cache
     params = property(fget=params)
 
+    def final_restr(self):
+        """Final restriction to make the object parsing variant unique."""
+        return self.config.steps[-2].parsable_form()
+    final_restr = property(fget=final_restr)
+
     def id(self):
         """Sufficiently unique ID to identify a test node."""
         return self.name + "-" + self.params["vms"].replace(" ", "")
@@ -75,7 +80,6 @@ class TestNode(object):
         self.name = name
         self.config = config
         self._params_cache = None
-        self.node_str = None
 
         self.should_run = True
         self.should_clean = True
