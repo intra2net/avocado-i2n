@@ -279,6 +279,22 @@ class CartesianGraphTest(unittest.TestCase):
                                                    self.config["tests_str"], self.config["vm_strs"],
                                                    prefix=self.prefix)
 
+        # restrict to vms-tests intersection if the same is nonempty
+        self.config["tests_str"] += "only tutorial1,tutorial_get\n"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
+            {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "set_state_images": "^install$"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_images": "^install$", "set_state_images": "^customize$"},
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "set_state_vms": "^on_customize$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state_vms": "^on_customize$"},
+        ]
+        self.runner.run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
     def test_one_leaf(self):
         """Check one test running without any reusable setup."""
         self.config["tests_str"] += "only tutorial1\n"

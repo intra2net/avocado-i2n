@@ -109,7 +109,7 @@ class CartesianLoader(Resolver):
             test_object.regenerate_params()
 
             if verbose:
-                print(f"{test_object.key}    {test_object.name}:  {test_object.params['shortname']}")
+                print(f"{test_object.key.rstrip('s')}    {test_object.name}:  {test_object.params['shortname']}")
             test_objects += [test_object]
 
         return test_objects
@@ -141,7 +141,7 @@ class CartesianLoader(Resolver):
 
         return composite
 
-    def parse_objects(self, param_dict=None, object_strs=None, verbose=False):
+    def parse_objects(self, param_dict=None, object_strs=None, verbose=False, skip_nets=False):
         """
         Parse all available test objects and their configurations or
         a selection of such where the selection is defined by the object
@@ -152,6 +152,7 @@ class CartesianLoader(Resolver):
         :param object_strs: object-specific names and variant restrictions
         :type object_strs: {str, str}
         :param bool verbose: whether to print extra messages or not
+        :param bool skip_nets: whether to skip parsing nets from current vms
         :returns: parsed test objects
         :rtype: [:py:class:`TestObject`]
         """
@@ -193,11 +194,12 @@ class CartesianLoader(Resolver):
                         image.composites.append(vm)
 
             # all possible vm combinations as variants of the same net slot
-            for combination in itertools.product(*suffix_variants.values()):
-                setup_dict = {} if param_dict is None else param_dict.copy()
-                setup_dict.update({"object_suffix": net_name, "object_type": "nets"})
-                net = self.parse_object_from_objects(combination, param_dict=setup_dict, verbose=verbose)
-                test_objects.append(net)
+            if not skip_nets:
+                for combination in itertools.product(*suffix_variants.values()):
+                    setup_dict = {} if param_dict is None else param_dict.copy()
+                    setup_dict.update({"object_suffix": net_name, "object_type": "nets"})
+                    net = self.parse_object_from_objects(combination, param_dict=setup_dict, verbose=verbose)
+                    test_objects.append(net)
 
         return test_objects
 
@@ -242,7 +244,6 @@ class CartesianLoader(Resolver):
         :param bool verbose: whether to print extra messages or not
         :returns: parsed test nodes
         :rtype: [:py:class:`TestNode`]
-        :raises: :py:class:`exceptions.ValueError` if the base vm is not among the vms for a node
         :raises: :py:class:`param.EmptyCartesianProduct` if no result on preselected vm
         """
         test_nodes = []
@@ -255,7 +256,12 @@ class CartesianLoader(Resolver):
         for i, d in enumerate(early_config.get_parser().get_dicts()):
 
             # get configuration of each participating object and choose the one to mix with the node
-            test_nets = self._parse_and_get_nets_from_node_params(test_graph, param_dict, d)
+            try:
+                test_nets = self._parse_and_get_nets_from_node_params(test_graph, param_dict, d)
+            except ValueError:
+                logging.debug(f"Could not get or construct a test net that is (right-)compatible "
+                              f"with the test node {d['shortname']} configuration - skipping")
+                continue
 
             # produce a test node variant for each reused test net variant
             logging.debug(f"Parsing {d['name']} customization for {test_nets}")
@@ -300,37 +306,29 @@ class CartesianLoader(Resolver):
         via the object strings (if set) on a test by test basis.
         """
         test_nodes, test_objects = [], []
-        selected_objects = set() if object_strs is None else set(object_strs.keys())
-        used_objects = set()
+        # starting object restrictions could be specified externally
+        object_strs = {} if object_strs is None else object_strs
 
-        initial_object_strs = {vm_name: "" for vm_name in param.all_objects("vms")}
-        initial_object_strs.update(object_strs)
         graph = TestGraph()
-        graph.objects = self.parse_objects(param_dict, initial_object_strs, verbose=False)
-        for test_object in graph.objects:
-            if test_object.name in selected_objects:
-                # no networks are stored at this stage, just selected vms and their images
-                test_objects.append(test_object)
-                test_objects.extend(test_object.components)
+        graph.objects = self.parse_objects(param_dict, object_strs, verbose=False, skip_nets=True)
+        # the parsed test nodes are already fully restricted by the available test objects
+        graph.nodes = self.parse_nodes(graph, param_dict, nodes_str, prefix=prefix, verbose=True)
+        for test_node in graph.nodes:
+            test_nodes.append(test_node)
+            for test_object in test_node.objects:
+                if test_object.key == "vms":
+                    if test_object not in test_objects:
+                        test_objects.append(test_object)
+                        test_objects.extend(test_object.components)
+                        if verbose:
+                            print("vm    %s:  %s" % (test_object.name, test_object.params["shortname"]))
+            # reuse additionally parsed net (node-level) objects
+            if test_node.objects[0] not in test_objects:
+                test_objects.append(test_node.objects[0])
 
-        for test_node in self.parse_nodes(graph, param_dict, nodes_str,
-                                          prefix=prefix, verbose=verbose):
-            test_vms = test_node.params.objects("vms")
-            for vm_name in test_vms:
-                if vm_name not in selected_objects:
-                    break
-            else:
-                # reuse additionally parsed net (node-level) objects
-                if test_node.objects[0] not in test_objects:
-                    test_objects.append(test_node.objects[0])
-                test_nodes.append(test_node)
-                used_objects.update(test_vms)
-
+        # handle empty product of node and object variants
         if len(test_nodes) == 0:
-            object_restrictions = param.ParsedDict(graph.test_objects).parsable_form()
-            object_strs = {} if object_strs is None else object_strs
-            for object_str in object_strs.values():
-                object_restrictions += object_str
+            object_restrictions = param.join_str(object_strs)
             config = param.Reparsable()
             config.parse_next_str(object_restrictions)
             config.parse_next_str(nodes_str)
@@ -338,14 +336,6 @@ class CartesianLoader(Resolver):
             raise param.EmptyCartesianProduct(config.print_parsed())
         if verbose:
             print("%s selected test variant(s)" % len(test_nodes))
-            graph.objects = test_objects.copy()
-            for test_object in graph.objects:
-                if test_object.name in used_objects:
-                    print("vm    %s:  %s" % (test_object.name, test_object.params["shortname"]))
-                elif test_object.key == "vms":
-                    test_objects.remove(test_object)
-                    for component in test_object.components:
-                        test_objects.remove(component)
             print("%s selected vm variant(s)" % len([t for t in test_objects if t.key == "vms"]))
 
         return test_nodes, test_objects
