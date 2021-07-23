@@ -291,7 +291,7 @@ def update(config, tag=""):
 
         logging.info("Updating all states before '%s'", to_state)
         setup_dict = config["param_dict"].copy()
-        setup_dict["main_vm"] = vm_name
+        setup_dict["vms"] = vm_name
         update_graph = l.parse_object_trees(setup_dict,
                                             param.re_str("all.." + to_state),
                                             {vm_name: config["vm_strs"][vm_name]}, prefix=tag)
@@ -303,7 +303,7 @@ def update(config, tag=""):
         from_state = "0preinstall" if from_state == "install" else from_state
         if from_state != "root":
             setup_dict = config["param_dict"].copy()
-            setup_dict["main_vm"] = vm_name
+            setup_dict["vms"] = vm_name
             reuse_graph = l.parse_object_trees(setup_dict,
                                                param.re_str("all.." + from_state),
                                                {vm_name: config["vm_strs"][vm_name]},

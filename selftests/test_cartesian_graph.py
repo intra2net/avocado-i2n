@@ -100,7 +100,6 @@ class CartesianGraphTest(unittest.TestCase):
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
 
         self.prefix = ""
-        self.main_vm = ""
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
         self.job = mock.MagicMock()
@@ -617,8 +616,7 @@ class CartesianGraphTest(unittest.TestCase):
         """Check for proper node difference of two Cartesian graphs."""
         self.config["tests_str"] = "only nonleaves\n"
         self.config["tests_str"] += "only connect\n"
-        self.main_vm = "vm1"
-        self.config["param_dict"]["main_vm"] = "vm1"
+        self.config["param_dict"]["vms"] = "vm1"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
@@ -636,8 +634,7 @@ class CartesianGraphTest(unittest.TestCase):
         tests_str1 += "only connect\n"
         tests_str2 = self.config["tests_str"]
         tests_str2 += "only 0preinstall\n"
-        self.main_vm = "vm2"
-        self.config["param_dict"]["main_vm"] = "vm2"
+        self.config["param_dict"]["vms"] = "vm2"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                tests_str1, self.config["vm_strs"],
                                                prefix=self.prefix)

@@ -248,7 +248,7 @@ class CartesianLoader(Resolver):
         for i, d in enumerate(early_config.get_parser().get_dicts()):
 
             # get configuration of each participating object and choose the one to mix with the node
-            test_nets, main_object_name = self._parse_and_get_nets_from_node_params(test_graph, param_dict, d)
+            test_nets = self._parse_and_get_nets_from_node_params(test_graph, param_dict, d)
 
             # produce a test node variant for each reused test net variant
             logging.debug(f"Parsing {d['name']} customization for {test_nets}")
@@ -262,14 +262,14 @@ class CartesianLoader(Resolver):
                         node_prefix = prefix + str(i+1) + j_prefix
                         test_node = self.parse_node_from_object(net, param_dict, param.re_str(d['name']),
                                                                 prefix=node_prefix)
-                        logging.debug(f"Parsed a test node {test_node.params['shortname']} with main "
-                                      f"test object {main_object_name}")
+                        logging.debug(f"Parsed a test node {test_node.params['shortname']} from "
+                                      f"two-way compatible test net {net}")
                 except param.EmptyCartesianProduct:
                     # empty product in cases like parent (dependency) nodes imply wrong configuration
                     if d.get("require_existence", "no") == "yes":
                         raise
-                    logging.debug(f"Tests {d['shortname']} not compatible with the main test object "
-                                  f"{main_object_name} configuration - skipping")
+                    logging.debug(f"Test net {net} not (left-)compatible with the test node "
+                                  f"{d['shortname']} configuration - skipping")
                 else:
                     if verbose:
                         print(f"test    {test_node.name}:  {test_node.params['shortname']}")
@@ -542,30 +542,52 @@ class CartesianLoader(Resolver):
         object_type = d.get("object_type", "")
         object_variant = d.get("object_id", ".*").replace(object_name + "-", "")
 
-        main_vm = d.get("main_vm", param.main_vm())
-        if object_name and object_type != "nets":
-            # as the object depending on this node might not be a vm
-            # and thus a suffix, we have to obtain the relevant vm (suffix)
-            main_vm = object_name.split("_")[-1]
         # case of singleton test node
+        all_vms = param.all_objects(key="vms")
         if d.get("vms") is None:
-            vms = [main_vm]
+            if object_type != "nets":
+                if object_name:
+                    # as the object depending on this node might not be a vm
+                    # and thus a suffix, we have to obtain the relevant vm (suffix)
+                    vms = [object_name.split("_")[-1]]
+                else:
+                    vms = [d.get("main_vm", param.main_vm())]
+            else:
+                vms = []
+                for vm_name in all_vms:
+                    if re.search("(\.|^)" + vm_name + "(\.|$)", object_variant):
+                        vms += [vm_name]
         else:
             # case of leaf test node or even specified object (dependency) as well as node
             vms = d["vms"].split(" ")
-            assert main_vm in vms, f"Main test object {main_vm} for test node {d['shortname']} not among:"\
-                                   f" {', '.join(vms)}"
+        dropped_vms = set(all_vms) - set(vms)
 
         logging.debug(f"Fetching nets composed of {', '.join(vms)} to parse {d['shortname']} nodes")
         get_nets, get_vms = None, {}
         for vm_name in vms:
+            # minimal filter
             vm_name_restr = "(\.|^)" + vm_name + "(\.|$)"
-            vm_node_restr = "(\.|^)" + d.get("only_%s" % vm_name, ".*") + "(\.|$)"
-            objects = graph.get_objects_by(param_val=vm_node_restr,
-                                           subset=graph.get_objects_by(param_val=vm_name_restr))
+            objects = graph.get_objects_by(param_val=vm_name_restr)
+            # our own parsed stage OR operators and filters
+            or_objects = []
+            for vm_node_variant in d.get("only_%s" % vm_name, ".*").split(","):
+                vm_node_restr = "(\.|^)" + vm_node_variant.strip() + "(\.|$)"
+                or_objects += graph.get_objects_by(param_val=vm_node_restr, subset=objects)
+            objects = or_objects
+            # dependency filter for object
             if vm_name == object_name or object_type == "images" and object_name.endswith(f"_{vm_name}"):
                 objects = graph.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=objects)
-            net_objects = set(o for o in objects if o.key == "nets")
+            net_objects = set()
+            for get_object in objects:
+                if get_object.key != "nets":
+                    continue
+                for dropped_vm in dropped_vms:
+                    if re.search("(\.|^)" + dropped_vm + "(\.|$)", get_object.params["name"]):
+                        logging.info(f"Test net {get_object} not (right-)compatible with the test node "
+                                     f"{d['shortname']} configuration and contains a redundant {dropped_vm}")
+                        break
+                else:
+                    net_objects = net_objects.union({get_object})
             get_nets = net_objects if get_nets is None else get_nets.intersection(net_objects)
             vm_objects = [o for o in objects if o.key == "vms"]
             get_vms[vm_name] = vm_objects
@@ -582,12 +604,13 @@ class CartesianLoader(Resolver):
             # all possible vm combinations as variants of the same net slot
             for combination in itertools.product(*get_vms.values()):
                 setup_dict = {} if param_dict is None else param_dict.copy()
-                setup_dict.update({"object_suffix": "net1", "object_type": "nets"})
+                setup_dict.update({"object_suffix": "net1", "object_type": "nets",
+                                   "vms": " ".join(vms)})
                 net = self.parse_object_from_objects(combination, param_dict=setup_dict, verbose=False)
                 parse_nets.append(net)
                 graph.objects += [net]
 
-        return get_nets if len(get_nets) > 0 else parse_nets, main_vm
+        return get_nets if len(get_nets) > 0 else parse_nets
 
     def _parse_and_get_parents(self, graph, test_node, test_object, param_dict=None):
         """
