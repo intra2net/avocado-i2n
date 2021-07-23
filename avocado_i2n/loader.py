@@ -93,12 +93,19 @@ class CartesianLoader(Resolver):
                                 ovrwrt_file=param.vms_ovrwrt_file())
         for d in config.get_parser().get_dicts():
             variant_config = config.get_copy()
-            variant_config.parse_next_str("only " + d["name"])
+            if object_type == "vms":
+                variant_config.parse_next_str("only " + d["name"])
+            else:
+                # TODO: joined variants do not support follow-up restrictions to generalize this to nets,
+                # this includes stacked vm-specific restrictions or any other join-generic such
+                #for vm_name in object_strs.keys():
+                #    variant_config.parse_next_str(vm_name + ": only " + object_strs[vm_name])
+                logging.warning("Parsing nets can only be redone from single vm variants")
 
             test_object = object_class(object_suffix, variant_config)
-            # TODO: move from test object/node config to just params
-            #from virttest import utils_params
-            #test_object._params_cache = utils_params.Params(d)
+            # TODO: the Cartesian parser does not support checkpoint dictionaries
+            #test_object.config = param.Reparsable()
+            #test_object.config.parse_next_dict(d)
             test_object.regenerate_params()
 
             if verbose:
