@@ -47,7 +47,8 @@ INTERFACE
 import sys
 import os
 import re
-import logging
+import logging as log
+logging = log.getLogger('avocado.test.' + __name__)
 import contextlib
 import importlib
 import asyncio

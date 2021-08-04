@@ -29,7 +29,8 @@ INTERFACE
 
 import os
 import re
-import logging
+import logging as log
+logging = log.getLogger('avocado.test.' + __name__)
 import itertools
 
 from avocado.core.plugin_interfaces import Resolver
@@ -366,7 +367,7 @@ class CartesianLoader(Resolver):
         # NOTE: reversing here turns the leaves into a simple stack
         unresolved = sorted(leaves, key=lambda x: int(re.match("^(\d+)", x.prefix).group(1)), reverse=True)
 
-        if logging.getLogger('graph').level <= logging.DEBUG:
+        if log.getLogger('graph').level <= log.DEBUG:
             parse_dir = os.path.join(self.logdir, "graph_parse")
             if not os.path.exists(parse_dir):
                 os.makedirs(parse_dir)
@@ -404,7 +405,7 @@ class CartesianLoader(Resolver):
                     graph.nodes.extend(clones)
                     unresolved.extend(clones)
 
-                if logging.getLogger('graph').level <= logging.DEBUG:
+                if log.getLogger('graph').level <= log.DEBUG:
                     step += 1
                     graph.visualize(parse_dir, step)
             test_node.validate()

@@ -29,7 +29,8 @@ INTERFACE
 
 import os
 import re
-import logging
+import logging as log
+logging = log.getLogger('avocado.test.' + __name__)
 import collections
 
 
@@ -41,7 +42,7 @@ def set_graph_logging_level(level=20):
     This determines what descriptions of the graph will be dumped
     for debugging purposes.
     """
-    logging.getLogger('graph').setLevel(level)
+    log.getLogger('graph').setLevel(level)
 set_graph_logging_level(level=20)
 
 
@@ -187,6 +188,7 @@ class TestGraph(object):
         """
         try:
             from graphviz import Digraph
+            log.getLogger("graphviz").parent = log.getLogger("avocado.test")
         except ImportError:
             logging.warning("Couldn't visualize the Cartesian graph due to missing dependency (Graphviz)")
             return

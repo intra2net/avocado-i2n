@@ -29,10 +29,11 @@ INTERFACE
 
 import os
 import time
-import logging
+import logging as log
+logging = log.getLogger('avocado.test.' + __name__)
 import signal
 import asyncio
-from multiprocessing import SimpleQueue
+log.getLogger('asyncio').parent = log.getLogger('avocado.test')
 
 from avocado.core import nrunner
 from avocado.core.messages import MessageHandler
@@ -235,7 +236,7 @@ class CartesianRunner(RunnerInterface):
         assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
         root = shared_roots[0]
 
-        if logging.getLogger('graph').level <= logging.DEBUG:
+        if log.getLogger('graph').level <= log.DEBUG:
             traverse_dir = os.path.join(self.job.logdir, "graph_traverse")
             if not os.path.exists(traverse_dir):
                 os.makedirs(traverse_dir)
@@ -300,7 +301,7 @@ class CartesianRunner(RunnerInterface):
             else:
                 raise AssertionError("Discontinuous path in the test dependency graph detected")
 
-            if logging.getLogger('graph').level <= logging.DEBUG:
+            if log.getLogger('graph').level <= log.DEBUG:
                 step += 1
                 graph.visualize(traverse_dir, step)
 

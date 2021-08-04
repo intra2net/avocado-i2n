@@ -29,7 +29,8 @@ INTERFACE
 
 import os
 import re
-import logging
+import logging as log
+logging = log.getLogger('avocado.test.' + __name__)
 
 from avocado.utils import process
 

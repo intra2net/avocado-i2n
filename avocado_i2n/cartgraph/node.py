@@ -28,7 +28,8 @@ INTERFACE
 """
 
 import re
-import logging
+import logging as log
+logging = log.getLogger('avocado.test.' + __name__)
 
 from avocado.core.test_id import TestID
 from avocado.core.nrunner import Runnable

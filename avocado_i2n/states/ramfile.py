@@ -28,7 +28,8 @@ INTERFACE
 """
 
 import os
-import logging
+import logging as log
+logging = log.getLogger('avocado.test.' + __name__)
 import glob
 
 from .setup import StateOnBackend
