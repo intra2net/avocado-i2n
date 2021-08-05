@@ -30,6 +30,8 @@ INTERFACE
 import os
 import re
 import logging
+import collections
+
 
 
 def set_graph_logging_level(level=20):
@@ -63,7 +65,7 @@ class TestGraph(object):
 
     def suffixes(self):
         """Test object suffixes and their variant restrictions."""
-        objects = {}
+        objects = collections.OrderedDict()
         for test_object in self.objects:
             suffix = test_object.long_suffix
             if suffix in objects.keys():
@@ -75,7 +77,7 @@ class TestGraph(object):
 
     def prefixes(self):
         """Test node prefixes and their variant restrictions."""
-        nodes = {}
+        nodes = collections.OrderedDict()
         for test_node in self.nodes:
             prefix = test_node.long_prefix
             if prefix in nodes.keys():

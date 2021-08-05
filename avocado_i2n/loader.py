@@ -167,8 +167,10 @@ class CartesianLoader(Resolver):
         test_objects = []
         suffix_variants = {}
         for net_name in param.all_objects("nets"):
-            net_vms = list(set(param.all_objects("vms", [net_name])).intersection(selected_vms))
+            net_vms = param.all_objects("vms", [net_name])
             for vm_name in net_vms:
+                if vm_name not in selected_vms:
+                    continue
 
                 # TODO: the images don't have variant suffix definitions so just
                 # take the vm generic variant and join it with itself
@@ -416,7 +418,7 @@ class CartesianLoader(Resolver):
                 object_roots.append(test_node)
         setup_dict = {} if param_dict is None else param_dict.copy()
         setup_dict.update({"shared_root" : "yes",
-                           "vms": " ".join(set(o.suffix for o in graph.objects if o.key == "vms"))})
+                           "vms": " ".join(sorted(list(set(o.suffix for o in graph.objects if o.key == "vms"))))})
         setup_str = param.re_str("all..internal..noop")
         root_for_all = self.parse_node_from_object(NetObject("net0", param.Reparsable()),
                                                    setup_dict, setup_str, prefix="0s")
@@ -519,10 +521,11 @@ class CartesianLoader(Resolver):
                                  f"in the test {d['shortname']}")
         if object_variant and object_type == "nets":
             get_nets = graph.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=get_nets)
+        get_nets = sorted(list(get_nets), key=lambda x: x.id)
 
         logging.debug(f"{len(get_nets)} test nets will be reused for {d['shortname']}")
+        parse_nets = []
         if len(get_nets) == 0:
-            parse_nets = []
             logging.debug(f"Parsing a new net from vms {', '.join(vms)} for {d['shortname']}")
             # all possible vm combinations as variants of the same net slot
             for combination in itertools.product(*get_vms.values()):
@@ -532,6 +535,7 @@ class CartesianLoader(Resolver):
                 net = self.parse_object_from_objects(combination, param_dict=setup_dict, verbose=False)
                 parse_nets.append(net)
                 graph.objects += [net]
+        parse_nets = sorted(parse_nets, key=lambda x: x.id)
 
         return get_nets if len(get_nets) > 0 else parse_nets
 
