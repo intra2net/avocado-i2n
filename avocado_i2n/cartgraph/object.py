@@ -42,9 +42,20 @@ class TestObject(object):
         return self._params_cache
     params = property(fget=params)
 
+    def final_restr(self):
+        """Final restriction to make the object parsing variant unique."""
+        return self.config.steps[-1].parsable_form()
+    final_restr = property(fget=final_restr)
+
     def id(self):
+        """Sufficiently unique ID to identify a test object suffix."""
         return self._id
     id = property(fget=id)
+
+    def id_long(self):
+        """Sufficiently unique ID to identify a test object."""
+        return self.name + "-" + self.params["name"]
+    id_long = property(fget=id_long)
 
     def __init__(self, name, config):
         """
@@ -54,12 +65,11 @@ class TestObject(object):
         :param config: variant configuration for the test object
         :type config: :py:class:`param.Reparsable`
         """
-        self.name = name.split("/")[-1]
+        self.name = name.split("_")[0]
         self._id = name
         self.config = config
         self._params_cache = None
 
-        self.object_str = ""
         # TODO: integrate these features better
         self.current_state = "unknown"
 
@@ -134,6 +144,12 @@ class VMObject(TestObject):
 
 class ImageObject(TestObject):
     """An image wrapper for a test object used in one or more test nodes."""
+
+    def id_long(self):
+        """Sufficiently unique ID to identify a test object."""
+        assert len(self.composites) == 1, "Image objects need a unique composite"
+        return self.id + "-" + self.composites[0].params["name"]
+    id_long = property(fget=id_long)
 
     def __init__(self, name, config):
         """

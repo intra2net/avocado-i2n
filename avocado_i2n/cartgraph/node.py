@@ -33,9 +33,6 @@ from avocado.core.test_id import TestID
 from avocado.core.nrunner import Runnable
 from avocado.core.dispatcher import SpawnerDispatcher
 
-from .. import params_parser as param
-from . import NetObject
-
 
 class TestNode(object):
     """
@@ -50,6 +47,11 @@ class TestNode(object):
         return self._params_cache
     params = property(fget=params)
 
+    def final_restr(self):
+        """Final restriction to make the object parsing variant unique."""
+        return self.config.steps[-2].parsable_form()
+    final_restr = property(fget=final_restr)
+
     def id(self):
         """Sufficiently unique ID to identify a test node."""
         return self.name + "-" + self.params["vms"].replace(" ", "")
@@ -57,7 +59,7 @@ class TestNode(object):
 
     def id_long(self):
         """Long and still unique ID to use for state machine tasks."""
-        return TestID(self.id, self.params["shortname"])
+        return TestID(self.id, self.params["name"])
     id_long = property(fget=id_long)
 
     def count(self):
@@ -65,31 +67,32 @@ class TestNode(object):
         return self.name
     count = property(fget=count)
 
-    def __init__(self, name, config, objects):
+    def __init__(self, name, config, object):
         """
         Construct a test node (test) for any test objects (vms).
 
         :param str name: name of the test node
         :param config: variant configuration for the test node
         :type config: :py:class:`param.Reparsable`
-        :param objects: objects participating in the test node
-        :type objects: [:py:class:`TestObject`]
+        :param object: node-level object participating in the test node
+        :type object: :py:class:`NetObject`
         """
         self.name = name
         self.config = config
         self._params_cache = None
-        self.node_str = None
 
         self.should_run = True
         self.should_clean = True
 
         self.spawner = None
 
-        # list of objects (in composition) involved in the test
-        self.objects = [NetObject("net1", param.Reparsable())]
-        # the vms and images are implicitly assumed here
-        for test_object in objects:
-            self.objects[0].components.append(test_object)
+        # flattened list of objects (in composition) involved in the test
+        self.objects = [object]
+        # TODO: only three nesting levels from a test net are supported
+        if object.key != "nets":
+            raise AssertionError("Test node could be initialized only from test objects "
+                                 "of the same composition level, currently only test nets")
+        for test_object in object.components:
             self.objects += [test_object]
             self.objects += test_object.components
 

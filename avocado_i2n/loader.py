@@ -30,6 +30,7 @@ INTERFACE
 import os
 import re
 import logging
+import itertools
 
 from avocado.core.plugin_interfaces import Resolver
 from avocado.core.resolver import ReferenceResolution, ReferenceResolutionResult
@@ -58,6 +59,88 @@ class CartesianLoader(Resolver):
         super().__init__()
 
     """parsing functionality"""
+    def parse_object_variants(self, param_dict=None, object_strs=None, verbose=False):
+        """
+        Parse composite test object variants from joined component variants.
+
+        :param param_dict: runtime parameters used for extra customization
+        :type param_dict: {str, str} or None
+        :param object_strs: object-specific names and variant restrictions
+        :type object_strs: {str, str}
+        :param bool verbose: whether to print extra messages or not
+        :returns: parsed test objects
+        :rtype: [:py:class:`TestObject`]
+
+        ..todo:: Support is limited to just vms and nets for the time being due to
+                 a vm-only supported suffixes for `object_strs`.
+        """
+        parsed_param_dict = param.ParsedDict(param_dict).parsable_form()
+        test_objects = []
+
+        object_suffix = param_dict.get("object_suffix", "net1")
+        object_type = param_dict.get("object_type", "nets")
+        if object_type == "images":
+            raise TypeError("Multi-variant image test objects are not supported.")
+        object_class = NetObject if object_type == "nets" else VMObject
+        main_vm = param.main_vm() if len(object_strs.keys()) > 1 else list(object_strs.keys())[0]
+
+        # all possible component object combinations for a given composite object
+        config = param.Reparsable()
+        config.parse_next_batch(base_file="objects.cfg",
+                                base_str=param.join_str(object_strs, parsed_param_dict),
+                                # make sure we have the final word on parameters we use to identify objects
+                                base_dict={"main_vm": main_vm},
+                                ovrwrt_file=param.vms_ovrwrt_file())
+        for d in config.get_parser().get_dicts():
+            variant_config = config.get_copy()
+            if object_type == "vms":
+                variant_config.parse_next_str("only " + d["name"])
+            else:
+                # TODO: joined variants do not support follow-up restrictions to generalize this to nets,
+                # this includes stacked vm-specific restrictions or any other join-generic such
+                #for vm_name in object_strs.keys():
+                #    variant_config.parse_next_str(vm_name + ": only " + object_strs[vm_name])
+                logging.warning("Parsing nets can only be redone from single vm variants")
+
+            test_object = object_class(object_suffix, variant_config)
+            # TODO: the Cartesian parser does not support checkpoint dictionaries
+            #test_object.config = param.Reparsable()
+            #test_object.config.parse_next_dict(d)
+            test_object.regenerate_params()
+
+            if verbose:
+                print(f"{test_object.key}    {test_object.name}:  {test_object.params['shortname']}")
+            test_objects += [test_object]
+
+        return test_objects
+
+    def parse_object_from_objects(self, test_objects, param_dict=None, verbose=False):
+        """
+        Parse a unique composite object from joined pre-parsed component objects.
+
+        :param test_objects: fully parsed test objects to parse the composite from
+        :type: test_objects: (:py:class:`TestObject`)
+        :param param_dict: runtime parameters used for extra customization
+        :type param_dict: {str, str} or None
+        :param bool verbose: whether to print extra messages or not
+        :returns: parsed test objects
+        :rtype: [:py:class:`TestObject`]
+        :raises: :py:class:`exceptions.AssertionError` if the parsed composite is not unique
+        """
+        object_strs = {o.name: o.final_restr for o in test_objects}
+        composite_objects = self.parse_object_variants(param_dict, object_strs, verbose=verbose)
+
+        if len(composite_objects) > 1:
+            raise AssertionError(f"No unique composite could be parsed using {test_objects}\n"
+                                 f"Parsed multiple composite objects: {composite_objects}")
+        composite = composite_objects[0]
+
+        for test_object in test_objects:
+            composite.components.append(test_object)
+            test_object.composites.append(composite)
+
+        return composite
+
     def parse_objects(self, param_dict=None, object_strs=None, verbose=False):
         """
         Parse all available test objects and their configurations or
@@ -79,60 +162,42 @@ class CartesianLoader(Resolver):
         else:
             selected_vms = object_strs.keys()
 
-        # TODO: multi-object-variant runs are not fully supported yet so empty strings
-        # will not result in "all variants" as they are supposed to but in validation error
-        # - override with unique defaults for now
-        from .cmd_parser import full_vm_params_and_strs
-        available_object_strs = {vm_name: "" for vm_name in param.all_objects("vms")}
-        available_object_strs.update(object_strs)
-        use_vms_default = {vm_name: available_object_strs[vm_name] == "" for vm_name in available_object_strs}
-        _, object_strs = full_vm_params_and_strs(param_dict, available_object_strs,
-                                                 use_vms_default=use_vms_default)
-
         # TODO: this is only generalized up to the current value of the stateful object chain
-        parsed_param_dict = param.ParsedDict(param_dict).parsable_form()
         test_objects = []
+        suffix_variants = {}
         for net_name in param.all_objects("nets"):
-            net_vms = param.all_objects("vms", [net_name])
-            objstrs = {vm_name: object_strs[vm_name] for vm_name in net_vms}
-            # all possible vm combinations for a given net
-            config = param.Reparsable()
-            config.parse_next_batch(base_file="objects.cfg",
-                                    base_str=param.join_str(objstrs, parsed_param_dict),
-                                    ovrwrt_file=param.vms_ovrwrt_file())
-            test_object = NetObject(net_name, config)
-            test_object.regenerate_params()
-            test_objects += [test_object]
-
+            net_vms = list(set(param.all_objects("vms", [net_name])).intersection(selected_vms))
             for vm_name in net_vms:
-                vm_images = param.all_objects("images", [net_name, vm_name])
+
                 # TODO: the images don't have variant suffix definitions so just
                 # take the vm generic variant and join it with itself
                 objstr = {vm_name: object_strs[vm_name]}
-                # all possible hardware-software combinations for a given vm
-                config = param.Reparsable()
-                config.parse_next_batch(base_file="objects.cfg",
-                                        base_str=param.join_str(objstr, parsed_param_dict),
-                                        # make sure we have the final word on parameters we use to identify objects
-                                        base_dict={"main_vm": vm_name},
-                                        ovrwrt_file=param.vms_ovrwrt_file())
-                test_object = VMObject(vm_name, config)
-                test_object.regenerate_params()
-                if verbose:
-                    print("vm    %s:  %s" % (test_object.name, test_object.params["shortname"]))
-                # the original restriction is an optional but useful attribute
-                test_object.object_str = object_strs[vm_name]
-                test_objects.append(test_object)
-                test_objects[0].components.append(test_object)
-                test_object.composites.append(test_objects[0])
+                setup_dict = {} if param_dict is None else param_dict.copy()
+                setup_dict.update({"object_suffix": vm_name, "object_type": "vms"})
+                # all possible hardware-software combinations as variants of the same vm slot
+                vms = self.parse_object_variants(setup_dict, object_strs=objstr, verbose=verbose)
 
-                # an extra run for nested image test objects
-                for image_name in vm_images:
-                    config = param.Reparsable()
-                    config.parse_next_dict(test_object.params.object_params(image_name))
-                    test_objects.append(ImageObject(f"{vm_name}/{image_name}", config))
-                    test_object.components.append(test_objects[-1])
-                    test_objects[-1].composites.append(test_object)
+                suffix_variants[f"{vm_name}_{net_name}"] = vms
+                test_objects.extend(vms)
+
+                # currently unique handling for nested image test objects
+                for vm in vms:
+                    for image_name in vm.params.objects("images"):
+                        image_suffix = f"{image_name}_{vm_name}"
+                        config = param.Reparsable()
+                        config.parse_next_dict(vm.params.object_params(image_name))
+                        config.parse_next_dict({"object_suffix": image_suffix, "object_type": "images"})
+                        image = ImageObject(image_suffix, config)
+                        test_objects.append(image)
+                        vm.components.append(image)
+                        image.composites.append(vm)
+
+            # all possible vm combinations as variants of the same net slot
+            for combination in itertools.product(*suffix_variants.values()):
+                setup_dict = {} if param_dict is None else param_dict.copy()
+                setup_dict.update({"object_suffix": net_name, "object_type": "nets"})
+                net = self.parse_object_from_objects(combination, param_dict=setup_dict, verbose=verbose)
+                test_objects.append(net)
 
         return test_objects
 
@@ -141,20 +206,24 @@ class CartesianLoader(Resolver):
         Get the original install test node for the given object.
 
         :param test_object: fully parsed test object to parse the node from
-        :type: test_object: :py:class:`TestObject`
+        :type: test_object: :py:class:`NetObject`
         :param param_dict: extra parameters to be used as overwrite dictionary
         :type param_dict: {str, str} or None
         :param str param_str: string block of parameters to be used as overwrite string
         :param str prefix: extra name identifier for the test to be run
         :returns: parsed test node for the object
         :rtype: :py:class:`TestNode`
+        :raises: :py:class:`AssertionError` if the node is parsed from a non-net object
         """
+        if test_object.key != "nets":
+            raise AssertionError("Test node could be parsed only from test objects of the "
+                                 "same composition level, currently only test nets")
         config = test_object.config.get_copy()
         config.parse_next_batch(base_file="sets.cfg",
                                 ovrwrt_file=param.tests_ovrwrt_file(),
                                 ovrwrt_str=param_str,
                                 ovrwrt_dict=param_dict)
-        test_node = TestNode(prefix, config, [test_object])
+        test_node = TestNode(prefix, config, test_object)
         test_node.regenerate_params()
         return test_node
 
@@ -186,65 +255,32 @@ class CartesianLoader(Resolver):
         for i, d in enumerate(early_config.get_parser().get_dicts()):
 
             # get configuration of each participating object and choose the one to mix with the node
-            objects, main_object = self._determine_objects_for_node_params(test_graph, d)
+            test_nets = self._parse_and_get_nets_from_node_params(test_graph, param_dict, d)
 
-            # 0scan shared root is parsable through the default procedure here
-            if "0root" in d["name"]:
-                test_nodes += [self.parse_terminal_node(obj, param_dict, prefix=prefix) for obj in objects if obj.key == "vms"]
-                continue
-
-            # final variant multiplication to produce final test node configuration
-            logging.debug("Multiplying the vm variants by the test variants using %s", main_object.name)
-            # each test node assumes one net object so combine vm configurations
-            vm_objects = [o for o in objects if o.key == "vms"]
-            objstrs = {}
-            for test_object in vm_objects:
-                objstrs[test_object.name] = test_object.object_str
-
-            if len(vm_objects) == 1:
-                # reuse trivial network from the parsed vm objects
-                test_node = self.parse_node_from_object(vm_objects[0], param_dict, param.re_str(d["name"]),
-                                                        prefix=prefix + str(i+1))
-                net_config = test_node.config.get_copy()
-            else:
-                # reuse custom network that isn't parsed yet
-                config = param.Reparsable()
-
-                # net parsing stage
-                config.parse_next_batch(base_file="objects.cfg",
-                                        # TODO: the current suffix operators make it nearly impossible to overwrite
-                                        # object parameters with object specific values after the suffix operator is
-                                        # applied with the exception of special regex operator within the config
-                                        base_str=param.join_str(objstrs, param.ParsedDict(param_dict).parsable_form()),
-                                        base_dict={"main_vm": main_object.name},
-                                        ovrwrt_file=param.vms_ovrwrt_file())
-                net_config = config.get_copy()
-
-                # test parsing stage
-                config.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file(),
-                                        ovrwrt_str=param.re_str(d["name"]),
-                                        ovrwrt_dict=param_dict)
-                name = prefix + str(i+1)
-                test_node = TestNode(name, config, vm_objects)
-
-            # the original restriction is an optional but useful attribute
-            test_node.node_str = nodes_str
-            # the test net config is the intermediary one here
-            test_node.objects[0].config = net_config
-            try:
-                test_node.regenerate_params()
-                if verbose:
-                    print("test    %s:  %s" % (test_node.name, test_node.params["shortname"]))
-                logging.debug("Parsed a test '%s' with main test object %s",
-                              d["shortname"], main_object.name)
-                test_nodes.append(test_node)
-            except param.EmptyCartesianProduct:
-                # empty product in cases like parent (dependency) nodes imply wrong configuration
-                if d.get("require_existence", "no") == "yes":
-                    raise
-                logging.debug("Test '%s' not compatible with the %s configuration - skipping",
-                              d["shortname"], main_object.name)
+            # produce a test node variant for each reused test net variant
+            logging.debug(f"Parsing {d['name']} customization for {test_nets}")
+            for j, net in enumerate(test_nets):
+                try:
+                    j_prefix = "b" + str(j) if j > 0 else ""
+                    if "0root" in d['name']:
+                        node_prefix = prefix + j_prefix
+                        test_node = self.parse_terminal_node(net, param_dict, prefix=node_prefix)
+                    else:
+                        node_prefix = prefix + str(i+1) + j_prefix
+                        test_node = self.parse_node_from_object(net, param_dict, param.re_str(d['name']),
+                                                                prefix=node_prefix)
+                        logging.debug(f"Parsed a test node {test_node.params['shortname']} from "
+                                      f"two-way compatible test net {net}")
+                except param.EmptyCartesianProduct:
+                    # empty product in cases like parent (dependency) nodes imply wrong configuration
+                    if d.get("require_existence", "no") == "yes":
+                        raise
+                    logging.debug(f"Test net {net} not (left-)compatible with the test node "
+                                  f"{d['shortname']} configuration - skipping")
+                else:
+                    if verbose:
+                        print(f"test    {test_node.name}:  {test_node.params['shortname']}")
+                    test_nodes.append(test_node)
 
         return test_nodes
 
@@ -273,6 +309,7 @@ class CartesianLoader(Resolver):
         graph.objects = self.parse_objects(param_dict, initial_object_strs, verbose=False)
         for test_object in graph.objects:
             if test_object.name in selected_objects:
+                # no networks are stored at this stage, just selected vms and their images
                 test_objects.append(test_object)
                 test_objects.extend(test_object.components)
 
@@ -283,6 +320,9 @@ class CartesianLoader(Resolver):
                 if vm_name not in selected_objects:
                     break
             else:
+                # reuse additionally parsed net (node-level) objects
+                if test_node.objects[0] not in test_objects:
+                    test_objects.append(test_node.objects[0])
                 test_nodes.append(test_node)
                 used_objects.update(test_vms)
 
@@ -451,9 +491,11 @@ class CartesianLoader(Resolver):
         setup_str = param.re_str("all..internal..0scan")
         nodes = self.parse_nodes(graph, setup_dict, setup_str)
         assert len(nodes) == 1, "There can only be one shared root"
-        scan_node = TestNode(prefix + "0s", nodes[0].config, graph.objects)
+        # TODO: scanning all test objects becomes increasingly monolithic and infeasible
+        main_net = [o for o in graph.objects if o.key == "nets"][0]
+        scan_node = TestNode(prefix + "0s", nodes[0].config, main_net)
         scan_node.regenerate_params()
-        logging.debug("Reached shared root %s", scan_node.params["shortname"])
+        logging.debug("Parsed shared root %s", scan_node.params["shortname"])
         return scan_node
 
     def parse_terminal_node(self, test_object, param_dict=None, prefix=""):
@@ -461,7 +503,7 @@ class CartesianLoader(Resolver):
         Get the original install test node for the given object.
 
         :param test_object: fully parsed test object to parse the node from
-        :type: test_object: :py:class:`TestObject`
+        :type: test_object: :py:class:`NetObject`
         :param param_dict: runtime parameters used for extra customization
         :type param_dict: {str, str} or None
         :param str prefix: extra name identifier for the test to be run
@@ -473,62 +515,109 @@ class CartesianLoader(Resolver):
         """
         setup_dict = {} if param_dict is None else param_dict.copy()
 
-        object_name = setup_dict.get("object_name", test_object.id)
+        object_suffix = setup_dict.get("object_suffix", test_object.id)
         object_type = setup_dict.get("object_type", test_object.key)
+        object_id = setup_dict.get("object_id", test_object.id_long)
 
         if object_type == "images":
             setup_dict.update({"get_images": "",
                                "set_state_images": "install",
-                               "object_root": object_name})
+                               "object_root": object_id})
             setup_str = param.re_str("all..internal..0root")
         elif object_type == "vms":
             setup_dict.update({"get_vms": "",
-                               "object_root": object_name})
+                               "object_root": object_id})
             setup_str = param.re_str("all..internal..start")
         elif object_type == "nets":
             setup_dict.update({"get_nets": "",
                                "set_state_nets": "default",
-                               "object_root": object_name})
+                               "object_root": object_id})
             setup_str = param.re_str("all..internal..unchanged")
 
-        terminal_node = self.parse_node_from_object(test_object, setup_dict, setup_str, prefix=prefix+"0t")
-        logging.debug("Reached %s terminal node for %s",
-                      object_name, terminal_node.params["shortname"])
+        terminal_node = self.parse_node_from_object(test_object, setup_dict, setup_str,
+                                                    prefix=prefix+"0t")
+        logging.debug(f"Parsed {object_suffix} terminal node {terminal_node.params['shortname']}")
         return terminal_node
 
     """internals"""
-    def _determine_objects_for_node_params(self, graph, d):
+    def _parse_and_get_nets_from_node_params(self, graph, param_dict, d):
         """
         Decide about test objects participating in the test node returning the
         final selection of such and the main object for the test.
         """
-        main_vm = d.get("main_vm", param.main_vm())
-        if d.get("object_name") and d.get("object_type", "vms") != "nets":
-            # as the object depending on this node might not be a vm
-            # and thus a suffix, we have to obtain the relevant vm (suffix)
-            main_vm = d.get("object_name").split("/")[0]
+        object_name = d.get("object_suffix", "")
+        object_type = d.get("object_type", "")
+        object_variant = d.get("object_id", ".*").replace(object_name + "-", "")
+
         # case of singleton test node
+        all_vms = param.all_objects(key="vms")
         if d.get("vms") is None:
-            vms = [main_vm]
+            if object_type != "nets":
+                if object_name:
+                    # as the object depending on this node might not be a vm
+                    # and thus a suffix, we have to obtain the relevant vm (suffix)
+                    vms = [object_name.split("_")[-1]]
+                else:
+                    vms = [d.get("main_vm", param.main_vm())]
+            else:
+                vms = []
+                for vm_name in all_vms:
+                    if re.search("(\.|^)" + vm_name + "(\.|$)", object_variant):
+                        vms += [vm_name]
         else:
             # case of leaf test node or even specified object (dependency) as well as node
             vms = d["vms"].split(" ")
-            assert main_vm in vms, "Main test object %s for test node '%s' not among:"\
-                                   " %s" % (main_vm, d["shortname"], ", ".join(vms))
+        dropped_vms = set(all_vms) - set(vms)
 
-        logging.debug("Fetching test objects %s to parse a test node", ", ".join(vms))
-        objects = []
+        logging.debug(f"Fetching nets composed of {', '.join(vms)} to parse {d['shortname']} nodes")
+        get_nets, get_vms = None, {}
         for vm_name in vms:
-            vm = graph.get_object_by(param_key="main_vm", param_val="^"+vm_name+"$")
-            objects.append(vm)
-            objects.extend(vm.components)
-            if main_vm == vm.name:
-                main_object = vm
-        if main_object is None:
-            raise ValueError("Could not detect the main object among '%s' "
-                             "in the test '%s'" % (", ".join(vms), d["shortname"]))
+            # minimal filter
+            vm_name_restr = "(\.|^)" + vm_name + "(\.|$)"
+            objects = graph.get_objects_by(param_val=vm_name_restr)
+            # our own parsed stage OR operators and filters
+            or_objects = []
+            for vm_node_variant in d.get("only_%s" % vm_name, ".*").split(","):
+                vm_node_restr = "(\.|^)" + vm_node_variant.strip() + "(\.|$)"
+                or_objects += graph.get_objects_by(param_val=vm_node_restr, subset=objects)
+            objects = or_objects
+            # dependency filter for object
+            if vm_name == object_name or object_type == "images" and object_name.endswith(f"_{vm_name}"):
+                objects = graph.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=objects)
+            net_objects = set()
+            for get_object in objects:
+                if get_object.key != "nets":
+                    continue
+                for dropped_vm in dropped_vms:
+                    if re.search("(\.|^)" + dropped_vm + "(\.|$)", get_object.params["name"]):
+                        logging.info(f"Test net {get_object} not (right-)compatible with the test node "
+                                     f"{d['shortname']} configuration and contains a redundant {dropped_vm}")
+                        break
+                else:
+                    net_objects = net_objects.union({get_object})
+            get_nets = net_objects if get_nets is None else get_nets.intersection(net_objects)
+            vm_objects = [o for o in objects if o.key == "vms"]
+            get_vms[vm_name] = vm_objects
+            if len(get_vms[vm_name]) == 0:
+                raise ValueError(f"Could not fetch any objects for suffix {vm_name} "
+                                 f"in the test {d['shortname']}")
+        if object_variant and object_type == "nets":
+            get_nets = graph.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=get_nets)
 
-        return objects, main_object
+        logging.debug(f"{len(get_nets)} test nets will be reused for {d['shortname']}")
+        if len(get_nets) == 0:
+            parse_nets = []
+            logging.debug(f"Parsing a new net from vms {', '.join(vms)} for {d['shortname']}")
+            # all possible vm combinations as variants of the same net slot
+            for combination in itertools.product(*get_vms.values()):
+                setup_dict = {} if param_dict is None else param_dict.copy()
+                setup_dict.update({"object_suffix": "net1", "object_type": "nets",
+                                   "vms": " ".join(vms)})
+                net = self.parse_object_from_objects(combination, param_dict=setup_dict, verbose=False)
+                parse_nets.append(net)
+                graph.objects += [net]
+
+        return get_nets if len(get_nets) > 0 else parse_nets
 
     def _parse_and_get_parents(self, graph, test_node, test_object, param_dict=None):
         """
@@ -538,22 +627,23 @@ class CartesianLoader(Resolver):
         object_params = test_object.object_typed_params(test_node.params)
         # objects can appear within a test without any prior dependencies
         setup_restr = object_params["get"]
-        logging.debug("Parsing Cartesian setup of %s through restriction %s",
-                      test_node.params["shortname"], setup_restr)
+        setup_obj_resr = test_object.id_long.split("-")[1]
+        logging.debug("Cartesian setup of %s for %s uses restriction %s",
+                      test_object.id, test_node.params["shortname"], setup_restr)
 
         # speedup for handling already parsed unique parent cases
         if setup_restr == "0root":
-            get_parent = graph.get_nodes_by("object_root", "^" + test_object.id + "$")
+            get_parent = graph.get_nodes_by("object_root", "^" + test_object.id_long + "$")
         else:
             get_parent = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
-                                            # not unique enough for vm1/image1 and vm2/image1
-                                            subset=graph.get_nodes_by(test_object.key,
-                                                                      "(^|\s)%s($|\s)" % test_object.name))
+                                            subset=graph.get_nodes_by("name",
+                                                                      "(\.|^)%s(\.|$)" % setup_obj_resr))
         if len(get_parent) == 1:
             return get_parent, []
         setup_dict = {} if param_dict is None else param_dict.copy()
-        setup_dict.update({"object_name": test_object.id,
+        setup_dict.update({"object_suffix": test_object.id,
                            "object_type": test_object.key,
+                           "object_id": test_object.id_long,
                            "require_existence": "yes"})
         setup_str = param.re_str("all.." + setup_restr)
         name = test_node.name + "a"
@@ -568,8 +658,8 @@ class CartesianLoader(Resolver):
             # but this regex performs extremely slow (much slower than string replacement)
             parent_name = ".".join(new_parent.params["name"].split(".")[1:])
             old_parents = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % parent_name,
-                                             subset=graph.get_nodes_by(test_object.key,
-                                                                       "(^|\s)%s($|\s)" % test_object.name))
+                                             subset=graph.get_nodes_by("name",
+                                                                       "(\.|^)%s(\.|$)" % setup_obj_resr))
             if len(old_parents) > 0:
                 for old_parent in old_parents:
                     logging.debug("Found parsed dependency %s for %s through object %s",
@@ -602,7 +692,7 @@ class CartesianLoader(Resolver):
                 else:
                     clone_name = clone_source.name + "d" + str(i)
                     clone_config = clone_source.config.get_copy()
-                    clone = TestNode(clone_name, clone_config, list(clone_source.objects))
+                    clone = TestNode(clone_name, clone_config, clone_source.objects[0])
                     clone.regenerate_params()
 
                     # clone setup with the exception of unique parent copy

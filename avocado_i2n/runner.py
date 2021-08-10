@@ -141,7 +141,7 @@ class CartesianRunner(RunnerInterface):
             await self.run_test(self.job, node)
 
             try:
-                test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["shortname"]))
+                test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["name"]))
                 test_status = test_result["status"]
             except StopIteration:
                 test_status = "ERROR"
@@ -420,7 +420,7 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_file=param.tests_ovrwrt_file(),
                                         ovrwrt_str=setup_str,
                                         ovrwrt_dict=setup_dict)
-        return await self.run_test_node(TestNode("0t", install_config, test_node.objects))
+        return await self.run_test_node(TestNode("0t", install_config, test_node.objects[0]))
 
     """internals"""
     async def _traverse_test_node(self, graph, test_node, params):
