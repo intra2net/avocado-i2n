@@ -55,10 +55,6 @@ class CmdParserTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             cmd.params_from_cmd(self.config)
 
-        self.config["params"] = base_params + ["default_only_vm1="]
-        with self.assertRaises(ValueError):
-            cmd.params_from_cmd(self.config)
-
     def test_selected_tests(self):
         # test default (from config)
         cmd.params_from_cmd(self.config)

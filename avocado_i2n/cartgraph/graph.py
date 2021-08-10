@@ -31,8 +31,6 @@ import os
 import re
 import logging
 
-from ..states import setup as ss
-
 
 def set_graph_logging_level(level=20):
     """
@@ -67,7 +65,11 @@ class TestGraph(object):
         """Test objects dictionary property."""
         objects = {}
         for test_object in self.objects:
-            objects[test_object.id] = test_object.params["shortname"]
+            suffix = test_object.id
+            if suffix in objects.keys():
+                objects[suffix] += "," + test_object.params["name"]
+            else:
+                objects[suffix] = test_object.params["name"]
         return objects
     test_objects = property(fget=test_objects)
 
@@ -75,7 +77,11 @@ class TestGraph(object):
         """Test nodes dictionary property."""
         nodes = {}
         for test_node in self.nodes:
-            nodes[test_node.id] = test_node.params["shortname"]
+            prefix = test_node.id
+            if prefix in nodes.keys():
+                nodes[prefix] += "," + test_node.params["name"]
+            else:
+                nodes[prefix] = test_node.params["name"]
         return nodes
     test_nodes = property(fget=test_nodes)
 
@@ -85,11 +91,11 @@ class TestGraph(object):
         self.objects = []
 
     def __repr__(self):
-        dump = "[cartgraph] objects='%s' nodes='%s'" % (len(self.nodes), len(self.objects))
+        dump = "[cartgraph] objects='%s' nodes='%s'" % (len(self.objects), len(self.nodes))
         for test_object in self.objects:
             dump = "%s\n\t%s" % (dump, str(test_object))
-            for test_node in self.nodes:
-                dump = "%s\n\t\t%s" % (dump, str(test_node))
+        for test_node in self.nodes:
+            dump = "%s\n\t%s" % (dump, str(test_node))
         return dump
 
     def new_objects(self, objects):
@@ -195,66 +201,6 @@ class TestGraph(object):
         graph.render("%s/cg_%s_%s" % (dump_dir, id(self), n))
 
     """run/clean switching functionality"""
-    def scan_object_states(self, env):
-        """
-        Scan for present object states to reuse tests from previous runs
-
-        :param env: environment related to the test
-        :type env: Env object
-        :raises: :py:class:`AssertionError` if a permanent (manual) vms doesn't exist
-        """
-        for test_node in self.nodes:
-            test_node.should_run = True
-
-            all_states_available = True
-            for test_object in test_node.objects:
-                object_name = test_object.name
-                object_params = test_node.params.object_params(object_name)
-                object_state = object_params.get("set_state")
-
-                # the test leaves an object undefined so it cannot be reused for this object
-                # TODO: If at least one object state left after some of the test nodes
-                # is available, the test node can be reused *for that object*.
-                if object_state is None or object_state == "":
-                    test_node.should_run = True
-                    break
-
-                # the ephemeral states can be unset during the test run so cannot be counted on
-                if test_node.is_ephemeral():
-                    if object_params.get("reuse_ephemeral_states", "no") == "yes":
-                        # NOTE: If you are running only tests that are descendants of this ephemeral test,
-                        # it won't be lost throughout the run so you might as well reuse it if available
-                        # before the test run commences. However, be warned that this is user responsibility.
-                        # TODO: If the states are on but not on a permanent test object,
-                        # we rely on the ephemeral tests. However, be warned that there is
-                        # no guarantee the ephemeral test concept (i.e. off to on
-                        # state transition) will guard all possible topologies of the Cartesian graph.
-                        # This works well for simple enough cases with no on states descending from
-                        # other on states unless we have a permanent object.
-                        logging.warning("The state %s of %s is ephemeral but will be forcibly reused",
-                                        object_state, object_name)
-                    else:
-                        logging.info("The state %s of %s is ephemeral (cannot be reused at any desired time)",
-                                     object_state, object_name)
-                        # test should be run regardless of further checks
-                        test_node.should_run = True
-                        break
-
-                # the object state has to be defined to reach this stage
-                if object_state == "root" and test_object.is_permanent():
-                    test_node.should_run = False
-                    break
-
-                # ultimate consideration of whether the state is actually present
-                object_params["vms"] = object_name
-                object_params["check_state"] = object_state
-                object_params["check_type"] = object_params.get("set_type", "on")
-                object_params["check_mode"] = object_params.get("check_mode", "rr")
-
-                all_states_available &= ss.check_states(object_params, env)
-            else:
-                test_node.should_run = not all_states_available
-
     def flag_children(self, node_name=None, object_name=None, flag_type="run", flag=True,
                       skip_roots=False):
         """
@@ -279,7 +225,7 @@ class TestGraph(object):
                                            param_val="(?:^|\s)%s(?:$|\s)" % object_name,
                                            subset=root_tests)
         else:
-            root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)0scan(?:\.|$)")
+            root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)noop(?:\.|$)")
         if len(root_tests) < 1:
             raise AssertionError("Could not retrieve node %s and flag all its children tests" % node_name)
         elif len(root_tests) > 1:
@@ -335,7 +281,7 @@ class TestGraph(object):
                     test_node.should_clean = flag
 
     """get queries"""
-    def get_objects_by(self, param_key="main_vm", param_val="", subset=None):
+    def get_objects_by(self, param_key="name", param_val="", subset=None):
         """
         Query all test objects by a value in a parameter, returning a set of objects.
 
@@ -356,7 +302,7 @@ class TestGraph(object):
                       len(objects_selection), len(subset), param_key, param_val)
         return objects_selection
 
-    def get_object_by(self, param_key="main_vm", param_val="", subset=None):
+    def get_object_by(self, param_key="name", param_val="", subset=None):
         """
         Query all test objects by a value in a parameter, returning a unique object.
 
@@ -366,7 +312,8 @@ class TestGraph(object):
         The rest of the arguments are analogical to the plural version.
         """
         objects_selection = self.get_objects_by(param_key, param_val, subset)
-        assert len(objects_selection) == 1
+        assert len(objects_selection) == 1, "Test object with %s=%s not existing"\
+               " or unique in: %s" % (param_key, param_val, objects_selection)
         return objects_selection[0]
 
     def get_nodes_by(self, param_key="name", param_val="", subset=None):

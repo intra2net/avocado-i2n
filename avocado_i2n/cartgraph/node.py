@@ -28,10 +28,13 @@ INTERFACE
 """
 
 import re
+import logging
 
 from avocado.core.test_id import TestID
 from avocado.core.nrunner import Runnable
 from avocado.core.dispatcher import SpawnerDispatcher
+
+from ..states import setup as ss
 
 
 class TestNode(object):
@@ -47,6 +50,11 @@ class TestNode(object):
         return self._params_cache
     params = property(fget=params)
 
+    def final_restr(self):
+        """Final restriction to make the object parsing variant unique."""
+        return self.config.steps[-2].parsable_form()
+    final_restr = property(fget=final_restr)
+
     def id(self):
         """Sufficiently unique ID to identify a test node."""
         return self.name + "-" + self.params["vms"].replace(" ", "")
@@ -54,7 +62,7 @@ class TestNode(object):
 
     def id_long(self):
         """Long and still unique ID to use for state machine tasks."""
-        return TestID(self.id, self.params["shortname"])
+        return TestID(self.id, self.params["name"])
     id_long = property(fget=id_long)
 
     def count(self):
@@ -62,15 +70,15 @@ class TestNode(object):
         return self.name
     count = property(fget=count)
 
-    def __init__(self, name, config, objects):
+    def __init__(self, name, config, object):
         """
         Construct a test node (test) for any test objects (vms).
 
         :param str name: name of the test node
         :param config: variant configuration for the test node
         :type config: :py:class:`param.Reparsable`
-        :param objects: objects participating in the test node
-        :type objects: [:py:class:`TestObject`]
+        :param object: node-level object participating in the test node
+        :type object: :py:class:`NetObject`
         """
         self.name = name
         self.config = config
@@ -78,13 +86,19 @@ class TestNode(object):
 
         self.should_run = True
         self.should_clean = True
-
-        self.node_str = None
+        self.should_scan = True
 
         self.spawner = None
 
-        # list of objects involved in the test
-        self.objects = objects
+        # flattened list of objects (in composition) involved in the test
+        self.objects = [object]
+        # TODO: only three nesting levels from a test net are supported
+        if object.key != "nets":
+            raise AssertionError("Test node could be initialized only from test objects "
+                                 "of the same composition level, currently only test nets")
+        for test_object in object.components:
+            self.objects += [test_object]
+            self.objects += test_object.components
 
         # lists of parent and children test nodes
         self.setup_nodes = []
@@ -142,51 +156,23 @@ class TestNode(object):
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
-        return self.name.endswith("0s")
+        return self.name.endswith("0s1")
 
-    def is_create_node(self):
+    def is_terminal_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.name.endswith("0r") and len(self.objects) == 1
-
-    def is_install_node(self):
-        """Check if the test node is the root of all test nodes for some test object."""
-        return self.name.endswith("0p") and len(self.objects) == 1
+        return self.name.endswith("0t")
 
     def is_shared_root(self):
         """Check if the test node is the root of all test nodes for all test objects."""
-        return self.is_scan_node()
+        return self.params.get_boolean("shared_root", False)
 
     def is_object_root(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.is_create_node()
+        return "object_root" in self.params
 
     def is_objectless(self):
         """Check if the test node is not defined with any test object."""
         return len(self.objects) == 0 or self.params["vms"] == ""
-
-    def is_ephemeral(self):
-        """
-        If the test node is ephemeral its `set_state` cannot be preserved for
-        longer than one cycle, i.e. if the next test stops reverting to it.
-
-        Such test nodes are transitions from off to on states and
-        must be repeated to reuse the on states that are their end states.
-        """
-        for test_object in self.objects:
-            object_name = test_object.name
-            object_params = self.params.object_params(object_name)
-            object_state = object_params.get("set_state")
-
-            # count only test objects left with saved states
-            if object_state is None or object_state == "":
-                continue
-
-            # any off-on state transition marks the test as ephemeral
-            if (object_params.get("get_type", "on") == "off" and
-                    object_params.get("set_type", "on") == "on"):
-                return True
-
-        return False
 
     def is_setup_ready(self):
         """
@@ -209,6 +195,34 @@ class TestNode(object):
         """
         return self.is_cleanup_ready() and not self.should_run
 
+    def is_terminal_node_for(self):
+        """
+        Determine any object that this node is a root of.
+
+        :returns: object that this node is a root of if any
+        :rtype: :py:class:`TestObject` or None
+        """
+        object_root = self.params.get("object_root")
+        if not object_root:
+            return object_root
+        for test_object in self.objects:
+            if test_object.id == object_root:
+                return test_object
+
+    def produces_setup(self):
+        """
+        Check if the test node produces any reusable setup state.
+
+        :returns: whether there are setup states to reuse from the test
+        :rtype: bool
+        """
+        for test_object in self.objects:
+            object_params = test_object.object_typed_params(self.params)
+            object_state = object_params.get("set_state")
+            if object_state:
+                return True
+        return False
+
     def has_dependency(self, state, test_object):
         """
         Check if the test node has a dependency parsed and available.
@@ -221,9 +235,9 @@ class TestNode(object):
         """
         for test_node in self.setup_nodes:
             if test_object in test_node.objects:
-                setup_object_params = test_node.params.object_params(test_object.name)
-                if re.search("(\.|^)" + state + "(\.|$)", setup_object_params.get("name")):
+                if re.search("(\.|^)" + state + "(\.|$)", test_node.params.get("name")):
                     return True
+                setup_object_params = test_object.object_typed_params(test_node.params)
                 if state == setup_object_params.get("set_state"):
                     return True
         return False
@@ -314,13 +328,61 @@ class TestNode(object):
         """
         self._params_cache = self.config.get_params(show_dictionaries=verbose)
 
+    def scan_states(self):
+        """Scan for present object states to reuse the test from previous runs."""
+        self.should_run = True
+        node_params = self.params.copy()
+
+        is_leaf = True
+        for test_object in self.objects:
+            object_params = test_object.object_typed_params(self.params)
+            object_state = object_params.get("set_state")
+
+            # the test leaves an object undefined so it cannot be reused for this object
+            if object_state is None or object_state == "":
+                continue
+            else:
+                is_leaf = False
+
+            # the object state has to be defined to reach this stage
+            if object_state == "install" and test_object.is_permanent():
+                self.should_run = False
+                break
+
+            # ultimate consideration of whether the state is actually present
+            node_params[f"check_state_{test_object.key}_{test_object.name}"] = object_state
+            node_params[f"check_mode_{test_object.key}_{test_object.name}"] = object_params.get("check_mode", "rf")
+            # TODO: unfortunately we need env object with pre-processed vms in order
+            # to provide ad-hoc root vm states so we use the current advantage that
+            # all vm state backends can check for states without a vm boot (root)
+            if test_object.key == "vms":
+                node_params[f"use_env_{test_object.key}_{test_object.name}"] = "no"
+            node_params[f"soft_boot_{test_object.key}_{test_object.name}"] = "no"
+
+        if not is_leaf:
+            self.should_run = not ss.check_states(node_params, None)
+        logging.info("The test node %s %s run", self, "should" if self.should_run else "should not")
+
     def validate(self):
         """Validate the test node for sane attribute-parameter correspondence."""
-        param_objects = set(self.params.objects("vms"))
-        attr_objects = set(o.name for o in self.objects)
-        if len(param_objects - attr_objects) > 0:
-            raise ValueError("Additional parametric objects %s not in %s" % (param_objects, attr_objects))
-        if len(attr_objects - param_objects) > 0:
-            raise ValueError("Missing parametric objects %s from %s" % (param_objects, attr_objects))
+        param_nets = self.params.objects("nets")
+        attr_nets = list(o.name for o in self.objects if o.key == "nets")
+        if len(attr_nets) > 1 or len(param_nets) > 1:
+            raise AssertionError(f"Test node {self} can have only one net ({attr_nets}/{param_nets}")
+        param_net_name, attr_net_name = attr_nets[0], param_nets[0]
+        if self.objects[0].name != attr_net_name:
+            raise AssertionError(f"The net {attr_net_name} must be the first node object {self.objects[0]}")
+        if param_net_name != attr_net_name:
+            raise AssertionError(f"Parametric and attribute nets differ {param_net_name} != {attr_net_name}")
+
+        param_vms = set(self.params.objects("vms"))
+        attr_vms = set(o.name for o in self.objects if o.key == "vms")
+        if len(param_vms - attr_vms) > 0:
+            raise ValueError("Additional parametric objects %s not in %s" % (param_vms, attr_vms))
+        if len(attr_vms - param_vms) > 0:
+            raise ValueError("Missing parametric objects %s from %s" % (param_vms, attr_vms))
+
+        # TODO: images can currently be ad-hoc during run and thus cannot be validated
+
         if self in self.setup_nodes or self in self.cleanup_nodes:
             raise ValueError("Detected reflexive dependency of %s to itself" % self)

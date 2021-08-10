@@ -84,7 +84,7 @@ def mock_check_states(params, env):
     return DummyStateCheck(params, env).result
 
 
-@mock.patch('avocado_i2n.cartgraph.graph.ss.check_states', mock_check_states)
+@mock.patch('avocado_i2n.cartgraph.node.ss.check_states', mock_check_states)
 @mock.patch.object(CartesianRunner, 'run_test', mock_run_test)
 @mock.patch.object(TestGraph, 'load_setup_list', mock.MagicMock())
 class CartesianGraphTest(unittest.TestCase):
@@ -100,7 +100,6 @@ class CartesianGraphTest(unittest.TestCase):
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
 
         self.prefix = ""
-        self.main_vm = ""
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
         self.job = mock.MagicMock()
@@ -279,6 +278,22 @@ class CartesianGraphTest(unittest.TestCase):
             graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                    self.config["tests_str"], self.config["vm_strs"],
                                                    prefix=self.prefix)
+
+        # restrict to vms-tests intersection if the same is nonempty
+        self.config["tests_str"] += "only tutorial1,tutorial_get\n"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
+            {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "set_state_images": "^install$"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_images": "^install$", "set_state_images": "^customize$"},
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "set_state_vms": "^on_customize$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state_vms": "^on_customize$"},
+        ]
+        self.runner.run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_one_leaf(self):
         """Check one test running without any reusable setup."""
@@ -617,8 +632,7 @@ class CartesianGraphTest(unittest.TestCase):
         """Check for proper node difference of two Cartesian graphs."""
         self.config["tests_str"] = "only nonleaves\n"
         self.config["tests_str"] += "only connect\n"
-        self.main_vm = "vm1"
-        self.config["param_dict"]["main_vm"] = "vm1"
+        self.config["param_dict"]["vms"] = "vm1"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
@@ -636,8 +650,7 @@ class CartesianGraphTest(unittest.TestCase):
         tests_str1 += "only connect\n"
         tests_str2 = self.config["tests_str"]
         tests_str2 += "only 0preinstall\n"
-        self.main_vm = "vm2"
-        self.config["param_dict"]["main_vm"] = "vm2"
+        self.config["param_dict"]["vms"] = "vm2"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                tests_str1, self.config["vm_strs"],
                                                prefix=self.prefix)

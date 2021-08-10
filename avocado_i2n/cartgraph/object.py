@@ -42,9 +42,20 @@ class TestObject(object):
         return self._params_cache
     params = property(fget=params)
 
+    def final_restr(self):
+        """Final restriction to make the object parsing variant unique."""
+        return self.config.steps[-1].parsable_form()
+    final_restr = property(fget=final_restr)
+
     def id(self):
-        return self.name
+        """Sufficiently unique ID to identify a test object suffix."""
+        return self._id
     id = property(fget=id)
+
+    def id_long(self):
+        """Sufficiently unique ID to identify a test object."""
+        return self.name + "-" + self.params["name"]
+    id_long = property(fget=id_long)
 
     def __init__(self, name, config):
         """
@@ -54,17 +65,20 @@ class TestObject(object):
         :param config: variant configuration for the test object
         :type config: :py:class:`param.Reparsable`
         """
-        self.name = name
+        self.name = name.split("_")[0]
+        self._id = name
         self.config = config
         self._params_cache = None
 
-        self.object_str = None
         # TODO: integrate these features better
         self.current_state = "unknown"
 
+        self.composites = []
+        self.components = []
+
     def __repr__(self):
-        obj_tuple = (self.id, self.params.get("shortname", "<unknown>"))
-        return "[object] id='%s', name='%s'" % obj_tuple
+        obj_tuple = (self.id, self.params.get("shortname", self.name))
+        return "[object] id='%s', shortname='%s'" % obj_tuple
 
     def is_permanent(self):
         """
@@ -77,10 +91,72 @@ class TestObject(object):
         """
         return self.params.get("permanent_vm", "no") == "yes"
 
+    def object_typed_params(self, params):
+        """
+        Return object and type filtered parameters using the current object type.
+
+        :param params: whether to show generated parameter dictionaries
+        :type params: :py:class:`param_utils.Params`
+        """
+        # TODO: we don't support recursion at the moment but this is fine
+        # for the current implicit assumption of nets->vms->images
+        for composite in self.composites:
+            params = params.object_params(composite.name)
+        return params.object_params(self.name).object_params(self.key)
+
     def regenerate_params(self, verbose=False):
         """
         Regenerate all parameters from the current reparsable config.
 
         :param bool verbose: whether to show generated parameter dictionaries
         """
-        self._params_cache = self.config.get_params(show_dictionaries=verbose)
+        generic_params = self.config.get_params(show_dictionaries=verbose)
+        self._params_cache = self.object_typed_params(generic_params)
+
+
+class NetObject(TestObject):
+    """A Net wrapper for a test object used in one or more test nodes."""
+
+    def __init__(self, name, config):
+        """
+        Construct a test object (vm) for any test nodes (tests).
+
+        All arguments are inherited from the base class.
+        """
+        super().__init__(name, config)
+        self.key = "nets"
+        self.components = []
+
+
+class VMObject(TestObject):
+    """A VM wrapper for a test object used in one or more test nodes."""
+
+    def __init__(self, name, config):
+        """
+        Construct a test object (vm) for any test nodes (tests).
+
+        All arguments are inherited from the base class.
+        """
+        super().__init__(name, config)
+        self.key = "vms"
+        self.components = []
+
+
+class ImageObject(TestObject):
+    """An image wrapper for a test object used in one or more test nodes."""
+
+    def id_long(self):
+        """Sufficiently unique ID to identify a test object."""
+        assert len(self.composites) == 1, "Image objects need a unique composite"
+        return self.id + "-" + self.composites[0].params["name"]
+    id_long = property(fget=id_long)
+
+    def __init__(self, name, config):
+        """
+        Construct a test object (vm) for any test nodes (tests).
+
+        All arguments are inherited from the base class.
+        """
+        super().__init__(name, config)
+        self.key = "images"
+        self.params["main_vm"] = "none"
