@@ -98,6 +98,18 @@ class VMNetBackend(StateBackend):
         return True
 
     @classmethod
+    def get_root(cls, params, object=None):
+        """
+        Get a root state or essentially due to pre-existence do nothing.
+
+        :param params: configuration parameters
+        :type params: {str, str}
+        :param object: object whose states are manipulated
+        :type object: VM object or None
+        """
+        cls.get(params, object=object)
+
+    @classmethod
     def set_root(cls, params, object=None):
         """
         Set a root state to provide object existence.

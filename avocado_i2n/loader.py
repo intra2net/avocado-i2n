@@ -346,7 +346,7 @@ class CartesianLoader(Resolver):
             for test_object in test_node.objects:
                 logging.debug(f"Parsing dependencies of {test_node.params['shortname']} for object {test_object.id}")
                 object_params = test_object.object_typed_params(test_node.params)
-                object_dependency = object_params.get("get", object_params.get("get_state", ""))
+                object_dependency = object_params.get("get")
                 # handle nodes without dependency for the given object
                 if not object_dependency:
                     continue
@@ -443,6 +443,8 @@ class CartesianLoader(Resolver):
         objects = sorted(graph.test_objects.keys())
         setup_dict = {} if param_dict is None else param_dict.copy()
         setup_dict.update({"abort_on_error": "yes", "set_state_on_error": "",
+                           # we need network root setup to provide vm root setup (e.g. bridges)
+                           "get_state_vms": "", "get_state_images": "",
                            "skip_image_processing": "yes",
                            "vms": " ".join(objects),
                            "main_vm": objects[0]})
@@ -534,8 +536,8 @@ class CartesianLoader(Resolver):
         node and test object (including the object creation root test).
         """
         object_params = test_object.object_typed_params(test_node.params)
-        # use get directive -> if not use get_state -> if not use root
-        setup_restr = object_params.get("get", object_params.get("get_state", "0root"))
+        # objects can appear within a test without any prior dependencies
+        setup_restr = object_params["get"]
         logging.debug("Parsing Cartesian setup of %s through restriction %s",
                       test_node.params["shortname"], setup_restr)
 
