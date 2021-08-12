@@ -164,7 +164,7 @@ class TestNode(object):
 
     def is_object_root(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.is_terminal_node()
+        return "object_root" in self.params
 
     def is_objectless(self):
         """Check if the test node is not defined with any test object."""

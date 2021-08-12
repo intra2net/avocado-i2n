@@ -226,7 +226,7 @@ class TestGraph(object):
                     is_leaf = False
 
                 # the object state has to be defined to reach this stage
-                if object_state == "root" and test_object.is_permanent():
+                if object_state == "install" and test_object.is_permanent():
                     test_node.should_run = False
                     break
 

@@ -268,15 +268,14 @@ class CartesianLoader(Resolver):
             for j, net in enumerate(test_nets):
                 try:
                     j_prefix = "b" + str(j) if j > 0 else ""
-                    if "0root" in d['name']:
-                        node_prefix = prefix + j_prefix
-                        test_node = self.parse_terminal_node(net, param_dict, prefix=node_prefix)
-                    else:
-                        node_prefix = prefix + str(i+1) + j_prefix
-                        test_node = self.parse_node_from_object(net, param_dict, param.re_str(d['name']),
-                                                                prefix=node_prefix)
-                        logging.debug(f"Parsed a test node {test_node.params['shortname']} from "
-                                      f"two-way compatible test net {net}")
+                    node_prefix = prefix + str(i+1) + j_prefix
+                    test_node = self.parse_node_from_object(net, param_dict, param.re_str(d['name']),
+                                                            prefix=node_prefix)
+                    logging.debug(f"Parsed a test node {test_node.params['shortname']} from "
+                                  f"two-way compatible test net {net}")
+                    # provide dynamic fingerprint to an original object root node
+                    if re.search("(\.|^)original(\.|$)", test_node.params["name"]):
+                        test_node.params["object_root"] = d.get("object_id", net.id)
                 except param.EmptyCartesianProduct:
                     # empty product in cases like parent (dependency) nodes imply wrong configuration
                     if d.get("require_existence", "no") == "yes":
@@ -488,47 +487,6 @@ class CartesianLoader(Resolver):
         logging.debug("Parsed shared root %s", scan_node.params["shortname"])
         return scan_node
 
-    def parse_terminal_node(self, test_object, param_dict=None, prefix=""):
-        """
-        Get the original install test node for the given object.
-
-        :param test_object: fully parsed test object to parse the node from
-        :type: test_object: :py:class:`NetObject`
-        :param param_dict: runtime parameters used for extra customization
-        :type param_dict: {str, str} or None
-        :param str prefix: extra name identifier for the test to be run
-        :returns: original parsed object install node as object root node
-        :rtype: :py:class:`TestNode`
-
-        This assumes that there is only one root test node which is the one
-        with the 'root' start state.
-        """
-        setup_dict = {} if param_dict is None else param_dict.copy()
-
-        object_suffix = setup_dict.get("object_suffix", test_object.id)
-        object_type = setup_dict.get("object_type", test_object.key)
-        object_id = setup_dict.get("object_id", test_object.id_long)
-
-        if object_type == "images":
-            setup_dict.update({"get_images": "",
-                               "set_state_images": "install",
-                               "object_root": object_id})
-            setup_str = param.re_str("all..internal..0root")
-        elif object_type == "vms":
-            setup_dict.update({"get_vms": "",
-                               "object_root": object_id})
-            setup_str = param.re_str("all..internal..start")
-        elif object_type == "nets":
-            setup_dict.update({"get_nets": "",
-                               "set_state_nets": "default",
-                               "object_root": object_id})
-            setup_str = param.re_str("all..internal..unchanged")
-
-        terminal_node = self.parse_node_from_object(test_object, setup_dict, setup_str,
-                                                    prefix=prefix+"0t")
-        logging.debug(f"Parsed {object_suffix} terminal node {terminal_node.params['shortname']}")
-        return terminal_node
-
     """internals"""
     def _parse_and_get_nets_from_node_params(self, graph, param_dict, d):
         """
@@ -622,12 +580,9 @@ class CartesianLoader(Resolver):
                       test_object.id, test_node.params["shortname"], setup_restr)
 
         # speedup for handling already parsed unique parent cases
-        if setup_restr == "0root":
-            get_parent = graph.get_nodes_by("object_root", "^" + test_object.id_long + "$")
-        else:
-            get_parent = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
-                                            subset=graph.get_nodes_by("name",
-                                                                      "(\.|^)%s(\.|$)" % setup_obj_resr))
+        get_parent = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
+                                        subset=graph.get_nodes_by("name",
+                                                                  "(\.|^)%s(\.|$)" % setup_obj_resr))
         if len(get_parent) == 1:
             return get_parent, []
         setup_dict = {} if param_dict is None else param_dict.copy()

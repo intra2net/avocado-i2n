@@ -390,40 +390,24 @@ class CartesianRunner(RunnerInterface):
                                  % test_object.name)
 
         logging.info("Configuring creation/installation for %s on %s", object_vm, object_image)
-        # parameters and the status from the install configuration determine the install test
-        install_params = test_node.params.copy()
-        # unset any cleanup and prepare special setup to make this a terminal node for an image
-        test_node.params.update({"set_state_images": "", "skip_image_processing": "yes",
-                                 # this configuration reuses and possibly creates an image
-                                 "get_state_images": "install", "get_mode": "ri", "check_mode": "rf"})
-        status = await self.run_test_node(test_node)
-
-        if not status:
-            logging.error("Could not configure the installation for %s", test_object.name)
-            return status
-
-        logging.info("Installing virtual machine %s", test_object.name)
-        setup_dict = {} if params is None else params.copy()
-        if install_params.get("configure_install", "stepmaker") == "unattended_install":
-            if test_object.params["os_type"] == "windows":
-                setup_str = param.re_str("all..original..unattended_install")
-            elif install_params["unattended_file"].endswith(".preseed"):
-                setup_str = param.re_str("all..original..unattended_install.cdrom.in_cdrom_ks")
-            elif install_params["unattended_file"].endswith(".ks"):
-                setup_str = param.re_str("all..original..unattended_install.cdrom.extra_cdrom_ks")
-            else:
-                raise NotImplementedError("Unattended install tests are not supported for variant %s" % test_object.params["name"])
-        else:
-            setup_dict.update({"type": install_params.get("configure_install", "stepmaker")})
-            setup_str = param.re_str("all..original..install")
-
-        setup_dict.update({"set_state_images": install_params["set_state_images"]})
+        setup_dict = test_node.params.copy()
+        setup_dict.update({} if params is None else params.copy())
+        setup_dict.update({"type": "shared_configure_install", "check_mode": "rr",  # explicit root handling
+                           # overwrite some params inherited from the modified install node
+                           f"set_state_images_{object_image}_{object_vm}": "root", "start_vm": "no"})
         install_config = test_object.config.get_copy()
         install_config.parse_next_batch(base_file="sets.cfg",
                                         ovrwrt_file=param.tests_ovrwrt_file(),
-                                        ovrwrt_str=setup_str,
+                                        ovrwrt_str=param.re_str("all..noop"),
                                         ovrwrt_dict=setup_dict)
-        return await self.run_test_node(TestNode("0t", install_config, test_node.objects[0]))
+        status = await self.run_test_node(TestNode("0t", install_config, test_node.objects[0]))
+        if not status:
+            logging.error("Could not configure the installation for %s on %s", object_vm, object_image)
+            return status
+
+        logging.info("Installing virtual machine %s", test_object.suffix)
+        test_node.params["type"] = test_node.params["configure_install"]
+        return await self.run_test_node(test_node)
 
     """internals"""
     async def _traverse_test_node(self, graph, test_node, params):
@@ -438,7 +422,7 @@ class CartesianRunner(RunnerInterface):
                 status = await self.run_scan_node(graph)
                 if not status:
                     logging.error("Could not perform state scanning of %s", test_node)
-            elif test_node.is_terminal_node():
+            elif test_node.is_object_root():
                 status = await self.run_terminal_node(graph, test_node.params["object_root"], params)
                 if not status:
                     logging.error("Could not perform the installation from %s", test_node)
