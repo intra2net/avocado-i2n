@@ -142,18 +142,18 @@ class CartesianGraphTest(unittest.TestCase):
         self.assertIn("[node]", repr)
 
         test_object = graph.get_object_by(param_val="vm1")
-        self.assertIn(test_object.name, graph.test_objects.keys())
-        self.assertEqual(test_object.name, "vm1")
-        object_num = len(graph.test_objects)
+        self.assertIn(test_object.long_suffix, graph.suffixes.keys())
+        self.assertEqual(test_object.long_suffix, "vm1")
+        object_num = len(graph.suffixes)
         graph.new_objects(test_object)
-        self.assertEqual(len(graph.test_objects), object_num)
+        self.assertEqual(len(graph.suffixes), object_num)
 
         test_node = graph.get_node_by(param_val="tutorial1")
-        self.assertIn("1", test_node.name)
-        self.assertIn(test_node.id, graph.test_nodes.keys())
-        node_num = len(graph.test_objects)
+        self.assertIn("1-vm1", test_node.long_prefix)
+        self.assertIn(test_node.long_prefix, graph.prefixes.keys())
+        node_num = len(graph.prefixes)
         graph.new_nodes(test_node)
-        self.assertEqual(len(graph.test_objects), node_num)
+        self.assertEqual(len(graph.prefixes), node_num)
 
     def test_object_params(self):
         """Check for correctly parsed test object parameters."""
@@ -167,7 +167,7 @@ class CartesianGraphTest(unittest.TestCase):
         # Parser of test objects must contain exactly one dictionary
         self.assertRaises(StopIteration, dict_generator.__next__)
         self.assertEqual(len(dict1.keys()), len(test_object.params.keys()),
-                         "The parameters of a test node must be the same as its only parser dictionary")
+                         "The parameters of a test object must be the same as its only parser dictionary")
         for key in dict1.keys():
             self.assertEqual(dict1[key], test_object.params[key],
                              "The values of key %s %s=%s must be the same" % (key, dict1[key], test_object.params[key]))
@@ -206,25 +206,25 @@ class CartesianGraphTest(unittest.TestCase):
                                                prefix=self.prefix)
 
         test_object = graph.get_object_by(param_val="vm1")
-        test_object_params = test_object.params.object_params(test_object.name)
+        test_object_params = test_object.params.object_params(test_object.suffix)
         self.assertNotEqual(test_object_params["images"], default_object_param,
-                            "The default %s of %s wasn't overwritten" % (default_object_param, test_object.name))
+                            "The default %s of %s wasn't overwritten" % (default_object_param, test_object.suffix))
         self.assertEqual(test_object_params["images"], custom_object_param,
-                         "The new %s of %s must be %s" % (default_object_param, test_object.name, custom_object_param))
+                         "The new %s of %s must be %s" % (default_object_param, test_object.suffix, custom_object_param))
         self.assertEqual(test_object_params["new_key"], "123",
-                         "A new parameter=%s of %s must be 123" % (test_object_params["new_key"], test_object.name))
+                         "A new parameter=%s of %s must be 123" % (test_object_params["new_key"], test_object.suffix))
 
         test_node = graph.get_node_by(param_val="tutorial1")
         self.assertNotEqual(test_node.params["kill_vm"], default_node_param,
-                            "The default %s of %s wasn't overwritten" % (default_node_param, test_node.name))
+                            "The default %s of %s wasn't overwritten" % (default_node_param, test_node.prefix))
         self.assertEqual(test_node.params["kill_vm"], custom_node_param,
-                         "The new %s of %s must be %s" % (default_node_param, test_node.name, custom_node_param))
+                         "The new %s of %s must be %s" % (default_node_param, test_node.prefix, custom_node_param))
         self.assertNotEqual(test_node.params["images_vm1"], default_object_param,
-                            "The default %s of %s wasn't overwritten" % (default_object_param, test_node.name))
+                            "The default %s of %s wasn't overwritten" % (default_object_param, test_node.prefix))
         self.assertEqual(test_node.params["images_vm1"], custom_object_param,
-                         "The new %s of %s must be %s" % (default_object_param, test_node.name, custom_object_param))
+                         "The new %s of %s must be %s" % (default_object_param, test_node.prefix, custom_object_param))
         self.assertEqual(test_node.params["new_key"], "123",
-                         "A new parameter=%s of %s must be 123" % (test_node.params["new_key"], test_object.name))
+                         "A new parameter=%s of %s must be 123" % (test_node.params["new_key"], test_node.prefix))
 
     def test_object_node_overwrite_scope(self):
         """Check the scope of application of overwriting preselected configuration."""
@@ -244,31 +244,31 @@ class CartesianGraphTest(unittest.TestCase):
 
         # TODO: the current suffix operators make it impossible to fully test this
         test_object1 = graph.get_object_by(param_val="vm1")
-        test_object_params1 = test_object1.params.object_params(test_object1.name)
+        test_object_params1 = test_object1.params.object_params(test_object1.suffix)
         #self.assertNotEqual(test_object_params1["images"], default_object_param,
-        #                    "The default %s of %s wasn't overwritten" % (default_object_param, test_object1.name))
+        #                    "The default %s of %s wasn't overwritten" % (default_object_param, test_object1.suffix))
         self.assertNotEqual(test_object_params1["images"], custom_object_param1,
-                            "The new %s of %s is of general scope" % (default_object_param, test_object1.name))
+                            "The new %s of %s is of general scope" % (default_object_param, test_object1.suffix))
         #self.assertEqual(test_object_params1["images"], custom_object_param2,
-        #                 "The new %s of %s must be %s" % (default_object_param, test_object1.name, custom_object_param2))
+        #                 "The new %s of %s must be %s" % (default_object_param, test_object1.suffix, custom_object_param2))
 
         test_object2 = graph.get_object_by(param_val="vm2")
-        test_object_params2 = test_object2.params.object_params(test_object2.name)
+        test_object_params2 = test_object2.params.object_params(test_object2.suffix)
         self.assertEqual(test_object_params2["images"], default_object_param,
-                         "The default %s of %s must be preserved" % (default_object_param, test_object2.name))
+                         "The default %s of %s must be preserved" % (default_object_param, test_object2.suffix))
 
         # TODO: the current suffix operators make it impossible to fully test this
         test_node = graph.get_node_by(param_val="tutorial3")
         self.assertNotEqual(test_node.params["images"], default_object_param,
-                         "The object-general default %s of %s must be overwritten" % (default_object_param, test_node.name))
+                         "The object-general default %s of %s must be overwritten" % (default_object_param, test_node.prefix))
         self.assertEqual(test_node.params["images"], custom_object_param1,
-                         "The object-general new %s of %s must be %s" % (default_object_param, test_node.name, custom_object_param1))
+                         "The object-general new %s of %s must be %s" % (default_object_param, test_node.prefix, custom_object_param1))
         #self.assertNotEqual(test_node.params["images_vm1"], default_object_param,
-        #                    "The default %s of %s wasn't overwritten" % (default_object_param, test_node.name))
+        #                    "The default %s of %s wasn't overwritten" % (default_object_param, test_node.prefix))
         #self.assertEqual(test_node.params["images_vm1"], custom_object_param2,
-        #                 "The new %s of %s must be %s" % (default_object_param, test_node.name, custom_object_param2))
+        #                 "The new %s of %s must be %s" % (default_object_param, test_node.prefix, custom_object_param2))
         self.assertEqual(test_node.params["images_vm2"], default_object_param,
-                         "The second %s of %s should be preserved" % (default_object_param, test_node.name))
+                         "The second %s of %s should be preserved" % (default_object_param, test_node.prefix))
 
     def test_object_node_incompatible(self):
         """Check incompatibility of parsed tests and preselected available objects."""

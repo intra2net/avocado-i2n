@@ -51,12 +51,12 @@ def permubuntu(config, tag=""):
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
     for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
-        logging.info("Performing extra setup for the permanent %s", vm.name)
+        logging.info("Performing extra setup for the permanent %s", vm.suffix)
 
         # consider this as a special kind of ephemeral test which concerns
         # permanent objects (i.e. instead of transition from customize to on
         # root, it is a transition from supposedly "permanentized" vm to the root)
-        logging.info("Booting %s for the first permanent on state", vm.name)
+        logging.info("Booting %s for the first permanent on state", vm.suffix)
         setup_dict = config["param_dict"].copy()
         setup_dict.update({"set_state": "ready"})
         setup_str = param.re_str("all..internal..manage.start")

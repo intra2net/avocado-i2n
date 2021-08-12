@@ -109,7 +109,7 @@ class CartesianLoader(Resolver):
             test_object.regenerate_params()
 
             if verbose:
-                print(f"{test_object.key.rstrip('s')}    {test_object.name}:  {test_object.params['shortname']}")
+                print(f"{test_object.key.rstrip('s')}    {test_object.suffix}:  {test_object.params['shortname']}")
             test_objects += [test_object]
 
         return test_objects
@@ -127,7 +127,7 @@ class CartesianLoader(Resolver):
         :rtype: [:py:class:`TestObject`]
         :raises: :py:class:`exceptions.AssertionError` if the parsed composite is not unique
         """
-        object_strs = {o.name: o.final_restr for o in test_objects}
+        object_strs = {o.suffix: o.final_restr for o in test_objects}
         composite_objects = self.parse_object_variants(param_dict, object_strs, verbose=verbose)
 
         if len(composite_objects) > 1:
@@ -284,7 +284,7 @@ class CartesianLoader(Resolver):
                                   f"{d['shortname']} configuration - skipping")
                 else:
                     if verbose:
-                        print(f"test    {test_node.name}:  {test_node.params['shortname']}")
+                        print(f"test    {test_node.prefix}:  {test_node.params['shortname']}")
                     test_nodes.append(test_node)
 
         return test_nodes
@@ -320,7 +320,7 @@ class CartesianLoader(Resolver):
                         test_objects.append(test_object)
                         test_objects.extend(test_object.components)
                         if verbose:
-                            print("vm    %s:  %s" % (test_object.name, test_object.params["shortname"]))
+                            print("vm    %s:  %s" % (test_object.suffix, test_object.params["shortname"]))
             # reuse additionally parsed net (node-level) objects
             if test_node.objects[0] not in test_objects:
                 test_objects.append(test_node.objects[0])
@@ -362,7 +362,7 @@ class CartesianLoader(Resolver):
         graph.nodes.extend(leaves)
         graph.objects.extend(stubs)
         # NOTE: reversing here turns the leaves into a simple stack
-        unresolved = sorted(leaves, key=lambda x: int(re.match("^(\d+)", x.id).group(1)), reverse=True)
+        unresolved = sorted(leaves, key=lambda x: int(re.match("^(\d+)", x.prefix).group(1)), reverse=True)
 
         if logging.getLogger('graph').level <= logging.DEBUG:
             parse_dir = os.path.join(self.logdir, "graph_parse")
@@ -373,7 +373,8 @@ class CartesianLoader(Resolver):
         while len(unresolved) > 0:
             test_node = unresolved.pop()
             for test_object in test_node.objects:
-                logging.debug(f"Parsing dependencies of {test_node.params['shortname']} for object {test_object.id}")
+                logging.debug(f"Parsing dependencies of {test_node.params['shortname']} "
+                              f"for object {test_object.long_suffix}")
                 object_params = test_object.object_typed_params(test_node.params)
                 object_dependency = object_params.get("get")
                 # handle nodes without dependency for the given object
@@ -415,7 +416,7 @@ class CartesianLoader(Resolver):
                 object_roots.append(test_node)
         setup_dict = {} if param_dict is None else param_dict.copy()
         setup_dict.update({"shared_root" : "yes",
-                           "vms": " ".join(set(o.name for o in graph.objects if o.key == "vms"))})
+                           "vms": " ".join(set(o.suffix for o in graph.objects if o.key == "vms"))})
         setup_str = param.re_str("all..internal..noop")
         root_for_all = self.parse_node_from_object(NetObject("net0", param.Reparsable()),
                                                    setup_dict, setup_str, prefix="0s")
@@ -542,9 +543,9 @@ class CartesianLoader(Resolver):
         object_params = test_object.object_typed_params(test_node.params)
         # objects can appear within a test without any prior dependencies
         setup_restr = object_params["get"]
-        setup_obj_resr = test_object.id_long.split("-")[1]
+        setup_obj_resr = test_object.id.split("-")[1]
         logging.debug("Cartesian setup of %s for %s uses restriction %s",
-                      test_object.id, test_node.params["shortname"], setup_restr)
+                      test_object.long_suffix, test_node.params["shortname"], setup_restr)
 
         # speedup for handling already parsed unique parent cases
         get_parent = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
@@ -553,12 +554,12 @@ class CartesianLoader(Resolver):
         if len(get_parent) == 1:
             return get_parent, []
         setup_dict = {} if param_dict is None else param_dict.copy()
-        setup_dict.update({"object_suffix": test_object.id,
+        setup_dict.update({"object_suffix": test_object.long_suffix,
                            "object_type": test_object.key,
-                           "object_id": test_object.id_long,
+                           "object_id": test_object.id,
                            "require_existence": "yes"})
         setup_str = param.re_str("all.." + setup_restr)
-        name = test_node.name + "a"
+        name = test_node.prefix + "a"
         new_parents = self.parse_nodes(graph, setup_dict, setup_str, prefix=name)
         if len(get_parent) == 0:
             return [], new_parents
@@ -575,12 +576,12 @@ class CartesianLoader(Resolver):
             if len(old_parents) > 0:
                 for old_parent in old_parents:
                     logging.debug("Found parsed dependency %s for %s through object %s",
-                                  old_parent.params["shortname"], test_node.params["shortname"], test_object.name)
+                                  old_parent.params["shortname"], test_node.params["shortname"], test_object.suffix)
                     if old_parent not in get_parents:
                         get_parents.append(old_parent)
             else:
                 logging.debug("Found new dependency %s for %s through object %s",
-                              new_parent.params["shortname"], test_node.params["shortname"], test_object.name)
+                              new_parent.params["shortname"], test_node.params["shortname"], test_object.suffix)
                 parse_parents.append(new_parent)
         return get_parents, parse_parents
 
@@ -602,7 +603,7 @@ class CartesianLoader(Resolver):
                 if i == 0:
                     child = clone_source
                 else:
-                    clone_name = clone_source.name + "d" + str(i)
+                    clone_name = clone_source.prefix + "d" + str(i)
                     clone_config = clone_source.config.get_copy()
                     clone = TestNode(clone_name, clone_config, clone_source.objects[0])
                     clone.regenerate_params()
@@ -619,8 +620,8 @@ class CartesianLoader(Resolver):
                     child = clone
                     clones.append(child)
 
-                state_suffixes = f"_{copy_object.key}_{copy_object.name}"
-                state_suffixes += f"_{copy_object.composites[0].name}" if copy_object.key == "images" else ""
+                state_suffixes = f"_{copy_object.key}_{copy_object.suffix}"
+                state_suffixes += f"_{copy_object.composites[0].suffix}" if copy_object.key == "images" else ""
 
                 parent_object_params = copy_object.object_typed_params(parent.params)
                 parent_state = parent_object_params.get("set_state", "")

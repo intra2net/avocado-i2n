@@ -398,7 +398,7 @@ def install(config, tag=""):
     graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
     for vm in graph.objects:
         graph.nodes.append(l.parse_install_node(vm, config["param_dict"], prefix=tag))
-        r.run_install_node(graph, vm.name, config["param_dict"])
+        r.run_install_node(graph, vm.suffix, config["param_dict"])
     LOG_UI.info("Finished installation")
 
 
@@ -651,7 +651,7 @@ def unset(config, tag=""):
 
         # since the default unset_mode is passive (ri) we need a better
         # default value for that case but still modifiable by the user
-        vm_op_mode = op_mode + "_" + vm.name
+        vm_op_mode = op_mode + "_" + vm.suffix
         state_mode = vm_op_mode if vm_op_mode in setup_dict else op_mode
         if state_mode not in setup_dict:
             setup_dict[vm_op_mode] = "fi"

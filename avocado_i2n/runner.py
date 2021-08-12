@@ -82,7 +82,7 @@ class CartesianRunner(RunnerInterface):
         if node.spawner is None:
             node.set_environment(job, self.slots[0])
 
-        raw_task = nrunner.Task(node.get_runnable(), node.id_long,
+        raw_task = nrunner.Task(node.get_runnable(), node.id_test,
                                 [job.config.get('nrunner.status_server_uri')],
                                 nrunner.RUNNERS_REGISTRY_PYTHON_CLASS,
                                 job_id=self.job.unique_id)
@@ -132,19 +132,22 @@ class CartesianRunner(RunnerInterface):
         assert runs_left >= 1, "retry_attempts cannot be less than zero"
         assert retry_stop in ["none", "error", "success"], "retry_stop must be one of 'none', 'error' or 'success'"
 
-        original_shortname = node.params["shortname"]
+        original_prefix = node.prefix
         for r in range(runs_left):
             # appending a suffix to retries so we can tell them apart
             if r > 0:
-                node.params["shortname"] = f"{original_shortname}.r{r}"
+                node.prefix = original_prefix + f"r{r}"
+            uid = node.long_prefix
+            name = node.params["name"]
 
             await self.run_test(self.job, node)
 
             try:
-                test_result = next((x for x in self.job.result.tests if x["name"].name == node.params["name"]))
+                test_result = next((x for x in self.job.result.tests if x["name"].name == name and x["name"].uid == uid))
                 test_status = test_result["status"]
             except StopIteration:
                 test_status = "ERROR"
+                logging.info("Test result wasn't found and cannot be extracted")
             if test_status not in ["PASS", "WARN", "ERROR", "FAIL"]:
                 # it doesn't make sense to retry with other status
                 logging.info(f"Will not attempt to retry test with status {test_status}")
@@ -155,7 +158,8 @@ class CartesianRunner(RunnerInterface):
             if retry_stop == "error" and test_status in ["ERROR", "FAIL"]:
                 logging.info("Stopping after first failed run")
                 break
-        node.params["shortname"] = original_shortname
+        node.prefix = original_prefix
+        logging.info(f"Finished running test with status {test_status}")
         # no need to log when test was not repeated
         if runs_left > 1:
             logging.info(f"Finished running test {r} times")
@@ -175,11 +179,11 @@ class CartesianRunner(RunnerInterface):
         while len(run_children) > 0:
             current_nodes = run_children[:len(self.slots)]
             logging.debug("Traversal advance running in parallel the tests:\n%s",
-                          "\n".join([n.id_long.name for n in current_nodes]))
+                          "\n".join([n.id for n in current_nodes]))
             if len(current_nodes) == 0:
                 raise ValueError("Not enough container run slots")
             for i, n in enumerate(current_nodes):
-                logging.debug(f"Running {current_nodes[i].id_long.name} in {self.slots[i]}")
+                logging.debug(f"Running {current_nodes[i].id} in {self.slots[i]}")
                 current_nodes[i].set_environment(self.job, self.slots[i])
                 run_children.remove(current_nodes[i])
             to_traverse = [self._traverse_test_node(graph, n, params)
@@ -358,7 +362,7 @@ class CartesianRunner(RunnerInterface):
 
         if test_object.is_permanent() and not test_node.params.get_boolean("create_permanent_vm"):
             raise AssertionError("Reached a permanent object root for %s due to incorrect setup"
-                                 % test_object.name)
+                                 % test_object.suffix)
 
         logging.info("Configuring creation/installation for %s on %s", object_vm, object_image)
         setup_dict = test_node.params.copy()
@@ -482,7 +486,7 @@ class CartesianRunner(RunnerInterface):
                                                     ovrwrt_file=param.tests_ovrwrt_file(),
                                                     ovrwrt_str=setup_str,
                                                     ovrwrt_dict=setup_dict)
-                    await self.run_test_node(TestNode(test_node.name + "c", forward_config, net))
+                    await self.run_test_node(TestNode(test_node.prefix + "c", forward_config, net))
                 else:
                     logging.info("No need to clean up %s", test_node)
 

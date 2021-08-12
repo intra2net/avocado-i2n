@@ -47,17 +47,17 @@ class TestObject(object):
         return self.config.steps[-1].parsable_form()
     final_restr = property(fget=final_restr)
 
+    def long_suffix(self):
+        """Sufficiently unique suffix to identify a variantless test object."""
+        return self._long_suffix
+    long_suffix = property(fget=long_suffix)
+
     def id(self):
-        """Sufficiently unique ID to identify a test object suffix."""
-        return self._id
+        """Unique ID to identify a test object."""
+        return self.long_suffix + "-" + self.params["name"]
     id = property(fget=id)
 
-    def id_long(self):
-        """Sufficiently unique ID to identify a test object."""
-        return self.name + "-" + self.params["name"]
-    id_long = property(fget=id_long)
-
-    def __init__(self, name, config):
+    def __init__(self, suffix, config):
         """
         Construct a test object (vm) for any test nodes (tests).
 
@@ -65,8 +65,8 @@ class TestObject(object):
         :param config: variant configuration for the test object
         :type config: :py:class:`param.Reparsable`
         """
-        self.name = name.split("_")[0]
-        self._id = name
+        self.suffix = suffix.split("_")[0]
+        self._long_suffix = suffix
         self.config = config
         self._params_cache = None
 
@@ -77,8 +77,8 @@ class TestObject(object):
         self.components = []
 
     def __repr__(self):
-        obj_tuple = (self.id, self.params.get("shortname", self.name))
-        return "[object] id='%s', shortname='%s'" % obj_tuple
+        shortname = self.params.get("shortname", "<unknown>")
+        return f"[object] longsuffix='{self.long_suffix}', shortname='{shortname}'"
 
     def is_permanent(self):
         """
@@ -101,8 +101,8 @@ class TestObject(object):
         # TODO: we don't support recursion at the moment but this is fine
         # for the current implicit assumption of nets->vms->images
         for composite in self.composites:
-            params = params.object_params(composite.name)
-        return params.object_params(self.name).object_params(self.key)
+            params = params.object_params(composite.suffix)
+        return params.object_params(self.suffix).object_params(self.key)
 
     def regenerate_params(self, verbose=False):
         """
@@ -145,11 +145,11 @@ class VMObject(TestObject):
 class ImageObject(TestObject):
     """An image wrapper for a test object used in one or more test nodes."""
 
-    def id_long(self):
+    def id(self):
         """Sufficiently unique ID to identify a test object."""
         assert len(self.composites) == 1, "Image objects need a unique composite"
-        return self.id + "-" + self.composites[0].params["name"]
-    id_long = property(fget=id_long)
+        return self.long_suffix + "-" + self.composites[0].params["name"]
+    id = property(fget=id)
 
     def __init__(self, name, config):
         """

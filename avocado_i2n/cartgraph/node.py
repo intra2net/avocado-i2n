@@ -55,22 +55,22 @@ class TestNode(object):
         return self.config.steps[-2].parsable_form()
     final_restr = property(fget=final_restr)
 
+    def long_prefix(self):
+        """Sufficiently unique prefix to identify a diagram test node."""
+        return self.prefix + "-" + self.params["vms"].replace(" ", "")
+    long_prefix = property(fget=long_prefix)
+
     def id(self):
-        """Sufficiently unique ID to identify a test node."""
-        return self.name + "-" + self.params["vms"].replace(" ", "")
+        """Unique ID to identify a test node."""
+        return self.long_prefix + "-" + self.params["name"]
     id = property(fget=id)
 
-    def id_long(self):
-        """Long and still unique ID to use for state machine tasks."""
-        return TestID(self.id, self.params["name"])
-    id_long = property(fget=id_long)
+    def id_test(self):
+        """Unique test ID to identify a test node."""
+        return TestID(self.long_prefix, self.params["name"])
+    id_test = property(fget=id_test)
 
-    def count(self):
-        """Node count property."""
-        return self.name
-    count = property(fget=count)
-
-    def __init__(self, name, config, object):
+    def __init__(self, prefix, config, object):
         """
         Construct a test node (test) for any test objects (vms).
 
@@ -80,7 +80,7 @@ class TestNode(object):
         :param object: node-level object participating in the test node
         :type object: :py:class:`NetObject`
         """
-        self.name = name
+        self.prefix = prefix
         self.config = config
         self._params_cache = None
 
@@ -107,8 +107,8 @@ class TestNode(object):
         self.visited_cleanup_nodes = []
 
     def __repr__(self):
-        obj_tuple = (self.id, self.params.get("shortname", "<unknown>"))
-        return "[node] id='%s', name='%s'" % obj_tuple
+        shortname = self.params.get("shortname", "<unknown>")
+        return f"[node] longprefix='{self.long_prefix}', shortname='{shortname}'"
 
     def get_runnable(self):
         """
@@ -117,8 +117,8 @@ class TestNode(object):
         :return: test class and constructor parameters
         :rtype: :py:class:`Runnable`
         """
-        self.params['short_id'] = self.id
-        self.params['id'] = self.id_long.str_uid + "_" + self.id_long.name
+        self.params['short_id'] = self.long_prefix
+        self.params['id'] = self.id_test.str_uid + "_" + self.id_test.name
 
         uri = self.params["shortname"]
         vt_params = self.params.copy()
@@ -156,11 +156,11 @@ class TestNode(object):
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
-        return self.name.endswith("0s1")
+        return self.prefix.endswith("0s1")
 
     def is_terminal_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.name.endswith("0t")
+        return self.prefix.endswith("t")
 
     def is_shared_root(self):
         """Check if the test node is the root of all test nodes for all test objects."""
@@ -263,7 +263,7 @@ class TestNode(object):
                 return a1 < a2
             else:
                 return compare_part(b1, b2)
-        return compare_part(node1.count, node2.count)
+        return compare_part(node1.prefix, node2.prefix)
 
     def pick_next_parent(self):
         """
@@ -350,14 +350,14 @@ class TestNode(object):
                 break
 
             # ultimate consideration of whether the state is actually present
-            node_params[f"check_state_{test_object.key}_{test_object.name}"] = object_state
-            node_params[f"check_mode_{test_object.key}_{test_object.name}"] = object_params.get("check_mode", "rf")
+            node_params[f"check_state_{test_object.key}_{test_object.suffix}"] = object_state
+            node_params[f"check_mode_{test_object.key}_{test_object.suffix}"] = object_params.get("check_mode", "rf")
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that
             # all vm state backends can check for states without a vm boot (root)
             if test_object.key == "vms":
-                node_params[f"use_env_{test_object.key}_{test_object.name}"] = "no"
-            node_params[f"soft_boot_{test_object.key}_{test_object.name}"] = "no"
+                node_params[f"use_env_{test_object.key}_{test_object.suffix}"] = "no"
+            node_params[f"soft_boot_{test_object.key}_{test_object.suffix}"] = "no"
 
         if not is_leaf:
             self.should_run = not ss.check_states(node_params, None)
@@ -366,17 +366,17 @@ class TestNode(object):
     def validate(self):
         """Validate the test node for sane attribute-parameter correspondence."""
         param_nets = self.params.objects("nets")
-        attr_nets = list(o.name for o in self.objects if o.key == "nets")
+        attr_nets = list(o.suffix for o in self.objects if o.key == "nets")
         if len(attr_nets) > 1 or len(param_nets) > 1:
             raise AssertionError(f"Test node {self} can have only one net ({attr_nets}/{param_nets}")
         param_net_name, attr_net_name = attr_nets[0], param_nets[0]
-        if self.objects[0].name != attr_net_name:
+        if self.objects[0].suffix != attr_net_name:
             raise AssertionError(f"The net {attr_net_name} must be the first node object {self.objects[0]}")
         if param_net_name != attr_net_name:
             raise AssertionError(f"Parametric and attribute nets differ {param_net_name} != {attr_net_name}")
 
         param_vms = set(self.params.objects("vms"))
-        attr_vms = set(o.name for o in self.objects if o.key == "vms")
+        attr_vms = set(o.suffix for o in self.objects if o.key == "vms")
         if len(param_vms - attr_vms) > 0:
             raise ValueError("Additional parametric objects %s not in %s" % (param_vms, attr_vms))
         if len(attr_vms - param_vms) > 0:

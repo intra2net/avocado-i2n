@@ -61,29 +61,29 @@ class TestGraph(object):
     products of tests and tracing their object dependencies.
     """
 
-    def test_objects(self):
-        """Test objects dictionary property."""
+    def suffixes(self):
+        """Test object suffixes and their variant restrictions."""
         objects = {}
         for test_object in self.objects:
-            suffix = test_object.id
+            suffix = test_object.long_suffix
             if suffix in objects.keys():
                 objects[suffix] += "," + test_object.params["name"]
             else:
                 objects[suffix] = test_object.params["name"]
         return objects
-    test_objects = property(fget=test_objects)
+    suffixes = property(fget=suffixes)
 
-    def test_nodes(self):
-        """Test nodes dictionary property."""
+    def prefixes(self):
+        """Test node prefixes and their variant restrictions."""
         nodes = {}
         for test_node in self.nodes:
-            prefix = test_node.id
+            prefix = test_node.long_prefix
             if prefix in nodes.keys():
                 nodes[prefix] += "," + test_node.params["name"]
             else:
                 nodes[prefix] = test_node.params["name"]
         return nodes
-    test_nodes = property(fget=test_nodes)
+    prefixes = property(fget=prefixes)
 
     def __init__(self):
         """Construct the test graph."""
@@ -107,9 +107,9 @@ class TestGraph(object):
         """
         if not isinstance(objects, list):
             objects = [objects]
-        test_objects_ids = self.test_objects.keys()
+        test_object_suffixes = self.suffixes.keys()
         for test_object in objects:
-            if test_object.id in test_objects_ids:
+            if test_object.long_suffix in test_object_suffixes:
                 continue
             self.objects.append(test_object)
 
@@ -122,9 +122,9 @@ class TestGraph(object):
         """
         if not isinstance(nodes, list):
             nodes = [nodes]
-        test_nodes_ids = self.test_nodes.keys()
+        test_node_prefixes = self.prefixes.keys()
         for test_node in nodes:
-            if test_node.id in test_nodes_ids:
+            if test_node.long_prefix in test_node_prefixes:
                 continue
             self.nodes.append(test_node)
 
@@ -140,7 +140,7 @@ class TestGraph(object):
             str_list = f.read()
         setup_list = re.findall("(\w+-\w+) (\d) (\d)", str_list)
         for i in range(len(setup_list)):
-            assert self.nodes[i].id == setup_list[i][0], "Corrupted setup list file"
+            assert self.nodes[i].long_prefix == setup_list[i][0], "Corrupted setup list file"
             self.nodes[i].should_run = bool(int(setup_list[i][1]))
             self.nodes[i].should_clean = bool(int(setup_list[i][2]))
 
@@ -155,7 +155,7 @@ class TestGraph(object):
         for test in self.nodes:
             should_run = 1 if test.should_run else 0
             should_clean = 1 if test.should_clean else 0
-            str_list += "%s %i %i\n" % (test.id, should_run, should_clean)
+            str_list += "%s %i %i\n" % (test.long_prefix, should_run, should_clean)
         with open(os.path.join(dump_dir, filename), "w") as f:
             f.write(str_list)
 
@@ -191,13 +191,13 @@ class TestGraph(object):
 
         graph = Digraph('cartesian_graph', format='svg')
         for tnode in self.nodes:
-            graph.node(tnode.id)
+            graph.node(tnode.long_prefix)
             for snode in tnode.setup_nodes:
-                graph.node(snode.id)
-                graph.edge(tnode.id, snode.id)
+                graph.node(snode.long_prefix)
+                graph.edge(tnode.long_prefix, snode.long_prefix)
             for cnode in tnode.cleanup_nodes:
-                graph.node(cnode.id)
-                graph.edge(tnode.id, cnode.id)
+                graph.node(cnode.long_prefix)
+                graph.edge(tnode.long_prefix, cnode.long_prefix)
         graph.render("%s/cg_%s_%s" % (dump_dir, id(self), n))
 
     """run/clean switching functionality"""
