@@ -52,6 +52,14 @@ class CartesianRunner(RunnerInterface):
     name = 'traverser'
     description = 'Runs tests through a Cartesian graph traversal'
 
+    def __init__(self):
+        """Construct minimal attributes for the Cartesian runner."""
+        self.tasks = []
+        self.slots = []
+
+        self.status_repo = None
+        self.status_server = None
+
     """running functionality"""
     async def _update_status(self, job):
         message_handler = MessageHandler()
@@ -80,7 +88,20 @@ class CartesianRunner(RunnerInterface):
         :type node: :py:class:`TestNode`
         """
         if node.spawner is None:
-            node.set_environment(job, self.slots[0])
+            default_slot = self.slots[0] if len(self.slots) > 0 else ""
+            node.set_environment(job, default_slot)
+        # once the slot is set (here or earlier), the hostname reflects it
+        hostname = node.params["hostname"]
+        hostname = "localhost" if not hostname else hostname
+        logging.debug(f"Running {node.id} on {hostname}")
+
+        if not self.status_repo:
+            self.status_repo = StatusRepo(job.unique_id)
+            self.status_server = StatusServer(job.config.get('nrunner.status_server_listen'),
+                                              self.status_repo)
+            asyncio.ensure_future(self.status_server.serve_forever())
+            # TODO: this needs more customization
+            asyncio.ensure_future(self._update_status(job))
 
         raw_task = nrunner.Task(node.get_runnable(), node.id_test,
                                 [job.config.get('nrunner.status_server_uri')],
@@ -178,12 +199,11 @@ class CartesianRunner(RunnerInterface):
                         and len(n.cleanup_nodes) == 0 and n.should_run]
         while len(run_children) > 0:
             current_nodes = run_children[:len(self.slots)]
-            logging.debug("Traversal advance running in parallel the tests:\n%s",
-                          "\n".join([n.id for n in current_nodes]))
             if len(current_nodes) == 0:
                 raise ValueError("Not enough container run slots")
+            logging.debug("Traversal advance running in parallel the tests:\n%s",
+                          "\n".join([n.id for n in current_nodes]))
             for i, n in enumerate(current_nodes):
-                logging.debug(f"Running {current_nodes[i].id} in {self.slots[i]}")
                 current_nodes[i].set_environment(self.job, self.slots[i])
                 run_children.remove(current_nodes[i])
             to_traverse = [self._traverse_test_node(graph, n, params)
@@ -272,7 +292,7 @@ class CartesianRunner(RunnerInterface):
                     graph.report_progress()
                 else:
                     # parallel pocket lookahead
-                    if next != root:
+                    if next != root and len(self.slots) > 1:
                         self._run_available_children(next, graph, params)
                         graph.report_progress()
                     # normal DFS
@@ -301,15 +321,15 @@ class CartesianRunner(RunnerInterface):
         self.status_server = StatusServer(job.config.get('nrunner.status_server_listen'),
                                           self.status_repo)
         asyncio.ensure_future(self.status_server.serve_forever())
+        # TODO: this needs more customization
+        asyncio.ensure_future(self._update_status(job))
 
         graph = self._graph_from_suite(test_suite)
         summary = set()
         params = self.job.config["param_dict"]
 
         self.tasks = []
-        self.slots = params.get("slots").split(" ")
-        # TODO: this needs more customization
-        asyncio.ensure_future(self._update_status(job))
+        self.slots = params.get("slots", "").split(" ")
 
         # TODO: fix other run_traversal calls
         try:
