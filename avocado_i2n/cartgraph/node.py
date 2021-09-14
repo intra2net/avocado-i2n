@@ -328,13 +328,8 @@ class TestNode(object):
         """
         self._params_cache = self.config.get_params(show_dictionaries=verbose)
 
-    def scan_states(self, env):
-        """
-        Scan for present object states to reuse the test from previous runs.
-
-        :param env: environment with registered pre-processed vms
-        :type env: :py:class:`virttest.utils_env.Env`
-        """
+    def scan_states(self):
+        """Scan for present object states to reuse the test from previous runs."""
         self.should_run = True
         node_params = self.params.copy()
 
@@ -357,10 +352,15 @@ class TestNode(object):
             # ultimate consideration of whether the state is actually present
             node_params[f"check_state_{test_object.key}_{test_object.name}"] = object_state
             node_params[f"check_mode_{test_object.key}_{test_object.name}"] = object_params.get("check_mode", "rf")
+            # TODO: unfortunately we need env object with pre-processed vms in order
+            # to provide ad-hoc root vm states so we use the current advantage that
+            # all vm state backends can check for states without a vm boot (root)
+            if test_object.key == "vms":
+                node_params[f"use_env_{test_object.key}_{test_object.name}"] = "no"
             node_params[f"soft_boot_{test_object.key}_{test_object.name}"] = "no"
 
         if not is_leaf:
-            self.should_run = not ss.check_states(node_params, env)
+            self.should_run = not ss.check_states(node_params, None)
         logging.info("The test node %s %s run", self, "should" if self.should_run else "should not")
 
     def validate(self):

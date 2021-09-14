@@ -222,6 +222,8 @@ class StateOnBackend(StateBackend):
                 logging.info("The required virtual machine %s has a missing image %s",
                              vm_name, image_name + image_format)
                 return False
+        if not params.get_boolean("use_env", True):
+            return True
         logging.debug("Checking whether %s is on (boot state requested)", vm_name)
         vm = object
         if vm is not None and vm.is_alive():
@@ -255,10 +257,14 @@ class StateOnBackend(StateBackend):
                 os.makedirs(os.path.dirname(image_name), exist_ok=True)
                 image_params.update({"create_image": "yes", "force_create_image": "yes"})
                 env_process.preprocess_image(None, image_params, image_name)
+        if not params.get_boolean("use_env", True):
+            return
         logging.info("Booting %s to provide boot state", vm_name)
         vm = object
         if vm is None:
             raise ValueError("Need an environmental object to boot")
+            #vm = env.create_vm(params.get('vm_type'), params.get('target'),
+            #                   vm_name, params, None)
         if not vm.is_alive():
             vm.create()
 
@@ -416,6 +422,10 @@ def check_states(run_params, env=None):
         state_backend = BACKENDS[state_params["states"]]
         # TODO: we don't support other parametric object instances
         vm = env.get_vm(state_params["vms"]) if env is not None else None
+        # TODO: consider whether we need this with more advanced env handling
+        #if vm is None and env is not None:
+        #    vm = env.create_vm(state_params.get('vm_type'), state_params.get('target'),
+        #                       params_obj_name, state_params, None)
         state_object = env if params_obj_type == "nets" else vm
 
         action_if_root_exists = state_params["check_mode"][0]
@@ -425,20 +435,7 @@ def check_states(run_params, env=None):
         root_exists = state_backend.check_root(state_params, state_object)
         if not root_exists:
             if action_if_root_doesnt_exist == "f":
-                # TODO: implement set root for all parametric object types
-                if params_obj_type == "nets/vms":
-                    if vm is None:
-                        if env is None:
-                            raise exceptions.TestError(f"Creating boot states requires an "
-                                                       "environment object to be provided.")
-                        vm = env.create_vm(state_params.get('vm_type'), state_params.get('target'),
-                                           params_obj_name, state_params, None)
-                    else:
-                        # vm states require manual update of the vm parameters
-                        vm.params = run_params.object_params(vm.name)
-                        state_backend.set_root(state_params, state_object)
-                else:
-                    state_backend.set_root(state_params, state_object)
+                state_backend.set_root(state_params, state_object)
                 root_exists = True
             elif action_if_root_doesnt_exist == "r":
                 return False
