@@ -54,8 +54,7 @@ class GUITestGenerator(QtGui.QWidget):
 
         self.vmnet, self.path = vmnet, vmnet.test.logdir
         self.test, self.params, self.env = vmnet.test, vmnet.params, vmnet.env
-        testsuite_top_path = settings.as_dict().get('i2n.common.suite_path')
-        self.image_root = os.path.join(testsuite_top_path, "data", "visual")
+        self.image_root = os.path.join(vmnet.params["suite_path"], "data", "visual")
         if self.params.get("store_permanently", "no") == "yes":
             self.path = self.image_root
             logging.info("Storing all captured screens and executed code permanently in %s",

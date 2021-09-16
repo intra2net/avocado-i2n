@@ -34,19 +34,18 @@ except ImportError:
 # HELPERS
 ###############################################################################
 
-def get_image_root():
+def get_image_root(suite_path):
     """
-    Get the image root from the avocado config.
+    Get the image root from the plugin settings.
 
+    :param str suite_path: test suite path as root for the image paths
     :raises: :py:class:`IOError` if path cannot be found
 
     Try with a host path first, then if not with a guest path,
     and ultimately fail if none of these is available.
     """
     try:
-        from avocado.core.settings import settings
-        testsuite_top_path = settings.as_dict().get('i2n.common.suite_path')
-        image_root = os.path.join(testsuite_top_path, "data", "visual")
+        image_root = os.path.join(suite_path, "data", "visual")
     except ImportError:
         image_root = os.path.join("/tmp", "data", "visual")
     if not os.path.exists(image_root):
@@ -132,7 +131,7 @@ def run(test, params, env):
     logging.info("Starting a minimal GUI test on two vms (screens)")
     if not BOT_AVAILABLE:
         raise exceptions.TestSkipError("No virtual user backend found")
-    image_root = get_image_root()
+    image_root = get_image_root(params["suite_path"])
     set_logging(params.get("vu_logging_level", 20), test.logdir)
     set_shared_configuration(params.get("smooth_mouse_motion", "no") == "yes")
     server_screen = initiate_vm_screen(server_vm, 'vncdotool')

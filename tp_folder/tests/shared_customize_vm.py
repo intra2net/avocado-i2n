@@ -36,8 +36,6 @@ pass
 # DEFINITIONS
 ###############################################################################
 
-testsuite_top_path = settings.as_dict().get('i2n.common.suite_path')
-guest_path = testsuite_top_path
 source_avocado_path = "/usr/lib/python3.7/site-packages/avocado/utils"
 destination_avocado_path = "/tmp/utils/avocado"
 
@@ -84,7 +82,7 @@ def deploy_data(vm, folder_name, params,
     os_type = params.get("os_type", "linux")
     tmp_dir = params.get("tmp_dir", "/tmp")
     if custom_src_path == "":
-        src_path = os.path.join(guest_path, folder_name)
+        src_path = os.path.join(params["suite_path"], folder_name)
     else:
         src_path = os.path.join(custom_src_path, folder_name)
     folder_name = custom_dst_name if custom_dst_name else folder_name
