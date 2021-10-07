@@ -304,6 +304,7 @@ class Reparsable():
         parser.parse_string("hostname = %s\n" % hostname)
         suite_path = settings.as_dict().get('i2n.common.suite_path')
         parser.parse_string("suite_path = %s\n" % suite_path)
+        parser.parse_string("test_pre_hook = %s\n" % os.path.join(suite_path, "controls", "pre_test.control"))
 
         for step in self.steps:
             if isinstance(step, ParsedFile):
