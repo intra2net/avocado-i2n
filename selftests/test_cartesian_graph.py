@@ -6,6 +6,7 @@ import shutil
 import asyncio
 import re
 
+from avocado import Test
 from avocado.core import exceptions
 from avocado.core.suite import TestSuite, resolutions_to_runnables
 
@@ -94,7 +95,7 @@ def mock_check_states(params, env):
 
 @mock.patch('avocado_i2n.cartgraph.node.ss.check_states', mock_check_states)
 @mock.patch.object(CartesianRunner, 'run_test', mock_run_test)
-class CartesianGraphTest(unittest.TestCase):
+class CartesianGraphTest(Test):
 
     def setUp(self):
         DummyTestRunning.asserted_tests = []

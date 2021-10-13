@@ -5,6 +5,7 @@ import unittest.mock as mock
 import shutil
 import re
 
+from avocado import Test
 from avocado.core import exceptions
 from virttest import utils_params
 
@@ -13,7 +14,7 @@ from avocado_i2n import vmnet
 from avocado_i2n.vmnet import VMNetwork
 
 
-class VMNetworkTest(unittest.TestCase):
+class VMNetworkTest(Test):
 
     def setUp(self):
         self.vmnet = mock.MagicMock()

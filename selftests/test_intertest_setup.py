@@ -5,6 +5,7 @@ import unittest.mock as mock
 import contextlib
 import re
 
+from avocado import Test
 from avocado.core import exceptions
 from virttest import utils_params
 
@@ -108,7 +109,7 @@ def mock_check_states(params, env):
 @mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
 @mock.patch('avocado_i2n.cartgraph.node.ss.check_states', mock_check_states)
 @mock.patch.object(CartesianRunner, 'run_test', mock_run_test)
-class IntertestSetupTest(unittest.TestCase):
+class IntertestSetupTest(Test):
 
     def setUp(self):
         DummyTestRunning.asserted_tests = []

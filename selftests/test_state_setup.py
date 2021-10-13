@@ -4,6 +4,7 @@ import unittest
 import unittest.mock as mock
 import os
 
+from avocado import Test
 from avocado.core import exceptions
 from avocado.utils import process
 from virttest import utils_params
@@ -26,11 +27,10 @@ from avocado_i2n.states import vmnet
 @mock.patch('avocado_i2n.states.lvm.os.unlink', mock.Mock(return_value=0))
 @mock.patch('avocado_i2n.states.lvm.shutil.rmtree', mock.Mock(return_value=0))
 @mock.patch('avocado_i2n.states.pool.os.makedirs', mock.Mock(return_value=0))
-class StateSetupTest(unittest.TestCase):
+class StateSetupTest(Test):
 
-    @classmethod
-    def setUpClass(cls):
-        cls.run_str = ""
+    def setUp(self):
+        self.run_str = ""
 
         ss.BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
                        "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
@@ -40,7 +40,6 @@ class StateSetupTest(unittest.TestCase):
         # disable pool locks for easier mocking
         pool.SKIP_LOCKS = True
 
-    def setUp(self):
         self.run_params = utils_params.Params()
         self.run_params["nets"] = "net1"
         self.run_params["vms"] = "vm1"
@@ -103,6 +102,9 @@ class StateSetupTest(unittest.TestCase):
             self.mock_vms[vm_name].params = self.run_params.object_params(vm_name)
 
     def _file_exists(self, filepath):
+        # avocado's test class does some unexpected monkey patching
+        if filepath.endswith(".expected"):
+            return False
         if self.exist_lambda:
             return self.exist_lambda(filepath)
         return self.exist_switch

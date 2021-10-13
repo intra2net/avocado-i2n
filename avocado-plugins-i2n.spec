@@ -45,7 +45,7 @@ BuildRequires: python3-devel, python3-setuptools
 BuildArch: noarch
 
 %if %{with tests}
-BuildRequires: python3-coverage
+BuildRequires: python3-coverage, python3-aexpect, python3-avocado, python3-avocado-plugins-vt
 %endif
 
 %description
@@ -80,7 +80,9 @@ graph structure.
 
 %if %{with tests}
 %check
-make check
+# if later on we decide that unit tests are still more appropriate here just do
+#make check
+PYTHONPATH=:. avocado run selftests/test_*
 %endif
 
 %files -n python3-%{name}
