@@ -17,6 +17,7 @@ logging = log.getLogger('avocado.test.pre')
 # custom imports
 from virttest import env_process
 from avocado_i2n.states import setup as ss
+from avocado_i2n.states import lvm, qcow2, lxc, btrfs, ramfile, pool
 
 # deployed utilities
 utility_path = os.path.join(params["suite_path"], "utils")
@@ -46,6 +47,12 @@ env_process.preprocess_vm_off_hook = off_state(ss.get_states)
 env_process.preprocess_vm_on_hook = on_state(ss.get_states)
 env_process.postprocess_vm_on_hook = on_state(ss.set_states)
 env_process.postprocess_vm_off_hook = off_state(ss.set_states)
+logging.info(f"Adding default state backends")
+ss.OFF_BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
+                   "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
+                   "pool": pool.QCOW2PoolBackend}
+ss.ON_BACKENDS = {"qcow2vt": qcow2.QCOW2VTBackend,
+                  "ramfile": ramfile.RamfileBackend}
 
 
 logging.info("%s control file finished.", NAME)
