@@ -24,7 +24,8 @@
 # the functional tests are time and resource sensitive and can
 # cause race conditions and random build failures. They are
 # enabled by default.
-%global with_tests 1
+# You can disable them with rpmbuild ... --without tests
+%bcond_without tests
 
 Summary: Avocado I2N Plugin
 Name: avocado-plugins-i2n
@@ -43,7 +44,7 @@ Source0: https://github.com/intra2net/%{srcname}/archive/%{commit}.tar.gz#/%{git
 BuildRequires: python3-devel, python3-setuptools
 BuildArch: noarch
 
-%if %{with_tests}
+%if %{with tests}
 BuildRequires: python3-coverage
 %endif
 
@@ -77,7 +78,7 @@ graph structure.
 %{__mkdir} -p %{buildroot}%{_sysconfdir}/avocado/conf.d
 %{__mv} %{buildroot}%{python3_sitelib}/avocado_i2n/conf.d/* %{buildroot}%{_sysconfdir}/avocado/conf.d
 
-%if %{with_tests}
+%if %{with tests}
 %check
 make check
 %endif
