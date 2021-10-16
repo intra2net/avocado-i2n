@@ -387,7 +387,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
         self.mock_vms["vm1"].is_alive.return_value = False
-        with self.assertRaises(exceptions.TestSkipError):
+        with self.assertRaises(exceptions.TestAbortError):
             ss.get_states(self.run_params, self.env)
         mock_lv_utils.lv_remove.assert_not_called()
         mock_lv_utils.lv_take_snapshot.assert_not_called()
@@ -395,7 +395,7 @@ class StateSetupTest(unittest.TestCase):
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
-        with self.assertRaises(exceptions.TestSkipError):
+        with self.assertRaises(exceptions.TestAbortError):
             ss.get_states(self.run_params, self.env)
         mock_lv_utils.lv_remove.assert_not_called()
         mock_lv_utils.lv_take_snapshot.assert_not_called()
@@ -632,14 +632,14 @@ class StateSetupTest(unittest.TestCase):
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
-        with self.assertRaises(exceptions.TestSkipError):
+        with self.assertRaises(exceptions.TestAbortError):
             ss.set_states(self.run_params, self.env)
         mock_lv_utils.lv_remove.assert_not_called()
         mock_lv_utils.lv_take_snapshot.assert_not_called()
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
-        with self.assertRaises(exceptions.TestSkipError):
+        with self.assertRaises(exceptions.TestAbortError):
             ss.set_states(self.run_params, self.env)
         mock_lv_utils.lv_remove.assert_not_called()
         mock_lv_utils.lv_take_snapshot.assert_not_called()
@@ -919,7 +919,7 @@ class StateSetupTest(unittest.TestCase):
 
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = False
-        with self.assertRaises(exceptions.TestSkipError):
+        with self.assertRaises(exceptions.TestAbortError):
             ss.unset_states(self.run_params, self.env)
         mock_lv_utils.lv_remove.assert_not_called()
 
@@ -1195,7 +1195,7 @@ class StateSetupTest(unittest.TestCase):
         # do not use pool root if disabled and no local root
         self.run_params["use_pool"] = "no"
         mock_shutil.reset_mock()
-        with self.assertRaises(exceptions.TestSkipError):
+        with self.assertRaises(exceptions.TestAbortError):
             ss.get_states(self.run_params, self.env)
         mock_shutil.copy.assert_not_called()
 
@@ -1257,7 +1257,7 @@ class StateSetupTest(unittest.TestCase):
         mock_process.reset_mock()
         mock_lv_utils.reset_mock()
         mock_lv_utils.lv_check.return_value = True
-        with self.assertRaises(exceptions.TestSkipError):
+        with self.assertRaises(exceptions.TestAbortError):
             ss.set_states(self.run_params, self.env)
         mock_lv_utils.lv_check.assert_called_with('disk_vm1', 'LogVol')
 
@@ -1561,7 +1561,7 @@ class StateSetupTest(unittest.TestCase):
         self.mock_vms["vm1"].is_alive.return_value = False
         self.mock_vms["vm3"].is_alive.return_value = True
 
-        with self.assertRaises(exceptions.TestSkipError):
+        with self.assertRaises(exceptions.TestAbortError):
             ss.get_states(self.run_params, self.env)
 
         expected = [mock.call("disk_vm1", "LogVol"),
@@ -1613,7 +1613,7 @@ class StateSetupTest(unittest.TestCase):
         mock_lv_utils.vg_check.return_value = False
         mock_process.run.return_value = process.CmdResult("dummy-command")
 
-        with self.assertRaises(exceptions.TestSkipError):
+        with self.assertRaises(exceptions.TestAbortError):
             ss.set_states(self.run_params, self.env)
 
         expected = [mock.call("disk_vm2", "LogVol"),
