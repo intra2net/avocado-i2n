@@ -221,13 +221,16 @@ class TestGraph(object):
         activity = ("" if flag else "not ") + ("running" if flag_type == "run" else "cleanup")
         logging.debug("Selecting test nodes for %s", activity)
         if object_name is not None:
-            node_name = "root" if node_name is None else node_name
-            root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)"+node_name+"(?:\.|$)")
-            root_tests = self.get_nodes_by(param_key="vms",
-                                           param_val="(?:^|\s)%s(?:$|\s)" % object_name,
-                                           subset=root_tests)
+            if node_name:
+                root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)"+node_name+"(?:\.|$)")
+                # TODO: we only support vm objects at the moment
+                root_tests = self.get_nodes_by(param_key="vms",
+                                               param_val="(?:^|\s)%s(?:$|\s)" % object_name,
+                                               subset=root_tests)
+            else:
+                root_tests = self.get_nodes_by(param_key="object_root", param_val="(?:\.|^)"+object_name+"(?:\.|$)")
         else:
-            root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)noop(?:\.|$)")
+            root_tests = self.get_nodes_by(param_key="shared_root", param_val="yes")
         if len(root_tests) < 1:
             raise AssertionError("Could not retrieve node %s and flag all its children tests" % node_name)
         elif len(root_tests) > 1:
@@ -243,6 +246,7 @@ class TestGraph(object):
         for test_node in flagged:
             logging.debug("The test %s is set for %s.", test_node.params["shortname"], activity)
             flagged.extend(test_node.cleanup_nodes)
+            test_node.should_scan = False
             if flag_type == "run":
                 test_node.should_run = flag
             else:
@@ -260,16 +264,12 @@ class TestGraph(object):
         :param bool flag: whether the run/clean action should be executed or not
         :param bool skip_object_roots: whether the object roots should not be flagged as well
         :param bool skip_shared_root: whether the shared root should not be flagged as well
-
-        .. note:: This method only works with reusable tests, due to current lack
-            of proper test identification. It is generally meant for identifying
-            paths of parents and not intersections of whole graphs.
         """
         activity = ("" if flag else "not ") + ("running" if flag_type == "run" else "cleanup")
         logging.debug("Selecting test nodes for %s", activity)
         for test_node in self.nodes:
-            if test_node.is_shared_root() or len(graph.get_nodes_by(param_key="set_state",
-                    param_val="^"+test_node.params["set_state"]+"$")) == 1:
+            name = ".".join(test_node.params["name"].split(".")[1:])
+            if len(graph.get_nodes_by(param_key="name", param_val=name+"$")) == 1:
                 if test_node.is_shared_root() and skip_shared_root:
                     logging.info("Skip flag for shared root")
                     continue
@@ -277,6 +277,7 @@ class TestGraph(object):
                     logging.info("Skip flag for object root")
                     continue
                 logging.debug("The test %s is set to %s.", test_node.params["shortname"], activity)
+                test_node.should_scan = False
                 if flag_type == "run":
                     test_node.should_run = flag
                 else:
