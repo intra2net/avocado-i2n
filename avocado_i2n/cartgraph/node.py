@@ -244,26 +244,31 @@ class TestNode(object):
 
     @staticmethod
     def comes_before(node1, node2):
-        def compare_part(c1, c2):
-            match1, match2 = re.match(r"^(\d+)(\w+)(.+)", c1), re.match(r"^(\d+)(\w+)(.+)", c2)
-            if match1 is None and match2 is None:
-                pass
-            d1, b1, a1 = c1, None, None if match1 is None else match1.group(1, 2, 3)
-            d2, b2, a2 = c2, None, None if match2 is None else match2.group(1, 2, 3)
-            if not c1.isdigit() or not c2.isdigit():
-                return str(c1) < str(c2)
-            d1, d2 = int(d1), int(d2)
-            if d1 != d2:
-                return d1 < d2
-            elif a1 != a2:
-                if a1 is None:
-                    return False if a2 == "a" else True  # reverse order for "c" and cleanup
-                if a2 is None:
-                    return True if a1 == "a" else False  # reverse order for "c" and cleanup
-                return a1 < a2
+        def compare_part(prefix1, prefix2):
+            match1, match2 = re.match(r"^(\d+)(\w)(.+)", prefix1), re.match(r"^(\d+)(\w)(.+)", prefix2)
+            digit1, alpha1, else1 = (prefix1, None, None) if match1 is None else match1.group(1, 2, 3)
+            digit2, alpha2, else2 = (prefix2, None, None) if match2 is None else match2.group(1, 2, 3)
+
+            # compare order of parsing if simple leaf nodes
+            if digit1.isdigit() and digit2.isdigit():
+                digit1, digit2 = int(digit1), int(digit2)
+                if digit1 != digit2:
+                    return digit1 < digit2
+            # we no longer match and are at the end ofthe prefix
             else:
-                return compare_part(b1, b2)
-        return compare_part(node1.prefix, node2.prefix)
+                return digit1 < digit2
+
+            # compare the node type flags next
+            if alpha1 != alpha2:
+                if alpha1 is None:
+                    return False if alpha2 == "a" else True  # reverse order for "c" (cleanup), "b" (byproduct), "d" (duplicate)
+                if alpha2 is None:
+                    return True if alpha1 == "a" else False  # reverse order for "c" (cleanup), "b" (byproduct), "d" (duplicate)
+                return alpha1 < alpha2
+            # redo the comparison for the next prefix part
+            else:
+                return compare_part(else1, else2)
+        return compare_part(node1.long_prefix, node2.long_prefix)
 
     def pick_next_parent(self):
         """
