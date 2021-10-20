@@ -210,11 +210,17 @@ def full(config, tag=""):
 
     for vm_name in selected_vms:
         vm_params = config["vms_params"].object_params(vm_name)
-        logging.info("Creating the full state '%s' of %s", vm_params.get("state", "customize"), vm_name)
-
-        state = vm_params.get("state", "customize")
-        state = "0root" if state == "root" else state
-        state = "0preinstall" if state == "install" else state
+        state = vm_params.get("to_state", "customize")
+        logging.info("Creating the full state '%s' of %s", state, vm_name)
+        # initial install node can be facilitated by the install tool
+        if state == "install":
+            # TODO: integrate this into:
+            #_reuse_tool_with_param_dict(config, tag, {}, install)
+            vm_strs = config["vm_strs"].copy()
+            config["vm_strs"] = {vm_name: vm_strs[vm_name]}
+            install(config, tag=tag)
+            config["vm_strs"] = vm_strs
+            continue
 
         # in case of permanent vms, support creation and other otherwise dangerous operations
         setup_dict = config["param_dict"].copy()
@@ -261,16 +267,14 @@ def update(config, tag=""):
 
     for vm_name in selected_vms:
         vm_params = config["vms_params"].object_params(vm_name)
-        logging.info("Updating state '%s' of %s", vm_params.get("to_state", "customize"), vm_name)
-
         from_state = vm_params.get("from_state", "install")
         to_state = vm_params.get("to_state", "customize")
-        if to_state == "root":
-            logging.warning("The root state of %s cannot be updated - use 'setup=full' instead.", vm_name)
+        if to_state == "install":
+            logging.warning("The root install state of %s cannot be updated - use 'setup=full' instead.", vm_name)
             continue
+        logging.info("Updating state '%s' of %s", to_state, vm_name)
 
         logging.info("Tracing and removing all old states depending on the updated '%s'...", to_state)
-        to_state = "0preinstall" if to_state == "install" else to_state
         setup_dict = config["param_dict"].copy()
         setup_dict["unset_mode"] = "fi"
         setup_str = vm_params.get("remove_set", "leaves")
@@ -302,10 +306,8 @@ def update(config, tag=""):
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=False)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=True,
                                               skip_object_roots=True, skip_shared_root=True)
-
         logging.info("Preserving all states before '%s'", from_state)
-        from_state = "0preinstall" if from_state == "install" else from_state
-        if from_state != "root":
+        if from_state != "install":
             setup_dict = config["param_dict"].copy()
             setup_dict["vms"] = vm_name
             reuse_graph = l.parse_object_trees(setup_dict,
@@ -398,8 +400,22 @@ def install(config, tag=""):
         if test_object.key != "vms":
             continue
         vm = test_object
-        graph.nodes.append(l.parse_install_node(vm, config["param_dict"], prefix=tag))
-        r.run_install_node(graph, vm.suffix, config["param_dict"])
+        if len(vm.components) > 1:
+            logging.warning("Multiple images used by %s, installing on first one", vm.suffix)
+        # install only on first image as RAID and other configurations are customizations
+        image = vm.components[0]
+        # parse individual net only for the current vm
+        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
+
+        setup_str = param.re_str("all..internal..customize")
+        start_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
+        setup_str = param.re_str("all..original.." + start_node.params["get_images"])
+        install_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
+        install_node.params["object_root"] = image.id
+        graph.nodes.append(install_node)
+        to_install = r.run_terminal_node(graph, image.id, config["param_dict"])
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_install, r.job.timeout or None))
+
     LOG_UI.info("Finished installation")
 
 

@@ -121,20 +121,6 @@ class IntertestSetupTest(unittest.TestCase):
         intertest_setup.full(self.config, tag="1r")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_full_root(self):
-        self.config["vms_params"]["state_vm1"] = "customize"
-        self.config["vms_params"]["state_vm2"] = "root"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-        DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.stateless.0root.vm1", "vms": "^vm1$", "set_state": "^root$"},
-            {"shortname": "^internal.stateless.0preinstall.vm1", "vms": "^vm1$"},
-            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-7.*\.iso$"},
-            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.stateless.0root.vm2", "vms": "^vm2$", "set_state": "^root$"},
-        ]
-        intertest_setup.full(self.config, tag="1r")
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
-
     def test_full_install(self):
         self.config["vms_params"]["state_vm1"] = "customize"
         self.config["vms_params"]["state_vm2"] = "install"
@@ -208,14 +194,6 @@ class IntertestSetupTest(unittest.TestCase):
             {"shortname": "^internal.stateless.manage.unchanged.vm1", "vms": "^vm1$", "unset_state": "^connect$", "unset_type": "^on"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^install$"},
             {"shortname": "^internal.permanent.connect.vm1", "vms": "^vm1$", "get_state": "^customize$"},
-        ]
-        intertest_setup.update(self.config, tag="0")
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
-
-    def test_update_root(self):
-        self.config["vms_params"]["to_state"] = "root"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
-        DummyTestRunning.asserted_tests = [
         ]
         intertest_setup.update(self.config, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)

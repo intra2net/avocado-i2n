@@ -357,7 +357,7 @@ class CartesianRunner(RunnerInterface):
         test_object = objects[0]
 
         nodes = graph.get_nodes_by("object_root", object_name)
-        assert len(nodes) == 1, "There can only be one root for %s" % object_name
+        assert len(nodes) == 1, "There should exist one unique root for %s" % object_name
         test_node = nodes[0]
 
         if test_object.is_permanent() and not test_node.params.get_boolean("create_permanent_vm"):
