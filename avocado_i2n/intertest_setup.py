@@ -441,7 +441,7 @@ def deploy(config, tag=""):
         # parse individual net only for the current vm
         net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
 
-        states = vm.params.objects("states")
+        states = vm.params.objects("to_states")
         if len(states) == 0:
             states = ["current_state"]
             stateless = vm.params.get("stateless", "yes") == "yes"

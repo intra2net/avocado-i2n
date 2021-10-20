@@ -104,8 +104,8 @@ class IntertestSetupTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_full_custom(self):
-        self.config["vms_params"]["state_vm1"] = "customize"
-        self.config["vms_params"]["state_vm2"] = "connect"
+        self.config["vms_params"]["to_state_vm1"] = "customize"
+        self.config["vms_params"]["to_state_vm2"] = "connect"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0root.vm1", "vms": "^vm1$", "set_state": "^root$"},
@@ -122,8 +122,8 @@ class IntertestSetupTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_full_install(self):
-        self.config["vms_params"]["state_vm1"] = "customize"
-        self.config["vms_params"]["state_vm2"] = "install"
+        self.config["vms_params"]["to_state_vm1"] = "customize"
+        self.config["vms_params"]["to_state_vm2"] = "install"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.stateless.0root.vm1", "vms": "^vm1$", "set_state": "^root$"},
@@ -263,7 +263,7 @@ class IntertestSetupTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_deploy_states(self):
-        self.config["vm_strs"] = {"vm1": "only CentOS\nstates=state1 state2\n"}
+        self.config["vm_strs"] = {"vm1": "only CentOS\nto_states=state1 state2\n"}
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^state1$", "set_state": "^state1$"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^state2$", "set_state": "^state2$"},
@@ -272,7 +272,7 @@ class IntertestSetupTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_deploy_states_multivm(self):
-        self.config["vm_strs"] = {"vm1": "only CentOS\nstates=state1 state2 state3\n", "vm2": "only Win10\nstates=state1 state3\n"}
+        self.config["vm_strs"] = {"vm1": "only CentOS\nto_states=state1 state2 state3\n", "vm2": "only Win10\nto_states=state1 state3\n"}
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^state1$", "set_state": "^state1$"},
             {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^state2$", "set_state": "^state2$"},
