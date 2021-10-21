@@ -22,6 +22,7 @@ INTERFACE
 import os
 import logging
 import contextlib
+import asyncio
 from collections import namedtuple
 
 from avocado.core import job
@@ -72,5 +73,6 @@ def develop(config, tag=""):
     setup_str = param.re_str("all..manual..develop.%s" % mode)
     tests, objects = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
-    r.run_test_node(TestNode(tag, tests[0].config, objects[0]))
+    to_run = r.run_test_node(TestNode(tag, tests[0].config, objects[-1]))
+    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
     LOG_UI.info("Development complete")

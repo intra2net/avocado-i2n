@@ -21,6 +21,7 @@ INTERFACE
 
 import os
 import logging
+import asyncio
 
 from avocado.core.output import LOG_UI
 from avocado_i2n import params_parser as param
@@ -50,7 +51,12 @@ def permubuntu(config, tag=""):
     LOG_UI.info("Starting permanent vm setup for %s (%s)",
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
-    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
+    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
+        if test_object.key != "vms":
+            continue
+        vm = test_object
+        # parse individual net only for the current vm
+        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
         logging.info("Performing extra setup for the permanent %s", vm.suffix)
 
         # consider this as a special kind of ephemeral test which concerns
@@ -58,9 +64,10 @@ def permubuntu(config, tag=""):
         # root, it is a transition from supposedly "permanentized" vm to the root)
         logging.info("Booting %s for the first permanent on state", vm.suffix)
         setup_dict = config["param_dict"].copy()
-        setup_dict.update({"set_state": "ready"})
+        setup_dict.update({"set_state_vms": "ready"})
         setup_str = param.re_str("all..internal..manage.start")
-        test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
-        r.run_test_node(test_node)
+        test_node = l.parse_node_from_object(net, setup_dict, setup_str, prefix=tag)
+        to_run = r.run_test_node(test_node)
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
 
     LOG_UI.info("Finished permanent vm setup")
