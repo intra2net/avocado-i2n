@@ -245,56 +245,78 @@ class IntertestSetupTest(unittest.TestCase):
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_deploy_stateless(self):
-        self.config["vm_strs"] = {"vm1": "only CentOS\nstateless=yes\n", "vm2": "only Win10\nstateless=yes\n"}
+        """Test the usage of the manual data deployment tool without any states."""
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^$", "set_state": "^$"},
-            {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$", "get_state": "^$", "set_state": "^$"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_vms": "^root$", "set_state_vms": "^$",
+             "get_state_images": "^root$", "set_state_images": "^$", "redeploy_only": "yes"},
+            {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$", "get_state_vms": "^root$", "set_state_vms": "^$",
+             "get_state_images": "^root$", "set_state_images": "^$", "redeploy_only": "yes"},
         ]
         intertest_setup.deploy(self.config, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_deploy_stateful(self):
-        self.config["vm_strs"] = {"vm1": "only CentOS\nstateless=no\n", "vm2": "only Win10\nstateless=no\n"}
+        self.config["param_dict"]["to_state_vms_vm1"] = ""
+        self.config["param_dict"]["to_state_images_vm2"] = ""
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^install$", "set_state": "^customize$"},
-            {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$", "get_state": "^install$", "set_state": "^customize$"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_vms": "^root$", "set_state_vms": "^$",
+             "get_state_images": "^root$", "set_state_images": "^$"},
+            {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$", "get_state_vms": "^root$", "set_state_vms": "^$",
+             "get_state_images": "^root$", "set_state_images": "^$"},
         ]
         intertest_setup.deploy(self.config, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_deploy_states(self):
-        self.config["vm_strs"] = {"vm1": "only CentOS\nto_states=state1 state2\n"}
+        """Test the error of the manual data deployment tool on too generic states."""
+        self.config["param_dict"]["to_state"] = "state1"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n"}
+        DummyTestRunning.asserted_tests = []
+        with self.assertRaises(ValueError):
+            intertest_setup.deploy(self.config, tag="ut")
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
+    def test_deploy_state_multivm(self):
+        """Test the usage of the manual data deployment tool on specific states of multiple types."""
+        self.config["param_dict"]["to_state_vms_vm1"] = "state1"
+        self.config["param_dict"]["to_state_vms_vm2"] = "state2"
+        self.config["param_dict"]["to_state_images_vm1"] = "state3"
+        self.config["param_dict"]["to_state_images_vm2"] = "state4"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^state1$", "set_state": "^state1$"},
-            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^state2$", "set_state": "^state2$"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_vms": "^state1$", "set_state_vms": "^state1$",
+             "get_state_images": "^state3$", "set_state_images": "^state3$"},
+            {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$", "get_state_vms": "^state2$", "set_state_vms": "^state2$",
+             "get_state_images": "^state4$", "set_state_images": "^state4$"},
         ]
         intertest_setup.deploy(self.config, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_deploy_states_multivm(self):
-        self.config["vm_strs"] = {"vm1": "only CentOS\nto_states=state1 state2 state3\n", "vm2": "only Win10\nto_states=state1 state3\n"}
-        DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^state1$", "set_state": "^state1$"},
-            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^state2$", "set_state": "^state2$"},
-            {"shortname": "^internal.permanent.customize.vm1", "vms": "^vm1$", "get_state": "^state3$", "set_state": "^state3$"},
-            {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$", "get_state": "^state1$", "set_state": "^state1$"},
-            {"shortname": "^internal.permanent.customize.vm2", "vms": "^vm2$", "get_state": "^state3$", "set_state": "^state3$"},
-        ]
-        intertest_setup.deploy(self.config, tag="ut")
+        self.config["vm_strs"] = {"vm1": "only CentOS\n"}
+        DummyTestRunning.asserted_tests = []
+        with self.assertRaises(AssertionError):
+            intertest_setup.deploy(self.config, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_internal_stateless(self):
-        self.config["vm_strs"] = {"vm2": "only Win10\nnode=connect\nstateless=yes\n"}
+        """Test the usage of the internal node access tool without any states."""
+        self.config["param_dict"]["node"] = "connect"
+        self.config["vm_strs"] = {"vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.permanent.connect.vm2", "vms": "^vm2$", "get_state": "^$", "set_state": "^$"},
+            {"shortname": "^internal.automated.connect.vm2", "vms": "^vm2$", "get_state_vms": "^root$", "set_state_vms": "^$",
+             "get_state_images": "^root$", "set_state_images": "^$"},
         ]
         intertest_setup.internal(self.config, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_internal_stateful(self):
-        self.config["vm_strs"] = {"vm2": "only Win10\nnode=connect\nstateless=no\n"}
+        """Test the usage of the internal node access tool with custom states."""
+        self.config["param_dict"]["node"] = "connect"
+        self.config["param_dict"]["to_state_images"] = "stateX"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "internal.permanent.connect.vm2", "vms": "^vm2$", "get_state": "^customize$", "set_state": "^connect$"},
+            {"shortname": "internal.automated.connect.vm1", "vms": "^vm1$", "get_state_images": "^stateX", "set_state_images": "^stateX"},
+            {"shortname": "internal.automated.connect.vm2", "vms": "^vm2$", "get_state_images": "^stateX", "set_state_images": "^stateX"},
         ]
         intertest_setup.internal(self.config, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
