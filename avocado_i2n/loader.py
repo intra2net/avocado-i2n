@@ -697,15 +697,18 @@ class CartesianLoader(Resolver):
                     child = clone
                     clones.append(child)
 
+                state_suffixes = f"_{copy_object.key}_{copy_object.name}"
+                state_suffixes += f"_{copy_object.composites[0].name}" if copy_object.key == "images" else ""
+
                 parent_object_params = copy_object.object_typed_params(parent.params)
                 parent_state = parent_object_params.get("set_state", "")
                 child.params["shortname"] += "." + parent_state
                 child.params["name"] += "." + parent_state
-                child.params["get_state_" + copy_object.name] = parent_state
+                child.params["get_state" + state_suffixes] = parent_state
                 child_object_params = copy_object.object_typed_params(child.params)
                 child_state = child_object_params.get("set_state", "")
                 if child_state:
-                    child.params["set_state_" + copy_object.name] += "." + parent_state
+                    child.params["set_state" + state_suffixes] = child_state + "." + parent_state
 
             for grandchild in clone_source.cleanup_nodes:
                 to_copy.append((grandchild, [clone_source, *clones]))
