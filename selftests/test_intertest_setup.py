@@ -15,21 +15,19 @@ from avocado_i2n.runner import CartesianRunner
 
 class DummyTestRunning(object):
 
-    fail_switch = []
     asserted_tests = []
 
     def __init__(self, node_params, test_results):
         self.test_results = test_results
-        if len(self.fail_switch) == 0:
-            self.fail_switch = [False] * len(self.asserted_tests)
-        assert len(self.fail_switch) == len(self.asserted_tests), "len(%s) != len(%s)" % (self.fail_switch, self.asserted_tests)
         # assertions about the test calls
         self.current_test_dict = node_params
         shortname = self.current_test_dict["shortname"]
 
         assert len(self.asserted_tests) > 0, "Unexpected test %s" % shortname
-        self.expected_test_dict, self.expected_test_fail = self.asserted_tests.pop(0), self.fail_switch.pop(0)
+        self.expected_test_dict = self.asserted_tests.pop(0)
         for checked_key in self.expected_test_dict.keys():
+            if checked_key.startswith("_"):
+                continue
             assert checked_key in self.current_test_dict.keys(), "%s missing in %s (params: %s)" % (checked_key, shortname, self.current_test_dict)
             expected, current = self.expected_test_dict[checked_key], self.current_test_dict[checked_key]
             assert re.match(expected, current) is not None, "Expected parameter %s=%s "\
@@ -41,8 +39,10 @@ class DummyTestRunning(object):
     def get_test_result(self):
         uid = self.current_test_dict["_uid"]
         name = self.current_test_dict["name"]
-        self.add_test_result(uid, name, "FAIL" if self.expected_test_fail else "PASS")
-        return not self.expected_test_fail
+        # allow tests to specify the status they expect
+        status = self.expected_test_dict.get("_status", "PASS")
+        self.add_test_result(uid, name, status)
+        return status not in ["ERROR", "FAIL"]
 
     def add_test_result(self, uid, name, status, logdir="."):
         mocktestid = mock.MagicMock(uid=uid, name=name)
@@ -112,7 +112,6 @@ class IntertestSetupTest(unittest.TestCase):
 
     def setUp(self):
         DummyTestRunning.asserted_tests = []
-        DummyTestRunning.fail_switch = []
 
         self.config = {}
         self.config["available_vms"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
@@ -265,14 +264,11 @@ class IntertestSetupTest(unittest.TestCase):
         """Test that a failure in different installation test stages aborts properly."""
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
+            {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$", "_status": "FAIL"},
             # skipped install test node
             {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
+            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$", "_status": "FAIL"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
-        DummyTestRunning.fail_switch[0] = True
-        DummyTestRunning.fail_switch[2] = True
         intertest_setup.install(self.config, tag="ut")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 

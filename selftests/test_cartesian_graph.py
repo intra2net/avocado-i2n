@@ -17,20 +17,16 @@ from avocado_i2n.runner import CartesianRunner
 
 class DummyTestRunning(object):
 
-    fail_switch = []
     asserted_tests = []
 
     def __init__(self, node_params, test_results):
         self.test_results = test_results
-        if len(self.fail_switch) == 0:
-            self.fail_switch = [False] * len(self.asserted_tests)
-        assert len(self.fail_switch) == len(self.asserted_tests), "len(%s) != len(%s)" % (self.fail_switch, self.asserted_tests)
         # assertions about the test calls
         self.current_test_dict = node_params
         shortname = self.current_test_dict["shortname"]
 
         assert len(self.asserted_tests) > 0, "Unexpected test %s" % shortname
-        self.expected_test_dict, self.expected_test_fail = self.asserted_tests.pop(0), self.fail_switch.pop(0)
+        self.expected_test_dict = self.asserted_tests.pop(0)
         for checked_key in self.expected_test_dict.keys():
             if checked_key.startswith("_"):
                 continue
@@ -46,18 +42,11 @@ class DummyTestRunning(object):
         uid = self.current_test_dict["_uid"]
         name = self.current_test_dict["name"]
         # allow tests to specify the status they expect
-        if self.expected_test_dict.get("_status"):
-            self.add_test_result(uid, name, self.expected_test_dict["_status"])
-            return self.expected_test_dict["_status"] not in ["ERROR", "FAIL"]
-        if self.expected_test_fail and "install" in self.expected_test_dict["shortname"]:
-            self.add_test_result(uid, name, "FAIL")
-            raise exceptions.TestFail("God wanted this test to fail")
-        elif self.expected_test_fail and self.current_test_dict.get("abort_on_error", "no") == "yes":
-            self.add_test_result(uid, name, "SKIP")
+        status = self.expected_test_dict.get("_status", "PASS")
+        self.add_test_result(uid, name, status)
+        if status in ["ERROR", "FAIL"] and self.current_test_dict.get("abort_on_error", "no") == "yes":
             raise exceptions.TestSkipError("God wanted this test to abort")
-        else:
-            self.add_test_result(name, "FAIL" if self.expected_test_fail else "PASS")
-            return not self.expected_test_fail
+        return status not in ["ERROR", "FAIL"]
 
     def add_test_result(self, uid, name, status, logdir="."):
         mocktestid = mock.MagicMock(uid=uid, name=name)
@@ -109,7 +98,6 @@ class CartesianGraphTest(unittest.TestCase):
 
     def setUp(self):
         DummyTestRunning.asserted_tests = []
-        DummyTestRunning.fail_switch = []
         DummyStateCheck.present_states = []
 
         self.config = {}
@@ -318,7 +306,6 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "set_state_vms": "^on_customize$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state_vms": "^on_customize$"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -335,7 +322,6 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -352,7 +338,6 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -391,7 +376,6 @@ class CartesianGraphTest(unittest.TestCase):
                                                prefix=self.prefix)
         DummyTestRunning.asserted_tests = [
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -413,7 +397,6 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$"},
             {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -428,7 +411,6 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$"},
             {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -466,7 +448,6 @@ class CartesianGraphTest(unittest.TestCase):
             # second (clicked) duplicated actual test
             {"shortname": "^leaves.tutorial_get.implicit_both.vm1", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -496,7 +477,6 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^tutorial_get.implicit_both.+guisetup.clicked", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked", "set_state_images_image1_vm2": "getsetup.guisetup.clicked"},
             {"shortname": "^leaves.tutorial_finale.+getsetup.guisetup.clicked", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "getsetup.guisetup.clicked"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -516,7 +496,6 @@ class CartesianGraphTest(unittest.TestCase):
         DummyStateCheck.present_states = []
         DummyTestRunning.asserted_tests = [
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
 
     def test_abort_run(self):
@@ -529,10 +508,8 @@ class CartesianGraphTest(unittest.TestCase):
         DummyStateCheck.present_states = ["root", "install"]
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "set_state_vms_on_error": "^$"},
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "set_state_vms_on_error": "^$", "_status": "FAIL"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
-        DummyTestRunning.fail_switch[-1] = True
         with self.assertRaises(exceptions.TestSkipError):
             self.runner.run_traversal(graph, self.config["param_dict"])
 
@@ -550,7 +527,6 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         with self.assertRaises(AssertionError):
             self.runner.run_traversal(graph, self.config["param_dict"])
 
@@ -565,7 +541,6 @@ class CartesianGraphTest(unittest.TestCase):
         graph.flag_parent_intersection(graph, flag_type="run", flag=False)
         DummyTestRunning.asserted_tests = [
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -588,7 +563,6 @@ class CartesianGraphTest(unittest.TestCase):
         DummyTestRunning.asserted_tests = [
             {"shortname": "^nonleaves.internal.automated.connect.vm2", "vms": "^vm2$"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -618,7 +592,6 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "set_state_vms": "^on_customize$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state_vms": "^on_customize$"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
 
         async def serve_forever(): pass
         server_instance = mock_status_server.return_value
@@ -647,7 +620,6 @@ class CartesianGraphTest(unittest.TestCase):
             {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "short_id": r"^[a\d]+r1-vm1$"},
             {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "short_id": r"^[a\d]+r2-vm1$"},
         ]
-        DummyTestRunning.fail_switch = [False] * len(DummyTestRunning.asserted_tests)
         self.runner.run_traversal(graph, {})
 
     def test_run_retry_status(self):
