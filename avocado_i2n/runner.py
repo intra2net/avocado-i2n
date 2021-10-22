@@ -196,7 +196,7 @@ class CartesianRunner(RunnerInterface):
         logging.info(f"Finished running test with status {test_status}")
         # no need to log when test was not repeated
         if runs_left > 1:
-            logging.info(f"Finished running test {r} times")
+            logging.info(f"Finished running test {r+1} times")
 
         # FIX: as VT's retval is broken (always True), we fix its handling here
         if test_status in ["ERROR", "FAIL"]:
