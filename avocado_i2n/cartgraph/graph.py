@@ -67,7 +67,11 @@ class TestGraph(object):
         """Test objects dictionary property."""
         objects = {}
         for test_object in self.objects:
-            objects[test_object.id] = test_object.params["shortname"]
+            suffix = test_object.id
+            if suffix in objects.keys():
+                objects[suffix] += "," + test_object.params["name"]
+            else:
+                objects[suffix] = test_object.params["name"]
         return objects
     test_objects = property(fget=test_objects)
 
@@ -75,7 +79,11 @@ class TestGraph(object):
         """Test nodes dictionary property."""
         nodes = {}
         for test_node in self.nodes:
-            nodes[test_node.id] = test_node.params["shortname"]
+            prefix = test_node.id
+            if prefix in nodes.keys():
+                nodes[prefix] += "," + test_node.params["name"]
+            else:
+                nodes[prefix] = test_node.params["name"]
         return nodes
     test_nodes = property(fget=test_nodes)
 
@@ -85,11 +93,11 @@ class TestGraph(object):
         self.objects = []
 
     def __repr__(self):
-        dump = "[cartgraph] objects='%s' nodes='%s'" % (len(self.nodes), len(self.objects))
+        dump = "[cartgraph] objects='%s' nodes='%s'" % (len(self.objects), len(self.nodes))
         for test_object in self.objects:
             dump = "%s\n\t%s" % (dump, str(test_object))
-            for test_node in self.nodes:
-                dump = "%s\n\t\t%s" % (dump, str(test_node))
+        for test_node in self.nodes:
+            dump = "%s\n\t%s" % (dump, str(test_node))
         return dump
 
     def new_objects(self, objects):
