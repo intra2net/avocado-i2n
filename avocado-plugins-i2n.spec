@@ -20,16 +20,12 @@
     %global gittar          %{srcname}-%{shortcommit}.tar.gz
 %endif
 
-%if 0%{?rhel}
-    %global with_python3 0
-%else
-    %global with_python3 1
-%endif
-
-# The Python dependencies are already tracked by the python2
-# or python3 "Requires".  This filters out the python binaries
-# from the RPM automatic requires/provides scanner.
-%global __requires_exclude ^/usr/bin/python[23]$
+# Selftests are provided but may need to be skipped because many of
+# the functional tests are time and resource sensitive and can
+# cause race conditions and random build failures. They are
+# enabled by default.
+# You can disable them with rpmbuild ... --without tests
+%bcond_without tests
 
 Summary: Avocado I2N Plugin
 Name: avocado-plugins-i2n
@@ -47,6 +43,10 @@ Source0: https://github.com/intra2net/%{srcname}/archive/%{commit}.tar.gz#/%{git
 %endif
 BuildRequires: python3-devel, python3-setuptools
 BuildArch: noarch
+
+%if %{with tests}
+BuildRequires: python3-coverage, python3-aexpect, python3-avocado, python3-avocado-plugins-vt
+%endif
 
 %description
 Avocado I2N is a plugin that extends the virt-tests functionality with
@@ -77,6 +77,13 @@ graph structure.
 %{__python3} setup.py install --root %{buildroot} --skip-build
 %{__mkdir} -p %{buildroot}%{_sysconfdir}/avocado/conf.d
 %{__mv} %{buildroot}%{python3_sitelib}/avocado_i2n/conf.d/* %{buildroot}%{_sysconfdir}/avocado/conf.d
+
+%if %{with tests}
+%check
+# if later on we decide that unit tests are still more appropriate here just do
+#make check
+PYTHONPATH=:. avocado run selftests/test_*
+%endif
 
 %files -n python3-%{name}
 %defattr(-,root,root,-)
