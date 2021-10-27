@@ -17,7 +17,9 @@ logging = log.getLogger('avocado.test.pre')
 # custom imports
 from virttest import env_process
 from avocado_i2n.states import setup as ss
-from avocado_i2n.states import lvm, qcow2, lxc, btrfs, ramfile, pool
+from avocado_i2n.states import lvm, qcow2, lxc, btrfs, ramfile, pool, vmnet
+from avocado_i2n.states.vmnet import VMNetBackend
+from avocado_i2n.vmnet import VMNetwork
 
 # deployed utilities
 utility_path = os.path.join(params["suite_path"], "utils")
@@ -29,6 +31,8 @@ logging.info("%s control file.", NAME)
 # MAIN PART
 
 logging.info(f"Added utility path {utility_path}")
+logging.info(f"Setting network class for state backend")
+VMNetBackend.network_class = VMNetwork
 
 logging.info(f"Adding env process stage hooks")
 def on_state(fn):
@@ -51,7 +55,7 @@ logging.info(f"Adding default state backends")
 ss.BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
                "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
                "pool": pool.QCOW2PoolBackend, "qcow2vt": qcow2.QCOW2VTBackend,
-               "ramfile": ramfile.RamfileBackend}
+               "ramfile": ramfile.RamfileBackend, "vmnet": vmnet.VMNetBackend}
 
 
 logging.info("%s control file finished.", NAME)

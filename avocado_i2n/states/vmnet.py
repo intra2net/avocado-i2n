@@ -34,6 +34,8 @@ from ..vmnet import VMNetwork
 class VMNetBackend(StateBackend):
     """Backend manipulating network states as VMNet operations."""
 
+    network_class = VMNetwork
+
     @classmethod
     def show(cls, params, object=None):
         """
@@ -61,7 +63,8 @@ class VMNetBackend(StateBackend):
         """
         env = object
         env.start_ip_sniffing(params)
-        vmn = VMNetwork(None, params, env)
+        vmn = cls.network_class(None, params, env)
+
         vmn.setup_host_bridges()
         vmn.setup_host_services()
         env.vmnet = vmn
