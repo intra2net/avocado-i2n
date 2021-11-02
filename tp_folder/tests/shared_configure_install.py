@@ -20,8 +20,10 @@ INTERFACE
 
 """
 
-import logging
 import re
+import logging
+# TODO: migrate from logging to log usage in messages
+log = logging = logging.getLogger('avocado.test.log')
 
 # avocado imports
 from avocado.core import exceptions
@@ -31,6 +33,7 @@ from virttest import error_context
 ###############################################################################
 # HELPERS
 ###############################################################################
+
 
 def convert_to_key_steps(parameter_string):
     """
@@ -78,6 +81,7 @@ def file_from_string(filename, final_string):
 ###############################################################################
 # MAJOR CONFIGURATION
 ###############################################################################
+
 
 @error_context.context_aware
 def configure_steps(params):
@@ -321,14 +325,18 @@ def configure_unattended_xml(params):
 # TEST MAIN
 ###############################################################################
 
+
 @error_context.context_aware
 def run(test, params, env):
     """
     Main test run.
 
     :param test: test object
+    :type test: :py:class:`avocado_vt.test.VirtTest`
     :param params: extended dictionary of parameters
+    :type params: :py:class:`virttest.utils_params.Params`
     :param env: environment object
+    :type env: :py:class:`virttest.utils_env.Env`
     """
     if params["configure_install"] == "steps":
         configure_steps(params)

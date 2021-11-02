@@ -20,10 +20,9 @@ INTERFACE
 """
 
 import os
-import logging
 import asyncio
 
-from avocado.core.output import LOG_UI
+from avocado.core.output import LOG_UI, LOG_JOB as logging
 from avocado_i2n import params_parser as param
 from avocado_i2n.intertest_setup import with_cartesian_graph
 

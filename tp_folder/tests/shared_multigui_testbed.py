@@ -28,10 +28,12 @@ INTERFACE
 
 """
 
-import logging
 import sys
 import random
 from PyQt4 import QtGui, QtCore
+import logging
+# TODO: migrate from logging to log usage in messages
+log = logging = logging.getLogger('avocado.test.log')
 
 # custom imports
 from multi_gui_utils import GUITestGenerator, Windows, Linux
@@ -40,6 +42,7 @@ from multi_gui_utils import GUITestGenerator, Windows, Linux
 ###############################################################################
 # TESTING
 ###############################################################################
+
 
 def stress_test(gui, name, *args):
     """
@@ -250,8 +253,11 @@ def run(test, params, env):
     Main test run.
 
     :param test: test object
+    :type test: :py:class:`avocado_vt.test.VirtTest`
     :param params: extended dictionary of parameters
+    :type params: :py:class:`virttest.utils_params.Params`
     :param env: environment object
+    :type env: :py:class:`virttest.utils_env.Env`
     """
     logging.info("Initiating the GUI test generator's GUI with all stress tests")
     app = QtGui.QApplication([])

@@ -20,8 +20,10 @@ INTERFACE
 """
 
 import time
-import logging
 import os
+import logging
+# TODO: migrate from logging to log usage in messages
+log = logging = logging.getLogger('avocado.test.log')
 
 # avocado imports
 from avocado.core import exceptions
@@ -43,6 +45,7 @@ from sample_utility import sleep
 ###############################################################################
 # HELPERS
 ###############################################################################
+
 
 @door.running_remotely
 def check_walk(params):
@@ -70,14 +73,18 @@ def check_walk(params):
 # TEST MAIN
 ###############################################################################
 
+
 @error_context.context_aware
 def run(test, params, env):
     """
     Main test run.
 
     :param test: test object
+    :type test: :py:class:`avocado_vt.test.VirtTest`
     :param params: extended dictionary of parameters
+    :type params: :py:class:`virttest.utils_params.Params`
     :param env: environment object
+    :type env: :py:class:`virttest.utils_env.Env`
     """
     error_context.context("network configuration")
     vmnet = env.get_vmnet()

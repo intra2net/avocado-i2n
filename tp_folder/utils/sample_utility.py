@@ -12,8 +12,9 @@ INTERFACE
 
 """
 
-import logging
 import time
+import logging
+log = logging.getLogger('avocado.test.utils')
 
 
 def sleep(n=10):
@@ -22,5 +23,5 @@ def sleep(n=10):
 
     :param int n: seconds to sleep
     """
-    logging.info("Sleeping for %s seconds", n)
+    log.info("Sleeping for %s seconds", n)
     time.sleep(n)

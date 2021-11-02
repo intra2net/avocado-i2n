@@ -20,7 +20,6 @@ INTERFACE
 """
 
 import os
-import logging
 import contextlib
 import asyncio
 from collections import namedtuple

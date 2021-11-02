@@ -18,10 +18,12 @@ INTERFACE
 
 """
 
-import logging
 import tempfile
 import os
 import re
+import logging
+# TODO: migrate from logging to log usage in messages
+log = logging = logging.getLogger('avocado.test.log')
 
 # avocado imports
 from avocado.core import exceptions
@@ -36,6 +38,7 @@ pass
 # DEFINITIONS
 ###############################################################################
 
+
 source_avocado_path = "/usr/lib/python3.7/site-packages/avocado/utils"
 destination_avocado_path = "/tmp/utils/avocado"
 
@@ -43,6 +46,7 @@ destination_avocado_path = "/tmp/utils/avocado"
 ###############################################################################
 # HELPERS
 ###############################################################################
+
 
 def deploy_avocado(vm, params, test):
     """
@@ -129,14 +133,18 @@ def handle_ssh_authorized_keys(vm, params):
 # TEST MAIN
 ###############################################################################
 
+
 @error_context.context_aware
 def run(test, params, env):
     """
     Main test run.
 
     :param test: test object
+    :type test: :py:class:`avocado_vt.test.VirtTest`
     :param params: extended dictionary of parameters
+    :type params: :py:class:`virttest.utils_params.Params`
     :param env: environment object
+    :type env: :py:class:`virttest.utils_env.Env`
     """
     vmnet = env.get_vmnet()
     vm, session, params = vmnet.get_single_vm_with_session_and_params()

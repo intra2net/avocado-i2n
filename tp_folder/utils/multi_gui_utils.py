@@ -16,9 +16,11 @@ INTERFACE
 
 """
 
-import logging
 import re
 import os
+import logging
+# TODO: migrate from logging to log usage in messages
+log = logging = logging.getLogger('avocado.test.utils')
 
 from PyQt4 import QtGui, QtCore
 

@@ -26,9 +26,11 @@ INTERFACE
 
 """
 
-import logging
 import sys
 from PyQt4 import QtGui
+import logging
+# TODO: migrate from logging to log usage in messages
+log = logging = logging.getLogger('avocado.test.log')
 
 # custom imports
 from multi_gui_utils import GUITestGenerator
@@ -38,13 +40,17 @@ from multi_gui_utils import GUITestGenerator
 # TEST MAIN
 ###############################################################################
 
+
 def run(test, params, env):
     """
     Main test run.
 
     :param test: test object
+    :type test: :py:class:`avocado_vt.test.VirtTest`
     :param params: extended dictionary of parameters
+    :type params: :py:class:`virttest.utils_params.Params`
     :param env: environment object
+    :type env: :py:class:`virttest.utils_env.Env`
     """
     logging.info("Initiating the GUI test generator's GUI")
     app = QtGui.QApplication([])
