@@ -113,50 +113,39 @@ giving the details but strongly recommending checking the source code of the
 Cartesian graph data structure for anyone that want to have fun with forward
 and backward DFS, the symmetrical pruning, and the reversing traversal path.
 
-### Off and on states, normal and ephemeral tests, normal and permanent vms
-A standard way to implement virtual machine states is LVM. However, since LVM
-requires the image to be inactive while reverting to the snapshot,
-this will introduce at least shutdown-boot performance penalty between each
-two tests. Actually, "live revert" is part of the future plans of LVM but
-right now its extra steps while switching test nodes might be even slower.
-Therefore, there is another type of states simply called here "on states"
-leaving the LVM an implementation of off states. A fairly standard on states
-implementation lies in the QCOW2 image format and more specifically the
-QEMU ability to take complete virtual machine snapshots on running machines
-which will avoid these two steps - just freeze the vm state and eventually
-come back to it for another test that requires it. The QCOW2 format allows
-QEMU to take live snapshots of both the virtual machine and its image without
-a danger of saving image and ramdisk snapshots that are out of sync which is
-the case with another implementation of on states (still available as a backend
-called "ramfile"). During a run with an automated vm state setup, a special
-dependency scan test checks for state availability once and uses this
-information for further decisions on test scheduling, order, and skipping.
+### Image, VM, and network states; normal and permanent vms
+The sample test suite supports three types of stateful objects, i.e. test
+objects with reusable state setup: images, vms, and networks. The image states
+can be managed using different state backends like QCOW2, LVM, among others and
+esentially can store and retrieve previous states of one or more VM images. The
+VM states contain the image as well as RAM states and are thus states of an
+entire running VM and all its images managed by backends like QCOW2VT (Qemu
+monitor usage through Avocado VT) and Ramfile. Finally, the network states are
+currently only managed by the VMNet state backend relying on the general VMNet
+subpackage and all the networking management it provides.
 
-A test suite might use only off states (e.g. logical volume snapshots), only
-on states (e.g. QCOW2 snapshots) or a mixture of the two where vms' QCOW2 images
-are contained on top of logical volumes which could even be on top of RAM for a
-maximum speedup. Each approach has its advantages and drawbacks where LVM is
-imperfectly container-isolated and thus harder to parallelize, could have more
-difficult to debug errors on unclean process interruptions, etc. while QCOW2
-might not support some cases of vm states like ones using pflash drives. In the
-case of mixture, each on state is based on an off state and the tests that
-produce on from off states are called ephemeral as changing the off state would
-remove all on states and the test has to be repeated. On states are
-however reusable within an off state transition and as many branches of
-on states transitions can span multiple tests without touching the off
-state. This is important in the test management as ephemeral tests provide
-states that can only be reused with protective scheduling.
+For some comparison between VM and image states: the VM states are faster since
+they involve running VM-s without an extra boot or shutdown but image states are
+more granular and more appropriate for VMs using RAID1 or other multi-image
+setup. For comparison among state backends, QCOW2 snapshots are easier to manage
+and share since they involve simple transfer of QCOW2 files while LVM is more
+rigid and not perfectly isolated for containerization (this eventually harder to
+parallelize) but could be even faster if managed on top of RAM for maximum
+speedup. LVM could also have more difficult to debug errors on unclean process
+interruptions. QCOW2VT might not support some cases of states like ones using
+pflash drives while the Ramfile backend is generally unstable. In the end all
+state backends have different limitations with the major ones outlined so far.
 
 A final additional concept to consider for test running is that of permanent
 vms. For a test requiring vms with highly sophisticated preparation sequences
 that sometimes might be only semi-automatable or requiring strictly human input
 it might be more preferable to add an external vm that could for instance only
-be manipulated via on states (thus without interfering with the original setup).
+be manipulated via states derived from a single starting state (thus without
+interfering with the original setup) or a few manually created starting states.
 Such a permanent vm might just be brought from outside to participate in the
-test suite orchestration with a minimal pre-set on state or could be fully
-prepared using the test suite tool set through an extra tool development. More
-information about it and ephemeral tests in general can be found in the test
-development documentation.
+test suite orchestration or it could be at least partially prepared in-house
+using the test suite toolset through an extra tool development. More information
+about it can be found in the test development documentation.
 
 ## How to install
 In terms of installation, you may proceed analogically to other avocado
@@ -342,23 +331,24 @@ simple setup is used. Since vm1 doesn't exist, it will create it and bring it
 to that state automatically, also determining the *setup* steps automatically.
 
 In the end with all but the minimum necessary vms and setup steps, the tests
-will run. For this reason, it is important to point out that the number of vms
-defined on the command line can only influence nonrun manual setup steps and is
-automatically determined during automatic setup. Generally, performing manual
-setup is also no longer necessary. You can easily distinguish among all manual
-and automated steps by looking at the test IDs. The manual steps contain "m"
-in their short names while automated steps contain "a". Cleanup tests contain
-"c" and "d" is reserved for duplicate tests due to multiple variants of their
+will run. For this reason, it is important to point out that the list of vms
+defined on the command line is used mainly for manual setup steps but could
+also play the role of a restriction of the tests to include in run steps and is
+otherwise automatically determined during automatic setup and thus not needed
+if you don't want to restrict tests via vms they use. You can distinguish among
+manual and automated steps by looking at test prefixes. The first contain "m"
+in their identifiers while automated steps contain "a". Cleanup tests contain
+"c" and are also automated depending on the unset mode you use. Finally, "b" is
+used for additional test variants based on multiple variants of the vms they use
+and "d" is reserved for duplicate tests due to multiple variants of test vms'
 setup. If you include only one *run* the tests executed within the run step
 will not contain any letters but if you include multiple *run* steps, in order
 to guarantee we can distinguish among the tests, they will contain "n" (with
-"s" for the shared root test for scanning all test dependencies and also "r"
-for an object-specific root or creation, "p" and "q" for preinstall and install
-test nodes), and finally "b" for autogenerated ephemeral nodes. The typical
+"t" for the terminal test nodes for each test object vm's image). The typical
 approach to do this test tagging is compound and specifically in order of test
 discovery, i.e. 0m1n1a2 stands for the test which is the second automated setup
 of the test which is the first test in a run step m1 and first run n1. These
-IDs are also used in all graphical descriptions of the Cartesian graph used
+prefixes are also used in all graphical descriptions of the Cartesian graph and
 for resolving all test dependencies.
 
  **Note**: The order of regular (run/main) tests is not always guaranteed.
@@ -369,14 +359,9 @@ More details regarding the configuration necessary for creating the graph is
 available in the test development documentation but the essential ones are the
 *check*, *get*, *set*, and *unset* routines with additional parameters like
 
-- *\*_state* - A vm state to perform the routine on
-- *\*_type* - Type of the vm state: "on" or "off"
+- *\*_state{_vms|_images}* - A vm or image state to perform the routine on
 - *\*_mode* - Behaviors in case of present/absent setup defined above
-- *\*_opts* - Secondary options, currently available ones are:
-  - "check_opts=print_pos=yes/no print_neg=yes/no" to decide whether to print
-    positive or negative outcomes from the check
-  - "get_opts=switch=on/off" to generate ephemeral tests and switch retrieved
-    state from an off state to an on state or vice versa
+- *\*_opts* - Secondary options, important only within the implementation
 
 An *only* argument can have any number of ".", "..", and "," in between variant
 names where the first stands for *immediately followed by*, the second for AND
@@ -403,16 +388,18 @@ importantly
 avocado manu [only=all|normal|minimal|...] only=TESTSUBVARIANT
 ```
 
- is the same as using the *only* clause in the Cartesian configs (unlike
-the first *only* argument). Ultimately, all *only* parameters have the same
-effect but the first *only* has a default value which is represented as
-'only=normal' to allow for overriding). The following are examples of test
-selections
+ is the same as using the *only* clause in the Cartesian configs. Ultimately,
+all *only* parameters have the same effect but the "all", "normal", "minimal"
+and other variants specified in the *main_restrictions* base config parameter
+are treated in a special way where they have an overridable default value. What
+this means is that compared to all standard variants, we will only end up with
+just one (default if not overrriden) variant (e.g. 'only=normal') and not a
+Cartesian product of all of them. The following are examples of test selections
 
 ```
 avocado manu only=minimal only=quicktest
 avocado manu only=normal only=tutorial1
-avocado manu only=normal only=tutorial2 only=names,files
+avocado manu only=normal..tutorial2 only=names,files
 avocado manu only=tutorial2..names,quicktest.tutorial2.files
 ```
 
@@ -423,13 +410,17 @@ of these groups.
 
 Similarly to the test restrictions, you can restrict the variants of vms that
 are defined in `objects.cfg`. The only difference is the way you specify this,
-namely by using *only_vmX* instead of *only* where vmX is the name of the vm
-that you want to reconfigure. The following are examples of vm selection
+namely by using *only_vmX* instead of *only* where vmX is the suffix of the vm
+that you want to restrict. The following are examples of vm selection
 
 ```
 avocado manu only_vm2=Win10
 avocado manu only_vm1=CentOS only=tutorial1
+avocado manu only_vm2=
 ```
+
+If we allow for multiple hardware or software variants of vm2, the third line
+would simply run all tests compatible with all vm2 variants.
 
 Any other parameter used by the tests can also be given like an optional
 argument. For example the parameter `vms` can be used to perform setup only on
@@ -443,41 +434,45 @@ avocado manu setup=clean vms=vm2
  **Note**: Be careful with the vm parameter generator, i.e. if you want to
 define some parameters for a single virtual machine which should not be
 generated make sure to do so. Making any parameter specific is easy - you only
-have to append `_vmname` to it, e.g. `nic_vm2` identically to the vm
+have to append a `_vmname` suffix to it, e.g. `nic_vm2` identically to the vm
 restriction.
 
 ### Test debugging
-Through the use of on states, debugging was made a lot easier. In most
-cases, if you run a single test and it fails, the vms will be left running
-after it and completely accessible for any type of debugging. The philosophy
+Whenever you run a single test and it fails, the vms will be left running
+afterwards and completely accessible for any type of debugging. The philosophy
 of this is that a vm state is cleaned up only when a new test is run and needs
 the particular test object (vm). As a result, all cleanups are removed and
 merged with all setups which is the only thing we have to worry about
 throughout any test run or development. An exception of this, i.e. a vm which
 is not left running could be either if the vm is an ephemeral client or if it
-was forced to shut down by a *kill_vm* parameter in the scope of the test. If
+was forced to shut down by a *kill_vm* parameter or when setting an image state
+(after automated clean shutdown) in the scope of the given test being run. If
 more than one test is being run and the error occurred at an early test, the
-vm's state will be saved as 'last_error' and can later on be accessed via
+vm's state can be saved as 'last_error' and can later on be accessed via
 
 ```
 avocado manu setup=get get_state=last_error vms=vm1
 ```
 
- for the vms that were involved in the test (e.g. vm1).
+ for the vms that were involved in the test (e.g. vm1) but you have to use a
+special `set_state_on_error=last_error` parameter as by default we rather cancel
+saving the originally specified states via `set_state_on_error=`.
 
 If more than one tests failed, in order to avoid running out of space, the
 state of the last error will be saved on top of the previous error. This means
 that you will only be able to quickly debug the last encountered error. A
 second limitation in the state debugging is that it doesn't support more
-complicated tests, i.e. tests with more complex network topologies.
+complicated tests, i.e. tests with more complex network topologies, hence also
+our choice of default above.
 
  **Note**: There is a large set of dumped data, including logs, files of
 importance for the particular tests, hardware info, etc. for every test in the
 test results. If the test involves work with the vm's GUI, some backends also
 provide additional image logging (see backend documentation for more info). You
-can make use of all these things in addition to any possible vm states at the
+can make use of all these things in addition to any possible states at the
 time of the error. Graphical representation of the entire Cartesian graph of
-tests is also available for each step of the test running and parsing.
+tests is also available for each step of the test running and parsing and can
+be optionally enabled for job-related debugging.
 
 ### Unit testing
 Even though a test suite usually has the sole purpose of testing software,
@@ -529,12 +524,12 @@ inaccessible will not be traversed as described in:
 https://github.com/intra2net/avocado-i2n/blob/master/doc/test_traversal_algorithm.pdf
 
 What this means is that all nodes we typically parse with *only leaves* will
-usually represent actual use cases of the product under QA connected to a scan
+usually represent actual use cases of the product under QA connected to a root
 traversal entry point through *nonleaves* and thus ultimately traversed. The
 most standard set *only normal* is an even smaller set of such nodes while the
 *only all* restriction will parse the complete graph but traverse only the part
-reachable from the shared root or scan node. Any internal tests that are not
-directly used remain disconnected and as such will not be run. They are then
+reachable from the shared root node skip the rest. Any internal tests that are
+not directly used remain disconnected and as such will not be run. They are then
 typically called only from (manual step) tools. Reading the graph from the
 config is thus mostly WYSIWYG and does not require any extra knowledge of the
 code parsing it.

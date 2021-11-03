@@ -59,7 +59,7 @@ def permubuntu(config, tag=""):
         net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
         logging.info("Performing extra setup for the permanent %s", vm.suffix)
 
-        # consider this as a special kind of ephemeral test which concerns
+        # consider this as a special kind of state converting test which concerns
         # permanent objects (i.e. instead of transition from customize to on
         # root, it is a transition from supposedly "permanentized" vm to the root)
         logging.info("Booting %s for the first permanent on state", vm.suffix)
