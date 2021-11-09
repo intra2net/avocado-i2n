@@ -16,10 +16,11 @@
 import os
 
 from avocado.core.settings import settings
-from avocado.core.output import LOG_JOB as log
+from avocado.core.output import LOG_JOB as log, LOG_UI
 from avocado.core.plugin_interfaces import CLICmd
 
 from .. import cmd_parser
+from .. import params_parser as param
 from .. import intertest_setup as intertest
 
 
@@ -57,7 +58,10 @@ class Manu(CLICmd):
 
         config["run.test_runner"] = "traverser"
         config["params"] = config["i2n.manu.params"]
-        cmd_parser.params_from_cmd(config)
+        try:
+            cmd_parser.params_from_cmd(config)
+        except param.EmptyCartesianProduct as error:
+            LOG_UI.error(error)
         intertest.load_addons_tools()
         run_params = config["vms_params"]
 
@@ -66,6 +70,9 @@ class Manu(CLICmd):
         for i, setup_step in enumerate(setup_chain):
             run_params["count"] = i
             setup_func = getattr(intertest, setup_step)
-            setup_func(config, "0m%s" % i)
+            try:
+                setup_func(config, "0m%s" % i)
+            except param.EmptyCartesianProduct as error:
+                LOG_UI.error(error)
 
         log.info("Manual setup chain finished.")
