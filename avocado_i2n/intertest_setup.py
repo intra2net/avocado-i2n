@@ -69,7 +69,8 @@ from .runner import CartesianRunner
 __all__ = ["noop", "unittest", "full", "update", "run", "list",
            "install", "deploy", "internal",
            "boot", "download", "upload", "shutdown",
-           "check", "pop", "push", "get", "set", "unset", "create", "clean"]
+           "check", "pop", "push", "get", "set", "unset",
+           "collect", "create", "clean"]
 
 
 def load_addons_tools():
@@ -649,6 +650,27 @@ def unset(config, tag=""):
                                               setup_dict, "state " + operation)
 
 
+def collect(config, tag=""):
+    """
+    Get a new test object (vm, root state) from a pool.
+
+    :param config: command line arguments and run configuration
+    :type config: {str, str}
+    :param str tag: extra name identifier for the test to be run
+
+    ..todo:: With later refactoring of the root check implicitly getting a
+        pool rool state, we can refine the parameters here.
+    """
+    _reuse_tool_with_param_dict(config, tag,
+                                {"get_state_images": "root",
+                                 "get_mode_images": "ii",
+                                 # don't touch root states in any way
+                                 "check_mode_images": "rr",
+                                 # this manual tool is compatible only with pool
+                                 "use_pool": "yes"},
+                                get)
+
+
 def create(config, tag=""):
     """
     Create a new test object (vm, root state).
@@ -659,7 +681,11 @@ def create(config, tag=""):
     """
     _reuse_tool_with_param_dict(config, tag,
                                 {"set_state_images": "root",
-                                 "set_mode_images": "af"},
+                                 "set_mode_images": "af",
+                                 # don't touch root states in any way
+                                 "check_mode_images": "rr",
+                                 # this manual tool is not compatible with pool
+                                 "use_pool": "no"},
                                 set)
 
 
@@ -673,7 +699,11 @@ def clean(config, tag=""):
     """
     _reuse_tool_with_param_dict(config, tag,
                                 {"unset_state_images": "root",
-                                 "unset_mode_images": "fa"},
+                                 "unset_mode_images": "fa",
+                                 # make use of off switch if vm is running
+                                 "check_mode_images": "rf",
+                                 # this manual tool is not compatible with pool
+                                 "use_pool": "no"},
                                 unset)
 
 

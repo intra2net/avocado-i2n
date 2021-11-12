@@ -365,8 +365,9 @@ class IntertestSetupTest(unittest.TestCase):
             setup_func = getattr(intertest_setup, state_action)
             setup_func(self.config)
 
-        for state_action in ["create", "clean"]:
+        for state_action in ["collect", "create", "clean"]:
             operation = "set" if state_action == "create" else "unset"
+            operation = "get" if state_action == "collect" else operation
             DummyTestRunning.asserted_tests = [
                 {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$",
                  "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
@@ -378,6 +379,7 @@ class IntertestSetupTest(unittest.TestCase):
                 test[operation+"_type_vm2"] = "^off$"
                 test[operation+"_type_vm3"] = "^on$"
                 test[operation+"_mode"] = "^af$" if operation == "set" else "^fa$"
+                test[operation+"_mode"] = "^ii$" if operation == "get" else test[operation+"_mode"]
             setup_func = getattr(intertest_setup, state_action)
             setup_func(self.config, "5m")
 

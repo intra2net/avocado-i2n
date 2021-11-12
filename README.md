@@ -225,8 +225,8 @@ and the *get/set/unset_mode* parameter is mostly used in the case of test mode
 (auto plugin). The choice of types of setup (manual steps) is the following:
 
  - *noop* - Simply load all plugins and do nothing (good for probing)
- - *create* - Create a ramdisk, virtual group and logical volume for each
-   virtual machine
+ - *create* - Create any predefined image for each virtual machine
+ - *collect* - Collect the vm root state from a pool if available
  - *install* - Prepare step files and install virtual machines
  - *deploy* - Simply deploy changes on top of current state (will be lost
    after reverting to snapshot)
