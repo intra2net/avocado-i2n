@@ -1462,7 +1462,7 @@ class VMNetwork(object):
                                                                       internal_timeout=0.5)
             logging.debug("Got answer:\n%s", text)
             if match == 0:
-                logging.debug("Got password prompt, sending '%s'", dst_vm.params.get("password"))
+                logging.debug("Got password prompt, sending password")
                 src_vm.session.sendline(dst_vm.params.get("password"))
             elif match == 1:
                 # the extra search is due to the inability of the builtin command to match the host
@@ -1528,7 +1528,7 @@ class VMNetwork(object):
                                                                       internal_timeout=0.5)
             logging.debug("Got answer:\n%s", text)
             if match == 0:
-                logging.debug("Got password prompt, sending '%s'", dst_vm.params.get("password"))
+                logging.debug("Got password prompt, sending password")
                 src_vm.session.sendline(dst_vm.params.get("password"))
             elif match == 1:
                 # the extra search is due to the inability of the builtin command to match the host
