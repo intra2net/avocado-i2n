@@ -74,11 +74,12 @@ def params_from_cmd(config):
         (key, value) = re_param.group(1, 2)
         if key == "only" or key == "no":
             # detect if this is the primary restriction to escape defaults
-            if value in available_restrictions:
-                use_tests_default = False
-            # else this is an auxiliary restriction
-            else:
-                with_nontrivial_restrictions = True
+            for variant in re.split(r",|\.|\.\.", value):
+                if variant in available_restrictions:
+                    use_tests_default = False
+                # else this is an auxiliary restriction
+                else:
+                    with_nontrivial_restrictions = True
             # main test restriction part
             tests_str += "%s %s\n" % (key, value)
         elif key.startswith("only_") or key.startswith("no_"):
