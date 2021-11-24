@@ -44,8 +44,7 @@ def run(test, params, env):
     if params.get("vm_action", "run") == "boot":
         vmnet.start_all_sessions()
     elif params.get("vm_action", "run") == "run":
-        vms = vmnet.get_ordered_vms()
-        for vm in vms:
+        for vm in vmnet.get_ordered_vms():
             raise NotImplementedError("Run control files or other code snippet on an %s vm", params["os_type"])
     elif params.get("vm_action", "run") == "download":
         if params.get("os_type", "linux") in ["android"]:
@@ -65,25 +64,21 @@ def run(test, params, env):
                 vm.copy_files_to(f, to_dir, timeout=30)
     elif params.get("vm_action", "run") == "shutdown":
         for vm in vmnet.get_ordered_vms():
-            if vm.name == params.get("main_vm"):
-                # NOTE: the rest of the vms will be destroyed automatically during post-processing
-                vm.destroy(gracefully=True)
-                break
+            vm.destroy(gracefully=True)
 
     # state manipulation
     elif params.get("vm_action", "run") == "check":
-        logging.info("Checking for %s's state '%s'", params["main_vm"], params["check_state"])
+        logging.info("Checking %s's (and its images') states", params["main_vm"])
         ss.check_states(params, env)
     elif params.get("vm_action", "run") == "push":
-        logging.info("Pushing %s's state '%s'", params["main_vm"], params["push_state"])
+        logging.info("Pushing %s's (and its images') states", params["main_vm"])
         ss.push_states(params, env)
     elif params.get("vm_action", "run") == "pop":
-        logging.info("Popping %s's state '%s'", params["main_vm"], params["pop_state"])
+        logging.info("Popping %s's (and its images') states", params["main_vm"])
         ss.pop_states(params, env)
     elif params.get("vm_action", "run") in ["get", "set"]:
-        # this operations are performed automatically by the environment process
-        state_param = params["get_state"] if params["vm_action"] == "get" else params["set_state"]
-        logging.info("%sting %s's state '%s'", params["vm_action"].title(), params["main_vm"], state_param)
+        # these operations are performed automatically by the environment process
+        logging.info("%sting %s's (and its images') states", params["vm_action"].title(), params["main_vm"])
     elif params.get("vm_action", "run") == "unset":
-        logging.info("Unsetting %s's state '%s'", params["main_vm"], params["unset_state"])
+        logging.info("Unsetting %s's (and its images') states", params["main_vm"])
         ss.unset_states(params, env)

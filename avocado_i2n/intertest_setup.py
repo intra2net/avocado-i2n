@@ -50,6 +50,7 @@ import re
 import logging
 import contextlib
 import importlib
+import asyncio
 from collections import namedtuple
 
 from avocado.core import job
@@ -68,7 +69,8 @@ from .runner import CartesianRunner
 __all__ = ["noop", "unittest", "full", "update", "run", "list",
            "install", "deploy", "internal",
            "boot", "download", "upload", "shutdown",
-           "check", "pop", "push", "get", "set", "unset", "create", "clean"]
+           "check", "pop", "push", "get", "set", "unset",
+           "collect", "create", "clean"]
 
 
 def load_addons_tools():
@@ -209,11 +211,17 @@ def full(config, tag=""):
 
     for vm_name in selected_vms:
         vm_params = config["vms_params"].object_params(vm_name)
-        logging.info("Creating the full state '%s' of %s", vm_params.get("state", "customize"), vm_name)
-
-        state = vm_params.get("state", "customize")
-        state = "0root" if state == "root" else state
-        state = "0preinstall" if state == "install" else state
+        state = vm_params.get("to_state", "customize")
+        logging.info("Creating the full state '%s' of %s", state, vm_name)
+        # initial install node can be facilitated by the install tool
+        if state == "install":
+            # TODO: integrate this into:
+            #_reuse_tool_with_param_dict(config, tag, {}, install)
+            vm_strs = config["vm_strs"].copy()
+            config["vm_strs"] = {vm_name: vm_strs[vm_name]}
+            install(config, tag=tag)
+            config["vm_strs"] = vm_strs
+            continue
 
         # in case of permanent vms, support creation and other otherwise dangerous operations
         setup_dict = config["param_dict"].copy()
@@ -260,16 +268,14 @@ def update(config, tag=""):
 
     for vm_name in selected_vms:
         vm_params = config["vms_params"].object_params(vm_name)
-        logging.info("Updating state '%s' of %s", vm_params.get("to_state", "customize"), vm_name)
-
         from_state = vm_params.get("from_state", "install")
         to_state = vm_params.get("to_state", "customize")
-        if to_state == "root":
-            logging.warning("The root state of %s cannot be updated - use 'setup=full' instead.", vm_name)
+        if to_state == "install":
+            logging.warning("The root install state of %s cannot be updated - use 'setup=full' instead.", vm_name)
             continue
+        logging.info("Updating state '%s' of %s", to_state, vm_name)
 
         logging.info("Tracing and removing all old states depending on the updated '%s'...", to_state)
-        to_state = "0preinstall" if to_state == "install" else to_state
         setup_dict = config["param_dict"].copy()
         setup_dict["unset_mode"] = "fi"
         setup_str = vm_params.get("remove_set", "leaves")
@@ -285,36 +291,31 @@ def update(config, tag=""):
                                             config["available_vms"],
                                             prefix=tag, verbose=False)
         remove_graph.flag_children(flag_type="run", flag=False)
-        remove_graph.flag_children(flag_type="clean", flag=False)
+        remove_graph.flag_children(flag_type="clean", flag=False, skip_roots=True)
         remove_graph.flag_children(to_state, vm_name, flag_type="clean", flag=True, skip_roots=True)
         r.run_traversal(remove_graph, {"vms": vm_name, **config["param_dict"]})
 
         logging.info("Updating all states before '%s'", to_state)
         setup_dict = config["param_dict"].copy()
-        setup_dict["main_vm"] = vm_name
+        setup_dict["vms"] = vm_name
+        # NOTE: this makes sure that no new states are created and the updated
+        # states are not removed, aborting in any other case
+        setup_dict.update({"get_mode": "ra", "set_mode": "fa", "unset_mode": "ra"})
         update_graph = l.parse_object_trees(setup_dict,
                                             param.re_str("all.." + to_state),
                                             {vm_name: config["vm_strs"][vm_name]}, prefix=tag)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=False)
         update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=True,
                                               skip_object_roots=True, skip_shared_root=True)
-
         logging.info("Preserving all states before '%s'", from_state)
-        from_state = "0preinstall" if from_state == "install" else from_state
-        if from_state != "root":
+        if from_state != "install":
             setup_dict = config["param_dict"].copy()
-            setup_dict["main_vm"] = vm_name
+            setup_dict["vms"] = vm_name
             reuse_graph = l.parse_object_trees(setup_dict,
                                                param.re_str("all.." + from_state),
                                                {vm_name: config["vm_strs"][vm_name]},
                                                prefix=tag, verbose=False)
             update_graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
-
-        # NOTE: this makes sure that no new states are created and the updated
-        # states are not removed, aborting in any other case
-        setup_dict = config["param_dict"].copy()
-        setup_dict.update({"get_mode": "ra", "set_mode": "fa", "unset_mode": "ra"})
-        setup_dict["vms"] = vm_name
         r.run_traversal(update_graph, setup_dict)
 
     LOG_UI.info("Finished update setup")
@@ -344,7 +345,8 @@ def run(config, tag=""):
 
         graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"],
                                           prefix=config["prefix"], verbose=config["subcommand"]!="list")
-        job.test_suites[0].tests = [n.get_test_factory() for n in graph.nodes]
+        runnables = [n.get_runnable() for n in graph.nodes]
+        job.test_suites[0].tests = runnables
 
         # HACK: pass the constructed graph to the runner using static attribute hack
         # since the currently digested test suite contains factory arguments obtained
@@ -395,52 +397,44 @@ def install(config, tag=""):
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
     graph = TestGraph()
     graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
-    for vm in graph.objects:
-        graph.nodes.append(l.parse_install_node(vm, config["param_dict"], prefix=tag))
-        r.run_install_node(graph, vm.name, config["param_dict"])
+    for test_object in graph.objects:
+        if test_object.key != "vms":
+            continue
+        vm = test_object
+        if len(vm.components) > 1:
+            logging.warning("Multiple images used by %s, installing on first one", vm.suffix)
+        # install only on first image as RAID and other configurations are customizations
+        image = vm.components[0]
+        # parse individual net only for the current vm
+        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
+
+        setup_str = param.re_str("all..internal..customize")
+        start_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
+        setup_str = param.re_str("all..original.." + start_node.params["get_images"])
+        install_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
+        install_node.params["object_root"] = image.id
+        graph.nodes.append(install_node)
+        to_install = r.run_terminal_node(graph, image.id, config["param_dict"])
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_install, r.job.timeout or None))
+
     LOG_UI.info("Finished installation")
 
 
 @with_cartesian_graph
 def deploy(config, tag=""):
     """
-    Deploy customized data and utilities to the guest vms,
-    to one or to more of their states, either temporary (``stateless=no``)
-    or taking a respective 'customize' snapshot.
+    Deploy customized data and utilities to the guest vms.
 
     :param config: command line arguments and run configuration
     :type config: {str, str}
     :param str tag: extra name identifier for the test to be run
+
+    We can deploy to one or to more of the vms, either temporarily or to a
+    specific vm or image state specified via `to_state` parameter.
     """
-    l, r = config["graph"].l, config["graph"].r
-    selected_vms = sorted(config["vm_strs"].keys())
-    LOG_UI.info("Deploying data to %s (%s)",
-                ", ".join(selected_vms), os.path.basename(r.job.logdir))
-    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
-
-        states = vm.params.objects("states")
-        if len(states) == 0:
-            states = ["current_state"]
-            stateless = vm.params.get("stateless", "yes") == "yes"
-        else:
-            stateless = False
-
-        for i, state in enumerate(states):
-            setup_dict = config["param_dict"].copy()
-            if state != "current_state":
-                setup_dict.update({"get_state": state, "set_state": state,
-                                   "get_type": "any", "set_type": "any"})
-            setup_dict.update({"skip_image_processing": "yes", "kill_vm": "no",
-                               "redeploy_only": config["vms_params"].get("redeploy_only", "yes")})
-            if stateless:
-                setup_dict["get_state"] = ""
-                setup_dict["set_state"] = ""
-            setup_tag = "%s%s" % (tag, i+1 if i > 0 else "")
-            setup_str = param.re_str("all..internal..customize")
-            test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=setup_tag)
-            r.run_test_node(test_node)
-
-    LOG_UI.info("Finished data deployment")
+    _parse_all_objects_with_custom_states(config, tag,
+                                          {"redeploy_only": config["vms_params"].get("redeploy_only", "yes")},
+                                          "data deployment", "all..internal..customize")
 
 
 @with_cartesian_graph
@@ -452,20 +446,12 @@ def internal(config, tag=""):
     :param config: command line arguments and run configuration
     :type config: {str, str}
     :param str tag: extra name identifier for the test to be run
+
+    We can prepare to one or to more of the vms, either temporarily or for a
+    specific vm or image state specified via `to_state` parameter.
     """
-    l, r = config["graph"].l, config["graph"].r
-    selected_vms = sorted(config["vm_strs"].keys())
-    LOG_UI.info("Performing internal setup on %s (%s)",
-                ", ".join(selected_vms), os.path.basename(r.job.logdir))
-    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
-        setup_dict = config["param_dict"].copy()
-        if vm.params.get("stateless", "yes") == "yes":
-            setup_dict.update({"get_state": "", "set_state": "",
-                               "skip_image_processing": "yes", "kill_vm": "no"})
-        setup_str = param.re_str("all..internal.." + vm.params["node"])
-        test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
-        r.run_test_node(test_node)
-    LOG_UI.info("Finished internal setup")
+    _parse_all_objects_with_custom_states(config, tag, {}, "internal setup",
+                                          "all..internal.." + config["param_dict"]["node"])
 
 
 ############################################################
@@ -623,29 +609,10 @@ def set(config, tag=""):
     methods but we use different approach for illustration.
     """
     operation = "set"
-    op_type = "set_type"
-    op_state = "set_state"
-
-    l, r = config["graph"].l, config["graph"].r
-    setup_dict = config["param_dict"].copy()
-    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
-        vm_op_type = op_type + "_" + vm.name
-        state_type = vm_op_type if vm_op_type in setup_dict else op_type
-        if state_type not in setup_dict:
-            vm_op_state = op_state + "_" + vm.name
-            state_name = setup_dict.get(vm_op_state, setup_dict.get(op_state))
-            if state_name == "root":
-                node = l.parse_create_node(vm, config["param_dict"], prefix=tag)
-                setup_dict[vm_op_type] = node.params["set_type"]
-            elif state_name == "install":
-                node = l.parse_install_node(vm, config["param_dict"], prefix=tag)
-                setup_dict[vm_op_type] = node.params["set_type"]
-            else:
-                pass  # will use default set type
-    setup_dict.update({"vm_action": operation, "skip_image_processing": "yes"})
-
     _parse_all_objects_then_iterate_for_nodes(config, tag,
-                                              setup_dict, "state " + operation)
+                                              {"vm_action": operation,
+                                               "skip_image_processing": "yes"},
+                                              "state " + operation)
 
 
 @with_cartesian_graph
@@ -662,38 +629,46 @@ def unset(config, tag=""):
     """
     operation = "unset"
     op_mode = "unset_mode"
-    op_type = "unset_type"
-    op_state = "unset_state"
 
     l, r = config["graph"].l, config["graph"].r
     setup_dict = config["param_dict"].copy()
-    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
+    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
+        if test_object.key != "vms":
+            continue
+        vm = test_object
 
         # since the default unset_mode is passive (ri) we need a better
         # default value for that case but still modifiable by the user
-        vm_op_mode = op_mode + "_" + vm.name
+        vm_op_mode = op_mode + "_" + vm.suffix
         state_mode = vm_op_mode if vm_op_mode in setup_dict else op_mode
         if state_mode not in setup_dict:
             setup_dict[vm_op_mode] = "fi"
-
-        vm_op_type = op_type + "_" + vm.name
-        state_type = vm_op_type if vm_op_type in setup_dict else op_type
-        if state_type not in setup_dict:
-            vm_op_state = op_state + "_" + vm.name
-            state_name = setup_dict.get(vm_op_state, setup_dict.get(op_state))
-            if state_name == "root":
-                node = l.parse_create_node(vm, config["param_dict"], prefix=tag)
-                setup_dict[vm_op_type] = node.params["set_type"]
-            elif state_name == "install":
-                node = l.parse_install_node(vm, config["param_dict"], prefix=tag)
-                setup_dict[vm_op_type] = node.params["set_type"]
-            else:
-                pass  # will use default unset type
 
     setup_dict.update({"vm_action": operation, "skip_image_processing": "yes"})
 
     _parse_all_objects_then_iterate_for_nodes(config, tag,
                                               setup_dict, "state " + operation)
+
+
+def collect(config, tag=""):
+    """
+    Get a new test object (vm, root state) from a pool.
+
+    :param config: command line arguments and run configuration
+    :type config: {str, str}
+    :param str tag: extra name identifier for the test to be run
+
+    ..todo:: With later refactoring of the root check implicitly getting a
+        pool rool state, we can refine the parameters here.
+    """
+    _reuse_tool_with_param_dict(config, tag,
+                                {"get_state_images": "root",
+                                 "get_mode_images": "ii",
+                                 # don't touch root states in any way
+                                 "check_mode_images": "rr",
+                                 # this manual tool is compatible only with pool
+                                 "use_pool": "yes"},
+                                get)
 
 
 def create(config, tag=""):
@@ -705,8 +680,12 @@ def create(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     _reuse_tool_with_param_dict(config, tag,
-                                {"set_state": "root",
-                                 "set_mode": "af"},
+                                {"set_state_images": "root",
+                                 "set_mode_images": "af",
+                                 # don't touch root states in any way
+                                 "check_mode_images": "rr",
+                                 # this manual tool is not compatible with pool
+                                 "use_pool": "no"},
                                 set)
 
 
@@ -719,8 +698,12 @@ def clean(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     _reuse_tool_with_param_dict(config, tag,
-                                {"unset_state": "root",
-                                 "unset_mode": "fa"},
+                                {"unset_state_images": "root",
+                                 "unset_mode_images": "fa",
+                                 # make use of off switch if vm is running
+                                 "check_mode_images": "rf",
+                                 # this manual tool is not compatible with pool
+                                 "use_pool": "no"},
                                 unset)
 
 
@@ -735,7 +718,8 @@ def _parse_one_node_for_all_objects(config, tag, verb):
 
     :param verb: verb forms in a tuple (gerund form, variant, test name, present)
     :type verb: (str, str, str, str)
-    :param str tag: extra name identifier for the test to be run
+
+    The rest of the arguments match the public functions.
     """
     l, r = config["graph"].l, config["graph"].r
     selected_vms = sorted(config["vm_strs"].keys())
@@ -745,32 +729,85 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
     setup_str = param.re_str("all..internal..manage.%s" % verb[1])
-    tests, vms = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
+    tests, objects = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one %s test variant from %s" % (verb[2], tests)
-    r.run_test_node(TestNode(tag, tests[0].config, vms))
+    to_run = r.run_test_node(TestNode(tag, tests[0].config, objects[-1]))
+    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
     LOG_UI.info("%s complete", verb[3])
 
 
 def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation):
     """
-    Wrapper for setting state/snapshot, same as :py:func:`set`.
+    Wrapper for getting/setting/unsetting/... state/snapshot.
 
     :param param_dict: additional parameters to overwrite the previous dictionary with
     :type param_dict: {str, str}
     :param str operation: operation description to use when logging
-    :param str tag: extra name identifier for the test to be run
+
+    The rest of the arguments match the public functions.
     """
     l, r = config["graph"].l, config["graph"].r
     selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Starting %s for %s with job %s and params:\n%s", operation,
                 ", ".join(selected_vms), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form().rstrip("\n"))
-    for vm in l.parse_objects(config["param_dict"], config["vm_strs"]):
+    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
+        if test_object.key != "vms":
+            continue
+        vm = test_object
+        # parse individual net only for the current vm
+        net = l.parse_object_from_objects([vm], param_dict=param_dict)
+
         setup_dict = config["param_dict"].copy()
         setup_dict.update(param_dict)
         setup_str = param.re_str("all..internal..manage.unchanged")
-        test_node = l.parse_node_from_object(vm, setup_dict, setup_str, prefix=tag)
-        r.run_test_node(test_node)
+        test_node = l.parse_node_from_object(net, setup_dict, setup_str, prefix=tag)
+        to_run = r.run_test_node(test_node)
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
+
+    LOG_UI.info("Finished %s", operation)
+
+
+def _parse_all_objects_with_custom_states(config, tag, param_dict, operation, restriction):
+    """
+    Wrapper for deploying/internally-preparing a state/snapshot.
+
+    :param param_dict: additional parameters to overwrite the previous dictionary with
+    :type param_dict: {str, str}
+    :param str operation: operation description to use when logging
+    :param str restriction: node restriction for the respective operation
+
+    The rest of the arguments match the public functions.
+
+    ..todo:: Currently these tools do not support image-specific image states.
+    """
+    l, r = config["graph"].l, config["graph"].r
+    selected_vms = sorted(config["vm_strs"].keys())
+    LOG_UI.info("Performing %s on %s (%s)", operation,
+                ", ".join(selected_vms), os.path.basename(r.job.logdir))
+    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
+        if test_object.key != "vms":
+            continue
+        vm = test_object
+        # parse individual net only for the current vm
+        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
+
+        if config["param_dict"].get("to_state"):
+            raise ValueError("Only state of specified (image or vm) types are supported for %s"
+                             % operation)
+        vm_state = vm.params.get("to_state_vms", "")
+        image_state = vm.params.get("to_state_images", "")
+
+        setup_dict = param_dict.copy()
+        setup_dict.update({f"get_state_vms": vm_state or "root",
+                           f"set_state_vms": vm_state,
+                           f"get_state_images": image_state or "root",
+                           f"set_state_images": image_state})
+        setup_str = param.re_str(restriction)
+        test_node = l.parse_node_from_object(net, setup_dict, setup_str, prefix=tag)
+        to_run = r.run_test_node(test_node)
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
+
     LOG_UI.info("Finished %s", operation)
 
 
@@ -782,6 +819,8 @@ def _reuse_tool_with_param_dict(config, tag, param_dict, tool):
     :type param_dict: {str, str}
     :param tool: tool to reuse
     :type tool: function
+
+    The rest of the arguments match the public functions.
     """
     setup_dict = config["param_dict"].copy()
     config["param_dict"].update(param_dict)

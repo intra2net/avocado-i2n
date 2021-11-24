@@ -28,9 +28,13 @@ INTERFACE
 """
 
 import re
+import logging
 
-from avocado.core import test
-from avocado_vt.test import VirtTest
+from avocado.core.test_id import TestID
+from avocado.core.nrunner import Runnable
+from avocado.core.dispatcher import SpawnerDispatcher
+
+from ..states import setup as ss
 
 
 class TestNode(object):
@@ -46,36 +50,55 @@ class TestNode(object):
         return self._params_cache
     params = property(fget=params)
 
+    def final_restr(self):
+        """Final restriction to make the object parsing variant unique."""
+        return self.config.steps[-2].parsable_form()
+    final_restr = property(fget=final_restr)
+
+    def long_prefix(self):
+        """Sufficiently unique prefix to identify a diagram test node."""
+        return self.prefix + "-" + self.params["vms"].replace(" ", "")
+    long_prefix = property(fget=long_prefix)
+
     def id(self):
-        return self.name + "-" + self.params["vms"].replace(" ", "")
+        """Unique ID to identify a test node."""
+        return self.long_prefix + "-" + self.params["name"]
     id = property(fget=id)
 
-    def count(self):
-        """Node count property."""
-        return self.name
-    count = property(fget=count)
+    def id_test(self):
+        """Unique test ID to identify a test node."""
+        return TestID(self.long_prefix, self.params["name"])
+    id_test = property(fget=id_test)
 
-    def __init__(self, name, config, objects):
+    def __init__(self, prefix, config, object):
         """
         Construct a test node (test) for any test objects (vms).
 
         :param str name: name of the test node
         :param config: variant configuration for the test node
         :type config: :py:class:`param.Reparsable`
-        :param objects: objects participating in the test node
-        :type objects: [:py:class:`TestObject`]
+        :param object: node-level object participating in the test node
+        :type object: :py:class:`NetObject`
         """
-        self.name = name
+        self.prefix = prefix
         self.config = config
         self._params_cache = None
 
         self.should_run = True
         self.should_clean = True
+        self.should_scan = True
 
-        self.node_str = None
+        self.spawner = None
 
-        # list of objects involved in the test
-        self.objects = objects
+        # flattened list of objects (in composition) involved in the test
+        self.objects = [object]
+        # TODO: only three nesting levels from a test net are supported
+        if object.key != "nets":
+            raise AssertionError("Test node could be initialized only from test objects "
+                                 "of the same composition level, currently only test nets")
+        for test_object in object.components:
+            self.objects += [test_object]
+            self.objects += test_object.components
 
         # lists of parent and children test nodes
         self.setup_nodes = []
@@ -84,72 +107,72 @@ class TestNode(object):
         self.visited_cleanup_nodes = []
 
     def __repr__(self):
-        obj_tuple = (self.id, self.params.get("shortname", "<unknown>"))
-        return "[node] id='%s', name='%s'" % obj_tuple
+        shortname = self.params.get("shortname", "<unknown>")
+        return f"[node] longprefix='{self.long_prefix}', shortname='{shortname}'"
 
-    def get_test_factory(self, job=None):
+    def get_runnable(self):
         """
         Get test factory from which the test loader will get a runnable test instance.
 
-        :param job: avocado job object to for running or None for reporting only
-        :type job: :py:class:`avocado.core.job.Job`
         :return: test class and constructor parameters
-        :rtype: (type, {str, obj})
+        :rtype: :py:class:`Runnable`
         """
-        test_constructor_params = {'name': test.TestID(self.id, self.params["shortname"]),
-                                   'vt_params': self.params}
-        if job is not None:
-            test_constructor_params['config'] = job.config
-            test_constructor_params['base_logdir'] = job.logdir
-        return (VirtTest, test_constructor_params)
+        self.params['short_id'] = self.long_prefix
+        self.params['id'] = self.id_test.str_uid + "_" + self.id_test.name
+
+        uri = self.params["shortname"]
+        vt_params = self.params.copy()
+
+        # Flatten the vt_params, discarding the attributes that are not
+        # scalars, and will not be used in the context of nrunner
+        for key in ('_name_map_file', '_short_name_map_file', 'dep'):
+            if key in self.params:
+                del(vt_params[key])
+
+        return Runnable('avocado-vt', uri, **vt_params)
+
+    def set_environment(self, job, env_id):
+        """
+        Set the environment for executing the test node.
+
+        :param job: job that includes the test suite
+        :type job: :py:class:`avocado.core.job.Job`
+        :param str env_id: name or ID to uniquely identiy the environment
+
+        This isolating environment could be a container, a virtual machine, or
+        a less-isolated process and is managed by a specialized spawner.
+        """
+        spawner_name = job.config.get('nrunner.spawner', 'lxc')
+        # TODO: move cid in constructor in the upstream PR
+        self.spawner = SpawnerDispatcher(job.config)[spawner_name].obj
+        self.spawner.cid = env_id
+
+        hostname = self.params["hostname"]
+        # prepend affected test parameters
+        for key, value in self.params.items():
+            if isinstance(value, str):
+                self.params[key] = value.replace(hostname, hostname + env_id)
+        self.params["hostname"] = env_id if env_id else hostname
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
-        return self.name.endswith("0s")
+        return self.prefix.endswith("0s1")
 
-    def is_create_node(self):
+    def is_terminal_node(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.name.endswith("0r") and len(self.objects) == 1
-
-    def is_install_node(self):
-        """Check if the test node is the root of all test nodes for some test object."""
-        return self.name.endswith("0p") and len(self.objects) == 1
+        return self.prefix.endswith("t")
 
     def is_shared_root(self):
         """Check if the test node is the root of all test nodes for all test objects."""
-        return self.is_scan_node()
+        return self.params.get_boolean("shared_root", False)
 
     def is_object_root(self):
         """Check if the test node is the root of all test nodes for some test object."""
-        return self.is_create_node()
+        return "object_root" in self.params
 
     def is_objectless(self):
         """Check if the test node is not defined with any test object."""
         return len(self.objects) == 0 or self.params["vms"] == ""
-
-    def is_ephemeral(self):
-        """
-        If the test node is ephemeral its `set_state` cannot be preserved for
-        longer than one cycle, i.e. if the next test stops reverting to it.
-
-        Such test nodes are transitions from off to on states and
-        must be repeated to reuse the on states that are their end states.
-        """
-        for test_object in self.objects:
-            object_name = test_object.name
-            object_params = self.params.object_params(object_name)
-            object_state = object_params.get("set_state")
-
-            # count only test objects left with saved states
-            if object_state is None or object_state == "":
-                continue
-
-            # any off-on state transition marks the test as ephemeral
-            if (object_params.get("get_type", "on") == "off" and
-                    object_params.get("set_type", "on") == "on"):
-                return True
-
-        return False
 
     def is_setup_ready(self):
         """
@@ -172,6 +195,34 @@ class TestNode(object):
         """
         return self.is_cleanup_ready() and not self.should_run
 
+    def is_terminal_node_for(self):
+        """
+        Determine any object that this node is a root of.
+
+        :returns: object that this node is a root of if any
+        :rtype: :py:class:`TestObject` or None
+        """
+        object_root = self.params.get("object_root")
+        if not object_root:
+            return object_root
+        for test_object in self.objects:
+            if test_object.id == object_root:
+                return test_object
+
+    def produces_setup(self):
+        """
+        Check if the test node produces any reusable setup state.
+
+        :returns: whether there are setup states to reuse from the test
+        :rtype: bool
+        """
+        for test_object in self.objects:
+            object_params = test_object.object_typed_params(self.params)
+            object_state = object_params.get("set_state")
+            if object_state:
+                return True
+        return False
+
     def has_dependency(self, state, test_object):
         """
         Check if the test node has a dependency parsed and available.
@@ -184,35 +235,40 @@ class TestNode(object):
         """
         for test_node in self.setup_nodes:
             if test_object in test_node.objects:
-                setup_object_params = test_node.params.object_params(test_object.name)
-                if re.search("(\.|^)" + state + "(\.|$)", setup_object_params.get("name")):
+                if re.search("(\.|^)" + state + "(\.|$)", test_node.params.get("name")):
                     return True
+                setup_object_params = test_object.object_typed_params(test_node.params)
                 if state == setup_object_params.get("set_state"):
                     return True
         return False
 
     @staticmethod
     def comes_before(node1, node2):
-        def compare_part(c1, c2):
-            match1, match2 = re.match(r"^(\d+)(\w+)(.+)", c1), re.match(r"^(\d+)(\w+)(.+)", c2)
-            if match1 is None and match2 is None:
-                pass
-            d1, b1, a1 = c1, None, None if match1 is None else match1.group(1, 2, 3)
-            d2, b2, a2 = c2, None, None if match2 is None else match2.group(1, 2, 3)
-            if not c1.isdigit() or not c2.isdigit():
-                return str(c1) < str(c2)
-            d1, d2 = int(d1), int(d2)
-            if d1 != d2:
-                return d1 < d2
-            elif a1 != a2:
-                if a1 is None:
-                    return False if a2 == "a" else True  # reverse order for "c" and cleanup
-                if a2 is None:
-                    return True if a1 == "a" else False  # reverse order for "c" and cleanup
-                return a1 < a2
+        def compare_part(prefix1, prefix2):
+            match1, match2 = re.match(r"^(\d+)(\w)(.+)", prefix1), re.match(r"^(\d+)(\w)(.+)", prefix2)
+            digit1, alpha1, else1 = (prefix1, None, None) if match1 is None else match1.group(1, 2, 3)
+            digit2, alpha2, else2 = (prefix2, None, None) if match2 is None else match2.group(1, 2, 3)
+
+            # compare order of parsing if simple leaf nodes
+            if digit1.isdigit() and digit2.isdigit():
+                digit1, digit2 = int(digit1), int(digit2)
+                if digit1 != digit2:
+                    return digit1 < digit2
+            # we no longer match and are at the end ofthe prefix
             else:
-                return compare_part(b1, b2)
-        return compare_part(node1.count, node2.count)
+                return digit1 < digit2
+
+            # compare the node type flags next
+            if alpha1 != alpha2:
+                if alpha1 is None:
+                    return False if alpha2 == "a" else True  # reverse order for "c" (cleanup), "b" (byproduct), "d" (duplicate)
+                if alpha2 is None:
+                    return True if alpha1 == "a" else False  # reverse order for "c" (cleanup), "b" (byproduct), "d" (duplicate)
+                return alpha1 < alpha2
+            # redo the comparison for the next prefix part
+            else:
+                return compare_part(else1, else2)
+        return compare_part(node1.long_prefix, node2.long_prefix)
 
     def pick_next_parent(self):
         """
@@ -277,13 +333,61 @@ class TestNode(object):
         """
         self._params_cache = self.config.get_params(show_dictionaries=verbose)
 
+    def scan_states(self):
+        """Scan for present object states to reuse the test from previous runs."""
+        self.should_run = True
+        node_params = self.params.copy()
+
+        is_leaf = True
+        for test_object in self.objects:
+            object_params = test_object.object_typed_params(self.params)
+            object_state = object_params.get("set_state")
+
+            # the test leaves an object undefined so it cannot be reused for this object
+            if object_state is None or object_state == "":
+                continue
+            else:
+                is_leaf = False
+
+            # the object state has to be defined to reach this stage
+            if object_state == "install" and test_object.is_permanent():
+                self.should_run = False
+                break
+
+            # ultimate consideration of whether the state is actually present
+            node_params[f"check_state_{test_object.key}_{test_object.suffix}"] = object_state
+            node_params[f"check_mode_{test_object.key}_{test_object.suffix}"] = object_params.get("check_mode", "rf")
+            # TODO: unfortunately we need env object with pre-processed vms in order
+            # to provide ad-hoc root vm states so we use the current advantage that
+            # all vm state backends can check for states without a vm boot (root)
+            if test_object.key == "vms":
+                node_params[f"use_env_{test_object.key}_{test_object.suffix}"] = "no"
+            node_params[f"soft_boot_{test_object.key}_{test_object.suffix}"] = "no"
+
+        if not is_leaf:
+            self.should_run = not ss.check_states(node_params, None)
+        logging.info("The test node %s %s run", self, "should" if self.should_run else "should not")
+
     def validate(self):
         """Validate the test node for sane attribute-parameter correspondence."""
-        param_objects = set(self.params.objects("vms"))
-        attr_objects = set(o.name for o in self.objects)
-        if len(param_objects - attr_objects) > 0:
-            raise ValueError("Additional parametric objects %s not in %s" % (param_objects, attr_objects))
-        if len(attr_objects - param_objects) > 0:
-            raise ValueError("Missing parametric objects %s from %s" % (param_objects, attr_objects))
+        param_nets = self.params.objects("nets")
+        attr_nets = list(o.suffix for o in self.objects if o.key == "nets")
+        if len(attr_nets) > 1 or len(param_nets) > 1:
+            raise AssertionError(f"Test node {self} can have only one net ({attr_nets}/{param_nets}")
+        param_net_name, attr_net_name = attr_nets[0], param_nets[0]
+        if self.objects[0].suffix != attr_net_name:
+            raise AssertionError(f"The net {attr_net_name} must be the first node object {self.objects[0]}")
+        if param_net_name != attr_net_name:
+            raise AssertionError(f"Parametric and attribute nets differ {param_net_name} != {attr_net_name}")
+
+        param_vms = set(self.params.objects("vms"))
+        attr_vms = set(o.suffix for o in self.objects if o.key == "vms")
+        if len(param_vms - attr_vms) > 0:
+            raise ValueError("Additional parametric objects %s not in %s" % (param_vms, attr_vms))
+        if len(attr_vms - param_vms) > 0:
+            raise ValueError("Missing parametric objects %s from %s" % (param_vms, attr_vms))
+
+        # TODO: images can currently be ad-hoc during run and thus cannot be validated
+
         if self in self.setup_nodes or self in self.cleanup_nodes:
             raise ValueError("Detected reflexive dependency of %s to itself" % self)

@@ -5,6 +5,7 @@ Submodules
 ----------
 
 .. toctree::
+   :maxdepth: 4
 
    avocado_i2n.cartgraph.graph
    avocado_i2n.cartgraph.node

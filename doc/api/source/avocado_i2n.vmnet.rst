@@ -5,6 +5,7 @@ Submodules
 ----------
 
 .. toctree::
+   :maxdepth: 4
 
    avocado_i2n.vmnet.interface
    avocado_i2n.vmnet.netconfig

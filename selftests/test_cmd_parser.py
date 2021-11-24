@@ -3,11 +3,12 @@
 import unittest
 import unittest_importer
 
+from avocado import Test
 import avocado_i2n.cmd_parser as cmd
 import avocado_i2n.params_parser as param
 
 
-class CmdParserTest(unittest.TestCase):
+class CmdParserTest(Test):
 
     def setUp(self):
         self.config = {}
@@ -52,10 +53,6 @@ class CmdParserTest(unittest.TestCase):
         base_params = self.config["params"]
 
         self.config["params"] = base_params + ["vms=vmX"]
-        with self.assertRaises(ValueError):
-            cmd.params_from_cmd(self.config)
-
-        self.config["params"] = base_params + ["default_only_vm1="]
         with self.assertRaises(ValueError):
             cmd.params_from_cmd(self.config)
 

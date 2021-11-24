@@ -44,5 +44,5 @@ def run(test, params, env):
     logging.info("Performing imaginary setup requiring the vm to be booted "
                  "at the beginning of the test and stay on at the end")
     # e.g. some program reaches a certain state which is changed upon rebooting
-    # so we have to perform it here, i.e. in a special ephemeral test
+    # so we have to perform it here
     logging.info("Imaginary setup done")

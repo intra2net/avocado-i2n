@@ -1,0 +1,61 @@
+NAME = "Pre-test hook"
+URI = ""
+DOC = """
+Control for a pre-test customization hook*
+
+This control file makes use of shared test parameters (in the form of
+a remote object) to return statuses and inform the host test back. It
+requires the same backends as the ones for a general remote object
+sharing by the remote door.
+"""
+
+import os
+import sys
+import logging as log
+logging = log.getLogger('avocado.test.pre')
+
+# custom imports
+from virttest import env_process
+from avocado_i2n.states import setup as ss
+from avocado_i2n.states import lvm, qcow2, lxc, btrfs, ramfile, pool, vmnet
+from avocado_i2n.states.vmnet import VMNetBackend
+from avocado_i2n.vmnet import VMNetwork
+
+# deployed utilities
+utility_path = os.path.join(params["suite_path"], "utils")
+sys.path.insert(1, utility_path)
+
+logging.info("%s control file.", NAME)
+
+
+# MAIN PART
+
+logging.info(f"Added utility path {utility_path}")
+logging.info(f"Setting network class for state backend")
+VMNetBackend.network_class = VMNetwork
+
+logging.info(f"Adding env process stage hooks")
+def on_state(fn):
+    def wrapper(test, params, env):
+        params["skip_types"] = "nets/vms/images nets"
+        fn(params, env)
+        del params["skip_types"]
+    return wrapper
+def off_state(fn):
+    def wrapper(test, params, env):
+        params["skip_types"] = "nets/vms"
+        fn(params, env)
+        del params["skip_types"]
+    return wrapper
+env_process.preprocess_vm_off_hook = off_state(ss.get_states)
+env_process.preprocess_vm_on_hook = on_state(ss.get_states)
+env_process.postprocess_vm_on_hook = on_state(ss.set_states)
+env_process.postprocess_vm_off_hook = off_state(ss.set_states)
+logging.info(f"Adding default state backends")
+ss.BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
+               "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
+               "pool": pool.QCOW2PoolBackend, "qcow2vt": qcow2.QCOW2VTBackend,
+               "ramfile": ramfile.RamfileBackend, "vmnet": vmnet.VMNetBackend}
+
+
+logging.info("%s control file finished.", NAME)

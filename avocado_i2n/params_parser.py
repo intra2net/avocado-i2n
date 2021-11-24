@@ -304,6 +304,7 @@ class Reparsable():
         parser.parse_string("hostname = %s\n" % hostname)
         suite_path = settings.as_dict().get('i2n.common.suite_path')
         parser.parse_string("suite_path = %s\n" % suite_path)
+        parser.parse_string("test_pre_hook = %s\n" % os.path.join(suite_path, "controls", "pre_test.control"))
 
         for step in self.steps:
             if isinstance(step, ParsedFile):
@@ -404,7 +405,7 @@ class Reparsable():
 
 def all_restrictions():
     """
-    Return all vms that can be passed for any test configuration.
+    Return all restrictions that can be passed for any test configuration.
 
     :returns: all available (from configuration) vms
     :rtype: [str]
@@ -414,16 +415,23 @@ def all_restrictions():
     return rep.get_params(list_of_keys=["main_restrictions"]).objects("main_restrictions")
 
 
-def all_vms():
+def all_objects(key="vms", composites=None):
     """
-    Return all vms that can be passed for any test configuration.
+    Return all test objects that can be passed for any test configuration.
 
-    :returns: all available (from configuration) vms
+    :param: str key: key to extract parametric objects from
+    :param composites: composite restriction of the returned objects
+    :type composites: [str]
+    :returns: all available (from configuration) objects of a given type
     :rtype: [str]
     """
     rep = Reparsable()
     rep.parse_next_file("guest-base.cfg")
-    return rep.get_params(list_of_keys=["vms"]).objects("vms")
+    params = rep.get_params()
+    composites = [] if not composites else composites
+    for composite in composites:
+        params = params.object_params(composite)
+    return params.objects(key)
 
 
 def main_vm():
@@ -456,21 +464,20 @@ def re_str(variant_str, base_str="", tag=""):
     return base_str + variant_str
 
 
-def vm_str(variant_strs, base_str=""):
+def join_str(variant_strs, base_str=""):
     """
-    Add a vm variant restriction to the base string, reaching
-    exactly one vm variant afterwards.
+    Join all object variant restrictions over the base string.
 
-    :param variant_strs: variant restrictions for each vm as key, value pair
+    :param variant_strs: variant restrictions for each object as key, value pair
     :type variant_strs: {str, str}
     :param str base_str: string where the variant restriction will be added
     :returns: restricted parameter string
     :rtype: str
     """
-    vms, variant_str = "", ""
-    for vm, variant in variant_strs.items():
+    objects, variant_str = "", ""
+    for params_object, variant in variant_strs.items():
         subvariant = "".join(["    " + l + "\n" for l in variant.rstrip("\n").split("\n")])
-        variant_str += "%s:\n%s" % (vm, subvariant)
-        vms += " " + vm
-    variant_str += "join" + vms + "\n"
+        variant_str += "%s:\n%s" % (params_object, subvariant)
+        objects += " " + params_object
+    variant_str += "join" + objects + "\n"
     return base_str + variant_str

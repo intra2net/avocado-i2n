@@ -36,12 +36,10 @@ from .setup import StateOnBackend
 
 class RamfileBackend(StateOnBackend):
     """
-    Backend manipulating on states as ram dump files.
+    Backend manipulating vm states as ram dump files.
 
-    ..note:: This "on" backend is available and still supported but not recommended.
+    ..note:: This backend is available and still supported but not recommended.
     """
-
-    _require_running_object = True
 
     @classmethod
     def _get_state_dir(cls, params):
@@ -94,7 +92,7 @@ class RamfileBackend(StateOnBackend):
         All arguments match the base class.
         """
         vm, vm_name = object, params["vms"]
-        logging.info("Reusing on state '%s' of %s", params["get_state"], vm_name)
+        logging.info("Reusing ramdisk state '%s' of %s", params["get_state"], vm_name)
         vm.pause()
         state_dir = RamfileBackend._get_state_dir(params)
         state_file = os.path.join(state_dir, params["check_state"] + ".state")
@@ -109,7 +107,7 @@ class RamfileBackend(StateOnBackend):
         All arguments match the base class.
         """
         vm, vm_name = object, params["vms"]
-        logging.info("Setting on state '%s' of %s", params["set_state"], vm_name)
+        logging.info("Setting ramdisk state '%s' of %s", params["set_state"], vm_name)
         vm.pause()
         state_dir = RamfileBackend._get_state_dir(params)
         state_file = os.path.join(state_dir, params["check_state"] + ".state")
@@ -128,7 +126,7 @@ class RamfileBackend(StateOnBackend):
         All arguments match the base class.
         """
         vm, vm_name = object, params["vms"]
-        logging.info("Removing on state '%s' of %s", params["unset_state"], vm_name)
+        logging.info("Removing ramdisk state '%s' of %s", params["unset_state"], vm_name)
         vm.pause()
         state_dir = RamfileBackend._get_state_dir(params)
         state_file = os.path.join(state_dir, params["check_state"] + ".state")

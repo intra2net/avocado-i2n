@@ -1,7 +1,7 @@
-avocado\_i2n.state\_setup module
+avocado\_i2n.states.btrfs module
 ================================
 
-.. automodule:: avocado_i2n.state_setup
+.. automodule:: avocado_i2n.states.btrfs
    :members:
    :undoc-members:
    :show-inheritance:

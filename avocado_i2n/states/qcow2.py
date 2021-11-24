@@ -44,7 +44,7 @@ QEMU_ON_STATES_REGEX = re.compile(r"^\d+\s+([\w\.]+)\s*(?!0 B)(\d+e?[\-\+]?[\.\d
 
 class QCOW2Backend(StateBackend):
     """
-    Backend manipulating off states as QCOW2 snapshots.
+    Backend manipulating image states as QCOW2 snapshots.
 
     ..todo:: There are utilities providing access to the Qemu image binary
              provided by Avocado VT similarly to the LV utilities used for the
@@ -52,6 +52,11 @@ class QCOW2Backend(StateBackend):
     """
 
     _require_running_object = False
+
+    @classmethod
+    def state_type(cls):
+        """State type string representation depending used for logging."""
+        return "on/vm" if cls._require_running_object else "off/image"
 
     @classmethod
     def show(cls, params, object=None):
@@ -79,17 +84,20 @@ class QCOW2Backend(StateBackend):
 
         All arguments match the base class.
         """
-        vm_name = params["vms"]
-        logging.debug("Checking %s for %s state '%s'", vm_name, cls.state_type(), params["check_state"])
+        object_name = params["vms"] if cls._require_running_object else params["vms"] + "/" + params["images"]
+        logging.debug("Checking %s for %s state '%s'", object_name,
+                      cls.state_type(), params["check_state"])
         states = cls.show(params, object)
         for state in states:
             if state == params["check_state"]:
                 logging.info("The %s snapshot '%s' of %s exists",
-                             cls.state_type(), params["check_state"], vm_name)
+                             cls.state_type(), params["check_state"],
+                             object_name)
                 return True
         # at this point we didn't find the on state in the listed ones
         logging.info("The %s snapshot '%s' of %s doesn't exist",
-                     cls.state_type(), params["check_state"], vm_name)
+                     cls.state_type(), params["check_state"],
+                     object_name)
         return False
 
     @classmethod
@@ -99,9 +107,11 @@ class QCOW2Backend(StateBackend):
 
         All arguments match the base class.
         """
-        vm, vm_name, state = object, params["vms"], params["get_state"]
+        vm, vm_name = object, params["vms"]
+        state, image_name = params["get_state"], params["images"]
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
-        logging.info("Reusing %s state '%s' of %s", cls.state_type(), params["get_state"], vm_name)
+        logging.info("Reusing %s state '%s' of %s/%s", cls.state_type(), state,
+                     vm_name, image_name)
         image_path = get_image_path(params)
         process.system("%s snapshot -a %s %s" % (qemu_img, state, image_path))
 
@@ -112,9 +122,11 @@ class QCOW2Backend(StateBackend):
 
         All arguments match the base class.
         """
-        vm, vm_name, state = object, params["vms"], params["set_state"]
+        vm, vm_name = object, params["vms"]
+        state, image_name = params["set_state"], params["images"]
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
-        logging.info("Creating %s state '%s' of %s", cls.state_type(), params["set_state"], vm_name)
+        logging.info("Creating %s state '%s' of %s/%s", cls.state_type(), state,
+                     vm_name, image_name)
         image_path = get_image_path(params)
         process.system("%s snapshot -c %s %s" % (qemu_img, state, image_path))
 
@@ -125,15 +137,17 @@ class QCOW2Backend(StateBackend):
 
         All arguments match the base class.
         """
-        vm, vm_name, state = object, params["vms"], params["unset_state"]
+        vm, vm_name = object, params["vms"]
+        state, image_name = params["unset_state"], params["images"]
         qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
-        logging.info("Removing %s state '%s' of %s", cls.state_type(), params["unset_state"], vm_name)
+        logging.info("Removing %s state '%s' of %s/%s", cls.state_type(), state,
+                     vm_name, image_name)
         image_path = get_image_path(params)
         process.system("%s snapshot -d %s %s" % (qemu_img, state, image_path))
 
 
 class QCOW2VTBackend(StateOnBackend, QCOW2Backend):
-    """Backend manipulating on states as QCOW2 snapshots using VT's VM bindings."""
+    """Backend manipulating vm states as QCOW2 snapshots using VT's VM bindings."""
 
     _require_running_object = True
 
@@ -145,7 +159,7 @@ class QCOW2VTBackend(StateOnBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm, vm_name = object, params["vms"]
-        logging.info("Reusing on state '%s' of %s", params["get_state"], vm_name)
+        logging.info("Reusing vm state '%s' of %s", params["get_state"], vm_name)
         vm.pause()
         vm.loadvm(params["get_state"])
         vm.resume(timeout=3)
@@ -158,7 +172,7 @@ class QCOW2VTBackend(StateOnBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm, vm_name = object, params["vms"]
-        logging.info("Setting on state '%s' of %s", params["set_state"], vm_name)
+        logging.info("Setting vm state '%s' of %s", params["set_state"], vm_name)
         vm.pause()
         vm.savevm(params["set_state"])
         vm.resume(timeout=3)
@@ -171,7 +185,7 @@ class QCOW2VTBackend(StateOnBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm, vm_name = object, params["vms"]
-        logging.info("Removing on state '%s' of %s", params["unset_state"], vm_name)
+        logging.info("Removing vm state '%s' of %s", params["unset_state"], vm_name)
         vm.pause()
         # NOTE: this was supposed to be implemented in the Qemu VM object but
         # it is not unlike savevm and loadvm, perhaps due to command availability
@@ -194,7 +208,8 @@ def get_image_path(params):
     image_name = params["image_name"]
     image_format = params.get("image_format")
     if image_format is None:
-        raise ValueError("Unspecified image format for %s - must be qcow2 or raw" % image_name)
+        raise ValueError(f"Unspecified image format for {image_name} - "
+                         "must be qcow2 or raw")
     if image_format not in ["raw", "qcow2"]:
         raise ValueError(f"Incompatible image format {image_format} for"
                          f" {image_name} - must be qcow2 or raw")

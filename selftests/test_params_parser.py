@@ -3,12 +3,13 @@
 import unittest
 import unittest_importer
 
+from avocado import Test
 from virttest.utils_params import Params
 
 import avocado_i2n.params_parser as param
 
 
-class ParamsParserTest(unittest.TestCase):
+class ParamsParserTest(Test):
 
     def setUp(self):
         self.base_dict = {}

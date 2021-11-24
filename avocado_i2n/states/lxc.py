@@ -31,9 +31,7 @@ from .setup import StateBackend
 
 
 class LXCBackend(StateBackend):
-    """Backend manipulating off states as LXC container snapshots."""
-
-    _require_running_object = False
+    """Backend manipulating states as LXC container snapshots."""
 
     @classmethod
     def show(cls, params, object=None):

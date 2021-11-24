@@ -35,7 +35,7 @@ from virttest import env_process
 
 
 #: list of all available state backends and operations
-__all__ = ["OFF_BACKENDS", "ON_BACKENDS", "ROOTS",
+__all__ = ["BACKENDS", "ROOTS",
            "show_states", "check_states",
            "get_states", "set_states", "unset_states",
            "push_states", "pop_states"]
@@ -43,13 +43,6 @@ __all__ = ["OFF_BACKENDS", "ON_BACKENDS", "ROOTS",
 
 class StateBackend():
     """A general backend implementing state manipulation."""
-
-    _require_running_object = None
-
-    @classmethod
-    def state_type(cls):
-        """State type string representation depending used for logging."""
-        return "on" if cls._require_running_object else "off"
 
     @classmethod
     def show(cls, params, object=None):
@@ -135,7 +128,10 @@ class StateBackend():
             image_name = os.path.join(params["images_base_dir"], image_name)
         image_format = params.get("image_format", "qcow2")
         logging.debug("Checking for %s image %s", image_format, image_name)
-        image_format = "" if image_format == "raw" else "." + image_format
+        image_format = "" if image_format in ["raw", ""] else "." + image_format
+        if object is not None and object.is_alive():
+            logging.info("The required virtual machine %s is alive and it shouldn't be", vm_name)
+            return False
         if os.path.exists(image_name + image_format):
             logging.info("The required virtual machine %s's %s exists", vm_name, image_name)
             return True
@@ -166,13 +162,18 @@ class StateBackend():
         :type object: VM object or None
         """
         vm_name = params["vms"]
+        if object is not None and object.is_alive():
+            object.destroy(gracefully=params.get_boolean("soft_boot", True))
         image_name = params["image_name"]
         if not os.path.isabs(image_name):
             image_name = os.path.join(params["images_base_dir"], image_name)
-        os.makedirs(os.path.dirname(image_name), exist_ok=True)
-        logging.info("Creating image %s for %s", image_name, vm_name)
-        params.update({"create_image": "yes", "force_create_image": "yes"})
-        env_process.preprocess_image(None, params, image_name)
+        image_format = params.get("image_format")
+        image_format = "" if image_format in ["raw", ""] else "." + image_format
+        if not os.path.exists(image_name + image_format):
+            os.makedirs(os.path.dirname(image_name), exist_ok=True)
+            logging.info("Creating image %s for %s", image_name, vm_name)
+            params.update({"create_image": "yes", "force_create_image": "yes"})
+            env_process.preprocess_image(None, params, image_name)
 
     @classmethod
     def unset_root(cls, params, object=None):
@@ -185,6 +186,8 @@ class StateBackend():
         :type object: VM object or None
         """
         vm_name = params["vms"]
+        if object is not None and object.is_alive():
+            object.destroy(gracefully=params.get_boolean("soft_boot", True))
         image_name = params["image_name"]
         if not os.path.isabs(image_name):
             image_name = os.path.join(params["images_base_dir"], image_name)
@@ -200,8 +203,6 @@ class StateBackend():
 class StateOnBackend(StateBackend):
     """A general backend implementing on state manipulation."""
 
-    _require_running_object = True
-
     @classmethod
     def check_root(cls, params, object=None):
         """
@@ -210,6 +211,19 @@ class StateOnBackend(StateBackend):
         All arguments match the base class.
         """
         vm_name = params["vms"]
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            image_name = image_params["image_name"]
+            if not os.path.isabs(image_name):
+                image_name = os.path.join(image_params["images_base_dir"], image_name)
+            image_format = image_params.get("image_format", "qcow2")
+            image_format = "" if image_format in ["raw", ""] else "." + image_format
+            if not os.path.exists(image_name + image_format):
+                logging.info("The required virtual machine %s has a missing image %s",
+                             vm_name, image_name + image_format)
+                return False
+        if not params.get_boolean("use_env", True):
+            return True
         logging.debug("Checking whether %s is on (boot state requested)", vm_name)
         vm = object
         if vm is not None and vm.is_alive():
@@ -230,10 +244,27 @@ class StateOnBackend(StateBackend):
                  for flawless vm destruction and creation to improve these
         """
         vm_name = params["vms"]
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            image_name = image_params["image_name"]
+            if not os.path.isabs(image_name):
+                image_name = os.path.join(image_params["images_base_dir"], image_name)
+            image_format = image_params.get("image_format")
+            image_format = "" if image_format in ["raw", ""] else "." + image_format
+            if not os.path.exists(image_name + image_format):
+                logging.info("Creating image %s in order to boot %s",
+                             image_name + image_format, vm_name)
+                os.makedirs(os.path.dirname(image_name), exist_ok=True)
+                image_params.update({"create_image": "yes", "force_create_image": "yes"})
+                env_process.preprocess_image(None, image_params, image_name)
+        if not params.get_boolean("use_env", True):
+            return
         logging.info("Booting %s to provide boot state", vm_name)
         vm = object
         if vm is None:
             raise ValueError("Need an environmental object to boot")
+            #vm = env.create_vm(params.get('vm_type'), params.get('target'),
+            #                   vm_name, params, None)
         if not vm.is_alive():
             vm.create()
 
@@ -251,43 +282,74 @@ class StateOnBackend(StateBackend):
             vm.destroy(gracefully=False)
 
 
-#: available off state implementations
-OFF_BACKENDS = {}
-#: available on state implementations
-ON_BACKENDS = {}
+#: available state backend implementations
+BACKENDS = {}
 #: keywords reserved for root states
 ROOTS = ['root', '0root', 'boot', '0boot']
 
 
-def _state_check_chain(do, env, vm_name, vm_params, image_name, image_params):
+def _parametric_object_iteration(params, composites=None):
+    """
+    Iterator over a hierarchy of stateful parametric objects.
+
+    :param params: parameters of the parametric object is processed
+    :type params: {str, str}
+    :param composites: current composite parametric object
+    :type composites: [(str, str)]
+    :raises: :py:class:`ValueError` if no hierarchy is configured
+    """
+    object_composition = params.objects("states_chain")
+    if len(object_composition) == 0:
+        raise ValueError("Have to specify at least one parametric object type "
+                         "or an overall composition through `states_chain`")
+    if composites is None:
+        composites = []
+    params_obj_type = object_composition[len(composites)]
+    composites.append(None)
+    for params_obj_name in params.objects(params_obj_type):
+        composites[-1] = (params_obj_name, params_obj_type)
+        obj_params = params.object_params(params_obj_name)
+        obj_params[params_obj_type] = params_obj_name
+        obj_params["object_name"] = "/".join([c[0] for c in composites])
+        obj_params["object_type"] = "/".join([c[1] for c in composites])
+        if params_obj_type != object_composition[-1]:
+            yield from _parametric_object_iteration(obj_params, composites)
+        # object type parameters don't propagate downwards in the hierarchy
+        obj_type_params = obj_params.object_params(params_obj_type)
+        yield obj_type_params
+    composites.pop()
+
+
+def _state_check_chain(do, env,
+                       params_obj_type, params_obj_name,
+                       state_params):
     """
     State chain from set/set/unset states to check states.
 
     :param str do: get, set, or unset
     :param env: test environment
     :type env: Env object
-    :param str vm_name: name of the vm to switch on/off
-    :param vm_params: vm parameters of the vm to switch on/off
-    :type vm_params: {str, str}
-    :param str image_name: name of the vm's image which is processed
-    :param image_params: image parameters of the vm's image which is processed
-    :type image_params: {str, str}
+    :param str params_obj_type: type of the parametric object to check
+    :param str params_obj_name: name of the parametric object to check
+    :param state_params: image parameters of the vm's image which is processed
+    :type state_params: {str, str}
     """
-    image_params["check_state"] = image_params[f"{do}_state"]
-    image_params["check_type"] = image_params[f"{do}_type"]
+    state_params["check_state"] = state_params[f"{do}_state"]
     if do == "set":
-        image_params["check_opts"] = "soft_boot=yes"
+        state_params["check_opts"] = "soft_boot=yes"
+        state_params["soft_boot"] = "yes"
     else:
-        image_params["check_opts"] = "soft_boot=no"
+        state_params["check_opts"] = "soft_boot=no"
+        state_params["soft_boot"] = "no"
 
-    # restrict inner calls
-    image_params["vms"] = vm_name
-    image_params["images"] = image_name
-    state_exists = check_states(image_params, env)
-
-    # if too many or no matches default to most performant type
-    image_params[f"{do}_type"] = image_params["check_type"]
-    vm_params[f"{do}_type"] = image_params["check_type"]
+    # restrict inner call parameteric object types and names
+    composite_types = params_obj_type.split("/")
+    composite_names = params_obj_name.split("/")
+    for composite_type, composite_name in zip(composite_types,
+                                              composite_names):
+        state_params[composite_type] = composite_name
+    state_params["states_chain"] = composite_types[-1]
+    state_exists = check_states(state_params, env)
 
     return state_exists
 
@@ -304,16 +366,23 @@ def show_states(run_params, env=None):
     :rtype: [str]
     """
     states = []
-    for vm_name in run_params.objects("vms"):
-        vm_params = run_params.object_params(vm_name)
-        for image_name in vm_params.objects("images"):
-            image_params = vm_params.object_params(image_name)
-            image_params["check_type"] = image_params.get("check_type", "off")
-            logging.debug("Checking %s for available %s states", vm_name, image_params["check_type"])
-            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["check_type"] == "off" \
-                else ON_BACKENDS[image_params["on_states"]]
-            states += backend.show(image_params, env)
-        logging.info("Detected %s states for %s: %s", image_params["check_type"], vm_name, ", ".join(states))
+    for state_params in _parametric_object_iteration(run_params):
+        params_obj_name = state_params["object_name"]
+        params_obj_type = state_params["object_type"]
+        if params_obj_type in state_params.objects('skip_types'):
+            continue
+        if params_obj_type == "nets/vms/images" and state_params.get_boolean("image_readonly", False):
+            logging.warning(f"Incorrect configuration: cannot use any state "
+                            f"from readonly image {params_obj_name} - skipping")
+            continue
+
+        logging.debug("Checking %s for available %s states",
+                      params_obj_name, params_obj_type)
+        state_backend = BACKENDS[state_params["states"]]
+        params_obj_states = state_backend.show(state_params, env)
+        logging.info("Detected %s states for %s: %s",
+                     params_obj_type, params_obj_name, ", ".join(params_obj_states))
+        states += params_obj_states
     return states
 
 
@@ -324,120 +393,70 @@ def check_states(run_params, env=None):
     :param run_params: configuration parameters
     :type run_params: {str, str}
     :type env: Env object or None
-    :returns: list of detected states
     :returns: whether the given state exists
     :rtype: bool
 
-    If not state type is specified explicitly, we will search for all types
-    in order of performance (on->off).
-
-    .. note:: Only one vm is generally expected in the received 'vms' parameter. If
-        more than one are present, the setup for all will be evaluated through
-        bitwise AND, i.e. it will determine the existence of a given state configuration.
+    .. note:: We can check for multiple states of multiple objects at the
+        same time through our choice of configuration.
     """
-    for vm_name in run_params.objects("vms"):
-        vm = env.get_vm(vm_name) if env is not None else None
-        vm_params = run_params.object_params(vm_name)
-        for image_name in vm_params.objects("images"):
-            image_params = vm_params.object_params(image_name)
+    for state_params in _parametric_object_iteration(run_params):
+        params_obj_name = state_params["object_name"]
+        params_obj_type = state_params["object_type"]
+        if params_obj_type in state_params.objects('skip_types'):
+            continue
+        if params_obj_type == "nets/vms/images" and state_params.get_boolean("image_readonly", False):
+            logging.warning(f"Incorrect configuration: cannot use any state "
+                            f"from readonly image {params_obj_name} - skipping")
+            continue
 
-            # if the snapshot is not defined skip (leaf tests that are no setup)
-            if not image_params.get("check_state"):
-                continue
-            # NOTE: there is no concept of "check_mode" here
-            image_params["check_type"] = image_params.get("check_type", "any")
-            image_params["check_opts"] = image_params.get("check_opts", "soft_boot=yes")
-            # TODO: document after experimental period
-            # - first position is for root, second for boot
-            # - each position could either be reuse check result or force existence
-            image_params["check_mode"] = image_params.get("check_mode", "rf")
+        # if the snapshot is not defined skip (leaf tests that are no setup)
+        if not state_params.get("check_state"):
+            continue
+        else:
+            state = state_params["check_state"]
+        # NOTE: there is no concept of "check_mode" here
+        state_params["check_opts"] = state_params.get("check_opts", "soft_boot=yes")
+        # TODO: document after experimental period
+        state_params["check_mode"] = state_params.get("check_mode", "rf")
 
-            state = image_params["check_state"]
-            stype = image_params["check_type"]
+        state_backend = BACKENDS[state_params["states"]]
+        # TODO: we don't support other parametric object instances
+        vm = env.get_vm(state_params["vms"]) if env is not None else None
+        # TODO: consider whether we need this with more advanced env handling
+        #if vm is None and env is not None:
+        #    vm = env.create_vm(state_params.get('vm_type'), state_params.get('target'),
+        #                       params_obj_name, state_params, None)
+        state_object = env if params_obj_type == "nets" else vm
 
-            # minimal filters
-            # TODO: partially implemented backends imply we cannot check all images
-            # at once for on states as we would do with get/set/unset operations
-            # -> implement true on state check for on state backends
-            if image_params.get_boolean("image_readonly", False):
-                logging.warning(f"Incorrect configuration: cannot use any state "
-                                 f"{state} as {image_name} is readonly - skipping")
-                continue
+        action_if_root_exists = state_params["check_mode"][0]
+        action_if_root_doesnt_exist = state_params["check_mode"][1]
 
-            off_backend = OFF_BACKENDS[image_params["off_states"]]
-            on_backend = ON_BACKENDS[image_params["on_states"]]
-            backend = off_backend if image_params["check_type"] == "off" else on_backend
-
-            action_if_root_exists = image_params["check_mode"][0]
-            action_if_boot_exists = image_params["check_mode"][1]
-
-            # always check the corresponding root state as a prerequisite
-            if state not in ROOTS or stype != "off":
-                root_exists = off_backend.check_root(image_params, vm)
-                if not root_exists:
-                    if action_if_root_exists == "f":
-                        off_backend.set_root(image_params, vm)
-                    elif action_if_root_exists == "r":
-                        return False
-                    else:
-                        raise exceptions.TestError(f"Invalid policy {action_if_root_exists}: The root "
-                                                   "check action can be either of 'reuse' or 'force'.")
-
-            # optionally check a corresponding boot state as a prerequisite
-            if state not in ROOTS or stype != "on":
-                boot_exists = on_backend.check_root(image_params, vm)
-
-                # need to passively detect type in order to support provision for boot states
-                if stype == "any" and state not in ROOTS:
-                    state_exists = True
-                    initial_type = image_params["check_type"]
-                    stype = "on"
-                    # TODO: on root existence is handled and enforced differently
-                    # than off root existence at the moment - need more unification
-                    #if not boot_exists or not on_backend.check(image_params, vm):
-                    if not on_backend.check(image_params, vm):
-                        stype = "off"
-                        if not off_backend.check(image_params, vm):
-                            # default type to treat in case of no result
-                            stype = initial_type
-                            state_exists = False
-                    # set this for external reporting of detected type
-                    run_params["check_type"] = stype
-                elif state in ROOTS:
-                    state_exists = backend.check_root(image_params, vm)
-                else:
-                    state_exists = backend.check(image_params, vm)
-
-                if stype in image_params.objects('skip_types'):
-                    pass
-                elif not boot_exists and stype == "on":
-                    if action_if_boot_exists == "f" and vm is None:
-                        if env is None:
-                            raise exceptions.TestError(f"Creating boot states requires an "
-                                                       "environment object to be provided.")
-                        vm = env.create_vm(vm_params.get('vm_type'), vm_params.get('target'),
-                                           vm_name, vm_params, None)
-                    elif action_if_boot_exists == "f":
-                        # on states require manual update of the vm parameters
-                        vm.params = vm_params
-                        on_backend.set_root(image_params, vm)
-                    elif action_if_boot_exists == "r":
-                        return False
-                    else:
-                        raise exceptions.TestError(f"Invalid policy {action_if_boot_exists}: The boot "
-                                                   "check action can be either of 'reuse' or 'force'.")
-                # bonus: switch off the vm if the requested state is an off state
-                elif boot_exists and stype == "off":
-                    # TODO: this could be unified with the unset on root and we could
-                    # eventually implement unset off root for the off root case above
-                    if action_if_boot_exists == "f":
-                        vm.destroy(gracefully=image_params.get_dict("check_opts").get("soft_boot", "yes")=="yes")
-
-            else:
-                state_exists = on_backend.check_root(image_params, vm)
-
-            if not state_exists:
+        # always check the corresponding root state as a prerequisite
+        root_exists = state_backend.check_root(state_params, state_object)
+        if not root_exists:
+            if action_if_root_doesnt_exist == "f":
+                state_backend.set_root(state_params, state_object)
+                root_exists = True
+            elif action_if_root_doesnt_exist == "r":
                 return False
+            else:
+                raise exceptions.TestError(f"Invalid policy {action_if_root_doesnt_exist}: The root "
+                                           "nonexistence action can be either of 'reuse' or 'force'.")
+        elif action_if_root_exists == "f":
+            # TODO: implement unset root for all parametric object types
+            if params_obj_type == "nets/vms":
+                vm.destroy(gracefully=state_params.get_dict("check_opts").get("soft_boot", "yes")=="yes")
+            else:
+                state_backend.unset_root(state_params, state_object)
+            root_exists = False
+
+        if state in ROOTS:
+            state_exists = root_exists
+        else:
+            state_exists = state_backend.check(state_params, state_object)
+
+        if not state_exists:
+            return False
 
     return True
 
@@ -450,74 +469,66 @@ def get_states(run_params, env=None):
     :type run_params: {str, str}
     :type env: Env object or None
     :returns: list of detected states
-    :raises: :py:class:`exceptions.TestSkipError` if the retrieved state doesn't exist,
+    :raises: :py:class:`exceptions.TestAbortError` if the retrieved state doesn't exist,
         the vm is unavailable from the env, or snapshot exists in passive mode (abort)
     :raises: :py:class:`exceptions.TestError` if invalid policy was used
     """
-    for vm_name in run_params.objects("vms"):
-        vm = env.get_vm(vm_name) if env is not None else None
-        vm_params = run_params.object_params(vm_name)
-        all_images_at_once = False
-        for image_name in vm_params.objects("images"):
-            image_params = vm_params.object_params(image_name)
+    for state_params in _parametric_object_iteration(run_params):
+        params_obj_name = state_params["object_name"]
+        params_obj_type = state_params["object_type"]
+        if params_obj_type in state_params.objects('skip_types'):
+            logging.debug(f"Skip getting states of types {', '.join(state_params.objects('skip_types'))}")
+            continue
+        if params_obj_type == "nets/vms/images" and state_params.get_boolean("image_readonly", False):
+            logging.warning(f"Incorrect configuration: cannot use any state "
+                            f"from readonly image {params_obj_name} - skipping")
+            continue
 
-            # if the state is not defined skip (leaf tests that are no setup)
-            if not image_params.get("get_state"):
-                continue
-            else:
-                state = image_params["get_state"]
-            image_params["get_type"] = image_params.get("get_type", "any")
-            image_params["get_mode"] = image_params.get("get_mode", "ra")
+        # if the state is not defined skip (leaf tests that are no setup)
+        if not state_params.get("get_state"):
+            continue
+        else:
+            state = state_params["get_state"]
+        state_params["get_mode"] = state_params.get("get_mode", "ra")
 
-            # minimal filters
-            if all_images_at_once:
-                logging.debug(f"Skip getting {state} separately, one get is for all {vm_name}")
-                continue
-            if image_params.get_boolean("image_readonly", False):
-                logging.warning(f"Incorrect configuration: cannot use any state "
-                                 f"{state} as {image_name} is readonly - skipping")
-                continue
+        logging.info(f"Getting {params_obj_type} state {state} for {params_obj_name}")
+        state_exists = _state_check_chain("get", env,
+                                          params_obj_type, params_obj_name,
+                                          state_params)
+        state_backend = BACKENDS[state_params["states"]]
+        # TODO: we don't support other parametric object instances
+        vm = env.get_vm(state_params["vms"]) if env is not None else None
+        state_object = env if params_obj_type == "nets" else vm
 
-            state_exists = _state_check_chain("get", env, vm_name, vm_params, image_name, image_params)
-            skip_types = run_params.objects('skip_types')
-            if image_params["get_type"] in skip_types:
-                logging.debug(f"Skip getting states of types {', '.join(skip_types)}")
-                continue
-            if image_params["get_type"] == "on":
-                all_images_at_once = True
+        action_if_exists = state_params["get_mode"][0]
+        action_if_doesnt_exist = state_params["get_mode"][1]
+        if not state_exists and "a" == action_if_doesnt_exist:
+            logging.info("Aborting because of missing snapshot for setup")
+            raise exceptions.TestAbortError("Snapshot '%s' of %s doesn't exist. Aborting "
+                                            "due to passive mode." % (state_params["get_state"], params_obj_name))
+        elif not state_exists and "i" == action_if_doesnt_exist:
+            logging.warning("Ignoring missing snapshot for setup")
+            continue
+        elif not state_exists:
+            raise exceptions.TestError("Invalid policy %s: The start action on missing state can be "
+                                       "either of 'abort', 'ignore'." % state_params["get_mode"])
+        elif state_exists and "a" == action_if_exists:
+            logging.info("Aborting because of unwanted snapshot for setup")
+            raise exceptions.TestAbortError("Snapshot '%s' of %s already exists. Aborting "
+                                            "due to passive mode." % (state_params["get_state"], params_obj_name))
+        elif state_exists and "r" == action_if_exists:
+            pass
+        elif state_exists and "i" == action_if_exists:
+            logging.warning("Ignoring present snapshot for setup")
+            continue
+        elif state_exists:
+            raise exceptions.TestError("Invalid policy %s: The start action on present state can be "
+                                       "either of 'abort', 'reuse', 'ignore'." % state_params["get_mode"])
 
-            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["get_type"] == "off" \
-                else ON_BACKENDS[image_params["on_states"]]
-
-            action_if_exists = image_params["get_mode"][0]
-            action_if_doesnt_exist = image_params["get_mode"][1]
-            if not state_exists and "a" == action_if_doesnt_exist:
-                logging.info("Aborting because of missing snapshot for setup")
-                raise exceptions.TestSkipError("Snapshot '%s' of %s doesn't exist. Aborting "
-                                               "due to passive mode." % (image_params["get_state"], vm_name))
-            elif not state_exists and "i" == action_if_doesnt_exist:
-                logging.warning("Ignoring missing snapshot for setup")
-                continue
-            elif not state_exists:
-                raise exceptions.TestError("Invalid policy %s: The start action on missing state can be "
-                                           "either of 'abort', 'ignore'." % image_params["get_mode"])
-            elif state_exists and "a" == action_if_exists:
-                logging.info("Aborting because of unwanted snapshot for setup")
-                raise exceptions.TestSkipError("Snapshot '%s' of %s already exists. Aborting "
-                                               "due to passive mode." % (image_params["get_state"], vm_name))
-            elif state_exists and "r" == action_if_exists:
-                pass
-            elif state_exists and "i" == action_if_exists:
-                logging.warning("Ignoring present snapshot for setup")
-                continue
-            elif state_exists:
-                raise exceptions.TestError("Invalid policy %s: The start action on present state can be "
-                                           "either of 'abort', 'reuse', 'ignore'." % image_params["get_mode"])
-
-            if image_params["get_state"] in ROOTS:
-                backend.get_root(image_params, vm)
-            else:
-                backend.get(image_params, vm)
+        if state_params["get_state"] in ROOTS:
+            state_backend.get_root(state_params, state_object)
+        else:
+            state_backend.get(state_params, state_object)
 
 
 def set_states(run_params, env=None):
@@ -528,81 +539,71 @@ def set_states(run_params, env=None):
     :type run_params: {str, str}
     :type env: Env object or None
     :returns: list of detected states
-    :raises: :py:class:`exceptions.TestSkipError` if unexpected/missing snapshot in passive mode (abort)
+    :raises: :py:class:`exceptions.TestAbortError` if unexpected/missing snapshot in passive mode (abort)
     :raises: :py:class:`exceptions.TestError` if invalid policy was used
     """
-    for vm_name in run_params.objects("vms"):
-        vm = env.get_vm(vm_name) if env is not None else None
-        vm_params = run_params.object_params(vm_name)
-        all_images_at_once = False
-        for image_name in vm_params.objects("images"):
-            image_params = vm_params.object_params(image_name)
+    for state_params in _parametric_object_iteration(run_params):
+        params_obj_name = state_params["object_name"]
+        params_obj_type = state_params["object_type"]
+        if params_obj_type in state_params.objects('skip_types'):
+            logging.debug(f"Skip setting states of types {', '.join(state_params.objects('skip_types'))}")
+            continue
+        if params_obj_type == "nets/vms/images" and state_params.get_boolean("image_readonly", False):
+            logging.warning(f"Incorrect configuration: cannot use any state "
+                            f"from readonly image {params_obj_name} - skipping")
+            continue
 
-            # if the state is not defined skip (leaf tests that are no setup)
-            if not image_params.get("set_state"):
-                continue
+        # if the state is not defined skip (leaf tests that are no setup)
+        if not state_params.get("set_state"):
+            continue
+        else:
+            state = state_params["set_state"]
+        state_params["set_mode"] = state_params.get("set_mode", "ff")
+
+        logging.info(f"Setting {params_obj_type} state {state} for {params_obj_name}")
+        state_exists = _state_check_chain("set", env,
+                                          params_obj_type, params_obj_name,
+                                          state_params)
+        state_backend = BACKENDS[state_params["states"]]
+        # TODO: we don't support other parametric object instances
+        vm = env.get_vm(state_params["vms"]) if env is not None else None
+        state_object = env if params_obj_type == "nets" else vm
+
+        action_if_exists = state_params["set_mode"][0]
+        action_if_doesnt_exist = state_params["set_mode"][1]
+        if state_exists and "a" == action_if_exists:
+            logging.info("Aborting because of unwanted snapshot for later cleanup")
+            raise exceptions.TestAbortError("Snapshot '%s' of %s already exists. Aborting "
+                                            "due to passive mode." % (state_params["set_state"], params_obj_name))
+        elif state_exists and "r" == action_if_exists:
+            logging.info("Keeping the already existing snapshot untouched")
+            continue
+        elif state_exists and "f" == action_if_exists:
+            logging.info("Overwriting the already existing snapshot")
+            state_params["unset_state"] = state_params["set_state"]
+            if state_params["set_state"] in ROOTS:
+                state_backend.unset_root(state_params, state_object)
             else:
-                state = image_params["set_state"]
-            image_params["set_type"] = image_params.get("set_type", "any")
-            image_params["set_mode"] = image_params.get("set_mode", "ff")
+                state_backend.unset(state_params, state_object)
+        elif state_exists:
+            raise exceptions.TestError("Invalid policy %s: The end action on present state can be "
+                                       "either of 'abort', 'reuse', 'force'." % state_params["set_mode"])
+        elif not state_exists and "a" == action_if_doesnt_exist:
+            logging.info("Aborting because of missing snapshot for later cleanup")
+            raise exceptions.TestAbortError("Snapshot '%s' of %s doesn't exist. Aborting "
+                                            "due to passive mode." % (state_params["set_state"], params_obj_name))
+        elif not state_exists and "f" == action_if_doesnt_exist:
+            if not state_params["set_state"] in ROOTS and not state_backend.check_root(state_params, state_object):
+                raise exceptions.TestError("Cannot force set state without a root state, use enforcing check "
+                                           "policy to also force root (existing stateful object) creation.")
+        elif not state_exists:
+            raise exceptions.TestError("Invalid policy %s: The end action on missing state can be "
+                                       "either of 'abort', 'force'." % state_params["set_mode"])
 
-            # minimal filters
-            if all_images_at_once:
-                logging.debug(f"Skip setting {state} separately, one set is for all {vm_name}")
-                continue
-            if image_params.get_boolean("image_readonly", False):
-                logging.warning(f"Incorrect configuration: cannot use any state "
-                                 f"{state} as {image_name} is readonly - skipping")
-                continue
-
-            state_exists = _state_check_chain("set", env, vm_name, vm_params, image_name, image_params)
-            skip_types = run_params.objects('skip_types')
-            if image_params["set_type"] in skip_types:
-                logging.debug(f"Skip setting states of types {', '.join(skip_types)}")
-                continue
-            if image_params["set_type"] == "on":
-                all_images_at_once = True
-
-            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["set_type"] == "off" \
-                else ON_BACKENDS[image_params["on_states"]]
-
-            action_if_exists = image_params["set_mode"][0]
-            action_if_doesnt_exist = image_params["set_mode"][1]
-            if state_exists and "a" == action_if_exists:
-                logging.info("Aborting because of unwanted snapshot for later cleanup")
-                raise exceptions.TestSkipError("Snapshot '%s' of %s already exists. Aborting "
-                                               "due to passive mode." % (image_params["set_state"], vm_name))
-            elif state_exists and "r" == action_if_exists:
-                logging.info("Keeping the already existing snapshot untouched")
-                continue
-            elif state_exists and "f" == action_if_exists:
-                logging.info("Overwriting the already existing snapshot")
-                image_params["unset_state"] = image_params["set_state"]
-                if image_params["set_state"] in ROOTS:
-                    backend.unset_root(image_params, vm)
-                elif image_params["set_type"] == "off":
-                    backend.unset(image_params, vm)
-                else:
-                    logging.debug("Overwriting on snapshot simply by writing it again")
-            elif state_exists:
-                raise exceptions.TestError("Invalid policy %s: The end action on present state can be "
-                                           "either of 'abort', 'reuse', 'force'." % image_params["set_mode"])
-            elif not state_exists and "a" == action_if_doesnt_exist:
-                logging.info("Aborting because of missing snapshot for later cleanup")
-                raise exceptions.TestSkipError("Snapshot '%s' of %s doesn't exist. Aborting "
-                                               "due to passive mode." % (image_params["set_state"], vm_name))
-            elif not state_exists and "f" == action_if_doesnt_exist:
-                if not image_params["set_state"] in ROOTS and not backend.check_root(image_params, vm):
-                    raise exceptions.TestError("Cannot force set state without a root state, use enforcing check "
-                                               "policy to also force root (existing stateful object) creation.")
-            elif not state_exists:
-                raise exceptions.TestError("Invalid policy %s: The end action on missing state can be "
-                                           "either of 'abort', 'force'." % image_params["set_mode"])
-
-            if image_params["set_state"] in ROOTS:
-                backend.set_root(image_params, vm)
-            else:
-                backend.set(image_params, vm)
+        if state_params["set_state"] in ROOTS:
+            state_backend.set_root(state_params, state_object)
+        else:
+            state_backend.set(state_params, state_object)
 
 
 def unset_states(run_params, env=None):
@@ -613,70 +614,61 @@ def unset_states(run_params, env=None):
     :type run_params: {str, str}
     :type env: Env object or None
     :returns: list of detected states
-    :raises: :py:class:`exceptions.TestSkipError` if missing snapshot in passive mode (abort)
+    :raises: :py:class:`exceptions.TestAbortError` if missing snapshot in passive mode (abort)
     :raises: :py:class:`exceptions.TestError` if invalid policy was used
     """
-    for vm_name in run_params.objects("vms"):
-        vm = env.get_vm(vm_name) if env is not None else None
-        vm_params = run_params.object_params(vm_name)
-        all_images_at_once = False
-        for image_name in vm_params.objects("images"):
-            image_params = vm_params.object_params(image_name)
+    for state_params in _parametric_object_iteration(run_params):
+        params_obj_name = state_params["object_name"]
+        params_obj_type = state_params["object_type"]
+        if params_obj_type in state_params.objects('skip_types'):
+            logging.debug(f"Skip unsetting states of types {', '.join(state_params.objects('skip_types'))}")
+            continue
+        if params_obj_type == "nets/vms/images" and state_params.get_boolean("image_readonly", False):
+            logging.warning(f"Incorrect configuration: cannot use any state "
+                            f"from readonly image {params_obj_name} - skipping")
+            continue
 
-            # if the state is not defined skip (leaf tests that are no setup)
-            if not image_params.get("unset_state"):
-                continue
-            else:
-                state = image_params["unset_state"]
-            image_params["unset_type"] = image_params.get("unset_type", "any")
-            image_params["unset_mode"] = image_params.get("unset_mode", "fi")
+        # if the state is not defined skip (leaf tests that are no setup)
+        if not state_params.get("unset_state"):
+            continue
+        else:
+            state = state_params["unset_state"]
+        state_params["unset_mode"] = state_params.get("unset_mode", "fi")
 
-            # minimal filters
-            if all_images_at_once:
-                logging.debug(f"Skip unsetting {state} separately, one unset is for all {vm_name}")
-                continue
-            if image_params.get_boolean("image_readonly", False):
-                logging.warning(f"Incorrect configuration: cannot use any state "
-                                 f"{state} as {image_name} is readonly - skipping")
-                continue
+        logging.info(f"Unsetting {params_obj_type} state {state} for {params_obj_name}")
+        state_exists = _state_check_chain("unset", env,
+                                          params_obj_type, params_obj_name,
+                                          state_params)
+        state_backend = BACKENDS[state_params["states"]]
+        # TODO: we don't support other parametric object instances
+        vm = env.get_vm(state_params["vms"]) if env is not None else None
+        state_object = env if params_obj_type == "nets" else vm
 
-            state_exists = _state_check_chain("unset", env, vm_name, vm_params, image_name, image_params)
+        action_if_exists = state_params["unset_mode"][0]
+        action_if_doesnt_exist = state_params["unset_mode"][1]
+        if not state_exists and "a" == action_if_doesnt_exist:
+            logging.info("Aborting because of missing snapshot for final cleanup")
+            raise exceptions.TestAbortError("Snapshot '%s' of %s doesn't exist. Aborting "
+                                            "due to passive mode." % (state_params["unset_state"], params_obj_name))
+        elif not state_exists and "i" == action_if_doesnt_exist:
+            logging.warning("Ignoring missing snapshot for final cleanup (will not be removed)")
+            continue
+        elif not state_exists:
+            raise exceptions.TestError("Invalid policy %s: The unset action on missing state can be "
+                                       "either of 'abort', 'ignore'." % state_params["unset_mode"])
+        elif state_exists and "r" == action_if_exists:
+            logging.info("Preserving state '%s' of %s for later test runs", state_params["unset_state"], params_obj_name)
+            continue
+        elif state_exists and "f" == action_if_exists:
+            pass
+        elif state_exists:
+            raise exceptions.TestError("Invalid policy %s: The unset action on present state can be "
+                                       "either of 'reuse', 'force'." % state_params["unset_mode"])
 
-            skip_types = run_params.objects('skip_types')
-            if image_params["unset_type"] in skip_types:
-                logging.debug(f"Skip unsetting states of types {', '.join(skip_types)}")
-                continue
-            if image_params["unset_type"] == "on":
-                all_images_at_once = True
-
-            backend = OFF_BACKENDS[image_params["off_states"]] if image_params["unset_type"] == "off" \
-                else ON_BACKENDS[image_params["on_states"]]
-
-            action_if_exists = image_params["unset_mode"][0]
-            action_if_doesnt_exist = image_params["unset_mode"][1]
-            if not state_exists and "a" == action_if_doesnt_exist:
-                logging.info("Aborting because of missing snapshot for final cleanup")
-                raise exceptions.TestSkipError("Snapshot '%s' of %s doesn't exist. Aborting "
-                                               "due to passive mode." % (image_params["unset_state"], vm_name))
-            elif not state_exists and "i" == action_if_doesnt_exist:
-                logging.warning("Ignoring missing snapshot for final cleanup (will not be removed)")
-                continue
-            elif not state_exists:
-                raise exceptions.TestError("Invalid policy %s: The unset action on missing state can be "
-                                           "either of 'abort', 'ignore'." % image_params["unset_mode"])
-            elif state_exists and "r" == action_if_exists:
-                logging.info("Preserving state '%s' of %s for later test runs", image_params["unset_state"], vm_name)
-                continue
-            elif state_exists and "f" == action_if_exists:
-                pass
-            elif state_exists:
-                raise exceptions.TestError("Invalid policy %s: The unset action on present state can be "
-                                           "either of 'reuse', 'force'." % image_params["unset_mode"])
-
-            if image_params["unset_state"] in ROOTS:
-                backend.unset_root(image_params, vm)
-            else:
-                backend.unset(image_params, vm)
+        if state_params["unset_state"] in ROOTS:
+            state_backend.unset_root(state_params, state_object)
+        else:
+            state_backend.unset(state_params, state_object)
 
 
 def push_states(run_params, env=None):
@@ -688,23 +680,30 @@ def push_states(run_params, env=None):
     :type env: Env object or None
     :returns: list of detected states
     """
-    for vm_name in run_params.objects("vms"):
-        vm_params = run_params.object_params(vm_name)
-        for image_name in vm_params.objects("images"):
-            image_params = vm_params.object_params(image_name)
+    for state_params in _parametric_object_iteration(run_params):
+        params_obj_name = state_params["object_name"]
+        params_obj_type = state_params["object_type"]
 
-            if image_params["push_state"] in ROOTS:
-                # cannot be done with root states
-                continue
+        if not state_params.get("push_state"):
+            continue
+        else:
+            state = state_params["push_state"]
+        if state in ROOTS:
+            # cannot be done with root states
+            continue
 
-            image_params["vms"] = vm_name
-            image_params["images"] = image_name
+        # restrict parametric objects of this type in the subroutine
+        composite_types = params_obj_type.split("/")
+        composite_names = params_obj_name.split("/")
+        for composite_type, composite_name in zip(composite_types,
+                                                  composite_names):
+            state_params[composite_type] = composite_name
+        state_params["states_chain"] = composite_types[-1]
 
-            image_params["set_state"] = image_params["push_state"]
-            image_params["set_type"] = image_params.get("push_type", "any")
-            image_params["set_mode"] = image_params.get("push_mode", "af")
+        state_params["set_state"] = state_params["push_state"]
+        state_params["set_mode"] = state_params.get("push_mode", "af")
 
-            set_states(image_params, env)
+        set_states(state_params, env)
 
 
 def pop_states(run_params, env=None):
@@ -716,24 +715,30 @@ def pop_states(run_params, env=None):
     :type env: Env object or None
     :returns: list of detected states
     """
-    for vm_name in run_params.objects("vms"):
-        vm_params = run_params.object_params(vm_name)
-        for image_name in vm_params.objects("images"):
-            image_params = vm_params.object_params(image_name)
+    for state_params in _parametric_object_iteration(run_params):
+        params_obj_name = state_params["object_name"]
+        params_obj_type = state_params["object_type"]
 
-            if image_params["pop_state"] in ROOTS:
-                # cannot be done with root states
-                continue
+        if not state_params.get("pop_state"):
+            continue
+        else:
+            state = state_params["pop_state"]
+        if state in ROOTS:
+            # cannot be done with root states
+            continue
 
-            image_params["vms"] = vm_name
-            image_params["images"] = image_name
+        # restrict parametric objects of this type in the subroutine
+        composite_types = params_obj_type.split("/")
+        composite_names = params_obj_name.split("/")
+        for composite_type, composite_name in zip(composite_types,
+                                                  composite_names):
+            state_params[composite_type] = composite_name
+        state_params["states_chain"] = composite_types[-1]
 
-            image_params["get_state"] = image_params["pop_state"]
-            image_params["get_type"] = image_params.get("pop_type", "any")
-            image_params["get_mode"] = image_params.get("pop_mode", "ra")
-            get_states(image_params, env)
+        state_params["get_state"] = state_params["pop_state"]
+        state_params["get_mode"] = state_params.get("pop_mode", "ra")
+        get_states(state_params, env)
 
-            image_params["unset_state"] = image_params["pop_state"]
-            image_params["unset_type"] = image_params.get("pop_type", "any")
-            image_params["unset_mode"] = image_params.get("pop_mode", "fa")
-            unset_states(image_params, env)
+        state_params["unset_state"] = state_params["pop_state"]
+        state_params["unset_mode"] = state_params.get("pop_mode", "fa")
+        unset_states(state_params, env)

@@ -45,9 +45,7 @@ SKIP_LOCKS = False
 
 
 class QCOW2PoolBackend(QCOW2Backend):
-    """Backend manipulating off states as from a shared pool of QCOW2 images."""
-
-    _require_running_object = False
+    """Backend manipulating image states as from a shared pool of QCOW2 images."""
 
     @classmethod
     def check_root(cls, params, object=None):
@@ -74,7 +72,12 @@ class QCOW2PoolBackend(QCOW2Backend):
         logging.debug(f"Checking for shared {vm_name}/{image_name} existence"
                       f" in the shared pool {shared_pool}")
         src_image_name = os.path.join(shared_pool, image_base_names)
-        if os.path.exists(src_image_name):
+        # it is possible that the the root state is partially provided
+        if os.path.exists(target_image) and not params.get_boolean("update_pool", False):
+            logging.info("The local %s image exists but from partial root state",
+                         src_image_name)
+            return False
+        elif os.path.exists(src_image_name):
             cls.get_root(params, object)
             logging.info("The shared %s image exists", src_image_name)
             return True

@@ -17,7 +17,7 @@
 
 SUMMARY
 ------------------------------------------------------
-Module for the Btrfs state management backend.
+Module for the VMNet state management backend.
 
 Copyright: Intra2net AG
 
@@ -28,10 +28,13 @@ INTERFACE
 """
 
 from .setup import StateBackend
+from ..vmnet import VMNetwork
 
 
-class BtrfsBackend(StateBackend):
-    """Backend manipulating states as Btrfs volume snapshots."""
+class VMNetBackend(StateBackend):
+    """Backend manipulating network states as VMNet operations."""
+
+    network_class = VMNetwork
 
     @classmethod
     def show(cls, params, object=None):
@@ -40,7 +43,7 @@ class BtrfsBackend(StateBackend):
 
         All arguments match the base class.
         """
-        raise NotImplementedError("Implement Btrfs states based on demand.")
+        return ["default"]
 
     @classmethod
     def check(cls, params, object=None):
@@ -49,7 +52,7 @@ class BtrfsBackend(StateBackend):
 
         All arguments match the base class.
         """
-        raise NotImplementedError("Implement Btrfs states based on demand.")
+        return True
 
     @classmethod
     def get(cls, params, object=None):
@@ -58,7 +61,14 @@ class BtrfsBackend(StateBackend):
 
         All arguments match the base class.
         """
-        raise NotImplementedError("Implement Btrfs states based on demand.")
+        env = object
+        env.start_ip_sniffing(params)
+        vmn = cls.network_class(params, env)
+
+        vmn.setup_host_bridges()
+        vmn.setup_host_services()
+        env.vmnet = vmn
+        type(env).get_vmnet = lambda self: self.vmnet
 
     @classmethod
     def set(cls, params, object=None):
@@ -67,7 +77,7 @@ class BtrfsBackend(StateBackend):
 
         All arguments match the base class.
         """
-        raise NotImplementedError("Implement Btrfs states based on demand.")
+        pass
 
     @classmethod
     def unset(cls, params, object=None):
@@ -76,7 +86,7 @@ class BtrfsBackend(StateBackend):
 
         All arguments match the base class.
         """
-        raise NotImplementedError("Implement Btrfs states based on demand.")
+        pass
 
     @classmethod
     def check_root(cls, params, object=None):
@@ -85,7 +95,19 @@ class BtrfsBackend(StateBackend):
 
         All arguments match the base class.
         """
-        raise NotImplementedError("Implement Btrfs states based on demand.")
+        return True
+
+    @classmethod
+    def get_root(cls, params, object=None):
+        """
+        Get a root state or essentially due to pre-existence do nothing.
+
+        :param params: configuration parameters
+        :type params: {str, str}
+        :param object: object whose states are manipulated
+        :type object: VM object or None
+        """
+        cls.get(params, object=object)
 
     @classmethod
     def set_root(cls, params, object=None):
@@ -94,7 +116,7 @@ class BtrfsBackend(StateBackend):
 
         All arguments match the base class.
         """
-        raise NotImplementedError("Implement Btrfs states based on demand.")
+        pass
 
     @classmethod
     def unset_root(cls, params, object=None):
@@ -103,4 +125,4 @@ class BtrfsBackend(StateBackend):
 
         All arguments match the base class and in addition:
         """
-        raise NotImplementedError("Implement Btrfs states based on demand.")
+        pass

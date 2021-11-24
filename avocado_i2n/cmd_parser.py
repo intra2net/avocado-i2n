@@ -16,6 +16,7 @@
 import sys
 import os
 import re
+import collections
 
 from avocado.core.settings import settings
 from avocado.core.output import LOG_JOB as log
@@ -24,7 +25,6 @@ from virttest import env_process
 
 from . import params_parser as param
 from .states import setup as ss
-from .vmnet import VMNetwork
 
 
 def params_from_cmd(config):
@@ -50,7 +50,7 @@ def params_from_cmd(config):
     sys.path.insert(1, os.path.join(suite_path, "utils"))
 
     # validate typed vm names and possible vm specific restrictions
-    available_vms = param.all_vms()
+    available_vms = param.all_objects("vms")
     available_restrictions = param.all_restrictions()
 
     # defaults usage vs command line overriding
@@ -62,7 +62,7 @@ def params_from_cmd(config):
     # the run string includes only pure parameters
     param_dict = {}
     # the tests string includes the test restrictions while the vm strings include the ones for the vm variants
-    tests_str, vm_strs = "", {vm: "" for vm in available_vms}
+    tests_str, vm_strs = "", collections.OrderedDict([(vm, "") for vm in available_vms])
 
     # main tokenizing loop
     for cmd_param in config["params"]:
@@ -135,12 +135,11 @@ def params_from_cmd(config):
     config["run.store_logging_stream"] = [":10", ":20", ":30", ":40"]
 
     # set default off and on state backends
-    from .states import lvm, qcow2, lxc, btrfs, ramfile, pool
-    ss.OFF_BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
-                       "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
-                       "pool": pool.QCOW2PoolBackend}
-    ss.ON_BACKENDS = {"qcow2vt": qcow2.QCOW2VTBackend,
-                      "ramfile": ramfile.RamfileBackend}
+    from .states import lvm, qcow2, lxc, btrfs, ramfile, pool, vmnet
+    ss.BACKENDS = {"lvm": lvm.LVMBackend, "qcow2": qcow2.QCOW2Backend,
+                   "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
+                   "pool": pool.QCOW2PoolBackend, "qcow2vt": qcow2.QCOW2VTBackend,
+                   "ramfile": ramfile.RamfileBackend, "vmnet": vmnet.VMNetBackend}
 
     # attach environment processing hooks
     env_process_hooks()
@@ -167,12 +166,10 @@ def full_vm_params_and_strs(param_dict, vm_strs, use_vms_default):
                                 ovrwrt_file=param.vms_ovrwrt_file(),
                                 ovrwrt_dict=param_dict)
     vms_params = vms_config.get_params()
-    for vm_name in param.all_vms():
+    for vm_name in param.all_objects("vms"):
         if use_vms_default[vm_name]:
             default = vms_params.get("default_only_%s" % vm_name)
-            if not default:
-                raise ValueError("No default variant restriction found for %s!" % vm_name)
-            vm_strs[vm_name] += "only %s\n" % default
+            vm_strs[vm_name] += "only %s\n" % default if default else ""
     log.debug("Parsed vm strings '%s'", vm_strs)
     return vms_params, vm_strs
 
@@ -211,30 +208,19 @@ def env_process_hooks():
     Add env processing hooks to handle on/off state get/set operations
     and vmnet networking setup and instance attachment to environment.
     """
-    def get_network_state(test, params, env):
-        vmn = VMNetwork(test, params, env)
-        vmn.setup_host_bridges()
-        vmn.setup_host_services()
-        env.vmnet = vmn
-        type(env).get_vmnet = lambda self: self.vmnet
-    def network_state(fn):
-        def wrapper(test, params, env):
-            get_network_state(test, params, env)
-            fn(test, params, env)
-        return wrapper
     def on_state(fn):
         def wrapper(test, params, env):
-            params["skip_types"] = "off"
+            params["skip_types"] = "nets/vms/images nets"
             fn(params, env)
             del params["skip_types"]
         return wrapper
     def off_state(fn):
         def wrapper(test, params, env):
-            params["skip_types"] = "on"
+            params["skip_types"] = "nets/vms"
             fn(params, env)
             del params["skip_types"]
         return wrapper
     env_process.preprocess_vm_off_hook = off_state(ss.get_states)
-    env_process.preprocess_vm_on_hook = network_state(on_state(ss.get_states))
+    env_process.preprocess_vm_on_hook = on_state(ss.get_states)
     env_process.postprocess_vm_on_hook = on_state(ss.set_states)
     env_process.postprocess_vm_off_hook = off_state(ss.set_states)
