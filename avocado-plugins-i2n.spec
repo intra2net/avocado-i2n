@@ -29,7 +29,7 @@
 
 Summary: Avocado I2N Plugin
 Name: avocado-plugins-i2n
-Version: 87.0
+Version: 92.0
 Release: 0%{?gitrel}%{?dist}
 License: GPLv2
 Group: Development/Tools
@@ -96,6 +96,11 @@ PYTHONPATH=:. avocado run selftests/test_*
 %{_datadir}/avocado-plugins-i2n/tp_folder/*
 
 %changelog
+* Thu Nov 25 2021 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 92.0-0
+- Stateful object composition for net, vm, and image states
+- Next traverser (runner) supporting process and LXC test isolation
+- Multi-variant vm suffixes with right-compatible test node prefixes
+
 * Mon May 3 2021 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 87.0-0
 - Extension of state setup to a python subpackage of configurable state backends
 - New state pool backend to reuse off root states across processes
