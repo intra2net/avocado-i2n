@@ -62,17 +62,25 @@ class Manu(CLICmd):
             cmd_parser.params_from_cmd(config)
         except param.EmptyCartesianProduct as error:
             LOG_UI.error(error)
+            return 1
         intertest.load_addons_tools()
         run_params = config["vms_params"]
 
         # prepare a setup step or a chain of such
         setup_chain = run_params.objects("setup")
+        retcode = 0
         for i, setup_step in enumerate(setup_chain):
             run_params["count"] = i
             setup_func = getattr(intertest, setup_step)
             try:
-                setup_func(config, "0m%s" % i)
-            except param.EmptyCartesianProduct as error:
+                # TODO: drop the consideration of None in the future if the
+                # functions from the intertest module do not return this value.
+                if setup_func(config, "0m%s" % i) not in [None, 0]:
+                    # return 1 if at least one of the steps fails
+                    retcode = 1
+            except Exception as error:
                 LOG_UI.error(error)
+                retcode = 1
 
         log.info("Manual setup chain finished.")
+        return retcode

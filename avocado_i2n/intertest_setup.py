@@ -139,6 +139,7 @@ def with_cartesian_graph(fn):
             fn(config, tag=tag)
 
             config["graph"] = None
+            return 0 if runner.all_tests_ok else 1
 
     return wrapper
 
@@ -354,10 +355,11 @@ def run(config, tag=""):
         # from an irreversible (information destructive) approach
         TestGraph.REFERENCE = graph
 
-        job.run()
+        retcode = job.run()
         # runner.run_traversal(graph, config["param_dict"].copy())
 
         config["graph"] = None
+        return retcode
 
 
 def list(config, tag=""):
