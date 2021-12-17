@@ -32,7 +32,7 @@ import logging as log
 logging = log.getLogger('avocado.test.' + __name__)
 
 from avocado.core.test_id import TestID
-from avocado.core.nrunner import Runnable
+from avocado.core.nrunner.runnable import Runnable
 from avocado.core.dispatcher import SpawnerDispatcher
 
 from ..states import setup as ss
@@ -146,7 +146,7 @@ class TestNode(object):
         """
         spawner_name = job.config.get('nrunner.spawner', 'lxc')
         # TODO: move cid in constructor in the upstream PR
-        self.spawner = SpawnerDispatcher(job.config)[spawner_name].obj
+        self.spawner = SpawnerDispatcher(job.config, job)[spawner_name].obj
         self.spawner.cid = env_id
 
         self.params["hostname"] = env_id if env_id else self.params["hostname"]

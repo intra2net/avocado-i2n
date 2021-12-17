@@ -35,7 +35,7 @@ import signal
 import asyncio
 log.getLogger('asyncio').parent = log.getLogger('avocado.test')
 
-from avocado.core import nrunner
+from avocado.core.nrunner.task import TASK_DEFAULT_CATEGORY, Task
 from avocado.core.messages import MessageHandler
 from avocado.core.plugin_interfaces import Runner as RunnerInterface
 from avocado.core.status.repo import StatusRepo
@@ -78,8 +78,8 @@ class CartesianRunner(RunnerInterface):
         message_handler = MessageHandler()
         while True:
             try:
-                (task_id, _, _, index) = \
-                    self.status_repo.status_journal_summary.pop(0)
+                (_, task_id, _, index) = \
+                    self.status_repo.status_journal_summary_pop()
 
             except IndexError:
                 await asyncio.sleep(0.05)
@@ -116,10 +116,10 @@ class CartesianRunner(RunnerInterface):
             # TODO: this needs more customization
             asyncio.ensure_future(self._update_status(job))
 
-        raw_task = nrunner.Task(node.get_runnable(), node.id_test,
-                                [job.config.get('nrunner.status_server_uri')],
-                                nrunner.RUNNERS_REGISTRY_PYTHON_CLASS,
-                                job_id=self.job.unique_id)
+        raw_task = Task(node.get_runnable(), node.id_test,
+                        [job.config.get('nrunner.status_server_uri')],
+                        category=TASK_DEFAULT_CATEGORY,
+                        job_id=self.job.unique_id)
         task = RuntimeTask(raw_task)
         self.tasks += [task]
 
