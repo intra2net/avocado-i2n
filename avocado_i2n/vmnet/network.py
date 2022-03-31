@@ -91,10 +91,14 @@ class VMNetwork(object):
         self.env = env
 
         # component types (could be replaced with extended ones)
-        self.new_node = VMNode
-        self.new_interface = VMInterface
-        self.new_netconfig = VMNetconfig
-        self.new_tunnel = VMTunnel
+        if getattr(self, "new_node", None) is None:
+            self.new_node = VMNode
+        if getattr(self, "new_interface", None) is None:
+            self.new_interface = VMInterface
+        if getattr(self, "new_netconfig", None) is None:
+            self.new_netconfig = VMNetconfig
+        if getattr(self, "new_tunnel", None) is None:
+            self.new_tunnel = VMTunnel
 
         # component instances
         self.nodes = {}
