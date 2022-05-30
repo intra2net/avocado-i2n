@@ -49,7 +49,8 @@ INTERFACE
 import os
 import re
 import time
-import logging
+import logging as log
+logging = log.getLogger('avocado.test.' + __name__)
 import collections
 
 from avocado.utils import process
