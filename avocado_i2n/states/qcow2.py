@@ -38,9 +38,9 @@ from .setup import StateBackend, StateOnBackend
 
 
 #: off qemu states regex (0 vm size)
-QEMU_OFF_STATES_REGEX = re.compile(r"^\d+\s+([\w\.]+)\s*(0 B)\s+\d{4}-\d\d-\d\d", flags=re.MULTILINE)
+QEMU_OFF_STATES_REGEX = re.compile(r"^\d+\s+([\w\.-]+)\s*(0 B)\s+\d{4}-\d\d-\d\d", flags=re.MULTILINE)
 #: on qemu states regex (>0 vm size)
-QEMU_ON_STATES_REGEX = re.compile(r"^\d+\s+([\w\.]+)\s*(?!0 B)(\d+e?[\-\+]?[\.\d]* \w+)\s+\d{4}-\d\d-\d\d", flags=re.MULTILINE)
+QEMU_ON_STATES_REGEX = re.compile(r"^\d+\s+([\w\.-]+)\s*(?!0 B)(\d+e?[\-\+]?[\.\d]* \w+)\s+\d{4}-\d\d-\d\d", flags=re.MULTILINE)
 
 
 class QCOW2Backend(StateBackend):

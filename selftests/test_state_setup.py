@@ -1737,6 +1737,37 @@ class StateSetupTest(Test):
                 self.mock_vms["vm1"].assert_not_called()
 
     @mock.patch('avocado_i2n.states.qcow2.process')
+    def test_qcow2_dash(self, mock_process):
+        """Test the special character suppot for the QCOW2 backends."""
+        self._set_image_qcow2_params()
+        self._set_vm_qcow2_params()
+        self._create_mock_vms()
+
+        self.run_params["image_name"] = "vm1/image"
+
+        for do in ["check", "get", "set", "unset"]:
+            for state_type in ["images", "vms"]:
+                self.run_params[f"{do}_state_{state_type}"] = "launch-ready_123"
+
+                self.mock_vms["vm1"].is_alive.return_value = state_type == "vms"
+                mock_process.reset_mock()
+                if state_type == "images":
+                    r = b"5         launch-ready_123         0 B 2021-01-18 21:24:22   00:00:44.478"
+                else:
+                    r = b"5         launch-ready_123         684 MiB 2021-01-18 21:24:22   00:00:44.478"
+                mock_process.system_output.return_value = r
+
+                # check root state name format
+                ss.__dict__[f"{do}_states"](self.run_params, self.env)
+                del self.run_params[f"{do}_state_{state_type}"]
+
+                # check internal state name format
+                self.run_params[f"{do}_state"] = "launch-ready_123"
+                ss.BACKENDS["qcow2"]().__getattribute__(do)(self.run_params, self.env)
+                ss.BACKENDS["qcow2vt"]().__getattribute__(do)(self.run_params, self.env)
+                del self.run_params[f"{do}_state"]
+
+    @mock.patch('avocado_i2n.states.qcow2.process')
     @mock.patch('avocado_i2n.states.qcow2.os.path.isfile')
     def test_qcow2_convert(self, mock_isfile, mock_process):
         """Test auxiliary qcow2 module conversion functionality."""
