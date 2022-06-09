@@ -204,27 +204,7 @@ class CartesianRunner(RunnerInterface):
         else:
             return True
 
-    def _run_available_children(self, node, graph, params):
-        loop = asyncio.get_event_loop()
-        # TODO: parallelize only leaf nodes with just this setup node as parent for now
-        # but later on run together also internal nodes if they don't modify the same vm
-        run_children = [n for n in node.cleanup_nodes if len(n.setup_nodes) == 1
-                        and len(n.cleanup_nodes) == 0 and n.should_run]
-        while len(run_children) > 0:
-            current_nodes = run_children[:len(self.slots)]
-            if len(current_nodes) == 0:
-                raise ValueError("Not enough container run slots")
-            logging.debug("Traversal advance running in parallel the tests:\n%s",
-                          "\n".join([n.id for n in current_nodes]))
-            for i, n in enumerate(current_nodes):
-                current_nodes[i].set_environment(self.job, self.slots[i])
-                run_children.remove(current_nodes[i])
-            to_traverse = [self._traverse_test_node(graph, n, params)
-                           for n in current_nodes]
-            loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                     self.job.timeout or None))
-
-    def run_traversal(self, graph, params):
+    async def run_traversal(self, graph, params, slot):
         """
         Run all user and system defined tests optimizing the setup reuse and
         minimizing the repetition of demanded tests.
@@ -233,6 +213,7 @@ class CartesianRunner(RunnerInterface):
         :type graph: :py:class:`TestGraph`
         :param params: runtime parameters used for extra customization
         :type params: {str, str}
+        :param str slot: id name for the worker traversing the graph
         :raises: :py:class:`AssertionError` if some traversal assertions are violated
 
         The highest priority is at the setup tests (parents) since the test cannot be
@@ -254,8 +235,6 @@ class CartesianRunner(RunnerInterface):
                 os.makedirs(traverse_dir)
             step = 0
 
-        loop = asyncio.get_event_loop()
-
         traverse_path = [root]
         while not root.is_cleanup_ready():
             next = traverse_path[-1]
@@ -267,14 +246,15 @@ class CartesianRunner(RunnerInterface):
                 traverse_path.append(next.pick_next_child())
                 continue
 
-            logging.debug("At test node %s which is %sready with setup, %sready with cleanup,"
-                          " should %srun, should %sbe cleaned, and %sbe scanned", next.params["shortname"],
+            logging.debug("Worker %s at test node %s which is %sready with setup, %sready with cleanup,"
+                          " should %srun, should %sbe cleaned, and %sbe scanned",
+                          slot, next.params["shortname"],
                           "not " if not next.is_setup_ready() else "",
                           "not " if not next.is_cleanup_ready() else "",
                           "not " if not next.should_run else "",
                           "not " if not next.should_clean else "",
                           "not " if not next.should_scan else "")
-            logging.debug("Current traverse path/stack:\n%s",
+            logging.debug("Current traverse path/stack for %s:\n%s", slot,
                           "\n".join([n.params["shortname"] for n in traverse_path]))
             # if previous in path is the child of the next, then the path is reversed
             # looking for setup so if the next is setup ready and already run, remove
@@ -282,7 +262,7 @@ class CartesianRunner(RunnerInterface):
             if previous in next.cleanup_nodes or previous in next.visited_cleanup_nodes:
 
                 if next.is_setup_ready():
-                    loop.run_until_complete(self._traverse_test_node(graph, next, params))
+                    await self._traverse_test_node(graph, next, params)
                     previous.visit_node(next)
                     traverse_path.pop()
                 else:
@@ -295,19 +275,15 @@ class CartesianRunner(RunnerInterface):
                     traverse_path.append(next.pick_next_parent())
                     continue
                 else:
-                    loop.run_until_complete(self._traverse_test_node(graph, next, params))
+                    await self._traverse_test_node(graph, next, params)
 
                 if next.is_cleanup_ready():
-                    loop.run_until_complete(self._reverse_test_node(graph, next, params))
+                    await self._reverse_test_node(graph, next, params)
                     for setup in next.visited_setup_nodes:
                         setup.visit_node(next)
                     traverse_path.pop()
                     graph.report_progress()
                 else:
-                    # parallel pocket lookahead
-                    if next != root and len(self.slots) > 1:
-                        self._run_available_children(next, graph, params)
-                        graph.report_progress()
                     # normal DFS
                     traverse_path.append(next.pick_next_child())
             else:
@@ -337,6 +313,8 @@ class CartesianRunner(RunnerInterface):
         # TODO: this needs more customization
         asyncio.ensure_future(self._update_status(job))
 
+        loop = asyncio.get_event_loop()
+
         graph = self._graph_from_suite(test_suite)
         summary = set()
         params = self.job.config["param_dict"]
@@ -344,10 +322,14 @@ class CartesianRunner(RunnerInterface):
         self.tasks = []
         self.slots = params.get("slots", "").split(" ")
 
-        # TODO: fix other run_traversal calls
         try:
             graph.visualize(self.job.logdir)
-            self.run_traversal(graph, params)
+
+            # TODO: current_nodes[i].set_environment(self.job, self.slots[i])
+            to_traverse = [self.run_traversal(graph, params, s) for s in self.slots]
+            loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
+                                                     self.job.timeout or None))
+
             if not self.all_tests_ok:
                 # the summary is a set so only a single failed test is enough
                 summary.add('FAIL')
