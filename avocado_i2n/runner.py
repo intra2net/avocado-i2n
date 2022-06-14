@@ -431,7 +431,7 @@ class CartesianRunner(RunnerInterface):
             # the primary setup nodes need special treatment
             if params.get("dry_run", "no") == "yes":
                 logging.info("Running a dry %s", test_node.params["shortname"])
-            elif test_node.is_scan_node():
+            elif test_node.is_shared_root():
                 logging.debug("Test run started from the shared root")
             elif test_node.is_object_root():
                 status = await self.run_terminal_node(graph, test_node.params["object_root"], params)
