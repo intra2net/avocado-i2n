@@ -90,6 +90,7 @@ class TestNode(object):
         self.should_scan = True
 
         self.spawner = None
+        self.workers = set()
 
         # flattened list of objects (in composition) involved in the test
         self.objects = [object]

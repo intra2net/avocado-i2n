@@ -65,18 +65,19 @@ class DummyStateCheck(object):
     present_states = []
 
     def __init__(self, params, env):
-        check_state = None
+        check_state, check_source = None, None
         for vm in params.objects("vms"):
             vm_params = params.object_params(vm)
             for image in params.objects("images"):
                 image_params = vm_params.object_params(image)
+                check_source = image_params.get("image_pool")
                 check_state = image_params.get("check_state_images")
                 if check_state:
                     break
                 check_state = image_params.get("check_state_vms")
                 if check_state:
                     break
-        if check_state in self.present_states:
+        if check_state in self.present_states or ":" in check_source:
             self.result = True
         else:
             self.result = False
@@ -86,8 +87,9 @@ async def mock_run_test(_self, _job, node):
     # define ID-s and other useful parameter filtering
     node.get_runnable()
     node.params["_uid"] = node.long_prefix
-    # small enough not to slow down our tests too much for a test timeout of 100
-    await asyncio.sleep(0.1)
+    # small enough not to slow down our tests too much for a test timeout of 200 but
+    # large enough to surpass the minimal occupation waiting timeout for more realism
+    await asyncio.sleep(0.2)
     return DummyTestRunning(node.params, _self.job.result.tests).get_test_result()
 
 
@@ -458,25 +460,29 @@ class CartesianGraphTest(Test):
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
-    def test_diverging_paths_with_locally_reused_setup(self):
+    def test_diverging_paths_with_swarm_reused_setup(self):
         """Test a multi-object test run where the workers will run multiple tests reusing their own local setup."""
-        # TODO: node setup is currently not reusable across workers so need <=2 to make this work
-        self.runner.slots = [f"c{i+1}" for i in range(2)]
+        self.runner.slots = [f"c{i+1}" for i in range(4)]
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["root", "install", "customize", "customize"]
+        # this is not what we test but simply a means to remove some inital nodes for simpler testing
+        DummyStateCheck.present_states = ["root", "install", "customize"]
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "hostname": "^c2$"},
+            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "hostname": "^c3$"},
+            # c4 would step back from already occupied on_customize (by c1) for the time being
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "hostname": "^c1$"},
-            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "hostname": "^c2$"},
-            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "hostname": "^c1$"},
-            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "hostname": "^c2$"},
-            # TODO: this tests reentry of traversed path well but node setup is currently not reusable across workers
-            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "hostname": "^c1$"},
+            # c2 would step back from already occupied linux_virtuser (by c3) and c3 proceeds instead
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "hostname": "^c3$"},
+            # this tests reentry of traversed path by an extra worker c4 reusing setup from c1
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "hostname": "^c4$"},
+            # c1 would now step back from already occupied tutorial2.names (by c4)
+            # c2 would now step back from already occupied client_noop (by c3)
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "hostname": "^c2$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
