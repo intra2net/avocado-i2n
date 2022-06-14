@@ -178,13 +178,13 @@ class TestGraph(object):
                 finished += 1
         logging.info("Finished %i\%i tests, %0.2f%% complete", finished, total, 100.0*finished/total)
 
-    def visualize(self, dump_dir, n=0):
+    def visualize(self, dump_dir, tag=0):
         """
         Dump a visual description of the Cartesian graph at
         a given parsing/traversal step.
 
         :param str dump_dir: directory for the dump image
-        :param int n: number of the parsing/traversal step
+        :param str tag: tag of the dump, e.g. parsing/traversal step and slot
         """
         try:
             from graphviz import Digraph
@@ -193,16 +193,24 @@ class TestGraph(object):
             logging.warning("Couldn't visualize the Cartesian graph due to missing dependency (Graphviz)")
             return
 
+        def get_display_id(node):
+            node_id = node.long_prefix
+            node_id += f"[{node.spawner.cid}]" if node.is_occupied() else ""
+            return node_id
+
         graph = Digraph('cartesian_graph', format='svg')
         for tnode in self.nodes:
-            graph.node(tnode.long_prefix)
+            tid = get_display_id(tnode)
+            graph.node(tid)
             for snode in tnode.setup_nodes:
-                graph.node(snode.long_prefix)
-                graph.edge(tnode.long_prefix, snode.long_prefix)
+                sid = get_display_id(snode)
+                graph.node(sid)
+                graph.edge(tid, sid)
             for cnode in tnode.cleanup_nodes:
-                graph.node(cnode.long_prefix)
-                graph.edge(tnode.long_prefix, cnode.long_prefix)
-        graph.render("%s/cg_%s_%s" % (dump_dir, id(self), n))
+                cid = get_display_id(cnode)
+                graph.node(cid)
+                graph.edge(tid, cid)
+        graph.render(f"{dump_dir}/cg_{id(self)}_{tag}")
 
     """run/clean switching functionality"""
     def flag_children(self, node_name=None, object_name=None, flag_type="run", flag=True,

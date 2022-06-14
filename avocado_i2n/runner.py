@@ -233,7 +233,6 @@ class CartesianRunner(RunnerInterface):
             traverse_dir = os.path.join(self.job.logdir, "graph_traverse")
             if not os.path.exists(traverse_dir):
                 os.makedirs(traverse_dir)
-            step = 0
 
         traverse_path = [root]
         occupied_at, occupied_wait = None, 0.0
@@ -311,8 +310,7 @@ class CartesianRunner(RunnerInterface):
                 raise AssertionError("Discontinuous path in the test dependency graph detected")
 
             if log.getLogger('graph').level <= log.DEBUG:
-                step += 1
-                graph.visualize(traverse_dir, step)
+                graph.visualize(traverse_dir, f"{time.time():.4f}_{slot}")
 
     def run_suite(self, job, test_suite):
         """

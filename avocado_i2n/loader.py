@@ -407,7 +407,7 @@ class CartesianLoader(Resolver):
 
                 if log.getLogger('graph').level <= log.DEBUG:
                     step += 1
-                    graph.visualize(parse_dir, step)
+                    graph.visualize(parse_dir, str(step))
             test_node.validate()
 
         # finally build the shared root node from used test objects (roots)
