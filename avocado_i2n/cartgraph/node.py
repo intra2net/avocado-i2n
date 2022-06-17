@@ -148,12 +148,7 @@ class TestNode(object):
         self.spawner = SpawnerDispatcher(job.config)[spawner_name].obj
         self.spawner.cid = env_id
 
-        hostname = self.params["hostname"]
-        # prepend affected test parameters
-        for key, value in self.params.items():
-            if isinstance(value, str):
-                self.params[key] = value.replace(hostname, hostname + env_id)
-        self.params["hostname"] = env_id if env_id else hostname
+        self.params["hostname"] = env_id if env_id else self.params["hostname"]
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
