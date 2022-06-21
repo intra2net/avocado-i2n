@@ -197,9 +197,9 @@ def run(test, params, env):
     # call to a function shared among tests
     sleep(3)
 
-    # We use the kind parameter from the Cartesian configuration
+    # We use the check_kind parameter from the Cartesian configuration
     # to decide which test to run
-    if params["kind"] == "names":
+    if params["check_kind"] == "names":
         extract_tarball(params, vm)
         run_extracted_script(params, vm)
     else:
