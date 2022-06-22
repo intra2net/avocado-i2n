@@ -23,7 +23,10 @@ from avocado.core import exceptions
 try:
     from guibot.guibot import GuiBot
     from guibot.config import GlobalConfig
-    from guibot.controller import QemuController, VNCDoToolController
+    from guibot.controller import VNCDoToolController
+    # TODO: the Qemu controller is now a custom controller example in
+    # newer guibot versions so reflect this change here
+    #from guibot.controller import QemuController
     BOT_AVAILABLE = True
 except ImportError:
     log.warning("No virtual user backend found")

@@ -33,7 +33,7 @@ except ImportError:
     log.warning("The remote door of an upgraded aexpect package is not available")
     import types
     door = types.ModuleType('door')
-    door.running_remotely = lambda x: x
+    door.run_remotely = lambda x: x
     DOOR_AVAILABLE = False
 
 # custom imports
@@ -48,7 +48,7 @@ log = logging = logging.getLogger('avocado.test.log')
 ###############################################################################
 
 
-@door.running_remotely
+@door.run_remotely
 def check_walk(params):
     """
     Asserts that a given file is in the test prefix using python `walk`.
