@@ -15,14 +15,15 @@ INTERFACE
 import time
 import os
 import logging
-# TODO: migrate from logging to log usage in messages
-log = logging = logging.getLogger('avocado.test.log')
 
 # avocado imports
 from avocado.core import exceptions
 
 # custom imports
 pass
+
+
+log = logging.getLogger('avocado.test.log')
 
 
 ###############################################################################
@@ -47,8 +48,8 @@ def run(test, params, env):
     # give the system three more seconds to settle down
     time.sleep(3)
 
-    logging.info("Performing imaginary setup requiring the vm to be booted "
-                 "at the beginning of the test and stay on at the end")
+    log.info("Performing imaginary setup requiring the vm to be booted "
+             "at the beginning of the test and stay on at the end")
     # e.g. some program reaches a certain state which is changed upon rebooting
     # so we have to perform it here
-    logging.info("Imaginary setup done")
+    log.info("Imaginary setup done")

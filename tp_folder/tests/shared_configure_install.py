@@ -22,12 +22,13 @@ INTERFACE
 
 import re
 import logging
-# TODO: migrate from logging to log usage in messages
-log = logging = logging.getLogger('avocado.test.log')
 
 # avocado imports
 from avocado.core import exceptions
 from virttest import error_context
+
+
+log = logging.getLogger('avocado.test.log')
 
 
 ###############################################################################
@@ -61,7 +62,7 @@ def string_from_template(filename):
     :rtype: str
     """
     with open(filename + ".template", "r") as f:
-        logging.info("Spawning from %s.template", filename)
+        log.info(f"Spawning from {filename}.template")
         template_string = f.read()
     return template_string
 
@@ -74,7 +75,7 @@ def file_from_string(filename, final_string):
     :param str final_string: template file content
     """
     with open(filename, "w") as f:
-        logging.info("Creating the final %s", filename)
+        log.info(f"Creating the final {filename}")
         f.write(final_string)
 
 
@@ -92,7 +93,7 @@ def configure_steps(params):
     :type params: {string, string}
     """
     error_context.context("Steps file setup")
-    logging.info("Preparing steps file for %s", params["main_vm"])
+    log.info(f"Preparing steps file for {params['main_vm']}")
     steps_string = string_from_template(params["steps"])
     vm_params = params.object_params(params["main_vm"])
     vm_nics = vm_params.objects("nics")
@@ -101,23 +102,21 @@ def configure_steps(params):
         nic_params = vm_params.object_params(nic)
         ip = nic_params["ip"]
         mask = nic_params["netmask"]
-        logging.debug("Detected %s with ip %s and netmask %s", nic, ip, mask)
+        log.debug(f"Detected {nic} with ip {ip} and netmask {mask}")
         # uncomment sections responsible for the nic setup
         steps_string = steps_string.replace("# NIC%i: " % (i + 1), "")
 
         ip_keystrokes = convert_to_key_steps(ip)
-        logging.debug("Replacing # IP_KEYS%i\n with %s", i + 1, ip_keystrokes)
+        log.debug(f"Replacing # IP_KEYS{i + 1}\n with {ip_keystrokes}")
         steps_string = steps_string.replace("# IP_KEYS%i\n" % (i + 1), ip_keystrokes)
         if ip_keystrokes not in steps_string:
-            logging.warning("Could not insert ip_%s in the provided IP_KEYS%i field",
-                            nic, i + 1)
+            log.warning(f"Could not insert ip_{nic} in the provided IP_KEYS{i + 1} field")
 
         mask_keystrokes = convert_to_key_steps(mask)
-        logging.debug("Replacing # NETMASK_KEYS%i\n with %s", i + 1, mask_keystrokes)
+        log.debug(f"Replacing # NETMASK_KEYS{i + 1}\n with {mask_keystrokes}")
         steps_string = steps_string.replace("# NETMASK_KEYS%i\n" % (i + 1), mask_keystrokes)
         if mask_keystrokes not in steps_string:
-            logging.warning("Could not insert netmask_%s in the provided NETMASK_KEYS%i field",
-                            nic, i + 1)
+            log.warning(f"Could not insert netmask_{nic} in the provided NETMASK_KEYS{i + 1} field")
 
     current_keystrokes = convert_to_key_steps(params["main_vm"])
     steps_string = steps_string.replace("# NAME_KEYS\n", current_keystrokes)
@@ -125,7 +124,7 @@ def configure_steps(params):
     steps_string = steps_string.replace("# PASSWORD_KEYS\n", current_keystrokes)
 
     file_from_string(params["steps"], steps_string)
-    logging.info("Steps file for %s ready to use", params["main_vm"])
+    log.info(f"Steps file for {params['main_vm']} ready to use")
 
 
 @error_context.context_aware
@@ -139,8 +138,7 @@ def configure_unattended_kickstart(params):
     .. note:: This approach is currently used for RHEL-based vms.
     """
     error_context.context("Unattended kickstart file setup")
-    logging.info("Preparing unattended file %s for %s",
-                 params["unattended_file"], params["main_vm"])
+    log.info(f"Preparing unattended file {params['unattended_file']} for {params['main_vm']}")
     ks_string = string_from_template(params["unattended_file"])
     vm_params = params.object_params(params["main_vm"])
     vm_nics = vm_params.objects("nics")
@@ -155,7 +153,7 @@ def configure_unattended_kickstart(params):
             netmask = nic_params["netmask"]
             network_line = ("%s --bootproto=static --ip=%s --netmask=%s --bindto=mac "
                             "--activate --nodefroute" % (network_line, ip, netmask))
-        logging.debug("Adding line '%s' to the unattended file", network_line)
+        log.debug(f"Adding line '{network_line}' to the unattended file")
         first_network_line = "network --hostname #VMNAME#"
         ks_string = re.sub(first_network_line,
                            "%s\n%s" % (first_network_line, network_line),
@@ -165,7 +163,7 @@ def configure_unattended_kickstart(params):
     ks_string = ks_string.replace("#ROOTPW#", params["password"])
 
     file_from_string(params["unattended_file"], ks_string)
-    logging.info("Unattended file for %s ready to use", params["main_vm"])
+    log.info(f"Unattended file for {params['main_vm']} ready to use")
 
 
 @error_context.context_aware
@@ -179,8 +177,7 @@ def configure_unattended_preseed(params):
     .. note:: This approach is currently used for Debian-based vms.
     """
     error_context.context("Unattended preseed file setup")
-    logging.info("Preparing unattended file %s for %s",
-                 params["unattended_file"], params["main_vm"])
+    log.info(f"Preparing unattended file {params['unattended_file']} for {params['main_vm']}")
     ps_string = string_from_template(params["unattended_file"])
     vm_params = params.object_params(params["main_vm"])
     vm_nics = vm_params.objects("nics")
@@ -197,7 +194,7 @@ def configure_unattended_preseed(params):
     ps_string = ps_string.replace("#ROOTPW#", params["password"])
 
     file_from_string(params["unattended_file"], ps_string)
-    logging.info("Unattended file for %s ready to use", params["main_vm"])
+    log.info(f"Unattended file for {params['main_vm']} ready to use")
 
 
 @error_context.context_aware
@@ -211,8 +208,7 @@ def configure_unattended_sif(params):
     .. note:: This approach is currently used for Windows XP vms.
     """
     error_context.context("Unattended sif file setup")
-    logging.info("Preparing unattended file %s for %s",
-                 params["unattended_file"], params["main_vm"])
+    log.info(f"Preparing unattended file {params['unattended_file']} for {params['main_vm']}")
     sif_string = string_from_template(params["unattended_file"])
     vm_params = params.object_params(params["main_vm"])
     vm_nics = vm_params.objects("nics")
@@ -255,7 +251,7 @@ def configure_unattended_sif(params):
     sif_string = sif_string.replace("#ROOTPW#", params["password"])
 
     file_from_string(params["unattended_file"], sif_string)
-    logging.info("Unattended file for %s ready to use", params["main_vm"])
+    log.info(f"Unattended file for {params['main_vm']} ready to use")
 
 
 @error_context.context_aware
@@ -269,16 +265,15 @@ def configure_unattended_xml(params):
     .. note:: This approach is currently used for Windows 7 vms.
     """
     error_context.context("Unattended xml file setup")
-    logging.info("Preparing unattended file %s for %s",
-                 params["unattended_file"], params["main_vm"])
+    log.info(f"Preparing unattended file {params['unattended_file']} for {params['main_vm']}")
     xml_string = string_from_template(params["unattended_file"])
     vm_params = params.object_params(params["main_vm"])
     vm_nics = vm_params.objects("nics")
 
     for i, nic in reversed(list(enumerate(vm_nics))):
         if nic == params["internet_nic"]:
-            logging.info("Only static IP configuration is included in the unattended xml "
-                         "file so the internet nic of %s (DHCP) will be skipped", params["main_vm"])
+            log.info(f"Only static IP configuration is included in the unattended xml "
+                     f"file so the internet nic of {params['main_vm']} (DHCP) will be skipped")
         else:
             nic_params = vm_params.object_params(nic)
             ip = nic_params["ip"]
@@ -318,7 +313,7 @@ def configure_unattended_xml(params):
     xml_string = xml_string.replace("#ROOTPW#", params["password"])
 
     file_from_string(params["unattended_file"], xml_string)
-    logging.info("Unattended file for %s ready to use", params["main_vm"])
+    log.info(f"Unattended file for {params['main_vm']} ready to use")
 
 
 ###############################################################################
@@ -352,13 +347,13 @@ def run(test, params, env):
         else:
             raise exceptions.TestError("Unsupported unattended file format for %s" % params["unattended_file"])
     elif params["configure_install"] == "shared_gui_install":
-        logging.warning("A GUI installation does not need any preconfiguration.")
+        log.warning("A GUI installation does not need any preconfiguration.")
     elif params["configure_install"] == "stepmaker":
-        logging.warning("A stepmaker installation process cannot be preconfigured - you are supposed "
-                        "to use it only to produce step files where no preconfiguration is necessary.")
+        log.warning("A stepmaker installation process cannot be preconfigured - you are supposed "
+                    "to use it only to produce step files where no preconfiguration is necessary.")
     elif params["configure_install"] == "shared_multigui_generator":
-        logging.warning("A GUI installation development process cannot be preconfigured - you are supposed "
-                        "to use it only to produce GUI tests where no preconfiguration is necessary.")
+        log.warning("A GUI installation development process cannot be preconfigured - you are supposed "
+                    "to use it only to produce GUI tests where no preconfiguration is necessary.")
     else:
         raise exceptions.TestError("Unsupported installation method '%s' - must be one of "
                                    "'steps', 'stepmaker', 'unattended_install'" % params["configure_install"])

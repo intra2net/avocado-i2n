@@ -22,8 +22,6 @@ import tempfile
 import os
 import re
 import logging
-# TODO: migrate from logging to log usage in messages
-log = logging = logging.getLogger('avocado.test.log')
 
 # avocado imports
 from avocado.core import exceptions
@@ -32,6 +30,9 @@ from virttest import error_context
 
 # custom imports
 pass
+
+
+log = logging.getLogger('avocado.test.log')
 
 
 ###############################################################################
@@ -59,9 +60,9 @@ def deploy_avocado(vm, params, test):
     :param test: test object (as before)
     """
     # TODO: scp does not seem to raise exception if path does not exist
-    logging.info("Deploying avocado utilities at %s", params["main_vm"])
-    logging.debug("Deploying utilities from %s on host to %s on the virtual machine.",
-                  source_avocado_path, destination_avocado_path)
+    log.info(f"Deploying avocado utilities at {params['main_vm']}")
+    log.debug(f"Deploying utilities from {source_avocado_path} on host to "
+              f"{destination_avocado_path} on the virtual machine.")
     vm.session.cmd("mkdir -p " + destination_avocado_path)
     vm.session.cmd("touch " + os.path.join(destination_avocado_path, "__init__.py"))
     vm.copy_files_to(source_avocado_path, destination_avocado_path, timeout=180)
@@ -118,7 +119,7 @@ def handle_ssh_authorized_keys(vm, params):
     ssh_authorized_keys = os.environ['SSHKEY'] if 'SSHKEY' in os.environ else ""
     if ssh_authorized_keys == "":
         return
-    logging.info("Enabled ssh key '{0}'".format(ssh_authorized_keys))
+    log.info(f"Enabled ssh key '{ssh_authorized_keys}'")
 
     tmpfile = tempfile.NamedTemporaryFile(delete=False)
     tmpfile.write((ssh_authorized_keys + '\n').encode())
@@ -157,20 +158,20 @@ def run(test, params, env):
         if os.path.exists(source_avocado_path):
             deploy_avocado(vm, params, test)
         else:
-            logging.warning("No source avocado path found and could be deployed")
+            log.warning("No source avocado path found and could be deployed")
 
     # main deployment part
-    logging.info("Deploying customized data to %s on %s", tmp_dir, params["main_vm"])
+    log.info(f"Deploying customized data to {tmp_dir} on {params['main_vm']}")
     deploy_data(vm, "data/", params)
     # WARNING: control file must add path to utils to the pythonpath
-    logging.info("Deploying customized test utilities to %s on %s", tmp_dir, params["main_vm"])
+    log.info(f"Deploying customized test utilities to {tmp_dir} on {params['main_vm']}")
     deploy_data(vm, "utils/", params)
 
     # additional deployment part
     additional_deployment_path = params.get("additional_deployment_dir", "/mnt/local/packages")
     destination_packages_path = params.get("deployed_packages_path", "/tmp/packages")
     if additional_deployment_path is not None and os.path.isdir(additional_deployment_path):
-        logging.info("Deploying additional packages and data to %s on %s", tmp_dir, params["main_vm"])
+        log.info(f"Deploying additional packages and data to {tmp_dir} on {params['main_vm']}")
         # careful about the splitting process - since we perform deleting need to validate here
         additional_deployment_path = additional_deployment_path.rstrip("/")
         deploy_data(vm, os.path.basename(additional_deployment_path), params,
@@ -183,10 +184,10 @@ def run(test, params, env):
             raise NotImplementedError("RPM updates are only available on some linux distros and not %s" % os_type)
         for rpm in params.objects("extra_rpms"):
             session.cmd("rpm -Uv --force %s" % os.path.join(destination_packages_path, rpm))
-            logging.info("Updated package: " + rpm)
+            log.info(f"Updated package: {rpm}")
 
     if os_type == "linux" and params.get("redeploy_only", "no") == "no":
         handle_ssh_authorized_keys(vm, params)
 
-    logging.info("Customized tests setup on VM finished")
+    log.info("Customized tests setup on VM finished")
     session.close()

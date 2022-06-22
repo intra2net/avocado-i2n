@@ -22,8 +22,6 @@ INTERFACE
 import time
 import os
 import logging
-# TODO: migrate from logging to log usage in messages
-log = logging = logging.getLogger('avocado.test.log')
 
 # avocado imports
 from avocado.core import exceptions
@@ -32,7 +30,7 @@ try:
     from aexpect import remote_door as door
     DOOR_AVAILABLE = True
 except ImportError:
-    logging.warning("The remote door of an upgraded aexpect package is not available")
+    log.warning("The remote door of an upgraded aexpect package is not available")
     import types
     door = types.ModuleType('door')
     door.running_remotely = lambda x: x
@@ -40,6 +38,9 @@ except ImportError:
 
 # custom imports
 from sample_utility import sleep
+
+
+log = logging = logging.getLogger('avocado.test.log')
 
 
 ###############################################################################
@@ -55,6 +56,7 @@ def check_walk(params):
     :param params: extended dictionary of parameters
     :type params: {str, str}
     """
+    # This function is run remotely where we use a generic logging module
     logging.info("Enter tutorial test variant two: check else.")
     walk_prefix = params["walk_prefix"]
     walk_goal = params["must_exist_in_walk"]
@@ -100,8 +102,8 @@ def run(test, params, env):
     error_context.context("misc commands on each vm")
     tmp_server = server_vm.session.cmd("ls " + server_vm.params["tmp_dir"])
     tmp_client = client_vm.session.cmd("dir " + client_vm.params["tmp_dir"])
-    logging.info("Content of temporary server folder:\n%s", tmp_server)
-    logging.info("Content of temporary client folder:\n%s", tmp_client)
+    log.info(f"Content of temporary server folder:\n{tmp_server}")
+    log.info(f"Content of temporary client folder:\n{tmp_client}")
     deployed_folders = ("data", "utils", "packages")
     for folder in deployed_folders:
         if folder not in tmp_server:
@@ -175,7 +177,7 @@ def run(test, params, env):
             # allowing for return arguments from the control but we need a remote
             # object backend as additional satisfied dependency.
             if host_serialization and guest_serialization:
-                logging.info("Performing extra hostname check using shared parameters control")
+                log.info("Performing extra hostname check using shared parameters control")
                 control_path = server_vm.params["control_file"].replace("step_3", "step_3.2")
                 control_path = door.set_subcontrol_parameter_object(control_path,
                                                                     server_vm.params)
@@ -199,4 +201,4 @@ def run(test, params, env):
                                              port=server_vm.params["ro_port"])
             sysmisc.sleep(5)
 
-    logging.info("It would appear that the test terminated in a civilized manner.")
+    log.info("It would appear that the test terminated in a civilized manner.")

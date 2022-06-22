@@ -14,11 +14,12 @@ INTERFACE
 
 import random
 import logging
-# TODO: migrate from logging to log usage in messages
-log = logging = logging.getLogger('avocado.test.log')
 
 # avocado imports
 from avocado.core import exceptions
+
+
+log = logging.getLogger('avocado.test.log')
 
 
 ###############################################################################
@@ -37,7 +38,7 @@ def run(test, params, env):
     :param env: environment object
     :type env: :py:class:`virttest.utils_env.Env`
     """
-    logging.info("Running minimal tutorial test.")
+    log.info("Running minimal tutorial test.")
 
     # Get the VM Network object for this test
     vmnet = env.get_vmnet()
@@ -46,7 +47,7 @@ def run(test, params, env):
     # This VM is the one available for tests within the quicktest variant
     _, session = vmnet.get_single_vm_with_session()
 
-    logging.info("Writing to a sample file.")
+    log.info("Writing to a sample file.")
 
     # Get the content to write to the file from the cartesian configuration
     contents_to_write = params.get("file_contents", "some content")
@@ -55,7 +56,7 @@ def run(test, params, env):
     # by invoking a shell command remotely
     session.cmd("echo %s > /root/sample.txt" % contents_to_write)
 
-    logging.info("Fetching file contents.")
+    log.info("Fetching file contents.")
 
     # Read the file we've previously written
     contents_written = session.cmd_output("cat /root/sample.txt").strip()

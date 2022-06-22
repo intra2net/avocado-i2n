@@ -29,11 +29,12 @@ INTERFACE
 import sys
 from PyQt4 import QtGui
 import logging
-# TODO: migrate from logging to log usage in messages
-log = logging = logging.getLogger('avocado.test.log')
 
 # custom imports
 from multi_gui_utils import GUITestGenerator
+
+
+log = logging.getLogger('avocado.test.log')
 
 
 ###############################################################################
@@ -52,14 +53,14 @@ def run(test, params, env):
     :param env: environment object
     :type env: :py:class:`virttest.utils_env.Env`
     """
-    logging.info("Initiating the GUI test generator's GUI")
+    log.info("Initiating the GUI test generator's GUI")
     app = QtGui.QApplication([])
 
     vmnet = env.get_vmnet()
     mt = GUITestGenerator(vmnet)
     mt.show()
 
-    logging.info("GUI test generator's GUI initiated")
+    log.info("GUI test generator's GUI initiated")
     # TODO: Once this is converted from pseudotest to an actual tool,
     # we will be free to do this
     #sys.exit(app.exec_())
