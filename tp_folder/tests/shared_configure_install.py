@@ -219,14 +219,14 @@ def configure_unattended_sif(params):
         netmask = nic_params["netmask"]
         mac = nic_params["mac"]
 
-        sif_string = re.sub("\[NetAdapters\]\n", "[NetAdapters]\n"
-                            "Adapter%02d = params.Adapter%02d\n" % (i, i),
+        sif_string = re.sub(r"\[NetAdapters\]\n", "[NetAdapters]\n"
+                            r"Adapter%02d = params.Adapter%02d\n" % (i, i),
                             sif_string)
         sif_string = re.sub(";nic names and macs here\n", ";nic names and macs here\n"
                             "[params.Adapter%02d]\nConnectionName=\"%s\"\n"
                             "netcardaddress = 0x%s\n" % (i, nic, mac.replace(":", "")),
                             sif_string)
-        if re.search("\[params.MS_TCPIP\]", sif_string) is None:
+        if re.search(r"\[params.MS_TCPIP\]", sif_string) is None:
             sif_string = re.sub("MS_TCPIP = params.MS_TCPIP\n",
                                 "MS_TCPIP = params.MS_TCPIP\n[params.MS_TCPIP]\n"
                                 "AdapterSections = params.MS_TCPIP.Adapter%02d\n" % i,
