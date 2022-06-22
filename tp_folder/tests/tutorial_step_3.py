@@ -119,7 +119,7 @@ def run(test, params, env):
         if not DOOR_AVAILABLE:
             raise exceptions.TestSkipError("The remote door of an upgraded aexpect package is not available")
         door.DUMP_CONTROL_DIR = test.logdir
-        door.REMOTE_PYTHON_BINARY = "python3.4"
+        door.REMOTE_PYTHON_BINARY = "python3.6"
 
         # The most advanced remote methods require serialization backend.
         serialization_cmd = door.REMOTE_PYTHON_BINARY + " -c 'import Pyro4'"
