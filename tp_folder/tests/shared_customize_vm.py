@@ -20,7 +20,6 @@ INTERFACE
 
 import tempfile
 import os
-import re
 import logging
 
 # avocado imports
@@ -49,18 +48,15 @@ destination_avocado_path = "/tmp/utils/avocado"
 ###############################################################################
 
 
-def deploy_avocado(vm, params, test):
+def deploy_avocado(vm):
     """
     Deploy the avocado package to a vm.
 
     :param vm: vm to deploy to (must be compatible)
-    :type vm: VM object
-    :param params: deploy configuration
-    :type params: {str, str}
-    :param test: test object (as before)
+    :type vm: :py:class:`virttest.qemu_vm.VM`
     """
     # TODO: scp does not seem to raise exception if path does not exist
-    log.info(f"Deploying avocado utilities at {params['main_vm']}")
+    log.info(f"Deploying avocado utilities at {vm.params['main_vm']}")
     log.debug(f"Deploying utilities from {source_avocado_path} on host to "
               f"{destination_avocado_path} on the virtual machine.")
     vm.session.cmd("mkdir -p " + destination_avocado_path)
@@ -68,14 +64,12 @@ def deploy_avocado(vm, params, test):
     vm.copy_files_to(source_avocado_path, destination_avocado_path, timeout=180)
 
 
-def deploy_data(vm, folder_name, params,
-                custom_src_path="", custom_dst_name="",
-                timeout=60):
+def deploy_data(vm, folder_name, dst_folder_name="", custom_src_path="", timeout=60):
     """
     Deploy data to a vm.
 
     :param vm: vm to deploy to (must be compatible)
-    :type vm: VM object
+    :type vm: :py:class:`virttest.qemu_vm.VM`
     :param str folder_name: data folder name (default path is 'guest')
     :param params: deploy configuration
     :type params: {str, str}
@@ -83,38 +77,25 @@ def deploy_data(vm, folder_name, params,
     :param str custom_dst_name: custom folder name of the dst data folder
     :param int timeout: copying timeout
     """
-    wipe_data = params.get("wipe_data", "no")
-    os_type = params.get("os_type", "linux")
-    tmp_dir = params.get("tmp_dir", "/tmp")
     if custom_src_path == "":
-        src_path = os.path.join(params["suite_path"], folder_name)
+        src_path = os.path.join(vm.params["suite_path"], folder_name)
     else:
         src_path = os.path.join(custom_src_path, folder_name)
-    folder_name = custom_dst_name if custom_dst_name else folder_name
-    if wipe_data == "yes" and os_type == "windows":
-        w_tmp_dir = tmp_dir.replace("/", "\\")
-        w_folder_name = folder_name.replace("/", "\\")
-        dst_path = os.path.join(w_tmp_dir, w_folder_name).replace("/", "\\")
-        try:
-            vm.session.cmd("rmdir %s /s /q" % dst_path)
-        except:
-            pass
-    elif wipe_data == "yes" and os_type == "linux":
-        dst_path = os.path.join(tmp_dir, folder_name)
-        vm.session.cmd("rm -fr %s" % dst_path)
-    else:
-        dst_path = os.path.join(tmp_dir, folder_name) if custom_dst_name else tmp_dir
+    tmp_dir = vm.params.get("tmp_dir", "/tmp")
+    folder_name = dst_folder_name if dst_folder_name else folder_name
+    dst_path = os.path.join(tmp_dir, folder_name)
+    cmd = f"rm -fr" if vm.params.get("os_type", "linux") == "linux" else "rmdir /s /q"
+    cmd += f" {dst_path}"
+    vm.session.cmd(cmd)
     vm.copy_files_to(src_path, dst_path, timeout=timeout)
 
 
-def handle_ssh_authorized_keys(vm, params):
+def handle_ssh_authorized_keys(vm):
     """
     Deploy an SSH key to a vm.
 
     :param vm: vm to deploy to (must be compatible)
-    :type vm: VM object
-    :param params: deploy configuration
-    :type params: {str, str}
+    :type vm: :py:class:`virttest.qemu_vm.VM`
     """
     ssh_authorized_keys = os.environ['SSHKEY'] if 'SSHKEY' in os.environ else ""
     if ssh_authorized_keys == "":
@@ -153,19 +134,18 @@ def run(test, params, env):
     os_variant = params.get("os_variant", "ibs")
     tmp_dir = params.get("tmp_dir", "/tmp")
 
-    # pre-deployment part
-    if params.get_boolean("guest_avocado_enabled"):
-        if os.path.exists(source_avocado_path):
-            deploy_avocado(vm, params, test)
-        else:
-            log.warning("No source avocado path found and could be deployed")
-
     # main deployment part
     log.info(f"Deploying customized data to {tmp_dir} on {params['main_vm']}")
-    deploy_data(vm, "data/", params)
+    deploy_data(vm, "data/")
     # WARNING: control file must add path to utils to the pythonpath
     log.info(f"Deploying customized test utilities to {tmp_dir} on {params['main_vm']}")
-    deploy_data(vm, "utils/", params)
+    deploy_data(vm, "utils/")
+    # as avocado utils are deployed in a subdirectory, deploy them after the general utils
+    if params.get_boolean("guest_avocado_enabled"):
+        if os.path.exists(source_avocado_path):
+            deploy_avocado(vm)
+        else:
+            log.warning("No source avocado path found and could be deployed")
 
     # additional deployment part
     additional_deployment_path = params.get("additional_deployment_dir", "/mnt/local/packages")
@@ -174,8 +154,8 @@ def run(test, params, env):
         log.info(f"Deploying additional packages and data to {tmp_dir} on {params['main_vm']}")
         # careful about the splitting process - since we perform deleting need to validate here
         additional_deployment_path = additional_deployment_path.rstrip("/")
-        deploy_data(vm, os.path.basename(additional_deployment_path), params,
-                    os.path.dirname(additional_deployment_path), "packages", 60)
+        deploy_data(vm, os.path.basename(additional_deployment_path), "packages",
+                    os.path.dirname(additional_deployment_path), 60)
     else:
         raise exceptions.TestError("Additional deployment path %s does not exist (current dir: "
                                    "%s)" % (additional_deployment_path, os.getcwd()))
@@ -187,7 +167,7 @@ def run(test, params, env):
             log.info(f"Updated package: {rpm}")
 
     if os_type == "linux" and params.get("redeploy_only", "no") == "no":
-        handle_ssh_authorized_keys(vm, params)
+        handle_ssh_authorized_keys(vm)
 
     log.info("Customized tests setup on VM finished")
     session.close()
