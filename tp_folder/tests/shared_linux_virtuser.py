@@ -15,14 +15,15 @@ INTERFACE
 import time
 import os
 import logging
-# TODO: migrate from logging to log usage in messages
-log = logging = logging.getLogger('avocado.test.log')
 
 # avocado imports
 from avocado.core import exceptions
 
 # custom imports
 pass
+
+
+log = logging.getLogger('avocado.test.log')
 
 
 ###############################################################################
@@ -44,8 +45,8 @@ def run(test, params, env):
     vmnet = env.get_vmnet()
     vm, session = vmnet.get_single_vm_with_session()
 
-    logging.info("Making virtual user software available on the vm")
-    logging.info("...")
+    log.info("Making virtual user software available on the vm")
+    log.info("...")
     try:
         from guibot import GuiBot
         from guibot.config import GlobalConfig
@@ -53,8 +54,8 @@ def run(test, params, env):
     except ImportError:
         # we would typically raise test error here to cancel all dependent tests
         # but we want the test suite to skip tests in the best case
-        logging.warning("No virtual user backend found")
-    logging.info("...some setup steps on linux")
+        log.warning("No virtual user backend found")
+    log.info("...some setup steps on linux")
 
-    logging.info("Virtual user is ready to manipulate the vm from a screen")
-    logging.info("\nFor more details check https://guibot.org")
+    log.info("Virtual user is ready to manipulate the vm from a screen")
+    log.info("\nFor more details check https://guibot.org")

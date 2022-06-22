@@ -15,14 +15,15 @@ INTERFACE
 import time
 import os
 import logging
-# TODO: migrate from logging to log usage in messages
-log = logging = logging.getLogger('avocado.test.log')
 
 # avocado imports
 from avocado.core import exceptions
 
 # custom imports
 from sample_utility import sleep
+
+
+log = logging.getLogger('avocado.test.log')
 
 
 ###############################################################################
@@ -47,13 +48,13 @@ def run(test, params, env):
     temporary = vms.temporary
     permanent = vms.permanent
 
-    logging.info(temporary.session.cmd_output("uptime"))
-    logging.info(temporary.session.cmd_output("cat /etc/os-release"))
+    log.info(temporary.session.cmd_output("uptime"))
+    log.info(temporary.session.cmd_output("cat /etc/os-release"))
 
-    logging.info(permanent.session.cmd_output("uptime"))
-    logging.info(permanent.session.cmd_output("cat /etc/os-release"))
+    log.info(permanent.session.cmd_output("uptime"))
+    log.info(permanent.session.cmd_output("cat /etc/os-release"))
 
     # call to a function shared among tests
     sleep(3)
 
-    logging.info("Test passed.")
+    log.info("Test passed.")

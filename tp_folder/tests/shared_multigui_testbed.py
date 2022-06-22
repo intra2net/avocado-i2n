@@ -32,11 +32,12 @@ import sys
 import random
 from PyQt4 import QtGui, QtCore
 import logging
-# TODO: migrate from logging to log usage in messages
-log = logging = logging.getLogger('avocado.test.log')
 
 # custom imports
 from multi_gui_utils import GUITestGenerator, Windows, Linux
+
+
+log = logging.getLogger('avocado.test.log')
 
 
 ###############################################################################
@@ -58,17 +59,17 @@ def stress_test(gui, name, *args):
     def interrupt():
         gui.interrupted = True
         gui.button_run.setText("Stopping")
-        logging.info("Interrupting current stress test run")
+        log.info("Interrupting current stress test run")
 
     def interrupted():
         gui.button_run.setText("Run")
         gui.disconnect(gui.button_run, QtCore.SIGNAL('clicked()'), interrupt)
         gui.connect(gui.button_run, QtCore.SIGNAL('clicked()'), gui.run)
         if gui.interrupted:
-            logging.info("Current stress test interrupted")
+            log.info("Current stress test interrupted")
             gui.interrupted = False
         else:
-            logging.info("Current stress test completed")
+            log.info("Current stress test completed")
 
     gui.button_run.setText("Stop")
     gui.disconnect(gui.button_run, QtCore.SIGNAL('clicked()'), gui.run)
@@ -148,7 +149,7 @@ class StressTestMouseHit(QtCore.QThread):
         from guibot.guibot.location import Location
         l = Location(100, 100)
         for i in range(self.trials):
-            logging.info("Performing hover-click hit %i", i)
+            log.info(f"Performing hover-click hit {i}")
             l.xpos = random.randrange(100, 500)
             l.ypos = random.randrange(100, 500)
             self.gui.user.hover(l)
@@ -236,12 +237,12 @@ class StressTestCustom(QtCore.QThread):
         # to simplify the example stress test
         n = 500
         for i in range(n):
-            logging.info("Attempt %i\%i", i, n)
+            log.info(f"Attempt {i}\{n}")
             os.start_menu_option()
             os.press_keys(os.ESC)
             if self.gui.interrupted:
                 return
-        logging.info("No errors")
+        log.info("No errors")
 
 
 ###############################################################################
@@ -259,7 +260,7 @@ def run(test, params, env):
     :param env: environment object
     :type env: :py:class:`virttest.utils_env.Env`
     """
-    logging.info("Initiating the GUI test generator's GUI with all stress tests")
+    log.info("Initiating the GUI test generator's GUI with all stress tests")
     app = QtGui.QApplication([])
 
     vmnet = env.get_vmnet()
@@ -271,10 +272,10 @@ def run(test, params, env):
                          "self.stress_test(self, 'custom')\u2029")
     mt.stress_test = stress_test
 
-    logging.info("GUI test generator's GUI initiated")
+    log.info("GUI test generator's GUI initiated")
     # TODO: Once this is converted from pseudotest to an actual tool,
     # we will be free to do this
     #sys.exit(app.exec_())
     app.exec_()
 
-    logging.info("Testbed completed successfully!")
+    log.info("Testbed completed successfully!")

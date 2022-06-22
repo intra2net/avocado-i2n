@@ -15,8 +15,6 @@ INTERFACE
 import os
 import random
 import logging
-# TODO: migrate from logging to log usage in messages
-log = logging = logging.getLogger('avocado.test.log')
 
 # avocado imports
 from avocado.core import exceptions
@@ -28,8 +26,11 @@ try:
     from guibot.controller import QemuController, VNCDoToolController
     BOT_AVAILABLE = True
 except ImportError:
-    logging.warning("No virtual user backend found")
+    log.warning("No virtual user backend found")
     BOT_AVAILABLE = False
+
+
+log = logging.getLogger('avocado.test.log')
 
 
 ###############################################################################
@@ -97,15 +98,15 @@ def initiate_vm_screen(vm, screen_type):
         dc = QemuController(synchronize=False)
         dc.params["qemu"]["qemu_monitor"] = vm.monitors[0]
         dc.synchronize_backend()
-        logging.debug("Initiating qemu monitor screen for vm %s", vm.name)
+        log.debug("Initiating qemu monitor screen for vm %s", vm.name)
     elif screen_type == 'vncdotool':
         dc = VNCDoToolController(synchronize=False)
         # starting from 5900, i.e. :0 == 5900
         dc.params["vncdotool"]["vnc_port"] = vm.vnc_port - 5900
         dc.params["vncdotool"]["vnc_delay"] = 0.02
         dc.synchronize_backend()
-        logging.debug("Initiating vnc server screen for vm %s on port %s (%s)",
-                      vm.name, dc.params["vncdotool"]["vnc_port"], vm.vnc_port)
+        log.debug("Initiating vnc server screen for vm %s on port %s (%s)",
+                  vm.name, dc.params["vncdotool"]["vnc_port"], vm.vnc_port)
     return dc
 
 
@@ -125,7 +126,7 @@ def run(test, params, env):
     :param env: environment object
     :type env: :py:class:`virttest.utils_env.Env`
     """
-    logging.info("Running GUI tutorial test.")
+    log.info("Running GUI tutorial test.")
 
     # Get the VM Network object for this test
     vmnet = env.get_vmnet()
@@ -135,7 +136,7 @@ def run(test, params, env):
     client_vm = vms.client
     vmnet.ping_all()
 
-    logging.info("Starting a minimal GUI test on two vms (screens)")
+    log.info("Starting a minimal GUI test on two vms (screens)")
     if not BOT_AVAILABLE:
         raise exceptions.TestSkipError("No virtual user backend found")
     image_root = get_image_root(params["suite_path"])
@@ -160,10 +161,10 @@ def run(test, params, env):
         else:
             bot.type_text('Anyone here?')
     elif params["set_state_vm2"] == "guisetup.noop":
-        logging.info("The virtual user will do nothing on the client screen")
+        log.info("The virtual user will do nothing on the client screen")
     else:
         raise exceptions.TestError("Invalid option for Windows client GUI setup "
                                    "operation %s" % params["set_state_vm2"])
 
-    logging.info("Running done.")
-    logging.info("\nFor more details check https://guibot.org")
+    log.info("Running done.")
+    log.info("\nFor more details check https://guibot.org")

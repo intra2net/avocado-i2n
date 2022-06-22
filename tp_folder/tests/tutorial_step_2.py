@@ -22,8 +22,6 @@ INTERFACE
 import os
 import subprocess
 import logging
-# TODO: migrate from logging to log usage in messages
-log = logging = logging.getLogger('avocado.test.log')
 
 # avocado imports
 from avocado.core import exceptions
@@ -31,11 +29,14 @@ try:
     from aexpect import session_ops
     OPS_AVAILABLE = True
 except ImportError:
-    logging.warning("The session ops of an upgraded aexpect package are not available")
+    log.warning("The session ops of an upgraded aexpect package are not available")
     OPS_AVAILABLE = False
 
 # custom imports
 from sample_utility import sleep
+
+
+log = logging.getLogger('avocado.test.log')
 
 
 ###############################################################################
@@ -70,7 +71,7 @@ def extract_tarball(params, vm):
     :params vm: guest VM object
     :type vm: virttest.qemu_vm.VM
     """
-    logging.info("Enter tutorial test variant one: extract and run a file.")
+    log.info("Enter tutorial test variant one: extract and run a file.")
     tarball_path = os.path.join(
         params["deployed_test_data_path"],
         "tutorial_step_2",
@@ -120,7 +121,7 @@ def run_extracted_script(params, vm):
             raise exceptions.TestError("Expected file %s to have been extracted, "
                                        "but it doesn't exist." % scriptabspath)
         else:
-            logging.info("The extracted script was also verified through session ops")
+            log.info("The extracted script was also verified through session ops")
 
     vm.session.cmd(scriptabspath + " " + vm.name)
 
@@ -136,7 +137,7 @@ def check_files(params, vm):
     :params vm: guest VM object
     :type vm: virttest.qemu_vm.VM
     """
-    logging.info("Enter tutorial test variant two: check files.")
+    log.info("Enter tutorial test variant two: check files.")
 
     must_exist = params["must_exist"].split(" ")
     must_not_exist = params["must_not_exist"].split(" ")
@@ -150,28 +151,26 @@ def check_files(params, vm):
         if OPS_AVAILABLE:
             result2 = session_ops.is_regular_file(vm.session, fullpath)
             assert result == result2
-        logging.info("  - Verifying the presence of file %s -> %s."
-                     % (fullpath, result and "exists" or "nil"))
+        log.info(f"  - Verifying the presence of file {fullpath} -> "
+                 f"{result and 'exists' or 'nil'}.")
         return result
 
     missing = [f for f in must_exist if not aux(f)]
     unwanted = [f for f in must_not_exist if aux(f)]
 
     if missing and unwanted:
-        logging.info(
-            "Unluckily, we encountered both unwanted and missing files.")
+        log.info("Unluckily, we encountered both unwanted and missing files.")
         raise exceptions.TestFail(
             "%d mandatory files not found in path %s: \"%s\";\n"
             "%d unwanted files in path %s: \"%s\"."
             % (len(missing), files_prefix, ", ".join(missing),
                len(unwanted), files_prefix, ", ".join(unwanted)))
     elif missing:
-        logging.info("Unluckily, some required files were missing.")
+        log.info("Unluckily, some required files were missing.")
         raise exceptions.TestFail("%d mandatory files not found in path %s: \"%s\"."
                                   % (files_prefix, len(missing), ", ".join(missing)))
     elif unwanted:
-        logging.info(
-            "Unluckily, we tripped over files we really struggled to avoid.")
+        log.info("Unluckily, we tripped over files we really struggled to avoid.")
         raise exceptions.TestFail("%d unwanted files in path %s: \"%s\"."
                                   % (files_prefix, len(unwanted), ", ".join(unwanted)))
 
