@@ -360,17 +360,17 @@ class CartesianGraphTest(Test):
         self.assertIn(test_object, test_node.objects)
         test_node.validate()
         test_node.objects.remove(test_object)
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, r"^Additional parametric objects .+ not in .+$"):
             test_node.validate()
         test_node.objects.append(test_object)
         test_node.validate()
         test_node.params["vms"] = ""
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, r"^Missing parametric objects .+ from .+$"):
             test_node.validate()
 
         # detect reflexive dependencies in the graph
         self.config["param_dict"]["get"] = "tutorial1"
-        with self.assertRaises(ValueError):
+        with self.assertRaisesRegex(ValueError, r"^Detected reflexive dependency of"):
             self.loader.parse_object_trees(self.config["param_dict"],
                                            self.config["tests_str"], self.config["vm_strs"],
                                            prefix=self.prefix)
@@ -389,7 +389,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
         ]
-        with self.assertRaises(RuntimeError):
+        with self.assertRaisesRegex(RuntimeError, r"^Worker .+ spent [\d\.]+ seconds waiting for occupied node"):
             self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
@@ -580,7 +580,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "set_state_vms_on_error": "^$", "_status": "FAIL"},
         ]
-        with self.assertRaises(exceptions.TestSkipError):
+        with self.assertRaisesRegex(exceptions.TestSkipError, r"^God wanted this test to abort$"):
             self._run_traversal(graph, self.config["param_dict"])
 
     def test_abort_objectless_node(self):
@@ -597,7 +597,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
         ]
-        with self.assertRaises(AssertionError):
+        with self.assertRaisesRegex(AssertionError, r"^Cannot run test nodes not using any test objects"):
             self._run_traversal(graph, self.config["param_dict"])
 
     def test_trees_difference_zero(self):
@@ -783,30 +783,43 @@ class CartesianGraphTest(Test):
     def test_run_retry_invalid(self):
         """Test if an exception is thrown with invalid retry parameter values."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
         DummyStateCheck.present_states = ["root", "install", "customize", "on_customize"]
         DummyTestRunning.asserted_tests = [
         ]
 
-        self.config["param_dict"]["retry_attempts"] = "3"
-        self.config["param_dict"]["retry_stop"] = "invalid"
-        with self.assertRaises(AssertionError):
-            self._run_traversal(graph, self.config["param_dict"])
+        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3",
+                                                         "retry_stop": "invalid"}):
+            graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                   self.config["tests_str"], self.config["vm_strs"],
+                                                   prefix=self.prefix)
+            with self.assertRaisesRegex(ValueError, r"^Value of retry_stop must be 'none', 'error' or 'success'$"):
+                self._run_traversal(graph, self.config["param_dict"])
 
-        self.config["param_dict"]["retry_stop"] = "none"
         # negative values
-        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "-32"}):
-            with self.assertRaises(AssertionError):
+        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "-32",
+                                                         "retry_stop": "none"}):
+            graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                   self.config["tests_str"], self.config["vm_strs"],
+                                                   prefix=self.prefix)
+            with self.assertRaisesRegex(ValueError, r"^Value of retry_attempts cannot be less than zero$"):
                 self._run_traversal(graph, self.config["param_dict"])
+
         # floats
-        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3.5"}):
-            with self.assertRaises(AssertionError):
+        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3.5",
+                                                         "retry_stop": "none"}):
+            graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                   self.config["tests_str"], self.config["vm_strs"],
+                                                   prefix=self.prefix)
+            with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
                 self._run_traversal(graph, self.config["param_dict"])
+
         # non-integers
-        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "hey"}):
-            with self.assertRaises(AssertionError):
+        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "hey",
+                                                         "retry_stop": "none"}):
+            graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                   self.config["tests_str"], self.config["vm_strs"],
+                                                   prefix=self.prefix)
+            with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
                 self._run_traversal(graph, self.config["param_dict"])
 
     def test_run_exit_code(self):

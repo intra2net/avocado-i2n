@@ -163,8 +163,10 @@ class CartesianRunner(RunnerInterface):
         # do not log when the user is not using the retry feature
         if runs_left > 1:
             logging.debug(f"Running test with retry_stop={retry_stop} and retry_attempts={runs_left}")
-        assert runs_left >= 1, "retry_attempts cannot be less than zero"
-        assert retry_stop in ["none", "error", "success"], "retry_stop must be one of 'none', 'error' or 'success'"
+        if runs_left < 1:
+            raise ValueError("Value of retry_attempts cannot be less than zero")
+        if retry_stop not in ["none", "error", "success"]:
+            raise ValueError("Value of retry_stop must be 'none', 'error' or 'success'")
 
         original_prefix = node.prefix
         for r in range(runs_left):
