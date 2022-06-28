@@ -122,10 +122,6 @@ class CartesianGraphTest(Test):
         self.runner.slots = ["c1"]
         self.runner.status_server = self.job
 
-    def tearDown(self):
-        shutil.rmtree("./graph_parse", ignore_errors=True)
-        shutil.rmtree("./graph_traverse", ignore_errors=True)
-
     def _run_traversal(self, graph, params):
         loop = asyncio.get_event_loop()
         to_traverse = [self.runner.run_traversal(graph, params, s) for s in self.runner.slots]
@@ -555,6 +551,10 @@ class CartesianGraphTest(Test):
         """Test a complete dry run traversal of a verbose (visualized) graph."""
         self.config["tests_str"] = "only all\n"
         self.config["param_dict"]["dry_run"] = "yes"
+        DummyStateCheck.present_states = []
+        DummyTestRunning.asserted_tests = [
+        ]
+
         # this type of verbosity requires graphviz dependency
         import logging
         try:
@@ -562,12 +562,11 @@ class CartesianGraphTest(Test):
             graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                    self.config["tests_str"], self.config["vm_strs"],
                                                    prefix=self.prefix, verbose=True)
+            self._run_traversal(graph, self.config["param_dict"])
         finally:
             logging.getLogger('graph').level = 50
-        DummyStateCheck.present_states = []
-        DummyTestRunning.asserted_tests = [
-        ]
-        self._run_traversal(graph, self.config["param_dict"])
+            shutil.rmtree("./graph_parse", ignore_errors=True)
+            shutil.rmtree("./graph_traverse", ignore_errors=True)
 
     def test_abort_run(self):
         """Test that traversal is aborted through explicit configuration."""

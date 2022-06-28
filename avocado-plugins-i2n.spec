@@ -82,7 +82,7 @@ graph structure.
 %check
 # if later on we decide that unit tests are still more appropriate here just do
 #make check
-PYTHONPATH=:. avocado run selftests/test_*
+PYTHONPATH=:. avocado run --nrunner-max-parallel-tasks=4 selftests/test_*
 %endif
 
 %files -n python3-%{name}
