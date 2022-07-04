@@ -182,7 +182,6 @@ def configure_unattended_preseed(params):
     vm_params = params.object_params(params["main_vm"])
     vm_nics = vm_params.objects("nics")
 
-    # TODO: set correct network line
     for i, nic in reversed(list(enumerate(vm_nics))):
         network_line = "network --device eth%i" % i
         if nic != params["internet_nic"]:
