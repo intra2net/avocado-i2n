@@ -70,6 +70,7 @@ def run(test, params, env):
                 log.info(f"Uploading {f} to {to_dir} ({vm.name})")
                 vm.copy_files_to(f, to_dir, timeout=30)
     elif params.get("vm_action", "run") == "shutdown":
+        vmnet.start_all_sessions()
         for vm in vmnet.get_ordered_vms():
             vm.destroy(gracefully=True)
 
