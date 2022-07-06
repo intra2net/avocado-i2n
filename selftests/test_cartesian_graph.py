@@ -86,7 +86,8 @@ async def mock_run_test(_self, _job, node):
     # define ID-s and other useful parameter filtering
     node.get_runnable()
     node.params["_uid"] = node.long_prefix
-    DummyTestRunning(node.params, _self.job.result.tests).get_test_result()
+    await asyncio.sleep(0.1)
+    return DummyTestRunning(node.params, _self.job.result.tests).get_test_result()
 
 
 def mock_check_states(params, env):
@@ -320,6 +321,7 @@ class CartesianGraphTest(Test):
 
     def test_one_leaf_with_setup(self):
         """Test traversal path of one test with a reusable setup."""
+        self.runner.slots = [f"c{i+1}" for i in range(4)]
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -327,9 +329,9 @@ class CartesianGraphTest(Test):
         DummyStateCheck.present_states = ["root", "install"]
         DummyTestRunning.asserted_tests = [
             # cleanup is expected only if at least one of the states is reusable (here root+install)
-            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "hostname": "^c1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
@@ -411,14 +413,55 @@ class CartesianGraphTest(Test):
 
     def test_two_objects_with_setup(self):
         """Test a two-object test run with reusable setup."""
+        self.runner.slots = [f"c{i+1}" for i in range(4)]
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
         DummyStateCheck.present_states = ["root", "install", "customize"]
         DummyTestRunning.asserted_tests = [
-            {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$"},
-            {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$"},
+            {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "hostname": "^c1$"},
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
+    def test_diverging_paths_with_setup(self):
+        """Test a multi-object test run with reusable setup of diverging workers."""
+        self.runner.slots = [f"c{i+1}" for i in range(4)]
+        self.config["tests_str"] += "only tutorial1,tutorial3\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        DummyStateCheck.present_states = ["root", "install", "customize"]
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "hostname": "^c2$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "hostname": "^c2$"},
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
+    def test_diverging_paths_with_locally_reused_setup(self):
+        """Test a multi-object test run where the workers will run multiple tests reusing their own local setup."""
+        # TODO: node setup is currently not reusable across workers so need <=2 to make this work
+        self.runner.slots = [f"c{i+1}" for i in range(2)]
+        self.config["tests_str"] = "only leaves\n"
+        self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        DummyStateCheck.present_states = ["root", "install", "customize", "customize"]
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "hostname": "^c2$"},
+            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "hostname": "^c2$"},
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "hostname": "^c2$"},
+            # TODO: this tests reentry of traversed path well but node setup is currently not reusable across workers
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "hostname": "^c1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)

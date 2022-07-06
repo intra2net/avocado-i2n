@@ -100,7 +100,7 @@ class CartesianRunner(RunnerInterface):
         :param node: test node to run
         :type node: :py:class:`TestNode`
         """
-        if node.spawner is None:
+        if not node.is_occupied():
             default_slot = self.slots[0] if len(self.slots) > 0 else ""
             node.set_environment(job, default_slot)
         # once the slot is set (here or earlier), the hostname reflects it
@@ -245,6 +245,12 @@ class CartesianRunner(RunnerInterface):
                 # a valid current node with at least one child is guaranteed
                 traverse_path.append(next.pick_next_child())
                 continue
+            if next.is_occupied():
+                logging.debug(f"Worker {slot} stepping back from already occupied test node {next}")
+                traverse_path.pop()
+                # ending with an occupied leaf node could take many minutes
+                await asyncio.sleep(60)
+                continue
 
             logging.debug("Worker %s at test node %s which is %sready with setup, %sready with cleanup,"
                           " should %srun, should %sbe cleaned, and %sbe scanned",
@@ -262,8 +268,8 @@ class CartesianRunner(RunnerInterface):
             if previous in next.cleanup_nodes or previous in next.visited_cleanup_nodes:
 
                 if next.is_setup_ready():
-                    await self._traverse_test_node(graph, next, params)
                     previous.visit_node(next)
+                    await self._traverse_test_node(graph, next, params, slot)
                     traverse_path.pop()
                 else:
                     # inverse DFS
@@ -275,12 +281,14 @@ class CartesianRunner(RunnerInterface):
                     traverse_path.append(next.pick_next_parent())
                     continue
                 else:
-                    await self._traverse_test_node(graph, next, params)
+                    await self._traverse_test_node(graph, next, params, slot)
 
                 if next.is_cleanup_ready():
-                    await self._reverse_test_node(graph, next, params)
                     for setup in next.visited_setup_nodes:
-                        setup.visit_node(next)
+                        # test node could be reversed by a previous worker
+                        if next not in setup.visited_cleanup_nodes:
+                            setup.visit_node(next)
+                    await self._reverse_test_node(graph, next, params, slot)
                     traverse_path.pop()
                     graph.report_progress()
                 else:
@@ -325,7 +333,6 @@ class CartesianRunner(RunnerInterface):
         try:
             graph.visualize(self.job.logdir)
 
-            # TODO: current_nodes[i].set_environment(self.job, self.slots[i])
             to_traverse = [self.run_traversal(graph, params, s) for s in self.slots]
             loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
                                                      self.job.timeout or None))
@@ -403,8 +410,13 @@ class CartesianRunner(RunnerInterface):
         return await self.run_test_node(test_node)
 
     """internals"""
-    async def _traverse_test_node(self, graph, test_node, params):
+    async def _traverse_test_node(self, graph, test_node, params, slot):
         """Run a single test according to user defined policy and state availability."""
+        if not test_node.is_occupied():
+            test_node.set_environment(self.job, slot)
+        else:
+            return
+
         if test_node.should_scan:
             test_node.scan_states()
             test_node.should_scan = False
@@ -414,7 +426,7 @@ class CartesianRunner(RunnerInterface):
             if params.get("dry_run", "no") == "yes":
                 logging.info("Running a dry %s", test_node.params["shortname"])
             elif test_node.is_shared_root():
-                logging.debug("Test run started from the shared root")
+                logging.debug("Test run on %s started from the shared root", slot)
             elif test_node.is_object_root():
                 status = await self.run_terminal_node(graph, test_node.params["object_root"], params)
                 if not status:
@@ -435,9 +447,12 @@ class CartesianRunner(RunnerInterface):
 
             test_node.should_run = False
         else:
-            logging.debug("Skipping test %s", test_node.params["shortname"])
+            logging.debug("Skipping test %s on %s", test_node.params["shortname"], slot)
 
-    async def _reverse_test_node(self, graph, test_node, params):
+        # free the node for traversal by other workers
+        test_node.spawner = None
+
+    async def _reverse_test_node(self, graph, test_node, params, slot):
         """
         Clean up any states that could be created by this node (will be skipped
         by default but the states can be removed with "unset_mode=f.").
@@ -447,7 +462,7 @@ class CartesianRunner(RunnerInterface):
             if params.get("dry_run", "no") == "yes":
                 logging.info("Cleaning a dry %s", test_node.params["shortname"])
             elif test_node.is_shared_root():
-                logging.debug("Test run ended at the shared root")
+                logging.debug("Test run on %s ended at the shared root", slot)
 
             elif test_node.produces_setup():
                 setup_dict = {} if params is None else params.copy()
@@ -496,7 +511,7 @@ class CartesianRunner(RunnerInterface):
                                        f"unset_mode{unset_suffixes}": object_params.get("unset_mode", "ri")})
 
                 if has_selected_object_setup:
-                    logging.info("Cleaning up %s", test_node)
+                    logging.info("Cleaning up %s on %s", test_node, slot)
                     setup_str = param.re_str("all..internal..manage.unchanged")
                     net = test_node.objects[0]
                     forward_config = net.config.get_copy()
@@ -506,10 +521,10 @@ class CartesianRunner(RunnerInterface):
                                                     ovrwrt_dict=setup_dict)
                     await self.run_test_node(TestNode(test_node.prefix + "c", forward_config, net))
                 else:
-                    logging.info("No need to clean up %s", test_node)
+                    logging.info("No need to clean up %s on %s", test_node, slot)
 
         else:
-            logging.debug("The test %s should not be cleaned up", test_node.params["shortname"])
+            logging.debug("The test %s should not be cleaned up on %s", test_node.params["shortname"], slot)
 
     def _graph_from_suite(self, test_suite):
         """

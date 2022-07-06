@@ -132,13 +132,14 @@ class TestNode(object):
 
         return Runnable('avocado-vt', uri, **vt_params)
 
-    def set_environment(self, job, env_id):
+    def set_environment(self, job, env_id=""):
         """
         Set the environment for executing the test node.
 
         :param job: job that includes the test suite
         :type job: :py:class:`avocado.core.job.Job`
-        :param str env_id: name or ID to uniquely identiy the environment
+        :param str env_id: name or ID to uniquely identify the environment, empty
+                           for unisolated process spawners
 
         This isolating environment could be a container, a virtual machine, or
         a less-isolated process and is managed by a specialized spawner.
@@ -149,6 +150,9 @@ class TestNode(object):
         self.spawner.cid = env_id
 
         self.params["hostname"] = env_id if env_id else self.params["hostname"]
+
+    def is_occupied(self):
+        return self.spawner is not None
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
@@ -190,6 +194,10 @@ class TestNode(object):
         be run anymore.
         """
         return self.is_cleanup_ready() and not self.should_run
+
+    def is_reachable_from(self, node):
+        """The current node is setup or cleanup node for another node."""
+        return self in node.setup_nodes or self in node.cleanup_nodes
 
     def is_terminal_node_for(self):
         """
@@ -275,8 +283,12 @@ class TestNode(object):
 
         The current basic priority is test name.
         """
-        next_node = self.setup_nodes[0]
-        for node in self.setup_nodes[1:]:
+        nodes = [n for n in self.setup_nodes if self.is_reachable_from(n)]
+        nodes = self.setup_nodes if len(nodes) == 0 else nodes
+        next_node = nodes[0]
+        for node in nodes[1:]:
+            if node.is_occupied():
+                continue
             if TestNode.comes_before(node, next_node):
                 next_node = node
         return next_node
@@ -288,17 +300,14 @@ class TestNode(object):
         :returns: the next child node
         :rtype: TestNode object
 
-        The current basic priority is test name.
-
-        .. todo:: more advanced scheduling can be based on different types of priority:
-
-            1. priority to tests with objects at current states -> then at further states
-               -> then at previous states;
-            2. priority to tests that are leaves -> then internal;
-            3. priority to tests using fewer objects -> then more objects;
+        The current order is defined by soft early fail then basic test name priority.
         """
-        next_node = self.cleanup_nodes[0]
-        for node in self.cleanup_nodes[1:]:
+        nodes = [n for n in self.cleanup_nodes if self.is_reachable_from(n)]
+        nodes = self.cleanup_nodes if len(nodes) == 0 else nodes
+        next_node = nodes[0]
+        for node in nodes[1:]:
+            if node.is_occupied():
+                continue
             if TestNode.comes_before(node, next_node):
                 next_node = node
         return next_node
