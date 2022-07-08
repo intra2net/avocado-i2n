@@ -108,6 +108,7 @@ def mock_check_states(params, env):
 
 @mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
 @mock.patch('avocado_i2n.cartgraph.node.ss.check_states', mock_check_states)
+@mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
 @mock.patch.object(CartesianRunner, 'run_test', mock_run_test)
 class IntertestSetupTest(Test):
 

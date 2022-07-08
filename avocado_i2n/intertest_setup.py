@@ -239,7 +239,8 @@ def full(config, tag=""):
         # states are removed, skipping any state restoring for better performance
         setup_dict = config["param_dict"].copy()
         setup_dict.update({"get_mode": "ia", "set_mode": "ff", "unset_mode": "ra"})
-        r.run_traversal(create_graph, setup_dict)
+        to_traverse = r.run_traversal(create_graph, setup_dict, "")
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_traverse, r.job.timeout or None))
 
     LOG_UI.info("Finished full setup")
 
@@ -295,7 +296,8 @@ def update(config, tag=""):
         remove_graph.flag_children(flag_type="run", flag=False)
         remove_graph.flag_children(flag_type="clean", flag=False, skip_roots=True)
         remove_graph.flag_children(to_state, vm_name, flag_type="clean", flag=True, skip_roots=True)
-        r.run_traversal(remove_graph, {"vms": vm_name, **config["param_dict"]})
+        to_traverse = r.run_traversal(remove_graph, {"vms": vm_name, **config["param_dict"]}, "")
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_traverse, r.job.timeout or None))
 
         logging.info("Updating all states before '%s'", to_state)
         setup_dict = config["param_dict"].copy()
@@ -318,7 +320,8 @@ def update(config, tag=""):
                                                {vm_name: config["vm_strs"][vm_name]},
                                                prefix=tag, verbose=False)
             update_graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
-        r.run_traversal(update_graph, setup_dict)
+        to_traverse = r.run_traversal(update_graph, setup_dict, "")
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_traverse, r.job.timeout or None))
 
     LOG_UI.info("Finished update setup")
 
