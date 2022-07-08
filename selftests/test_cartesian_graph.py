@@ -86,6 +86,7 @@ async def mock_run_test(_self, _job, node):
     # define ID-s and other useful parameter filtering
     node.get_runnable()
     node.params["_uid"] = node.long_prefix
+    # small enough not to slow down our tests too much for a test timeout of 100
     await asyncio.sleep(0.1)
     return DummyTestRunning(node.params, _self.job.result.tests).get_test_result()
 
@@ -104,7 +105,7 @@ class CartesianGraphTest(Test):
         DummyStateCheck.present_states = []
 
         self.config = {}
-        self.config["param_dict"] = {}
+        self.config["param_dict"] = {"test_timeout": 100}
         self.config["tests_str"] = "only normal\n"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
 
@@ -377,6 +378,24 @@ class CartesianGraphTest(Test):
             self.loader.parse_object_trees(self.config["param_dict"],
                                            self.config["tests_str"], self.config["vm_strs"],
                                            prefix=self.prefix)
+
+    def test_one_leaf_with_occupation_timeout(self):
+        """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
+        self.config["param_dict"]["test_timeout"] = 1
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        test_node = graph.get_node_by(param_val="tutorial1")
+        test_node.set_environment(self.job, "dead")
+        DummyStateCheck.present_states = ["root", "install"]
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+        ]
+        with self.assertRaises(RuntimeError):
+            self._run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
     def test_one_leaf_dry_run(self):
         """Test dry run of a single leaf test where no test should end up really running."""

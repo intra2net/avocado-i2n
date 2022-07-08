@@ -236,6 +236,7 @@ class CartesianRunner(RunnerInterface):
             step = 0
 
         traverse_path = [root]
+        occupied_at, occupied_wait = None, 0.0
         while not root.is_cleanup_ready():
             next = traverse_path[-1]
             if len(traverse_path) > 1:
@@ -246,10 +247,22 @@ class CartesianRunner(RunnerInterface):
                 traverse_path.append(next.pick_next_child())
                 continue
             if next.is_occupied():
-                logging.debug(f"Worker {slot} stepping back from already occupied test node {next}")
+                # ending with an occupied node would mean we wait for a permill of its duration
+                test_duration = next.params.get_numeric("test_timeout", 3600)
+                occupied_timeout = round(max(test_duration/1000, 0.1), 2)
+                if next == occupied_at:
+                    if occupied_wait > test_duration:
+                        raise RuntimeError(f"Worker {slot} spent {occupied_wait:.2f} seconds waiting for "
+                                           f"occupied node of maximum test duration {test_duration:.2f}")
+                    occupied_wait += occupied_timeout
+                else:
+                    # reset as we are waiting for a different node now
+                    occupied_wait = 0.0
+                occupied_at = next
+                logging.debug(f"Worker {slot} stepping back from already occupied test node {next} for "
+                              f"a period of {occupied_timeout} seconds (total time spent: {occupied_wait:.2f})")
                 traverse_path.pop()
-                # ending with an occupied leaf node could take many minutes
-                await asyncio.sleep(60)
+                await asyncio.sleep(occupied_timeout)
                 continue
 
             logging.debug("Worker %s at test node %s which is %sready with setup, %sready with cleanup,"
