@@ -72,6 +72,8 @@ class MockDriver(unittest.TestCase):
             mock_driver.return_value.snapshot_list.return_value = output
             with mock.patch('avocado_i2n.states.qcow2.QemuImg', mock_driver):
                 yield mock_driver
+        elif backend == "qcow2ext":
+            mock_driver.listdir.return_value = [s + ".qcow2" for s in state_names]
         elif backend == "ramfile":
             mock_driver.glob.return_value = state_names
             with mock.patch('avocado_i2n.states.ramfile.glob', mock_driver):
@@ -106,6 +108,20 @@ class MockDriver(unittest.TestCase):
             driver_instance.snapshot_list.return_value = output
             with mock.patch('avocado_i2n.states.qcow2.QemuImg', mock_driver):
                 yield mock_driver
+        elif backend == "qcow2ext":
+            mock_driver.listdir.return_value = [state_name + ".state"] if exists else []
+            mock_driver.stat.return_value.st_size = 0
+            mock_driver.path.join = os.path.join
+            mock_driver.path.exists = self.mock_file_exists
+            self.exist_switch = exists
+            exist_lambda = lambda filename: filename.endswith("image.qcow2") or filename.endswith("/vm1")
+            self.exist_lambda = exist_lambda if root_exists and not exists else None
+            # TODO: this is in fact way too much mocking since it requires mocking various
+            # other backends like shutil, QemuImg, etc. all of which are used - better convert
+            # all these isolated boundary tests into proper integration tests to reduce mocking
+            # the boundary of our dependencies and benefit from proper boundary change detection
+            with mock.patch('avocado_i2n.states.qcow2.os', mock_driver):
+                yield mock_driver
         elif backend == "ramfile":
             # restore some unmocked parts of the os module
             mock_driver.path.dirname = os.path.dirname
@@ -126,6 +142,8 @@ class MockDriver(unittest.TestCase):
             mock_driver.lv_list.assert_called_once_with("disk_vm1")
         elif backend in ["qcow2", "qcow2vt"]:
             mock_driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
+        elif backend == "qcow2ext":
+            mock_driver.listdir.assert_called_once_with("/images/vm1/image1")
         elif backend == "ramfile":
             mock_driver.glob.assert_called_once_with("/images/vm1/*.state")
         else:
@@ -153,6 +171,17 @@ class MockDriver(unittest.TestCase):
                 mock_driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
             else:
                 mock_driver.return_value.snapshot_list.assert_not_called()
+        elif backend == "qcow2ext":
+            # assert root state is checked as a prerequisite
+            expected_checks = [mock.call(f"/images/vm1"),
+                               mock.call(f"/images/vm1/image.qcow2")]
+            if not root_exists:
+                expected_checks = expected_checks[:1]
+            self.assertListEqual(mock_driver.path.exists.call_args_list, expected_checks)
+            # assert actual state is checked when root is available
+            if root_exists:
+                # TODO: cannot assert state_name as we need more isolated testing here
+                mock_driver.listdir.assert_called_once_with(f"/images/vm1/image1")
         elif backend == "ramfile":
             # assert root state is checked as a prerequisite
             expected_checks = [mock.call(f"/images/vm1/image.qcow2"),
@@ -187,6 +216,9 @@ class MockDriver(unittest.TestCase):
                 driver_instance.assert_not_called()
             else:
                 self.mock_vms["vm1"].loadvm.assert_not_called()
+        elif backend == "qcow2ext":
+            # would have to mock a different dependency (QemuImg) here
+            raise NotImplementedError("Not isolated backend - test via integration")
         elif backend == "ramfile":
             mock_driver.path.exists.assert_called_with(f"/images/vm1/{state_name}.state")
             if action_type == 1:
@@ -229,6 +261,9 @@ class MockDriver(unittest.TestCase):
                 self.mock_vms["vm1"].savevm.assert_called_once_with(state_name)
             else:
                 self.mock_vms["vm1"].savevm.assert_not_called()
+        elif backend == "qcow2ext":
+            # would have to mock a different dependency (shutil.copy) here
+            raise NotImplementedError("Not isolated backend - test via integration")
         elif backend == "ramfile":
             if action_type in [1, 2]:
                 mock_driver.path.exists.assert_any_call(f"/images/vm1/{state_name}.state")
@@ -261,6 +296,13 @@ class MockDriver(unittest.TestCase):
                 mock_driver.return_value.assert_not_called()
             else:
                 self.mock_vms["vm1"].monitor.send_args_cmd.assert_not_called()
+        elif backend == "qcow2ext":
+            # TODO: cannot assert state_name as we need more isolated testing here
+            mock_driver.listdir.assert_called_once_with(f"/images/vm1/image1")
+            if action_type == 1:
+                mock_driver.unlink.assert_called_once_with(f"/images/vm1/{state_name}.qcow2")
+            else:
+                mock_driver.unlink.assert_not_called()
         elif backend == "ramfile":
             mock_driver.path.exists.assert_called_with(f"/images/vm1/{state_name}.state")
             if action_type == 1:
@@ -357,7 +399,7 @@ class StateSetupTest(Test):
     def _prepare_driver_from_backend(self, backend):
         self._create_mock_vms()
 
-        if backend in ["qcow2", "lvm", "pool"]:
+        if backend in ["qcow2", "qcow2ext", "lvm", "pool"]:
             backend_type = "image"
             self.run_params["skip_types"] = "nets nets/vms"
         else:
@@ -366,6 +408,8 @@ class StateSetupTest(Test):
         if backend == "pool":
             self._set_image_pool_params()
         elif backend == "qcow2":
+            self._set_image_qcow2_params()
+        elif backend == "qcow2ext":
             self._set_image_qcow2_params()
         elif backend == "lvm":
             self._set_image_lvm_params()
@@ -466,8 +510,12 @@ class StateSetupTest(Test):
         self._test_show_states("lvm")
 
     def test_show_image_qcow2(self):
-        """Test that state listing with the QCOW2 backend works correctly."""
+        """Test that state listing with the QCOW2 internal state backend works correctly."""
         self._test_show_states("qcow2")
+
+    def test_show_image_qcow2ext(self):
+        """Test that state listing with the QCOW2 external state backend works correctly."""
+        self._test_show_states("qcow2ext")
 
     def test_show_vm_qcow2(self):
         """Test that state listing with the QCOW2VT backend works correctly."""
@@ -482,8 +530,12 @@ class StateSetupTest(Test):
         self._test_check_state("lvm")
 
     def test_check_image_qcow2(self):
-        """Test that state checking with the QCOW2 backend works correctly."""
+        """Test that state checking with the QCOW2 internal state backend works correctly."""
         self._test_check_state("qcow2")
+
+    def test_check_image_qcow2ext(self):
+        """Test that state checking with the QCOW2 external state backend works correctly."""
+        self._test_check_state("qcow2ext")
 
     def test_check_image_qcow2_boot(self):
         """
@@ -752,8 +804,12 @@ class StateSetupTest(Test):
         self._test_unset_state("lvm")
 
     def test_unset_image_qcow2(self):
-        """Test that state unsetting with the QCOW2 backend works with available root."""
+        """Test that state unsetting with the QCOW2 internal state backend works with available root."""
         self._test_unset_state("qcow2")
+
+    def test_unset_image_qcow2ext(self):
+        """Test that state unsetting with the QCOW2 external state backend works with available root."""
+        self._test_unset_state("qcow2ext")
 
     def test_unset_ra(self):
         """Test that state unsetting works with reuse and abort policy."""
@@ -1309,9 +1365,9 @@ class StateSetupTest(Test):
             self.mock_vms["vm1"].loadvm.assert_called_once_with('launch')
             self.mock_vms["vm1"].monitor.send_args_cmd.assert_called_once_with("delvm id=launch")
 
-    @mock.patch('avocado_i2n.states.qcow2.process')
+    @mock.patch('avocado_i2n.states.qcow2.QemuImg')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
-    def test_check_multivm(self, mock_lv_utils, _mock_process):
+    def test_check_multivm(self, mock_lv_utils, _mock_qemu_class):
         """Test that checking various states of multiple vms works."""
         self.run_params["vms"] = "vm1 vm2"
         self.run_params["check_state_images"] = "launch"
@@ -1387,10 +1443,10 @@ class StateSetupTest(Test):
 
     # TODO: LVM is not supposed to reach to QCOW2 but we have in-code TODO about it
     @mock.patch('avocado_i2n.states.setup.env_process', mock.Mock(return_value=0))
-    @mock.patch('avocado_i2n.states.qcow2.process')
+    @mock.patch('avocado_i2n.states.qcow2.QemuImg')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     @mock.patch('avocado_i2n.states.lvm.process')
-    def test_set_multivm(self, mock_process, mock_lv_utils, _mock_qcow2_process):
+    def test_set_multivm(self, mock_process, mock_lv_utils, _mock_qemu_class):
         """Test that setting various states of multiple vms works."""
         self.run_params["vms"] = "vm2 vm3 vm4"
         self.run_params["set_state_images"] = "launch2"
@@ -1438,9 +1494,9 @@ class StateSetupTest(Test):
         mock_lv_utils.lv_create.assert_called_once_with('disk_vm3', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
         mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm3', 'LogVol', 'current_state')
 
-    @mock.patch('avocado_i2n.states.qcow2.process')
+    @mock.patch('avocado_i2n.states.qcow2.QemuImg')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
-    def test_unset_multivm(self, mock_lv_utils, _mock_process):
+    def test_unset_multivm(self, mock_lv_utils, _mock_qemu_class):
         """Test that unsetting various states of multiple vms works."""
         self.run_params["vms"] = "vm1 vm4"
         self.run_params["unset_state_images_vm1"] = "root"

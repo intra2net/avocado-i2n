@@ -29,6 +29,7 @@ INTERFACE
 
 import os
 import re
+import shutil
 import logging as log
 logging = log.getLogger('avocado.test.' + __name__)
 
@@ -44,7 +45,7 @@ QEMU_ON_STATES_REGEX = re.compile(r"^\d+\s+([\w\.-]+)\s*(?!0 B)(\d+e?[\-\+]?[\.\
 
 
 class QCOW2Backend(StateBackend):
-    """Backend manipulating image states as QCOW2 snapshots."""
+    """Backend manipulating image states as internal QCOW2 snapshots."""
 
     _require_running_object = False
 
@@ -61,7 +62,7 @@ class QCOW2Backend(StateBackend):
         All arguments match the base class.
         """
         qemu_img = QemuImg(params, params["images_base_dir"], params["images"])
-        logging.debug("Showing %s snapshots for image %s", cls.state_type(), qemu_img.image_filename)
+        logging.debug("Showing %s internal states for image %s", cls.state_type(), params["images"])
         on_snapshots_dump = qemu_img.snapshot_list(force_share=True)
         pattern = QEMU_ON_STATES_REGEX if cls._require_running_object else QEMU_OFF_STATES_REGEX
         state_tuples = re.findall(pattern, on_snapshots_dump)
@@ -144,6 +145,83 @@ class QCOW2Backend(StateBackend):
         logging.info("Removing %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image)
         qemu_img.snapshot_del()
+
+
+class QCOW2ExtBackend(QCOW2Backend):
+    """Backend manipulating image states as external QCOW2 snapshots."""
+
+    _require_running_object = False
+
+    @classmethod
+    def show(cls, params, object=None):
+        """
+        Return a list of available states of a specific type.
+
+        All arguments match the base class.
+        """
+        qemu_img = QemuImg(params, params["images_base_dir"], params["images"])
+        logging.debug("Showing %s external states for image %s", cls.state_type(), params["images"])
+        images_dir = os.path.dirname(qemu_img.image_filename)
+        snapshots = os.listdir(images_dir)
+        states = []
+        for snapshot in snapshots:
+            if not snapshot.endswith(".qcow2"):
+                continue
+            size = os.stat(os.path.join(images_dir, snapshot)).st_size
+            state = snapshot[:-6]
+            logging.info(f"Detected {cls.state_type()} state '{state}' of size "
+                         f"{round(size / 1024**3, 3)} GB ({size})")
+            states.append(state)
+        return states
+
+    @classmethod
+    def get(cls, params, object=None):
+        """
+        Retrieve a state disregarding the current changes.
+
+        All arguments match the base class.
+        """
+        vm, vm_name = object, params["vms"]
+        state, image = params["get_state"], params["images"]
+        params["image_chain"] = f"snapshot {image}"
+        params["image_name_snapshot"] = state
+        params["image_format_snapshot"] = "qcow2"
+        qemu_img = QemuImg(params, params["images_base_dir"], image)
+        logging.info("Reusing %s state '%s' of %s/%s", cls.state_type(), state,
+                     vm_name, image)
+        qemu_img.create(params, ignore_errors=False)
+
+    @classmethod
+    def set(cls, params, object=None):
+        """
+        Store a state saving the current changes.
+
+        All arguments match the base class.
+        """
+        vm, vm_name = object, params["vms"]
+        state, image = params["set_state"], params["images"]
+        qemu_img = QemuImg(params, params["images_base_dir"], image)
+        logging.info("Creating %s state '%s' of %s/%s", cls.state_type(), state,
+                     vm_name, image)
+        images_dir = os.path.dirname(qemu_img.image_filename)
+        os.makedirs(images_dir, exist_ok=True)
+        shutil.copy(qemu_img.image_filename, os.path.join(images_dir, state + ".qcow2"))
+
+    @classmethod
+    def unset(cls, params, object=None):
+        """
+        Remove a state with previous changes.
+
+        All arguments match the base class.
+        """
+        vm, vm_name = object, params["vms"]
+        state, image = params["unset_state"], params["images"]
+        qemu_img = QemuImg(params, params["images_base_dir"], image)
+        logging.info("Removing %s state '%s' of %s/%s", cls.state_type(), state,
+                     vm_name, image)
+        images_dir = os.path.dirname(qemu_img.image_filename)
+        # TODO: should we mv to pointer image in case removed state is in backing chain?
+        os.unlink(os.path.join(images_dir, state + ".qcow2"))
 
 
 class QCOW2VTBackend(StateOnBackend, QCOW2Backend):
