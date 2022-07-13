@@ -69,8 +69,8 @@ class MockDriver(unittest.TestCase):
             for state in state_names:
                 size = "0 B" if state_type == "image" else "1 GiB"
                 output += f"0         {state}         {size} 0000-00-00 00:00:00   00:00:00.000\n"
-            mock_driver.system_output.return_value = output.encode()
-            with mock.patch('avocado_i2n.states.qcow2.process', mock_driver):
+            mock_driver.return_value.snapshot_list.return_value = output
+            with mock.patch('avocado_i2n.states.qcow2.QemuImg', mock_driver):
                 yield mock_driver
         elif backend == "ramfile":
             mock_driver.glob.return_value = state_names
@@ -102,8 +102,9 @@ class MockDriver(unittest.TestCase):
             state = state_name
             output = f"0         {state}         {size} 0000-00-00 00:00:00   00:00:00.000\n"
             output = "" if not exists else output
-            mock_driver.system_output.return_value = output.encode()
-            with mock.patch('avocado_i2n.states.qcow2.process', mock_driver):
+            driver_instance = mock_driver.return_value
+            driver_instance.snapshot_list.return_value = output
+            with mock.patch('avocado_i2n.states.qcow2.QemuImg', mock_driver):
                 yield mock_driver
         elif backend == "ramfile":
             # restore some unmocked parts of the os module
@@ -124,7 +125,7 @@ class MockDriver(unittest.TestCase):
         if backend == "lvm":
             mock_driver.lv_list.assert_called_once_with("disk_vm1")
         elif backend in ["qcow2", "qcow2vt"]:
-            mock_driver.system_output.assert_called_once_with("qemu-img snapshot -l /images/vm1/image.qcow2 -U")
+            mock_driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
         elif backend == "ramfile":
             mock_driver.glob.assert_called_once_with("/images/vm1/*.state")
         else:
@@ -149,9 +150,9 @@ class MockDriver(unittest.TestCase):
             self.mock_file_exists.assert_called_once_with("/images/vm1/image.qcow2")
             # assert actual state is checked only when root is available
             if root_exists:
-                mock_driver.system_output.assert_called_once_with("qemu-img snapshot -l /images/vm1/image.qcow2 -U")
+                mock_driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
             else:
-                mock_driver.system_output.assert_not_called()
+                mock_driver.return_value.snapshot_list.assert_not_called()
         elif backend == "ramfile":
             # assert root state is checked as a prerequisite
             expected_checks = [mock.call(f"/images/vm1/image.qcow2"),
@@ -173,13 +174,17 @@ class MockDriver(unittest.TestCase):
                 mock_driver.lv_remove.assert_not_called()
                 mock_driver.lv_take_snapshot.assert_not_called()
         elif backend in ["qcow2", "qcow2vt"]:
-            mock_driver.system_output.assert_called_once_with("qemu-img snapshot -l /images/vm1/image.qcow2 -U")
+            driver_instance = mock_driver.return_value
+            driver_instance.snapshot_list.assert_called_once_with(force_share=True)
             if action_type == 1 and state_type == "image":
-                mock_driver.system.assert_called_once_with(f"qemu-img snapshot -a {state_name} /images/vm1/image.qcow2")
+                mock_driver.assert_called()
+                second_creation_call_params = mock_driver.call_args_list[-2].args[0]
+                self.assertEqual(second_creation_call_params["get_state"], state_name)
+                driver_instance.snapshot_apply.assert_called_once_with()
             elif action_type == 1 and state_type == "vm":
                 self.mock_vms["vm1"].loadvm.assert_called_once_with(state_name)
             elif state_type == "image":
-                mock_driver.system.assert_not_called()
+                driver_instance.assert_not_called()
             else:
                 self.mock_vms["vm1"].loadvm.assert_not_called()
         elif backend == "ramfile":
@@ -206,15 +211,20 @@ class MockDriver(unittest.TestCase):
                 mock_driver.lv_remove.assert_not_called()
                 mock_driver.lv_take_snapshot.assert_not_called()
         elif backend in ["qcow2", "qcow2vt"]:
-            mock_driver.system_output.assert_called_once_with("qemu-img snapshot -l /images/vm1/image.qcow2 -U")
+            mock_driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
             if action_type == 1 and state_type == "image":
-                mock_driver.system.assert_called_once_with(f"qemu-img snapshot -c {state_name} /images/vm1/image.qcow2")
+                mock_driver.assert_called()
+                second_creation_call_params = mock_driver.call_args_list[-2].args[0]
+                self.assertEqual(second_creation_call_params["set_state"], state_name)
+                mock_driver.return_value.snapshot_create.assert_called_once_with()
             elif action_type == 2 and state_type == "image":
-                expected_checks = [mock.call(f"qemu-img snapshot -d {state_name} /images/vm1/image.qcow2"),
-                                   mock.call(f"qemu-img snapshot -c {state_name} /images/vm1/image.qcow2")]
-                self.assertListEqual(mock_driver.system.call_args_list, expected_checks)
+                mock_driver.assert_called()
+                second_creation_call_params = mock_driver.call_args_list[-2].args[0]
+                self.assertEqual(second_creation_call_params["set_state"], state_name)
+                mock_driver.return_value.snapshot_del.assert_called_once_with()
+                mock_driver.return_value.snapshot_create.assert_called_once_with()
             elif state_type == "image":
-                mock_driver.system.assert_not_called()
+                mock_driver.return_value.assert_not_called()
             elif action_type in [1, 2] and state_type == "vm":
                 self.mock_vms["vm1"].savevm.assert_called_once_with(state_name)
             else:
@@ -239,13 +249,16 @@ class MockDriver(unittest.TestCase):
                 mock_driver.lv_remove.assert_not_called()
                 mock_driver.lv_take_snapshot.assert_not_called()
         elif backend in ["qcow2", "qcow2vt"]:
-            mock_driver.system_output.assert_called_once_with("qemu-img snapshot -l /images/vm1/image.qcow2 -U")
+            mock_driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
             if action_type == 1 and state_type == "image":
-                mock_driver.system.assert_called_once_with(f"qemu-img snapshot -d {state_name} /images/vm1/image.qcow2")
+                mock_driver.assert_called()
+                second_creation_call_params = mock_driver.call_args_list[-2].args[0]
+                self.assertEqual(second_creation_call_params["unset_state"], state_name)
+                mock_driver.return_value.snapshot_del.assert_called_once_with()
             elif action_type == 1 and state_type == "vm":
                 self.mock_vms["vm1"].monitor.send_args_cmd.assert_called_once_with(f'delvm id={state_name}')
             elif state_type == "image":
-                mock_driver.system.assert_not_called()
+                mock_driver.return_value.assert_not_called()
             else:
                 self.mock_vms["vm1"].monitor.send_args_cmd.assert_not_called()
         elif backend == "ramfile":
@@ -549,7 +562,7 @@ class StateSetupTest(Test):
             # assert root state is provided from the check
             self.mock_vms["vm1"].create.assert_called_once()
             # assert actual state is still checked and not available
-            driver.system_output.assert_called_once_with("qemu-img snapshot -l /images/vm1/image.qcow2 -U")
+            driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
         self.assertFalse(exists)
 
     def test_get_image_lvm(self):
@@ -1291,7 +1304,7 @@ class StateSetupTest(Test):
             # TODO: once called assertions are too strong
             #self.driver.assert_get(driver, "launch", backend_type, 1)
             #self.driver.assert_unset(driver, "launch", backend_type, 1)
-            driver.system_output.assert_called_with("qemu-img snapshot -l /images/vm1/image.qcow2 -U")
+            driver.return_value.snapshot_list.assert_called_with(force_share=True)
             self.mock_vms["vm1"].is_alive.assert_called_with()
             self.mock_vms["vm1"].loadvm.assert_called_once_with('launch')
             self.mock_vms["vm1"].monitor.send_args_cmd.assert_called_once_with("delvm id=launch")
@@ -1330,9 +1343,8 @@ class StateSetupTest(Test):
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
         self.assertFalse(exists)
 
-    @mock.patch('avocado_i2n.states.qcow2.process')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
-    def test_get_multivm(self, mock_lv_utils, mock_process):
+    def test_get_multivm(self, mock_lv_utils):
         """Test that getting various states of multiple vms works."""
         self.run_params["vms"] = "vm1 vm2 vm3"
         self.run_params["get_state_images"] = "launch2"
@@ -1353,14 +1365,17 @@ class StateSetupTest(Test):
         self._set_vm_qcow2_params()
 
         # test on/off switch as well
-        def lv_check_side_effect(_vgname, lvname):
-            return True if lvname in ["LogVol", "launch1"] else False if lvname == "launch2" else False
-        mock_lv_utils.lv_check.side_effect = lv_check_side_effect
-        mock_process.system_output.return_value = b"5         launch3         684 MiB 2021-01-18 21:24:22   00:00:44.478"
-        self.mock_vms["vm1"].is_alive.return_value = False
-        self.mock_vms["vm3"].is_alive.return_value = True
+        with self.driver.mock_check("launch3", "vm", True) as driver:
+            def lv_check_side_effect(_vgname, lvname):
+                return True if lvname in ["LogVol", "launch1"] else False if lvname == "launch2" else False
+            mock_lv_utils.lv_check.side_effect = lv_check_side_effect
+            self.mock_vms["vm1"].is_alive.return_value = False
+            self.mock_vms["vm3"].is_alive.return_value = True
 
-        ss.get_states(self.run_params, self.env)
+            ss.get_states(self.run_params, self.env)
+
+            self.mock_vms["vm3"].is_alive.assert_called_once_with()
+            driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
 
         expected = [mock.call("disk_vm1", "LogVol"),
                     mock.call("disk_vm1", "launch1"),
@@ -1369,8 +1384,6 @@ class StateSetupTest(Test):
                     mock.call("disk_vm3", "LogVol"),
                     mock.call("disk_vm3", "launch2")]
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
-        self.mock_vms["vm3"].is_alive.assert_called_once_with()
-        mock_process.system_output.assert_called_once_with("qemu-img snapshot -l /images/vm3/image.qcow2 -U")
 
     # TODO: LVM is not supposed to reach to QCOW2 but we have in-code TODO about it
     @mock.patch('avocado_i2n.states.setup.env_process', mock.Mock(return_value=0))
@@ -1453,37 +1466,6 @@ class StateSetupTest(Test):
                     mock.call("disk_vm4", "launch4")]
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
 
-    def test_qcow2_format(self):
-        """Test that QCOW2 format filter for the QCOW2 backends."""
-        backend = "qcow2"
-        backend_type = self._prepare_driver_from_backend(backend)
-
-        for do in ["check", "get", "set", "unset"]:
-            self.run_params[f"{do}_state_{backend_type}s"] = "launch"
-
-            for image_format in ["incompatible", "missing"]:
-                self.run_params["image_format"] = image_format
-                if image_format == "missing":
-                    del self.run_params["image_format"]
-
-                with self.driver.mock_check("launch", backend_type, False, True) as driver:
-                    # check root format blockage
-                    with self.assertRaises(ValueError):
-                        ss.__dict__[f"{do}_states"](self.run_params, self.env)
-                    driver.run.assert_not_called()
-                    self.mock_vms["vm1"].assert_not_called()
-
-                # check internal format blockage
-                self.run_params["image_name"] = "vm1/image"
-                self.run_params[f"{do}_state"] = "launch"
-                with self.driver.mock_check("launch", backend_type, False, True) as driver:
-                    with self.assertRaises(ValueError):
-                        ss.BACKENDS["qcow2"]().__getattribute__(do)(self.run_params, self.env)
-                        ss.BACKENDS["qcow2vt"]().__getattribute__(do)(self.run_params, self.env)
-                    driver.run.assert_not_called()
-                    self.mock_vms["vm1"].assert_not_called()
-                del self.run_params[f"{do}_state"]
-
     def test_qcow2_dash(self):
         """Test the special character suppot for the QCOW2 backends."""
         self.run_params["image_name"] = "vm1/image"
@@ -1517,26 +1499,29 @@ class StateSetupTest(Test):
 
         mock_isfile.return_value = True
         with self.driver.mock_check("launch", backend_type, False, False) as driver:
-            driver.run.return_value = process.CmdResult("dummy-command")
             qcow2.convert_image(self.run_params)
-            driver.run.assert_called_with('qemu-img convert -c -p -O qcow2 "./ext_image" "/images/vm1/image.qcow2"',
-                                          timeout=12000)
+            driver.return_value.convert.assert_called()
+            # TODO: this is now fully external assertion beyond our mocks
+            # 'qemu-img convert -c -p -O qcow2 "./ext_image" "/images/vm1/image.qcow2"'
 
         mock_isfile.return_value = False
         with self.driver.mock_check("launch", backend_type, False, False) as driver:
             with self.assertRaises(FileNotFoundError):
                 qcow2.convert_image(self.run_params)
-            driver.run.assert_not_called()
+            driver.return_value.assert_not_called()
 
         mock_isfile.return_value = True
         with self.driver.mock_check("launch", backend_type, False, False) as driver:
             driver.CmdError = process.CmdError
             result = process.CmdResult("qemu-img convert", stderr=b'..."write" lock...', exit_status=0)
-            driver.run.side_effect = process.CmdError(result=result)
+            driver.return_value.check.side_effect = process.CmdError(result=result)
             with self.assertRaises(process.CmdError):
                 qcow2.convert_image(self.run_params)
             # no convert command was executed
-            driver.run.assert_called_once_with('qemu-img check /images/vm1/image.qcow2')
+            driver.return_value.check.assert_called_once()
+            # TODO: this is now fully external assertion beyond our mocks
+            # 'qemu-img check /images/vm1/image.qcow2'
+            driver.return_value.assert_not_called()
 
     @mock.patch('avocado_i2n.states.pool.SKIP_LOCKS', False)
     @mock.patch('avocado_i2n.states.pool.fcntl')
