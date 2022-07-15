@@ -103,11 +103,12 @@ class QCOW2Backend(StateBackend):
         """
         vm, vm_name = object, params["vms"]
         state, image = params["get_state"], params["images"]
+        params["image_chain"] = f"{image} snapshot"
+        params["image_raw_device_snapshot"] = "yes"
+        params["image_name_snapshot"] = state
         qemu_img = QemuImg(params, params["images_base_dir"], image)
         logging.info("Reusing %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image)
-        qemu_img.snapshot_tag = state
-        qemu_img.snapshot_image_filename = state
         qemu_img.snapshot_apply()
 
     @classmethod
@@ -119,11 +120,12 @@ class QCOW2Backend(StateBackend):
         """
         vm, vm_name = object, params["vms"]
         state, image = params["set_state"], params["images"]
+        params["image_chain"] = f"{image} snapshot"
+        params["image_raw_device_snapshot"] = "yes"
+        params["image_name_snapshot"] = state
         qemu_img = QemuImg(params, params["images_base_dir"], image)
         logging.info("Creating %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image)
-        qemu_img.snapshot_tag = state
-        qemu_img.snapshot_image_filename = state
         qemu_img.snapshot_create()
 
     @classmethod
@@ -135,11 +137,12 @@ class QCOW2Backend(StateBackend):
         """
         vm, vm_name = object, params["vms"]
         state, image = params["unset_state"], params["images"]
+        params["image_chain"] = f"{image} snapshot"
+        params["image_raw_device_snapshot"] = "yes"
+        params["image_name_snapshot"] = state
         qemu_img = QemuImg(params, params["images_base_dir"], image)
         logging.info("Removing %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image)
-        qemu_img.snapshot_tag = state
-        qemu_img.snapshot_image_filename = state
         qemu_img.snapshot_del()
 
 
