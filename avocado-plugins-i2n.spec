@@ -29,7 +29,7 @@
 
 Summary: Avocado I2N Plugin
 Name: avocado-plugins-i2n
-Version: 92.0
+Version: 98.0
 Release: 0%{?gitrel}%{?dist}
 License: GPLv2
 Group: Development/Tools
@@ -96,6 +96,10 @@ PYTHONPATH=:. avocado run --nrunner-max-parallel-tasks=4 selftests/test_*
 %{_datadir}/avocado-plugins-i2n/tp_folder/*
 
 %changelog
+* Tue Jul 19 2022 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 98.0-0
+- Fully parallel graph traversal using divergent paths strategy
+- Fully restored, adapted, and CI-covered sample test suite
+
 * Thu Nov 25 2021 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 92.0-0
 - Stateful object composition for net, vm, and image states
 - Next traverser (runner) supporting process and LXC test isolation
