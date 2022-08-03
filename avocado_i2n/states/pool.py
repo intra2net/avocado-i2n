@@ -36,7 +36,7 @@ import contextlib
 import fcntl
 import errno
 
-from .qcow2 import QCOW2Backend, get_image_path
+from .qcow2 import QCOW2Backend, QCOW2ExtBackend, get_image_path
 
 
 #: skip waiting on locks if we only read from the pool for all processes, i.e.
@@ -45,8 +45,8 @@ from .qcow2 import QCOW2Backend, get_image_path
 SKIP_LOCKS = False
 
 
-class QCOW2PoolBackend(QCOW2Backend):
-    """Backend manipulating image states as from a shared pool of QCOW2 images."""
+class QCOW2RootPoolBackend(QCOW2Backend):
+    """Backend manipulating root states from a shared pool of QCOW2 images."""
 
     @classmethod
     def check_root(cls, params, object=None):
@@ -56,12 +56,12 @@ class QCOW2PoolBackend(QCOW2Backend):
         All arguments match the base class.
         """
         if not params.get_boolean("use_pool", True):
-            return super(QCOW2PoolBackend, cls).check_root(params, object)
+            return super(QCOW2RootPoolBackend, cls).check_root(params, object)
         elif (params.get_boolean("update_pool", False) and
-                not super(QCOW2PoolBackend, cls).check_root(params, object)):
+                not super(QCOW2RootPoolBackend, cls).check_root(params, object)):
             raise RuntimeError("Updating state pool requires local root states")
         elif (not params.get_boolean("update_pool", False) and
-                super(QCOW2PoolBackend, cls).check_root(params, object)):
+                super(QCOW2RootPoolBackend, cls).check_root(params, object)):
             return True
 
         vm_name = params["vms"]
@@ -93,9 +93,9 @@ class QCOW2PoolBackend(QCOW2Backend):
 
         All arguments match the base class.
         """
-        if (super(QCOW2PoolBackend, cls).check_root(params, object) or
+        if (super(QCOW2RootPoolBackend, cls).check_root(params, object) or
                 not params.get_boolean("use_pool", True)):
-            super(QCOW2PoolBackend, cls).get_root(params, object)
+            super(QCOW2RootPoolBackend, cls).get_root(params, object)
             return
 
         vm_name = params["vms"]
@@ -122,7 +122,7 @@ class QCOW2PoolBackend(QCOW2Backend):
         # local and pool root setting are mutually exclusive as we usually want
         # to set the pool root from an existing local root with some states on it
         if not params.get_boolean("update_pool", False):
-            super(QCOW2PoolBackend, cls).set_root(params, object)
+            super(QCOW2RootPoolBackend, cls).set_root(params, object)
             return
 
         vm_name = params["vms"]
@@ -149,7 +149,7 @@ class QCOW2PoolBackend(QCOW2Backend):
         # local and pool root setting are mutually exclusive as we usually want
         # to set the pool root from an existing local root with some states on it
         if not params.get_boolean("update_pool", False):
-            super(QCOW2PoolBackend, cls).unset_root(params, object)
+            super(QCOW2RootPoolBackend, cls).unset_root(params, object)
             return
 
         vm_name = params["vms"]
@@ -164,6 +164,136 @@ class QCOW2PoolBackend(QCOW2Backend):
         update_timeout = params.get_numeric("update_pool_timeout", 300)
         with image_lock(dst_image_name, update_timeout) as lock:
             os.unlink(dst_image_name)
+
+
+class QCOW2PoolBackend(QCOW2ExtBackend):
+    """Backend manipulating image states from a shared pool of QCOW2 images."""
+
+    @classmethod
+    def show(cls, params, object=None):
+        """
+        Return a list of available states of a specific type.
+
+        All arguments match the base class.
+        """
+        if not params.get_boolean("use_pool", True):
+            return super(QCOW2PoolBackend, cls).show(params, object)
+        elif (params.get_boolean("update_pool", False) and
+                # make sure we don't use this class' show states method
+                not QCOW2ExtBackend.check(params, object)):
+            raise RuntimeError("Updating state pool requires local states")
+
+        cache_states = super(QCOW2PoolBackend, cls).show(params, object)
+
+        vm_name = params["vms"]
+        image = params["images"]
+        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        cache_dir = params["images_base_dir"]
+
+        logging.debug(f"Checking for shared {vm_name}/{image} states "
+                      f"in the shared pool {shared_pool}")
+        params["images_base_dir"] = os.path.join(shared_pool, vm_name)
+        pool_states = super(QCOW2PoolBackend, cls).show(params, object)
+        params["images_base_dir"] = cache_dir
+
+        return list(set(cache_states).union(set(pool_states)))
+
+    @classmethod
+    def check(cls, params, object=None):
+        """
+        Check whether a given state exists.
+
+        All arguments match the base class.
+        """
+        if (params.get_boolean("update_pool", False) and
+                not super(QCOW2PoolBackend, cls).check(params, object)):
+            raise RuntimeError("Updating state pool requires local root states")
+        elif params.get_boolean("update_pool", False):
+            return False
+        else:
+            return super(QCOW2PoolBackend, cls).check(params, object)
+
+    @classmethod
+    def get(cls, params, object=None):
+        """
+        Get a root state or essentially due to pre-existence do nothing.
+
+        All arguments match the base class.
+        """
+        # make sure we don't use this class' show states method
+        if (QCOW2ExtBackend.check(params, object) or
+                not params.get_boolean("use_pool", True)):
+            super(QCOW2PoolBackend, cls).get(params, object)
+            return
+
+        vm_name = params["vms"]
+        state, image_name = params["get_state"], params["images"]
+        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        cache_dir = params["images_base_dir"]
+
+        logging.info(f"Downloading shared {vm_name}/{image_name} state {state} "
+                     f"from the shared pool {shared_pool}")
+        source_image_name = os.path.join(shared_pool, vm_name, image_name, state + ".qcow2")
+        target_image_name = os.path.join(cache_dir, image_name, state + ".qcow2")
+        update_timeout = params.get_numeric("update_pool_timeout", 300)
+        with image_lock(source_image_name, update_timeout) as lock:
+            os.makedirs(os.path.dirname(target_image_name), exist_ok=True)
+            shutil.copy(source_image_name, target_image_name)
+
+        super(QCOW2PoolBackend, cls).get(params, object)
+
+    @classmethod
+    def set(cls, params, object=None):
+        """
+        Set a root state to provide object existence.
+
+        All arguments match the base class.
+        """
+        # local and pool root setting are mutually exclusive as we usually want
+        # to set the pool root from an existing local root with some states on it
+        if not params.get_boolean("update_pool", False):
+            super(QCOW2PoolBackend, cls).set(params, object)
+            return
+
+        vm_name = params["vms"]
+        state, image_name = params["set_state"], params["images"]
+        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        cache_dir = params["images_base_dir"]
+
+        logging.info(f"Uploading shared {vm_name}/{image_name} state {state} "
+                     f"to the shared pool {shared_pool}")
+        source_image_name = os.path.join(cache_dir, image_name, state + ".qcow2")
+        target_image_name = os.path.join(shared_pool, vm_name, image_name, state + ".qcow2")
+        update_timeout = params.get_numeric("update_pool_timeout", 300)
+        with image_lock(target_image_name, update_timeout) as lock:
+            os.makedirs(os.path.dirname(target_image_name), exist_ok=True)
+            shutil.copy(source_image_name, target_image_name)
+
+    @classmethod
+    def unset(cls, params, object=None):
+        """
+        Unset a root state to prevent object existence.
+
+        All arguments match the base class and in addition:
+        """
+        # local and pool root setting are mutually exclusive as we usually want
+        # to set the pool root from an existing local root with some states on it
+        if not params.get_boolean("update_pool", False):
+            super(QCOW2PoolBackend, cls).unset(params, object)
+            return
+
+        vm_name = params["vms"]
+        state, image_name = params["unset_state"], params["images"]
+        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        cache_dir = params["images_base_dir"]
+
+        logging.info(f"Removing shared {vm_name}/{image_name} state {state} "
+                     f"from the shared pool {shared_pool}")
+        target_image_name = os.path.join(shared_pool, vm_name,
+                                         image_name, state + ".qcow2")
+        update_timeout = params.get_numeric("update_pool_timeout", 300)
+        with image_lock(target_image_name, update_timeout) as lock:
+            os.unlink(target_image_name)
 
 
 @contextlib.contextmanager
