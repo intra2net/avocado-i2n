@@ -143,6 +143,7 @@ def params_from_cmd(config):
                    "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
                    "qcow2vt": qcow2.QCOW2VTBackend, "ramfile": ramfile.RamfileBackend,
                    "vmnet": vmnet.VMNetBackend}
+    ramfile.RamfileBackend.image_state_backend = pool.QCOW2PoolBackend
 
     # attach environment processing hooks
     env_process_hooks()
