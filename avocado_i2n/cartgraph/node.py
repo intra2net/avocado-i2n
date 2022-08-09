@@ -27,15 +27,17 @@ INTERFACE
 
 """
 
+import os
 import re
 import logging as log
 logging = log.getLogger('avocado.test.' + __name__)
 
+from aexpect.exceptions import ShellCmdError
+from aexpect import remote
+from aexpect import remote_door as door
 from avocado.core.test_id import TestID
 from avocado.core.nrunner.runnable import Runnable
 from avocado.core.dispatcher import SpawnerDispatcher
-
-from ..states import setup as ss
 
 
 class TestNode(object):
@@ -371,7 +373,26 @@ class TestNode(object):
             node_params[f"soft_boot_{test_object.key}_{test_object.suffix}"] = "no"
 
         if not is_leaf:
-            self.should_run = not ss.check_states(node_params, None)
+            log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
+            node_host = self.params["hostname"]
+            node_nets = self.params["nets_ip_prefix"]
+            node_source_ip = f"{node_nets}.{node_host[1:]}" if node_host else ""
+            session = remote.wait_for_login(self.params["nets_shell_client"],
+                                            node_source_ip,
+                                            self.params["nets_shell_port"],
+                                            self.params["nets_username"], self.params["nets_password"],
+                                            self.params["nets_shell_prompt"])
+
+            control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
+            mod_control_path = door.set_subcontrol_parameter_dict(control_path, "params", node_params)
+            try:
+                door.run_subcontrol(session, mod_control_path)
+                self.should_run = False
+            except ShellCmdError as error:
+                if "AssertionError" in error.output:
+                    self.should_run = True
+                else:
+                    raise RuntimeError("Could not complete state scan due to control file error")
         logging.info("The test node %s %s run", self, "should" if self.should_run else "should not")
 
     def validate(self):

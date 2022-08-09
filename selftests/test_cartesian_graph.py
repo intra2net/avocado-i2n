@@ -6,6 +6,7 @@ import shutil
 import asyncio
 import re
 
+from aexpect.exceptions import ShellCmdError
 from avocado import Test
 from avocado.core import exceptions
 from avocado.core.suite import TestSuite, resolutions_to_runnables
@@ -63,8 +64,10 @@ class DummyTestRunning(object):
 class DummyStateCheck(object):
 
     present_states = []
+    states_params = {}
 
-    def __init__(self, params, env):
+    def __init__(self):
+        params = self.states_params
         check_state, check_source = None, None
         for vm in params.objects("vms"):
             vm_params = params.object_params(vm)
@@ -93,11 +96,18 @@ async def mock_run_test(_self, _job, node):
     return DummyTestRunning(node.params, _self.job.result.tests).get_test_result()
 
 
-def mock_check_states(params, env):
-    return DummyStateCheck(params, env).result
+def mock_check_states(session, mod_control_path):
+    if not DummyStateCheck().result:
+        raise ShellCmdError(1, "command", "AssertionError")
 
 
-@mock.patch('avocado_i2n.cartgraph.node.ss.check_states', mock_check_states)
+def get_check_states_params(_, __, node_params):
+    DummyStateCheck.states_params = node_params
+
+
+@mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
+@mock.patch('avocado_i2n.cartgraph.node.door.run_subcontrol', mock_check_states)
+@mock.patch('avocado_i2n.cartgraph.node.door.set_subcontrol_parameter_dict', get_check_states_params)
 @mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
 @mock.patch.object(CartesianRunner, 'run_test', mock_run_test)
 class CartesianGraphTest(Test):

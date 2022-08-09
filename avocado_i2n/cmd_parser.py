@@ -137,7 +137,7 @@ def params_from_cmd(config):
 
     # set default off and on state backends
     from .states import lvm, qcow2, lxc, btrfs, ramfile, pool, vmnet
-    ss.BACKENDS = {"qcow2": qcow2.QCOW2Backend, "qcow2ext": qcow2.QCOW2Backend,
+    ss.BACKENDS = {"qcow2": qcow2.QCOW2Backend, "qcow2ext": qcow2.QCOW2ExtBackend,
                    "pool": pool.QCOW2PoolBackend, "rootpool": pool.QCOW2RootPoolBackend,
                    "lvm": lvm.LVMBackend,
                    "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,

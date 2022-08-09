@@ -267,7 +267,7 @@ class CartesianRunner(RunnerInterface):
                 continue
 
             logging.debug("Worker %s at test node %s which is %sready with setup, %sready with cleanup,"
-                          " should %srun, should %sbe cleaned, and %sbe scanned",
+                          " should %srun, should %sbe cleaned, and should %sbe scanned",
                           slot, next.params["shortname"],
                           "not " if not next.is_setup_ready() else "",
                           "not " if not next.is_cleanup_ready() else "",
@@ -435,7 +435,6 @@ class CartesianRunner(RunnerInterface):
             test_node.should_scan = slot not in test_node.workers
 
         if test_node.should_scan:
-            # TODO: this currently happens locally and thus means state reuse is everywhere read-only
             test_node.scan_states()
             test_node.should_scan = False
         if test_node.should_run:
