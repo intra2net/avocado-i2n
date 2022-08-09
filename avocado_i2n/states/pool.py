@@ -235,8 +235,8 @@ class QCOW2PoolBackend(StateBackend):
         All arguments match the base class.
         """
         local_state_backend = cls._type_decorator(params["object_type"])
-        if (params.get_boolean("update_pool", False) and
-                not local_state_backend.check(params, object)):
+        locally_present = local_state_backend.check(params, object)
+        if params.get_boolean("update_pool", False) and not locally_present:
             raise RuntimeError("Updating state pool requires local states")
         elif params.get_boolean("update_pool", False):
             return False
@@ -250,6 +250,10 @@ class QCOW2PoolBackend(StateBackend):
             states = cls.show(params, object)
             for state in states:
                 if state == params["check_state"]:
+                    if not locally_present:
+                        params["get_state"] = state
+                        params["pool_only"] = "yes"
+                        cls.get(params, object)
                     logging.info(f"The {state_tag} state '{params['check_state']}' exists")
                     return True
             # at this point we didn't find the state in the listed ones
@@ -294,7 +298,8 @@ class QCOW2PoolBackend(StateBackend):
             with image_lock(source_memory_path, update_timeout) as lock:
                 shutil.copy(source_memory_path, target_memory_path)
 
-        local_state_backend.get(params, object)
+        if not params.get_boolean("pool_only"):
+            local_state_backend.get(params, object)
 
     @classmethod
     def set(cls, params, object=None):
