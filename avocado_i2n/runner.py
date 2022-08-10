@@ -238,14 +238,14 @@ class CartesianRunner(RunnerInterface):
 
         traverse_path = [root]
         occupied_at, occupied_wait = None, 0.0
-        while not root.is_cleanup_ready():
+        while not root.is_cleanup_ready(slot):
             next = traverse_path[-1]
             if len(traverse_path) > 1:
                 previous = traverse_path[-2]
             else:
                 # since the loop is discontinued if len(traverse_path) == 0 or root.is_cleanup_ready()
                 # a valid current node with at least one child is guaranteed
-                traverse_path.append(next.pick_next_child())
+                traverse_path.append(next.pick_next_child(slot))
                 continue
             if next.is_occupied():
                 # ending with an occupied node would mean we wait for a permill of its duration
@@ -269,8 +269,8 @@ class CartesianRunner(RunnerInterface):
             logging.debug("Worker %s at test node %s which is %sready with setup, %sready with cleanup,"
                           " should %srun, should %sbe cleaned, and should %sbe scanned",
                           slot, next.params["shortname"],
-                          "not " if not next.is_setup_ready() else "",
-                          "not " if not next.is_cleanup_ready() else "",
+                          "not " if not next.is_setup_ready(slot) else "",
+                          "not " if not next.is_cleanup_ready(slot) else "",
                           "not " if not next.should_run else "",
                           "not " if not next.should_clean else "",
                           "not " if not next.should_scan else "")
@@ -281,33 +281,31 @@ class CartesianRunner(RunnerInterface):
             # the previous' reference to it and pop the current next from the path
             if previous in next.cleanup_nodes or previous in next.visited_cleanup_nodes:
 
-                if next.is_setup_ready():
-                    previous.visit_node(next)
+                if next.is_setup_ready(slot):
+                    previous.visit_node(next, slot)
                     await self._traverse_test_node(graph, next, params, slot)
                     traverse_path.pop()
                 else:
                     # inverse DFS
-                    traverse_path.append(next.pick_next_parent())
+                    traverse_path.append(next.pick_next_parent(slot))
             elif previous in next.setup_nodes or previous in next.visited_setup_nodes:
 
                 # stop if test is not a setup leaf since parents have higher priority than children
-                if not next.is_setup_ready():
-                    traverse_path.append(next.pick_next_parent())
+                if not next.is_setup_ready(slot):
+                    traverse_path.append(next.pick_next_parent(slot))
                     continue
                 else:
                     await self._traverse_test_node(graph, next, params, slot)
 
-                if next.is_cleanup_ready():
+                if next.is_cleanup_ready(slot):
                     for setup in next.visited_setup_nodes:
-                        # test node could be reversed by a previous worker
-                        if next not in setup.visited_cleanup_nodes:
-                            setup.visit_node(next)
+                        setup.visit_node(next, slot)
                     await self._reverse_test_node(graph, next, params, slot)
                     traverse_path.pop()
                     graph.report_progress()
                 else:
                     # normal DFS
-                    traverse_path.append(next.pick_next_child())
+                    traverse_path.append(next.pick_next_child(slot))
             else:
                 raise AssertionError("Discontinuous path in the test dependency graph detected")
 
@@ -431,7 +429,7 @@ class CartesianRunner(RunnerInterface):
         else:
             return
         # scanning can now be additionally triggered for each worker on internal nodes
-        if not test_node.should_scan and not test_node.is_cleanup_ready():
+        if not test_node.should_scan and not test_node.is_cleanup_ready(slot):
             test_node.should_scan = slot not in test_node.workers
 
         if test_node.should_scan:

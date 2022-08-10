@@ -107,8 +107,8 @@ class TestNode(object):
         # lists of parent and children test nodes
         self.setup_nodes = []
         self.cleanup_nodes = []
-        self.visited_setup_nodes = []
-        self.visited_cleanup_nodes = []
+        self.visited_setup_nodes = {}
+        self.visited_cleanup_nodes = {}
 
     def __repr__(self):
         shortname = self.params.get("shortname", "<unknown>")
@@ -177,18 +177,28 @@ class TestNode(object):
         """Check if the test node is not defined with any test object."""
         return len(self.objects) == 0 or self.params["vms"] == ""
 
-    def is_setup_ready(self):
+    def is_setup_ready(self, worker=None):
         """
-        All dependencies of the test were run or there were none, so it can
-        be run as well.
+        Check if all dependencies of the test were run or there were none.
+
+        :param str worker: relative setup readiness with respect to a worker ID
         """
+        if worker:
+            for node in self.visited_setup_nodes:
+                if worker not in self.visited_setup_nodes[node]:
+                    return False
         return len(self.setup_nodes) == 0
 
-    def is_cleanup_ready(self):
+    def is_cleanup_ready(self, worker=None):
         """
-        All dependent tests were run or there were none, so the end states
-        from the test can be removed.
+        Check if all dependent tests were run or there were none.
+
+        :param str worker: relative setup readiness with respect to a worker ID
         """
+        if worker:
+            for node in self.visited_cleanup_nodes:
+                if worker not in self.visited_cleanup_nodes[node]:
+                    return False
         return len(self.cleanup_nodes) == 0
 
     def is_finished(self):
@@ -277,7 +287,7 @@ class TestNode(object):
                 return compare_part(else1, else2)
         return compare_part(node1.long_prefix, node2.long_prefix)
 
-    def pick_next_parent(self):
+    def pick_next_parent(self, slot):
         """
         Pick the next available parent based on some priority.
 
@@ -288,6 +298,7 @@ class TestNode(object):
         """
         nodes = [n for n in self.setup_nodes if self.is_reachable_from(n)]
         nodes = self.setup_nodes if len(nodes) == 0 else nodes
+        nodes = [n for n in self.visited_setup_nodes if slot not in self.visited_setup_nodes[n]] if len(nodes) == 0 else nodes
         next_node = nodes[0]
         for node in nodes[1:]:
             if node.is_occupied():
@@ -296,7 +307,7 @@ class TestNode(object):
                 next_node = node
         return next_node
 
-    def pick_next_child(self):
+    def pick_next_child(self, slot):
         """
         Pick the next available child based on some priority.
 
@@ -307,6 +318,7 @@ class TestNode(object):
         """
         nodes = [n for n in self.cleanup_nodes if self.is_reachable_from(n)]
         nodes = self.cleanup_nodes if len(nodes) == 0 else nodes
+        nodes = [n for n in self.visited_cleanup_nodes if slot not in self.visited_cleanup_nodes[n]] if len(nodes) == 0 else nodes
         next_node = nodes[0]
         for node in nodes[1:]:
             if node.is_occupied():
@@ -315,20 +327,27 @@ class TestNode(object):
                 next_node = node
         return next_node
 
-    def visit_node(self, test_node):
+    def visit_node(self, test_node, worker):
         """
         Move a parent or child node to the set of visited nodes for this test.
 
         :param test_node: visited node
         :type test_node: TestNode object
+        :param str worker: slot ID of worker visiting the node
         :raises: :py:class:`ValueError` if visited node is not directly dependent
         """
-        if test_node in self.setup_nodes:
-            self.setup_nodes.remove(test_node)
-            self.visited_setup_nodes.append(test_node)
-        elif test_node in self.cleanup_nodes:
-            self.cleanup_nodes.remove(test_node)
-            self.visited_cleanup_nodes.append(test_node)
+        if test_node in self.setup_nodes or test_node in self.visited_setup_nodes:
+            if test_node in self.setup_nodes:
+                self.setup_nodes.remove(test_node)
+            if test_node not in self.visited_setup_nodes:
+                self.visited_setup_nodes[test_node] = set()
+            self.visited_setup_nodes[test_node].add(worker)
+        elif test_node in self.cleanup_nodes or test_node in self.visited_cleanup_nodes:
+            if test_node in self.cleanup_nodes:
+                self.cleanup_nodes.remove(test_node)
+            if test_node not in self.visited_cleanup_nodes:
+                self.visited_cleanup_nodes[test_node] = set()
+            self.visited_cleanup_nodes[test_node].add(worker)
         else:
             raise ValueError("Invalid test node - %s and %s are not directly dependent "
                              "in any way" % (test_node.params["shortname"], self.params["shortname"]))
