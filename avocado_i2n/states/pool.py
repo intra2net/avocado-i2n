@@ -189,6 +189,46 @@ class QCOW2PoolBackend(StateBackend):
             raise ValueError(f"Unsupported state type for pooling {state_type}")
 
     @classmethod
+    def _transfer_chain(cls, state, backend, params, down=True):
+        """
+        Repeat pool operation an all dependencies states backing a given state.
+
+        :param str state: state name
+        :param params: configuration parameters
+        :param backend: local state backend to show states with
+        :type backend: :py:class:`avocado_i2n.states.setup.StateBackend`
+        :type params: {str, str}
+        :param bool down: whether the chain is downloaded or uploaded
+        """
+        transfer_operation = download_from_pool if down else upload_to_pool
+        transfer_name = "download" if down else "upload"
+
+        shared_pool = params["image_pool"]
+        cache_dir = params["vms_base_dir"]
+        vm_name = params["vms"]
+
+        next_state = state
+        while next_state != "":
+            for image_name in params.objects("images"):
+                image_params = params.object_params(image_name)
+                cache_path = os.path.join(cache_dir, vm_name, image_name, next_state + ".qcow2")
+                pool_path = os.path.join(shared_pool, vm_name, image_name, next_state + ".qcow2")
+                # if only vm state is not available this would indicate image corruption
+                if os.path.exists(cache_path):
+                    logging.info(f"Skip {transfer_name} of an already available {image_name} state {next_state}")
+                    continue
+                transfer_operation(cache_path, pool_path, image_params)
+            if next_state == state and params["object_type"] in ["vms", "nets/vms"]:
+                cache_path = os.path.join(cache_dir, vm_name, next_state + ".state")
+                pool_path = os.path.join(shared_pool, vm_name, next_state + ".state")
+                if os.path.exists(cache_path):
+                    logging.info(f"Skip {transfer_name} of an already available {vm_name} state {next_state}")
+                else:
+                    transfer_operation(cache_path, pool_path, params)
+            # download of state chain is not yet complete if the state has backing dependencies
+            next_state = backend.get_dependency(next_state, params)
+
+    @classmethod
     def show(cls, params, object=None):
         """
         Return a list of available states of a specific type.
@@ -272,22 +312,21 @@ class QCOW2PoolBackend(StateBackend):
 
         vm_name = params["vms"]
         state_tag = f"{vm_name}"
+        format = "state"
         if params["object_type"] in ["images", "nets/vms/images"]:
             image_name = params["images"]
             state_tag += f"/{image_name}"
+            format = "qcow2"
         state = params["get_state"]
         logging.info(f"Downloading shared {state_tag} state {state} "
-                     f"from the shared pool {shared_pool}")
+                     f"from the shared pool {shared_pool} to {cache_dir}")
 
-        for image_name in params.objects("images"):
-            image_params = params.object_params(image_name)
-            cache_path = os.path.join(cache_dir, vm_name, image_name, state + ".qcow2")
-            pool_path = os.path.join(shared_pool, vm_name, image_name, state + ".qcow2")
-            download_from_pool(cache_path, pool_path, image_params)
-        if params["object_type"] in ["vms", "nets/vms"]:
-            cache_path = os.path.join(cache_dir, vm_name, state + ".state")
-            pool_path = os.path.join(shared_pool, vm_name, state + ".state")
-            download_from_pool(cache_path, pool_path, params)
+        try:
+            cls._transfer_chain(state, local_state_backend, params, down=True)
+        except Exception as error:
+            remove_path = os.path.join(cache_dir, state_tag, state + "." + format)
+            os.unlink(remove_path)
+            raise error
 
         if not params.get_boolean("pool_only"):
             local_state_backend.get(params, object)
@@ -316,17 +355,14 @@ class QCOW2PoolBackend(StateBackend):
             state_tag += f"/{image_name}"
         state = params["set_state"]
         logging.info(f"Uploading shared {state_tag} state {state} "
-                     f"to the shared pool {shared_pool}")
+                     f"to the shared pool {shared_pool} from {cache_dir}")
 
-        for image_name in params.objects("images"):
-            image_params = params.object_params(image_name)
-            cache_path = os.path.join(cache_dir, vm_name, image_name, state + ".qcow2")
-            pool_path = os.path.join(shared_pool, vm_name, image_name, state + ".qcow2")
-            upload_to_pool(cache_path, pool_path, image_params)
-        if params["object_type"] in ["vms", "nets/vms"]:
-            cache_path = os.path.join(cache_dir, vm_name, state + ".state")
-            pool_path = os.path.join(shared_pool, vm_name, state + ".state")
-            upload_to_pool(cache_path, pool_path, params)
+        try:
+            cls._transfer_chain(state, local_state_backend, params, down=False)
+        except Exception as error:
+            remove_path = os.path.join(shared_pool, state_tag, state + "." + format)
+            delete_in_pool(remove_path, params)
+            raise error
 
     @classmethod
     def unset(cls, params, object=None):
@@ -343,7 +379,6 @@ class QCOW2PoolBackend(StateBackend):
             return
 
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
-        cache_dir = params["vms_base_dir"]
 
         vm_name = params["vms"]
         state_tag = f"{vm_name}"
