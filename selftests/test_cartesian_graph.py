@@ -335,7 +335,7 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["root", "install"]
+        DummyStateCheck.present_states = ["install"]
         DummyTestRunning.asserted_tests = [
             # cleanup is expected only if at least one of the states is reusable (here root+install)
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
@@ -396,7 +396,7 @@ class CartesianGraphTest(Test):
                                                prefix=self.prefix)
         test_node = graph.get_node_by(param_val="tutorial1")
         test_node.set_environment(self.job, "dead")
-        DummyStateCheck.present_states = ["root", "install"]
+        DummyStateCheck.present_states = ["install"]
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
@@ -445,7 +445,7 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["root", "install", "customize"]
+        DummyStateCheck.present_states = ["install", "customize"]
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "hostname": "^c1$"},
@@ -460,7 +460,7 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["root", "install", "customize"]
+        DummyStateCheck.present_states = ["install", "customize"]
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "hostname": "^c2$"},
@@ -479,7 +479,7 @@ class CartesianGraphTest(Test):
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
         # this is not what we test but simply a means to remove some inital nodes for simpler testing
-        DummyStateCheck.present_states = ["root", "install", "customize"]
+        DummyStateCheck.present_states = ["install", "customize"]
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "hostname": "^c2$"},
@@ -541,7 +541,7 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["root", "install", "customize"]
+        DummyStateCheck.present_states = ["install", "customize"]
         DummyTestRunning.asserted_tests = [
             # automated setup of vm1
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$"},
@@ -591,7 +591,7 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["root", "install"]
+        DummyStateCheck.present_states = ["install"]
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "set_state_vms_on_error": "^$", "_status": "FAIL"},
@@ -608,7 +608,7 @@ class CartesianGraphTest(Test):
         test_node = graph.get_node_by(param_val="tutorial1")
         # assume we are parsing invalid configuration
         test_node.params["vms"] = ""
-        DummyStateCheck.present_states = ["root", "install"]
+        DummyStateCheck.present_states = ["install"]
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
