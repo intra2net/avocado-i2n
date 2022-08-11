@@ -414,8 +414,9 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_file=param.tests_ovrwrt_file(),
                                         ovrwrt_str=param.re_str("all..noop"),
                                         ovrwrt_dict=setup_dict)
-        status = await self.run_test_node(TestNode("0t", install_config, test_node.objects[0]),
-                                          can_retry=True)
+        pre_node = TestNode("0t", install_config, test_node.objects[0])
+        pre_node.set_environment(self.job, test_node.params["hostname"])
+        status = await self.run_test_node(pre_node, can_retry=True)
         if not status:
             logging.error("Could not configure the installation for %s on %s", object_vm, object_image)
             return status
@@ -552,7 +553,9 @@ class CartesianRunner(RunnerInterface):
                                                     ovrwrt_file=param.tests_ovrwrt_file(),
                                                     ovrwrt_str=setup_str,
                                                     ovrwrt_dict=setup_dict)
-                    await self.run_test_node(TestNode(test_node.prefix + "c", forward_config, net))
+                    reverse_node = TestNode(test_node.prefix + "c", forward_config, net)
+                    reverse_node.set_environment(self.job, slot)
+                    await self.run_test_node(reverse_node)
                 else:
                     logging.info("No need to clean up %s on %s", test_node, slot)
 
