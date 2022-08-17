@@ -178,12 +178,17 @@ class CartesianRunner(RunnerInterface):
 
             await self.run_test(self.job, node)
 
-            try:
-                test_result = next((x for x in self.job.result.tests if x["name"].name == name and x["name"].uid == uid))
-                test_status = test_result["status"]
-            except StopIteration:
-                test_status = "ERROR"
-                logging.info("Test result wasn't found and cannot be extracted")
+            for i in range(10):
+                try:
+                    test_result = next((x for x in self.job.result.tests if x["name"].name == name and x["name"].uid == uid))
+                    test_status = test_result["status"]
+                    break
+                except StopIteration:
+                    await asyncio.sleep(30)
+                    logging.warning(f"Test result {uid} wasn't yet found and could not be extracted")
+                    test_status = "ERROR"
+            else:
+                logging.error(f"Test result {uid} for {name} could not be found and extracted, defaulting to ERROR")
             if test_status not in ["PASS", "WARN", "ERROR", "FAIL"]:
                 # it doesn't make sense to retry with other status
                 logging.info(f"Will not attempt to retry test with status {test_status}")
