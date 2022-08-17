@@ -32,6 +32,7 @@ import logging as log
 logging = log.getLogger('avocado.test.' + __name__)
 
 from virttest import env_process
+from virttest.virt_vm import VMCreateError
 
 from .setup import StateBackend
 
@@ -170,6 +171,7 @@ class RamfileBackend(StateBackend):
             logging.info("The base directory for the virtual machine %s is missing", vm_name)
             return False
 
+        # we cannot use local image backend because root conditions here require running vm
         for image in params.objects("images"):
             image_params = params.object_params(image)
             image_name = image_params["image_name"]
@@ -200,33 +202,48 @@ class RamfileBackend(StateBackend):
 
         All arguments match the base class.
 
-        ..todo:: study better the environment pre/postprocessing details necessary
-                 for flawless vm destruction and creation to improve these
+        ..todo:: The following is too complex and setting a root has gradually grown to
+                 require setting too many separate conditions, some of which might already
+                 be set, some are forced to be redone, and only some are mocked and thus
+                 checked. We need root state consiredations and refactoring to simplify
+                 this and improve the corresponding test definitions / contracts.
+
+        ..todo:: Once the previous todo is achieved it is possible that the logic here
+                 also simplifies so that we don't have to worry about creating blank
+                 images on top of good ones obtained via the image backend or not creating
+                 images that are in fact missing or could be corrupted via modified backing
+                 chains of dependencies.
         """
         vm_name = params["vms"]
-        for image in params.objects("images"):
-            image_params = params.object_params(image)
-            image_name = image_params["image_name"]
-            if not os.path.isabs(image_name):
-                image_name = os.path.join(image_params["images_base_dir"], image_name)
-            image_format = image_params.get("image_format")
-            image_format = "" if image_format in ["raw", ""] else "." + image_format
-            if not os.path.exists(image_name + image_format):
-                logging.info("Creating image %s in order to boot %s",
-                             image_name + image_format, vm_name)
-                os.makedirs(os.path.dirname(image_name), exist_ok=True)
-                image_params.update({"create_image": "yes", "force_create_image": "yes"})
-                env_process.preprocess_image(None, image_params, image_name)
+        os.makedirs(os.path.join(params["images_base_dir"],
+                                 vm_name), exist_ok=True)
+
         if not params.get_boolean("use_env", True):
             return
-        logging.info("Booting %s to provide boot state", vm_name)
+
         vm = object
+        logging.info("Booting %s to provide boot state", vm_name)
         if vm is None:
             raise ValueError("Need an environmental object to boot")
             #vm = env.create_vm(params.get('vm_type'), params.get('target'),
             #                   vm_name, params, None)
         if not vm.is_alive():
-            vm.create()
+            try:
+                vm.create()
+            except VMCreateError as error:
+                for image in params.objects("images"):
+                    image_params = params.object_params(image)
+                    image_name = image_params["image_name"]
+                    if not os.path.isabs(image_name):
+                        image_name = os.path.join(image_params["images_base_dir"], image_name)
+                    image_format = image_params.get("image_format")
+                    image_format = "" if image_format in ["raw", ""] else "." + image_format
+                    logging.info("Creating image %s in order to boot %s",
+                                 image_name + image_format, vm_name)
+                    os.makedirs(os.path.dirname(image_name), exist_ok=True)
+                    image_params.update({"create_image": "yes", "force_create_image": "yes"})
+                    env_process.preprocess_image(None, image_params, image_name)
+                vm.create()
 
     @classmethod
     def unset_root(cls, params, object=None):

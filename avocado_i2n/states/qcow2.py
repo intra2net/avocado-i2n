@@ -317,8 +317,8 @@ class QCOW2VTBackend(QCOW2Backend):
 
         All arguments match the base class.
 
-        ..todo:: study better the environment pre/postprocessing details necessary
-                 for flawless vm destruction and creation to improve these
+        ..todo:: Study better the environment pre/postprocessing details necessary
+                 for flawless vm destruction and creation to improve these.
         """
         vm_name = params["vms"]
 
