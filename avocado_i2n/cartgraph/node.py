@@ -70,7 +70,12 @@ class TestNode(object):
 
     def id_test(self):
         """Unique test ID to identify a test node."""
-        return TestID(self.long_prefix, self.params["name"])
+        # TODO: cannot reuse long prefix since container is set at runtime
+        #return TestID(self.long_prefix, self.params["name"])
+        net_id = self.params["hostname"]
+        net_id += self.params["vms"].replace(" ", "")
+        full_prefix = self.prefix + "-" + net_id
+        return TestID(full_prefix, self.params["name"])
     id_test = property(fget=id_test)
 
     def __init__(self, prefix, config, object):

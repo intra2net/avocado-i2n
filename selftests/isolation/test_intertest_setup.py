@@ -101,7 +101,7 @@ async def mock_run_test(_self, _job, node):
         _self.job.result.tests = []
     # define ID-s and other useful parameter filtering
     node.get_runnable()
-    node.params["_uid"] = node.long_prefix
+    node.params["_uid"] = node.id_test.uid
     DummyTestRunning(node.params, _self.job.result.tests).get_test_result()
 
 

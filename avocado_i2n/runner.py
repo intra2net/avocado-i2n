@@ -173,7 +173,7 @@ class CartesianRunner(RunnerInterface):
             # appending a suffix to retries so we can tell them apart
             if r > 0:
                 node.prefix = original_prefix + f"r{r}"
-            uid = node.long_prefix
+            uid = node.id_test.uid
             name = node.params["name"]
 
             await self.run_test(self.job, node)
