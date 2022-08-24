@@ -679,6 +679,10 @@ class CartesianGraphTest(Test):
             self.config["vm_strs"], prefix="")
         DummyTestRunning.asserted_tests = [
             {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
             {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
             {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$"},
             {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "short_id": r"^[a\d]+r1-vm1$"},

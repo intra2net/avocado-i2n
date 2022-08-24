@@ -413,14 +413,15 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_file=param.tests_ovrwrt_file(),
                                         ovrwrt_str=param.re_str("all..noop"),
                                         ovrwrt_dict=setup_dict)
-        status = await self.run_test_node(TestNode("0t", install_config, test_node.objects[0]))
+        status = await self.run_test_node(TestNode("0t", install_config, test_node.objects[0]),
+                                          can_retry=True)
         if not status:
             logging.error("Could not configure the installation for %s on %s", object_vm, object_image)
             return status
 
         logging.info("Installing virtual machine %s", test_object.suffix)
         test_node.params["type"] = test_node.params["configure_install"]
-        return await self.run_test_node(test_node)
+        return await self.run_test_node(test_node, can_retry=True)
 
     """internals"""
     async def _traverse_test_node(self, graph, test_node, params, slot):
