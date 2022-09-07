@@ -5,7 +5,8 @@ import unittest.mock as mock
 import contextlib
 import re
 
-from avocado import Test
+from aexpect.exceptions import ShellCmdError
+from avocado import Test, skip
 from avocado.core import exceptions
 from virttest import utils_params
 
@@ -59,8 +60,10 @@ class DummyTestRunning(object):
 class DummyStateCheck(object):
 
     present_states = []
+    states_params = {}
 
-    def __init__(self, params, env):
+    def __init__(self):
+        params = self.states_params
         check_state = None
         for vm in params.objects("vms"):
             vm_params = params.object_params(vm)
@@ -102,12 +105,19 @@ async def mock_run_test(_self, _job, node):
     DummyTestRunning(node.params, _self.job.result.tests).get_test_result()
 
 
-def mock_check_states(params, env):
-    return DummyStateCheck(params, env).result
+def mock_check_states(session, mod_control_path):
+    if not DummyStateCheck().result:
+        raise ShellCmdError(1, "command", "AssertionError")
+
+
+def get_check_states_params(_, __, node_params):
+    DummyStateCheck.states_params = node_params
 
 
 @mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
-@mock.patch('avocado_i2n.cartgraph.node.ss.check_states', mock_check_states)
+@mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
+@mock.patch('avocado_i2n.cartgraph.node.door.run_subcontrol', mock_check_states)
+@mock.patch('avocado_i2n.cartgraph.node.door.set_subcontrol_parameter_dict', get_check_states_params)
 @mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
 @mock.patch.object(CartesianRunner, 'run_test', mock_run_test)
 class IntertestSetupTest(Test):
@@ -170,6 +180,7 @@ class IntertestSetupTest(Test):
         intertest_setup.full(self.config, tag="1r")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
+    @skip("The run, scan, and other flags are no longer compatible with manual setting")
     def test_update_default(self):
         """Test the general usage of the manual update-setup tool."""
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
@@ -190,6 +201,7 @@ class IntertestSetupTest(Test):
         intertest_setup.update(self.config, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
+    @skip("The run, scan, and other flags are no longer compatible with manual setting")
     def test_update_custom_cleanup(self):
         """Test the custom cleanup usage of the manual update-setup tool."""
         self.config["vms_params"]["remove_set"] = "minimal"
@@ -229,6 +241,7 @@ class IntertestSetupTest(Test):
             intertest_setup.update(self.config, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
+    @skip("The run, scan, and other flags are no longer compatible with manual setting")
     def test_update_custom(self):
         """Test the custom state usage of the manual update-setup tool."""
         self.config["vms_params"]["from_state"] = "install"

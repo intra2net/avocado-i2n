@@ -28,13 +28,16 @@ INTERFACE
 """
 
 import os
+import json
 import re
+import shutil
 import logging as log
 logging = log.getLogger('avocado.test.' + __name__)
 
-from avocado.utils import process
+from virttest import env_process
+from virttest.qemu_storage import QemuImg
 
-from .setup import StateBackend, StateOnBackend
+from .setup import StateBackend
 
 
 #: off qemu states regex (0 vm size)
@@ -44,13 +47,7 @@ QEMU_ON_STATES_REGEX = re.compile(r"^\d+\s+([\w\.-]+)\s*(?!0 B)(\d+e?[\-\+]?[\.\
 
 
 class QCOW2Backend(StateBackend):
-    """
-    Backend manipulating image states as QCOW2 snapshots.
-
-    ..todo:: There are utilities providing access to the Qemu image binary
-             provided by Avocado VT similarly to the LV utilities used for the
-             LVM backend instead of independently implemented here.
-    """
+    """Backend manipulating image states as internal QCOW2 snapshots."""
 
     _require_running_object = False
 
@@ -66,10 +63,9 @@ class QCOW2Backend(StateBackend):
 
         All arguments match the base class.
         """
-        qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
-        image_path = get_image_path(params)
-        logging.debug("Showing %s snapshots for image %s", cls.state_type(), image_path)
-        on_snapshots_dump = process.system_output("%s snapshot -l %s -U" % (qemu_img, image_path)).decode()
+        qemu_img = QemuImg(params, params["images_base_dir"], params["images"])
+        logging.debug("Showing %s internal states for image %s", cls.state_type(), params["images"])
+        on_snapshots_dump = qemu_img.snapshot_list(force_share=True)
         pattern = QEMU_ON_STATES_REGEX if cls._require_running_object else QEMU_OFF_STATES_REGEX
         state_tuples = re.findall(pattern, on_snapshots_dump)
         states = []
@@ -109,12 +105,14 @@ class QCOW2Backend(StateBackend):
         All arguments match the base class.
         """
         vm, vm_name = object, params["vms"]
-        state, image_name = params["get_state"], params["images"]
-        qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
+        state, image = params["get_state"], params["images"]
+        params["image_chain"] = f"{image} snapshot"
+        params["image_raw_device_snapshot"] = "yes"
+        params["image_name_snapshot"] = state
+        qemu_img = QemuImg(params, params["images_base_dir"], image)
         logging.info("Reusing %s state '%s' of %s/%s", cls.state_type(), state,
-                     vm_name, image_name)
-        image_path = get_image_path(params)
-        process.system("%s snapshot -a %s %s" % (qemu_img, state, image_path))
+                     vm_name, image)
+        qemu_img.snapshot_apply()
 
     @classmethod
     def set(cls, params, object=None):
@@ -124,12 +122,14 @@ class QCOW2Backend(StateBackend):
         All arguments match the base class.
         """
         vm, vm_name = object, params["vms"]
-        state, image_name = params["set_state"], params["images"]
-        qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
+        state, image = params["set_state"], params["images"]
+        params["image_chain"] = f"{image} snapshot"
+        params["image_raw_device_snapshot"] = "yes"
+        params["image_name_snapshot"] = state
+        qemu_img = QemuImg(params, params["images_base_dir"], image)
         logging.info("Creating %s state '%s' of %s/%s", cls.state_type(), state,
-                     vm_name, image_name)
-        image_path = get_image_path(params)
-        process.system("%s snapshot -c %s %s" % (qemu_img, state, image_path))
+                     vm_name, image)
+        qemu_img.snapshot_create()
 
     @classmethod
     def unset(cls, params, object=None):
@@ -139,18 +139,146 @@ class QCOW2Backend(StateBackend):
         All arguments match the base class.
         """
         vm, vm_name = object, params["vms"]
-        state, image_name = params["unset_state"], params["images"]
-        qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
+        state, image = params["unset_state"], params["images"]
+        params["image_chain"] = f"{image} snapshot"
+        params["image_raw_device_snapshot"] = "yes"
+        params["image_name_snapshot"] = state
+        qemu_img = QemuImg(params, params["images_base_dir"], image)
+        logging.info("Removing %s state '%s' of %s/%s", cls.state_type(), state,
+                     vm_name, image)
+        qemu_img.snapshot_del()
+
+
+class QCOW2ExtBackend(QCOW2Backend):
+    """Backend manipulating image states as external QCOW2 snapshots."""
+
+    _require_running_object = False
+
+    @classmethod
+    def get_dependency(cls, state, params):
+        """
+        Return a backing state that the current state depends on.
+
+        :param str state: state name to retriee the backing dependency of
+
+        The rest of the arguments match the signature of the other methods here.
+        """
+        vm_name, image_name = params["vms"], params["images"]
+        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        params["image_chain"] = f"snapshot {image_name}"
+        params["image_name_snapshot"] = os.path.join(image_name, state)
+        params["image_format_snapshot"] = "qcow2"
+        # TODO: we might want to return the complete backing chain but in some
+        # cases parts of it are stored in a remote location
+        #params["backing_chain"] = "yes"
+        qemu_img = QemuImg(params.object_params("snapshot"), vm_dir, "snapshot")
+        image_info = qemu_img.info(force_share=True, output="json")
+        image_file = json.loads(image_info).get("backing-filename", "")
+        return os.path.basename(image_file.replace(".qcow2", ""))
+
+    @classmethod
+    def show(cls, params, object=None):
+        """
+        Return a list of available states of a specific type.
+
+        All arguments match the base class.
+        """
+        vm_name, image_name = params["vms"], params["images"]
+        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        qemu_img = QemuImg(params, vm_dir, image_name)
+        logging.debug("Showing %s external states for image %s", cls.state_type(), image_name)
+        image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image_name)
+        if not os.path.exists(image_dir):
+            return []
+        snapshots = os.listdir(image_dir)
+        states = []
+        for snapshot in snapshots:
+            if not snapshot.endswith(".qcow2"):
+                continue
+            size = os.stat(os.path.join(image_dir, snapshot)).st_size
+            state = snapshot[:-6]
+            logging.info(f"Detected {cls.state_type()} state '{state}' of size "
+                         f"{round(size / 1024**3, 3)} GB ({size})")
+            states.append(state)
+        return states
+
+    @classmethod
+    def get(cls, params, object=None):
+        """
+        Retrieve a state disregarding the current changes.
+
+        All arguments match the base class.
+        """
+        vm_name, image_name = params["vms"], params["images"]
+        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        state = params["get_state"]
+        params["image_chain"] = f"snapshot {image_name}"
+        params["image_name_snapshot"] = os.path.join(image_name, state)
+        params["image_format_snapshot"] = "qcow2"
+        qemu_img = QemuImg(params, vm_dir, image_name)
+        logging.info("Reusing %s state '%s' of %s/%s", cls.state_type(), state,
+                     vm_name, image_name)
+        qemu_img.create(params, ignore_errors=False)
+
+    @classmethod
+    def set(cls, params, object=None):
+        """
+        Store a state saving the current changes.
+
+        All arguments match the base class.
+        """
+        vm_name, image_name = params["vms"], params["images"]
+        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        state = params["set_state"]
+        qemu_img = QemuImg(params, vm_dir, image_name)
+        logging.info("Creating %s state '%s' of %s/%s", cls.state_type(), state,
+                     vm_name, image_name)
+        image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image_name)
+        os.makedirs(image_dir, exist_ok=True)
+        shutil.copy(qemu_img.image_filename, os.path.join(image_dir, state + ".qcow2"))
+
+    @classmethod
+    def unset(cls, params, object=None):
+        """
+        Remove a state with previous changes.
+
+        All arguments match the base class.
+        """
+        vm_name, image_name = params["vms"], params["images"]
+        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        state = params["unset_state"]
+        qemu_img = QemuImg(params, vm_dir, image_name)
         logging.info("Removing %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image_name)
-        image_path = get_image_path(params)
-        process.system("%s snapshot -d %s %s" % (qemu_img, state, image_path))
+        image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image_name)
+        # TODO: should we mv to pointer image in case removed state is in backing chain?
+        os.unlink(os.path.join(image_dir, state + ".qcow2"))
 
 
-class QCOW2VTBackend(StateOnBackend, QCOW2Backend):
+class QCOW2VTBackend(QCOW2Backend):
     """Backend manipulating vm states as QCOW2 snapshots using VT's VM bindings."""
 
     _require_running_object = True
+
+    @classmethod
+    def show(cls, params, object=None):
+        """
+        Return a list of available states of a specific type.
+
+        All arguments match the base class.
+        """
+        logging.debug(f"Showing external states for vm {params['vms']}")
+        states = set()
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            # TODO: refine method arguments by providing at least the image name directly
+            image_params["images"] = image_name
+            image_states = super().show(image_params, object=object)
+            if len(states) == 0:
+                states = image_states
+            else:
+                states = states.intersect(image_states)
+        return states
 
     @classmethod
     def get(cls, params, object=None):
@@ -196,6 +324,89 @@ class QCOW2VTBackend(StateOnBackend, QCOW2Backend):
         vm.verify_status('paused')
         vm.resume(timeout=3)
 
+    @classmethod
+    def check_root(cls, params, object=None):
+        """
+        Check whether a root state or essentially the object is running.
+
+        All arguments match the base class.
+        """
+        vm_name = params["vms"]
+        logging.debug("Checking whether %s's root state is fully available", vm_name)
+
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            image_path = image_params["image_name"]
+            if not os.path.isabs(image_path):
+                image_path = os.path.join(image_params["images_base_dir"], image_path)
+            image_format = image_params.get("image_format", "qcow2")
+            image_format = "" if image_format in ["raw", ""] else "." + image_format
+            if not os.path.exists(image_path + image_format):
+                logging.info("The required virtual machine %s has a missing image %s",
+                             vm_name, image_path + image_format)
+                return False
+
+        if not params.get_boolean("use_env", True):
+            return True
+        logging.debug("Checking whether %s is on (boot state requested)", vm_name)
+        vm = object
+        if vm is not None and vm.is_alive():
+            logging.info("The required virtual machine %s is on", vm_name)
+            return True
+        else:
+            logging.info("The required virtual machine %s is off", vm_name)
+            return False
+
+    @classmethod
+    def set_root(cls, params, object=None):
+        """
+        Set a root state to provide running object.
+
+        All arguments match the base class.
+
+        ..todo:: Study better the environment pre/postprocessing details necessary
+                 for flawless vm destruction and creation to improve these.
+        """
+        vm_name = params["vms"]
+
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            image_path = image_params["image_name"]
+            if not os.path.isabs(image_path):
+                image_path = os.path.join(image_params["images_base_dir"], image_path)
+            image_format = image_params.get("image_format")
+            image_format = "" if image_format in ["raw", ""] else "." + image_format
+            if not os.path.exists(image_path + image_format):
+                logging.info("Creating image %s in order to boot %s",
+                                image_path + image_format, vm_name)
+                os.makedirs(os.path.dirname(image_path), exist_ok=True)
+                image_params.update({"create_image": "yes", "force_create_image": "yes"})
+                env_process.preprocess_image(None, image_params, image_path)
+
+        if not params.get_boolean("use_env", True):
+            return
+        logging.info("Booting %s to provide boot state", vm_name)
+        vm = object
+        if vm is None:
+            raise ValueError("Need an environmental object to boot")
+            #vm = env.create_vm(params.get('vm_type'), params.get('target'),
+            #                   vm_name, params, None)
+        if not vm.is_alive():
+            vm.create()
+
+    @classmethod
+    def unset_root(cls, params, object=None):
+        """
+        Unset a root state to prevent object from running.
+
+        All arguments match the base class.
+        """
+        vm_name = params["vms"]
+        logging.info("Shutting down %s to prevent boot state", vm_name)
+        vm = object
+        if vm is not None and vm.is_alive():
+            vm.destroy(gracefully=False)
+
 
 def get_image_path(params):
     """
@@ -233,36 +444,39 @@ def convert_image(params):
     .. note:: This function could be used with qemu-img for more general images
         and not just the QCOW2 format.
     """
-    qemu_img = params.get("qemu_img_binary", "/usr/bin/qemu-img")
     raw_directory = params.get("raw_image_dir", ".")
+    raw_image = params["raw_image"]
     # allow the user to specify a path prefix for image files
     logging.info(f"Using image prefix {raw_directory}")
-
-    source_image = os.path.join(raw_directory, params[f"raw_image"])
-    target_image = get_image_path(params)
-    target_format = params["image_format"]
+    source_image = os.path.join(raw_directory, raw_image)
+    params.update({"image_name_rawimg1": source_image,
+                   "image_format_rawimg1": "raw",
+                   "image_raw_device_rawimg1": "yes"})
+    source_qemu_img = QemuImg(params, raw_directory, "rawimg1")
 
     if not os.path.isfile(source_image):
         raise FileNotFoundError(f"Source image {source_image} doesn't exist")
 
+    target_qemu_img = QemuImg(params, params["images_base_dir"], params["images"])
+    target_image = get_image_path(params)
     # create the target directory if needed
     target_directory = os.path.dirname(target_image)
     os.makedirs(target_directory, exist_ok=True)
 
     if os.path.isfile(target_image):
         logging.debug(f"{target_image} already exists, checking if it's in use")
-        try:
-            process.run(f"{qemu_img} check {target_image}")
+        result = target_qemu_img.check(params, params["images_base_dir"])
+        if result.exit_status == 0:
             logging.debug(f"{target_image} not in use, integrity asserted")
-        except process.CmdError as ex:
-            # file is in use
-            if "\"write\" lock" in ex.result.stderr_text:
+        else:
+            if "\"write\" lock" in result.stderr_text:
                 logging.error(f"{target_image} is in use, refusing to convert")
                 raise
             logging.debug(f"{target_image} exists but cannot check integrity")
         logging.info(f"Overwriting existing {target_image}")
 
-    logging.debug(f"Converting image {source_image} to {target_image} formatted to {target_format}")
-    process.run(f"{qemu_img} convert -c -p -O {target_format} \"{source_image}\" \"{target_image}\"",
-                timeout=params.get_numeric("conversion_timeout", 12000))
+    params["convert_target"] = params["images"]
+    params["convert_compressed"] = "yes"
+    source_qemu_img.convert(params, params["images_base_dir"])
+
     logging.debug("Conversion successful")
