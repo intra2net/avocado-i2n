@@ -957,39 +957,39 @@ class StateSetupTest(Test):
             exists = ss.check_states(self.run_params, self.env)
         self.assertFalse(exists)
 
-    @mock.patch('avocado_i2n.states.pool.shutil')
-    def test_check_root_image_pool(self, mock_shutil):
+    @mock.patch('avocado_i2n.states.pool.download_from_pool')
+    def test_check_root_image_pool(self, mock_download):
         """Test that root checking with the pool backend works."""
         # bonus: test for two images rather than one
         self.run_params["images_vm1"] = "image1 image2"
-        self.run_params["image_name_image1_vm1"] = "vm1/image1"
-        self.run_params["image_name_image2_vm1"] = "vm1/image2"
+        self.run_params["image_name_image1_vm1"] = "image1"
+        self.run_params["image_name_image2_vm1"] = "image2"
         backend = "rootpool"
         backend_type = self._prepare_driver_from_backend(backend)
         self.run_params[f"check_state_{backend_type}s_vm1"] = "root"
 
         # consider local root with priority
-        mock_shutil.reset_mock()
+        mock_download.reset_mock()
         with self.driver.mock_check("launch", backend_type, False, True) as driver:
             exists = ss.check_states(self.run_params, self.env)
-        mock_shutil.copy.assert_not_called()
+        mock_download.assert_not_called()
         self.assertTrue(exists)
 
         # consider pool root as well
-        mock_shutil.reset_mock()
+        mock_download.reset_mock()
         with self.driver.mock_check("launch", backend_type, False, False) as driver:
             exists = ss.check_states(self.run_params, self.env)
-        mock_shutil.copy.assert_not_called()
+        mock_download.assert_not_called()
         self.assertFalse(exists)
 
         # the root state exists (and is downloaded) if its pool counterpart exists
-        mock_shutil.reset_mock()
+        mock_download.reset_mock()
         with self.driver.mock_check("launch", backend_type, False, False) as driver:
             self.driver.exist_lambda = lambda filename: filename.startswith("/data/pool")
             exists = ss.check_states(self.run_params, self.env)
-        expected_checks = [mock.call("/data/pool/vm1/image1.qcow2", "/images/vm1/image1.qcow2"),
-                           mock.call("/data/pool/vm1/image2.qcow2", "/images/vm1/image2.qcow2")]
-        self.assertListEqual(mock_shutil.copy.call_args_list, expected_checks)
+        expected_checks = [mock.call("/images/vm1/image1.qcow2", "/data/pool/vm1/image1.qcow2", mock.ANY),
+                           mock.call("/images/vm1/image2.qcow2", "/data/pool/vm1/image2.qcow2", mock.ANY)]
+        self.assertListEqual(mock_download.call_args_list, expected_checks)
         self.assertTrue(exists)
 
     def test_check_root_vm_qcow2(self):
@@ -1045,8 +1045,8 @@ class StateSetupTest(Test):
         with self.driver.mock_check("launch", backend_type, False, True) as driver:
             ss.get_states(self.run_params, self.env)
 
-    @mock.patch('avocado_i2n.states.pool.shutil')
-    def test_get_root_image_pool(self, mock_shutil):
+    @mock.patch('avocado_i2n.states.pool.download_from_pool')
+    def test_get_root_image_pool(self, mock_download):
         """Test that root getting with the pool backend works."""
         backend = "rootpool"
         backend_type = self._prepare_driver_from_backend(backend)
@@ -1054,28 +1054,29 @@ class StateSetupTest(Test):
 
         # consider local root with priority
         self.run_params["use_pool"] = "yes"
-        mock_shutil.reset_mock()
+        mock_download.reset_mock()
         with self.driver.mock_check("launch", backend_type, False, True) as driver:
             ss.get_states(self.run_params, self.env)
-        mock_shutil.copy.assert_not_called()
+        mock_download.assert_not_called()
 
         # use pool root if enabled and no local root
         self.run_params["use_pool"] = "yes"
-        mock_shutil.reset_mock()
+        mock_download.reset_mock()
         with self.driver.mock_check("launch", backend_type, False, False) as driver:
             self.driver.exist_lambda = lambda filename: filename.startswith("/data/pool")
             ss.get_states(self.run_params, self.env)
-        mock_shutil.copy.assert_called_with("/data/pool/vm1/image.qcow2",
-                                            "/images/vm1/image.qcow2")
+        mock_download.assert_called_with("/images/vm1/image.qcow2",
+                                         "/data/pool/vm1/image.qcow2",
+                                         mock.ANY)
 
         # do not use pool root if disabled and no local root
         self.run_params["use_pool"] = "no"
-        mock_shutil.reset_mock()
+        mock_download.reset_mock()
         with self.driver.mock_check("launch", backend_type, False, False) as driver:
             self.driver.exist_lambda = lambda filename: filename.startswith("/data/pool")
             with self.assertRaises(exceptions.TestAbortError):
                 ss.get_states(self.run_params, self.env)
-        mock_shutil.copy.assert_not_called()
+        mock_download.assert_not_called()
 
     def test_get_root_vm(self):
         """Test that root getting with an vm state backend works."""
@@ -1180,10 +1181,10 @@ class StateSetupTest(Test):
             self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=True)
         mock_env_process.preprocess_image.assert_not_called()
 
-    @mock.patch('avocado_i2n.states.pool.shutil')
+    @mock.patch('avocado_i2n.states.pool.upload_to_pool')
     @mock.patch('avocado_i2n.states.pool.QCOW2Backend.set_root')
     @mock.patch('avocado_i2n.states.pool.QCOW2Backend.unset_root', mock.Mock())
-    def test_set_root_image_pool(self, mock_check_root, mock_shutil):
+    def test_set_root_image_pool(self, mock_check_root, mock_upload):
         """Test that root setting with the pool backend works."""
         backend = "rootpool"
         backend_type = self._prepare_driver_from_backend(backend)
@@ -1192,32 +1193,33 @@ class StateSetupTest(Test):
         # not updating the state pool means setting the local root
         self.run_params["update_pool"] = "no"
         pool.QCOW2RootPoolBackend.local_state_backend.reset_mock()
-        mock_shutil.reset_mock()
+        mock_upload.reset_mock()
         with self.driver.mock_check("launch", backend_type, False, True) as driver:
             ss.set_states(self.run_params, self.env)
         pool.QCOW2RootPoolBackend.local_state_backend.set_root.assert_called_once()
-        mock_shutil.copy.assert_not_called()
+        mock_upload.assert_not_called()
 
         # updating the state pool means not setting the local root
         self.run_params["update_pool"] = "yes"
         pool.QCOW2RootPoolBackend.local_state_backend.reset_mock()
-        mock_shutil.reset_mock()
+        mock_upload.reset_mock()
         with self.driver.mock_check("launch", backend_type, False, True) as driver:
             ss.set_states(self.run_params, self.env)
         pool.QCOW2RootPoolBackend.local_state_backend.set_root.assert_not_called()
-        mock_shutil.copy.assert_called_with("/images/vm1/image.qcow2",
-                                            "/data/pool/vm1/image.qcow2")
+        mock_upload.assert_called_with("/images/vm1/image.qcow2",
+                                       "/data/pool/vm1/image.qcow2",
+                                       mock.ANY)
 
         # updating the state pool without local root must fail early
         self.run_params["update_pool"] = "yes"
         pool.QCOW2RootPoolBackend.local_state_backend.reset_mock()
-        mock_shutil.reset_mock()
+        mock_upload.reset_mock()
         with self.driver.mock_check("launch", backend_type, False, False) as driver:
             self.driver.exist_lambda = lambda filename: filename.startswith("/data/pool")
             with self.assertRaises(RuntimeError):
                 ss.set_states(self.run_params, self.env)
         pool.QCOW2RootPoolBackend.local_state_backend.set_root.assert_not_called()
-        mock_shutil.copy.assert_not_called()
+        mock_upload.assert_not_called()
 
     @mock.patch('avocado_i2n.states.ramfile.env_process')
     @mock.patch('avocado_i2n.states.qcow2.env_process')
@@ -1294,35 +1296,31 @@ class StateSetupTest(Test):
         #self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=False)
         pass
 
-    @mock.patch('avocado_i2n.states.pool.os')
-    def test_unset_root_image_pool(self, mock_os):
+    @mock.patch('avocado_i2n.states.pool.delete_in_pool')
+    def test_unset_root_image_pool(self, mock_delete):
         """Test that root unsetting with the pool backend works."""
         backend = "rootpool"
         backend_type = self._prepare_driver_from_backend(backend)
         self.run_params[f"unset_state_{backend_type}s_vm1"] = "root"
 
-        # retore some path capabilities in our mock module
-        mock_os.path.join = os.path.join
-        mock_os.path.basename = os.path.basename
-
         # not updating the state pool means unsetting the local root
         self.run_params["update_pool"] = "no"
         pool.QCOW2RootPoolBackend.local_state_backend.reset_mock()
-        mock_os.reset_mock()
+        mock_delete.reset_mock()
         with self.driver.mock_check("launch", backend_type, False, True) as driver:
             ss.unset_states(self.run_params, self.env)
         pool.QCOW2RootPoolBackend.local_state_backend.unset_root.assert_called_once()
-        mock_os.unlink.assert_not_called()
+        mock_delete.assert_not_called()
 
         # updating the state pool means not unsetting the local root
         self.run_params["update_pool"] = "yes"
         pool.QCOW2RootPoolBackend.local_state_backend.reset_mock()
-        mock_os.reset_mock()
+        mock_delete.reset_mock()
         with self.driver.mock_check("launch", backend_type, True, True) as driver:
             ss.unset_states(self.run_params, self.env)
         pool.QCOW2RootPoolBackend.local_state_backend.unset_root.assert_not_called()
         # TODO: partial (local only) root state implies no root and thus ignore unset only
-        mock_os.unlink.assert_called_with("/data/pool/vm1/image.qcow2")
+        mock_delete.assert_called_with("/data/pool/vm1/image.qcow2", mock.ANY)
 
     def test_unset_root_vm(self):
         """Test that root unsetting with a vm state backend works."""

@@ -27,15 +27,17 @@ INTERFACE
 
 """
 
+import os
 import re
 import logging as log
 logging = log.getLogger('avocado.test.' + __name__)
 
+from aexpect.exceptions import ShellCmdError
+from aexpect import remote
+from aexpect import remote_door as door
 from avocado.core.test_id import TestID
 from avocado.core.nrunner.runnable import Runnable
 from avocado.core.dispatcher import SpawnerDispatcher
-
-from ..states import setup as ss
 
 
 class TestNode(object):
@@ -90,6 +92,7 @@ class TestNode(object):
         self.should_scan = True
 
         self.spawner = None
+        self.workers = set()
 
         # flattened list of objects (in composition) involved in the test
         self.objects = [object]
@@ -104,8 +107,8 @@ class TestNode(object):
         # lists of parent and children test nodes
         self.setup_nodes = []
         self.cleanup_nodes = []
-        self.visited_setup_nodes = []
-        self.visited_cleanup_nodes = []
+        self.visited_setup_nodes = {}
+        self.visited_cleanup_nodes = {}
 
     def __repr__(self):
         shortname = self.params.get("shortname", "<unknown>")
@@ -151,6 +154,25 @@ class TestNode(object):
 
         self.params["hostname"] = env_id if env_id else self.params["hostname"]
 
+    @staticmethod
+    def start_environment(env_id):
+        """
+        Start the environment for executing a test node.
+
+        :returns: whether the environment is available after current or previous start
+        :rtype: bool
+
+        ..todo:: As we can start containers this code will have to differentiate
+            between a remote host and a remote or local container later on with a
+            wake-on-lan implementation for the latter.
+        """
+        import lxc
+        container = lxc.Container(env_id)
+        if not container.running:
+            logging.info(f"Starting bootable environment {env_id}")
+            return container.start()
+        return container.running
+
     def is_occupied(self):
         return self.spawner is not None
 
@@ -174,18 +196,28 @@ class TestNode(object):
         """Check if the test node is not defined with any test object."""
         return len(self.objects) == 0 or self.params["vms"] == ""
 
-    def is_setup_ready(self):
+    def is_setup_ready(self, worker=None):
         """
-        All dependencies of the test were run or there were none, so it can
-        be run as well.
+        Check if all dependencies of the test were run or there were none.
+
+        :param str worker: relative setup readiness with respect to a worker ID
         """
+        if worker:
+            for node in self.visited_setup_nodes:
+                if worker not in self.visited_setup_nodes[node]:
+                    return False
         return len(self.setup_nodes) == 0
 
-    def is_cleanup_ready(self):
+    def is_cleanup_ready(self, worker=None):
         """
-        All dependent tests were run or there were none, so the end states
-        from the test can be removed.
+        Check if all dependent tests were run or there were none.
+
+        :param str worker: relative setup readiness with respect to a worker ID
         """
+        if worker:
+            for node in self.visited_cleanup_nodes:
+                if worker not in self.visited_cleanup_nodes[node]:
+                    return False
         return len(self.cleanup_nodes) == 0
 
     def is_finished(self):
@@ -274,7 +306,7 @@ class TestNode(object):
                 return compare_part(else1, else2)
         return compare_part(node1.long_prefix, node2.long_prefix)
 
-    def pick_next_parent(self):
+    def pick_next_parent(self, slot):
         """
         Pick the next available parent based on some priority.
 
@@ -285,6 +317,7 @@ class TestNode(object):
         """
         nodes = [n for n in self.setup_nodes if self.is_reachable_from(n)]
         nodes = self.setup_nodes if len(nodes) == 0 else nodes
+        nodes = [n for n in self.visited_setup_nodes if slot not in self.visited_setup_nodes[n]] if len(nodes) == 0 else nodes
         next_node = nodes[0]
         for node in nodes[1:]:
             if node.is_occupied():
@@ -293,7 +326,7 @@ class TestNode(object):
                 next_node = node
         return next_node
 
-    def pick_next_child(self):
+    def pick_next_child(self, slot):
         """
         Pick the next available child based on some priority.
 
@@ -304,6 +337,7 @@ class TestNode(object):
         """
         nodes = [n for n in self.cleanup_nodes if self.is_reachable_from(n)]
         nodes = self.cleanup_nodes if len(nodes) == 0 else nodes
+        nodes = [n for n in self.visited_cleanup_nodes if slot not in self.visited_cleanup_nodes[n]] if len(nodes) == 0 else nodes
         next_node = nodes[0]
         for node in nodes[1:]:
             if node.is_occupied():
@@ -312,20 +346,27 @@ class TestNode(object):
                 next_node = node
         return next_node
 
-    def visit_node(self, test_node):
+    def visit_node(self, test_node, worker):
         """
         Move a parent or child node to the set of visited nodes for this test.
 
         :param test_node: visited node
         :type test_node: TestNode object
+        :param str worker: slot ID of worker visiting the node
         :raises: :py:class:`ValueError` if visited node is not directly dependent
         """
-        if test_node in self.setup_nodes:
-            self.setup_nodes.remove(test_node)
-            self.visited_setup_nodes.append(test_node)
-        elif test_node in self.cleanup_nodes:
-            self.cleanup_nodes.remove(test_node)
-            self.visited_cleanup_nodes.append(test_node)
+        if test_node in self.setup_nodes or test_node in self.visited_setup_nodes:
+            if test_node in self.setup_nodes:
+                self.setup_nodes.remove(test_node)
+            if test_node not in self.visited_setup_nodes:
+                self.visited_setup_nodes[test_node] = set()
+            self.visited_setup_nodes[test_node].add(worker)
+        elif test_node in self.cleanup_nodes or test_node in self.visited_cleanup_nodes:
+            if test_node in self.cleanup_nodes:
+                self.cleanup_nodes.remove(test_node)
+            if test_node not in self.visited_cleanup_nodes:
+                self.visited_cleanup_nodes[test_node] = set()
+            self.visited_cleanup_nodes[test_node].add(worker)
         else:
             raise ValueError("Invalid test node - %s and %s are not directly dependent "
                              "in any way" % (test_node.params["shortname"], self.params["shortname"]))
@@ -370,7 +411,26 @@ class TestNode(object):
             node_params[f"soft_boot_{test_object.key}_{test_object.suffix}"] = "no"
 
         if not is_leaf:
-            self.should_run = not ss.check_states(node_params, None)
+            log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
+            node_host = self.params["hostname"]
+            node_nets = self.params["nets_ip_prefix"]
+            node_source_ip = f"{node_nets}.{node_host[1:]}" if node_host else ""
+            session = remote.wait_for_login(self.params["nets_shell_client"],
+                                            node_source_ip,
+                                            self.params["nets_shell_port"],
+                                            self.params["nets_username"], self.params["nets_password"],
+                                            self.params["nets_shell_prompt"])
+
+            control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
+            mod_control_path = door.set_subcontrol_parameter_dict(control_path, "params", node_params)
+            try:
+                door.run_subcontrol(session, mod_control_path)
+                self.should_run = False
+            except ShellCmdError as error:
+                if "AssertionError" in error.output:
+                    self.should_run = True
+                else:
+                    raise RuntimeError("Could not complete state scan due to control file error")
         logging.info("The test node %s %s run", self, "should" if self.should_run else "should not")
 
     def validate(self):

@@ -36,6 +36,9 @@ import contextlib
 import fcntl
 import errno
 
+from aexpect import remote, ops
+from avocado.utils import crypto
+
 from .setup import StateBackend
 from .qcow2 import QCOW2Backend, QCOW2ExtBackend, get_image_path
 from .ramfile import RamfileBackend
@@ -112,10 +115,7 @@ class QCOW2RootPoolBackend(StateBackend):
         logging.info(f"Downloading shared {vm_name}/{image_name} "
                      f"from the shared pool {shared_pool}")
         src_image_name = os.path.join(shared_pool, image_base_names)
-        update_timeout = params.get_numeric("update_pool_timeout", 300)
-        with image_lock(src_image_name, update_timeout) as lock:
-            os.makedirs(os.path.dirname(target_image), exist_ok=True)
-            shutil.copy(src_image_name, target_image)
+        download_from_pool(target_image, src_image_name, params)
 
     @classmethod
     def set_root(cls, params, object=None):
@@ -139,10 +139,7 @@ class QCOW2RootPoolBackend(StateBackend):
         logging.info(f"Uploading shared {vm_name}/{image_name} "
                      f"to the shared pool {shared_pool}")
         dst_image_name = os.path.join(shared_pool, image_base_names)
-        update_timeout = params.get_numeric("update_pool_timeout", 300)
-        with image_lock(dst_image_name, update_timeout) as lock:
-            os.makedirs(shared_pool, exist_ok=True)
-            shutil.copy(target_image, dst_image_name)
+        upload_to_pool(target_image, dst_image_name, params)
 
     @classmethod
     def unset_root(cls, params, object=None):
@@ -166,9 +163,7 @@ class QCOW2RootPoolBackend(StateBackend):
         logging.info(f"Removing shared {vm_name}/{image_name} "
                      f"from the shared pool {shared_pool}")
         dst_image_name = os.path.join(shared_pool, image_base_names)
-        update_timeout = params.get_numeric("update_pool_timeout", 300)
-        with image_lock(dst_image_name, update_timeout) as lock:
-            os.unlink(dst_image_name)
+        delete_in_pool(dst_image_name, params)
 
 
 class QCOW2PoolBackend(StateBackend):
@@ -193,6 +188,39 @@ class QCOW2PoolBackend(StateBackend):
             return cls.local_vm_state_backend
         else:
             raise ValueError(f"Unsupported state type for pooling {state_type}")
+
+    @classmethod
+    def _transfer_chain(cls, state, backend, params, down=True):
+        """
+        Repeat pool operation an all dependencies states backing a given state.
+
+        :param str state: state name
+        :param params: configuration parameters
+        :param backend: local state backend to show states with
+        :type backend: :py:class:`avocado_i2n.states.setup.StateBackend`
+        :type params: {str, str}
+        :param bool down: whether the chain is downloaded or uploaded
+        """
+        transfer_operation = download_from_pool if down else upload_to_pool
+
+        shared_pool = params["image_pool"]
+        cache_dir = params["vms_base_dir"]
+        vm_name = params["vms"]
+
+        next_state = state
+        while next_state != "":
+            for image_name in params.objects("images"):
+                image_params = params.object_params(image_name)
+                cache_path = os.path.join(cache_dir, vm_name, image_name, next_state + ".qcow2")
+                pool_path = os.path.join(shared_pool, vm_name, image_name, next_state + ".qcow2")
+                # if only vm state is not available this would indicate image corruption
+                transfer_operation(cache_path, pool_path, image_params)
+            if next_state == state and params["object_type"] in ["vms", "nets/vms"]:
+                cache_path = os.path.join(cache_dir, vm_name, next_state + ".state")
+                pool_path = os.path.join(shared_pool, vm_name, next_state + ".state")
+                transfer_operation(cache_path, pool_path, params)
+            # download of state chain is not yet complete if the state has backing dependencies
+            next_state = backend.get_dependency(next_state, params)
 
     @classmethod
     def show(cls, params, object=None):
@@ -221,9 +249,9 @@ class QCOW2PoolBackend(StateBackend):
         logging.debug(f"Checking for shared {state_tag} states "
                       f"in the shared pool {shared_pool}")
 
-        params["vms_base_dir"] = shared_pool
-        pool_states = local_state_backend.show(params, object)
-        params["vms_base_dir"] = cache_dir
+        # TODO: list in vm dir or image dir
+        pool_states = list_pool(cache_dir, shared_pool,
+                                params, object, local_state_backend)
 
         return list(set(cache_states).union(set(pool_states)))
 
@@ -278,25 +306,21 @@ class QCOW2PoolBackend(StateBackend):
 
         vm_name = params["vms"]
         state_tag = f"{vm_name}"
+        format = "state"
         if params["object_type"] in ["images", "nets/vms/images"]:
             image_name = params["images"]
             state_tag += f"/{image_name}"
+            format = "qcow2"
         state = params["get_state"]
         logging.info(f"Downloading shared {state_tag} state {state} "
-                     f"from the shared pool {shared_pool}")
+                     f"from the shared pool {shared_pool} to {cache_dir}")
 
-        update_timeout = params.get_numeric("update_pool_timeout", 300)
-        for image_name in params.objects("images"):
-            source_image_path = os.path.join(shared_pool, vm_name, image_name, state + ".qcow2")
-            target_image_path = os.path.join(cache_dir, vm_name, image_name, state + ".qcow2")
-            with image_lock(source_image_path, update_timeout) as lock:
-                os.makedirs(os.path.dirname(target_image_path), exist_ok=True)
-                shutil.copy(source_image_path, target_image_path)
-        if params["object_type"] in ["vms", "nets/vms"]:
-            source_memory_path = os.path.join(shared_pool, vm_name, state + ".state")
-            target_memory_path = os.path.join(cache_dir, vm_name, state + ".state")
-            with image_lock(source_memory_path, update_timeout) as lock:
-                shutil.copy(source_memory_path, target_memory_path)
+        try:
+            cls._transfer_chain(state, local_state_backend, params, down=True)
+        except Exception as error:
+            remove_path = os.path.join(cache_dir, state_tag, state + "." + format)
+            os.unlink(remove_path)
+            raise error
 
         if not params.get_boolean("pool_only"):
             local_state_backend.get(params, object)
@@ -325,20 +349,14 @@ class QCOW2PoolBackend(StateBackend):
             state_tag += f"/{image_name}"
         state = params["set_state"]
         logging.info(f"Uploading shared {state_tag} state {state} "
-                     f"to the shared pool {shared_pool}")
+                     f"to the shared pool {shared_pool} from {cache_dir}")
 
-        update_timeout = params.get_numeric("update_pool_timeout", 300)
-        for image_name in params.objects("images"):
-            source_image_path = os.path.join(cache_dir, vm_name, image_name, state + ".qcow2")
-            target_image_path = os.path.join(shared_pool, vm_name, image_name, state + ".qcow2")
-            with image_lock(target_image_path, update_timeout) as lock:
-                os.makedirs(os.path.dirname(target_image_path), exist_ok=True)
-                shutil.copy(source_image_path, target_image_path)
-        if params["object_type"] in ["vms", "nets/vms"]:
-            source_memory_path = os.path.join(cache_dir, vm_name, state + ".state")
-            target_memory_path = os.path.join(shared_pool, vm_name, state + ".state")
-            with image_lock(source_memory_path, update_timeout) as lock:
-                shutil.copy(source_memory_path, target_memory_path)
+        try:
+            cls._transfer_chain(state, local_state_backend, params, down=False)
+        except Exception as error:
+            remove_path = os.path.join(shared_pool, state_tag, state + "." + format)
+            delete_in_pool(remove_path, params)
+            raise error
 
     @classmethod
     def unset(cls, params, object=None):
@@ -355,7 +373,6 @@ class QCOW2PoolBackend(StateBackend):
             return
 
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
-        cache_dir = params["vms_base_dir"]
 
         vm_name = params["vms"]
         state_tag = f"{vm_name}"
@@ -366,15 +383,13 @@ class QCOW2PoolBackend(StateBackend):
         logging.info(f"Removing shared {state_tag} state {state} "
                      f"from the shared pool {shared_pool}")
 
-        update_timeout = params.get_numeric("update_pool_timeout", 300)
         for image_name in params.objects("images"):
-            target_image_path = os.path.join(shared_pool, vm_name, image_name, state + ".qcow2")
-            with image_lock(target_image_path, update_timeout) as lock:
-                os.unlink(target_image_path)
+            image_params = params.object_params(image_name)
+            pool_path = os.path.join(shared_pool, vm_name, image_name, state + ".qcow2")
+            delete_in_pool(pool_path, image_params)
         if params["object_type"] in ["vms", "nets/vms"]:
-            target_memory_path = os.path.join(shared_pool, vm_name, state + ".state")
-            with image_lock(source_memory_path, update_timeout) as lock:
-                os.unlink(target_memory_path)
+            pool_path = os.path.join(shared_pool, vm_name, state + ".state")
+            delete_in_pool(pool_path, params)
 
     @classmethod
     def check_root(cls, params, object=None):
@@ -415,6 +430,165 @@ class QCOW2PoolBackend(StateBackend):
         """
         local_state_backend = cls._type_decorator(params["object_type"])
         local_state_backend.unset_root(params, object)
+
+
+def list_pool(cache_path, pool_path, params, object, backend):
+    """
+    List all states in a path from the pool.
+
+    :param str cache_path: cache path to list local states from
+    :param str pool_path: pool path to list pool states from
+    :param params: configuration parameters
+    :type params: {str, str}
+    :param object: object whose states are manipulated
+    :type object: :py:class:`virttest.qemu_vm.VM` or None
+    :param backend: local state backend to show states with
+    :type backend: :py:class:`avocado_i2n.states.setup.StateBackend`
+    """
+    if ":" in pool_path:
+        host, path = pool_path.split(":")
+        session = remote.remote_login(params["nets_shell_client"],
+                                      host,
+                                      params["nets_shell_port"],
+                                      params["nets_username"], params["nets_password"],
+                                      params["nets_shell_prompt"])
+        # TODO: not local backend agnostic so use a remote control file
+        if params["object_type"] in ["images", "nets/vms/images"]:
+            state_tag = f"{params['vms']}/{params['images']}"
+            format = ".qcow2"
+        else:
+            state_tag = f"{params['vms']}"
+            format = ".state"
+        path = os.path.join(path, state_tag)
+        states = session.cmd_output(f"ls {path}").split()
+        states = [p.replace(format, "") for p in states]
+    else:
+        params["vms_base_dir"] = pool_path
+        states = backend.show(params, object)
+        params["vms_base_dir"] = cache_path
+    return states
+
+
+def download_from_pool(cache_path, pool_path, params):
+    """
+    Download a path from the pool depending on the pool location.
+
+    :param str cache_path: cache path to download to
+    :param str pool_path: pool path to download from
+    :param params: configuration parameters
+    :type params: {str, str}
+    """
+    if os.path.exists(cache_path):
+        local_hash = crypto.hash_file(cache_path, 1048576, "md5")
+    else:
+        local_hash = ""
+
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+
+    update_timeout = params.get_numeric("update_pool_timeout", 300)
+    if ":" in pool_path:
+        # TODO: no support for remote lock files yet
+        host, path = pool_path.split(":")
+
+        session = remote.remote_login(params["nets_shell_client"],
+                                      host,
+                                      params["nets_shell_port"],
+                                      params["nets_username"], params["nets_password"],
+                                      params["nets_shell_prompt"])
+        remote_hash = ops.hash_file(session, path, "1M", "md5")
+
+        if local_hash == remote_hash:
+            logging.info(f"Skip download of an already available {cache_path} ({remote_hash})")
+            return
+        if local_hash is not None:
+            logging.info(f"Force download of an already available {cache_path} ({remote_hash})")
+
+        remote.copy_files_from(host,
+                               params["nets_file_transfer_client"],
+                               params["nets_username"], params["nets_password"],
+                               params["nets_file_transfer_port"],
+                               path, cache_path,
+                               timeout=update_timeout)
+        return
+
+    with image_lock(pool_path, update_timeout) as lock:
+        remote_hash = crypto.hash_file(pool_path, 1048576, "md5")
+        if local_hash == remote_hash:
+            logging.info(f"Skip download of an already available {cache_path}")
+            return
+        shutil.copy(pool_path, cache_path)
+
+
+def upload_to_pool(cache_path, pool_path, params):
+    """
+    Upload a path to the pool depending on the pool location.
+
+    :param str cache_path: cache path to upload from
+    :param str pool_path: pool path to upload to
+    :param params: configuration parameters
+    :type params: {str, str}
+    """
+    if os.path.exists(cache_path):
+        local_hash = crypto.hash_file(cache_path, 1048576, "md5")
+    else:
+        local_hash = ""
+
+    update_timeout = params.get_numeric("update_pool_timeout", 300)
+    if ":" in pool_path:
+        # TODO: need to create remote directory if not available
+        # TODO: no support for remote lock files yet
+        host, path = pool_path.split(":")
+
+        session = remote.remote_login(params["nets_shell_client"],
+                                      host,
+                                      params["nets_shell_port"],
+                                      params["nets_username"], params["nets_password"],
+                                      params["nets_shell_prompt"])
+        remote_hash = ops.hash_file(session, path, "1M", "md5")
+
+        if local_hash == remote_hash:
+            logging.info(f"Skip upload of an already available {cache_path} ({remote_hash})")
+            return
+        if local_hash is not None:
+            logging.info(f"Force upload of an already available {cache_path} ({remote_hash})")
+
+        remote.copy_files_to(host,
+                             params["nets_file_transfer_client"],
+                             params["nets_username"], params["nets_password"],
+                             params["nets_file_transfer_port"],
+                             cache_path, path,
+                             timeout=update_timeout)
+        return
+
+    with image_lock(pool_path, update_timeout) as lock:
+        remote_hash = crypto.hash_file(pool_path, 1048576, "md5")
+        if local_hash == remote_hash:
+            logging.info(f"Skip upload of an already available {cache_path}")
+            return
+        os.makedirs(os.path.dirname(pool_path), exist_ok=True)
+        shutil.copy(cache_path, pool_path)
+
+
+def delete_in_pool(pool_path, params):
+    """
+    Delete a path in the pool depending on the pool location.
+
+    :param str pool_path: path in the pool to delete
+    :param params: configuration parameters
+    :type params: {str, str}
+    """
+    update_timeout = params.get_numeric("update_pool_timeout", 300)
+    if ":" in pool_path:
+        host, path = pool_path.split(":")
+        session = remote.remote_login(params["nets_shell_client"],
+                                      host,
+                                      params["nets_shell_port"],
+                                      params["nets_username"], params["nets_password"],
+                                      params["nets_shell_prompt"])
+        # TODO: not local backend agnostic so use a remote control file
+        session.cmd(f"rm {path}")
+    with image_lock(pool_path, update_timeout) as lock:
+        os.unlink(pool_path)
 
 
 @contextlib.contextmanager

@@ -43,6 +43,17 @@ class RamfileBackend(StateBackend):
     image_state_backend = None
 
     @classmethod
+    def get_dependency(cls, state, params):
+        """
+        Return a backing state that the current state depends on.
+
+        :param str state: state name to retriee the backing dependency of
+
+        The rest of the arguments match the signature of the other methods here.
+        """
+        return cls.image_state_backend.get_dependency(state, params)
+
+    @classmethod
     def show(cls, params, object=None):
         """
         Return a list of available states of a specific type.

@@ -28,6 +28,7 @@ INTERFACE
 """
 
 import os
+import json
 import re
 import shutil
 import logging as log
@@ -152,6 +153,28 @@ class QCOW2ExtBackend(QCOW2Backend):
     """Backend manipulating image states as external QCOW2 snapshots."""
 
     _require_running_object = False
+
+    @classmethod
+    def get_dependency(cls, state, params):
+        """
+        Return a backing state that the current state depends on.
+
+        :param str state: state name to retriee the backing dependency of
+
+        The rest of the arguments match the signature of the other methods here.
+        """
+        vm_name, image_name = params["vms"], params["images"]
+        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        params["image_chain"] = f"snapshot {image_name}"
+        params["image_name_snapshot"] = os.path.join(image_name, state)
+        params["image_format_snapshot"] = "qcow2"
+        # TODO: we might want to return the complete backing chain but in some
+        # cases parts of it are stored in a remote location
+        #params["backing_chain"] = "yes"
+        qemu_img = QemuImg(params.object_params("snapshot"), vm_dir, "snapshot")
+        image_info = qemu_img.info(force_share=True, output="json")
+        image_file = json.loads(image_info).get("backing-filename", "")
+        return os.path.basename(image_file.replace(".qcow2", ""))
 
     @classmethod
     def show(cls, params, object=None):
