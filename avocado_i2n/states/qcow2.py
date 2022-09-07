@@ -33,9 +33,10 @@ import shutil
 import logging as log
 logging = log.getLogger('avocado.test.' + __name__)
 
+from virttest import env_process
 from virttest.qemu_storage import QemuImg
 
-from .setup import StateBackend, StateOnBackend
+from .setup import StateBackend
 
 
 #: off qemu states regex (0 vm size)
@@ -227,10 +228,30 @@ class QCOW2ExtBackend(QCOW2Backend):
         os.unlink(os.path.join(image_dir, state + ".qcow2"))
 
 
-class QCOW2VTBackend(StateOnBackend, QCOW2Backend):
+class QCOW2VTBackend(QCOW2Backend):
     """Backend manipulating vm states as QCOW2 snapshots using VT's VM bindings."""
 
     _require_running_object = True
+
+    @classmethod
+    def show(cls, params, object=None):
+        """
+        Return a list of available states of a specific type.
+
+        All arguments match the base class.
+        """
+        logging.debug(f"Showing external states for vm {params['vms']}")
+        states = set()
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            # TODO: refine method arguments by providing at least the image name directly
+            image_params["images"] = image_name
+            image_states = super().show(image_params, object=object)
+            if len(states) == 0:
+                states = image_states
+            else:
+                states = states.intersect(image_states)
+        return states
 
     @classmethod
     def get(cls, params, object=None):
@@ -275,6 +296,89 @@ class QCOW2VTBackend(StateOnBackend, QCOW2Backend):
         vm.monitor.send_args_cmd("delvm id=%s" % params["unset_state"])
         vm.verify_status('paused')
         vm.resume(timeout=3)
+
+    @classmethod
+    def check_root(cls, params, object=None):
+        """
+        Check whether a root state or essentially the object is running.
+
+        All arguments match the base class.
+        """
+        vm_name = params["vms"]
+        logging.debug("Checking whether %s's root state is fully available", vm_name)
+
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            image_path = image_params["image_name"]
+            if not os.path.isabs(image_path):
+                image_path = os.path.join(image_params["images_base_dir"], image_path)
+            image_format = image_params.get("image_format", "qcow2")
+            image_format = "" if image_format in ["raw", ""] else "." + image_format
+            if not os.path.exists(image_path + image_format):
+                logging.info("The required virtual machine %s has a missing image %s",
+                             vm_name, image_path + image_format)
+                return False
+
+        if not params.get_boolean("use_env", True):
+            return True
+        logging.debug("Checking whether %s is on (boot state requested)", vm_name)
+        vm = object
+        if vm is not None and vm.is_alive():
+            logging.info("The required virtual machine %s is on", vm_name)
+            return True
+        else:
+            logging.info("The required virtual machine %s is off", vm_name)
+            return False
+
+    @classmethod
+    def set_root(cls, params, object=None):
+        """
+        Set a root state to provide running object.
+
+        All arguments match the base class.
+
+        ..todo:: Study better the environment pre/postprocessing details necessary
+                 for flawless vm destruction and creation to improve these.
+        """
+        vm_name = params["vms"]
+
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            image_path = image_params["image_name"]
+            if not os.path.isabs(image_path):
+                image_path = os.path.join(image_params["images_base_dir"], image_path)
+            image_format = image_params.get("image_format")
+            image_format = "" if image_format in ["raw", ""] else "." + image_format
+            if not os.path.exists(image_path + image_format):
+                logging.info("Creating image %s in order to boot %s",
+                                image_path + image_format, vm_name)
+                os.makedirs(os.path.dirname(image_path), exist_ok=True)
+                image_params.update({"create_image": "yes", "force_create_image": "yes"})
+                env_process.preprocess_image(None, image_params, image_path)
+
+        if not params.get_boolean("use_env", True):
+            return
+        logging.info("Booting %s to provide boot state", vm_name)
+        vm = object
+        if vm is None:
+            raise ValueError("Need an environmental object to boot")
+            #vm = env.create_vm(params.get('vm_type'), params.get('target'),
+            #                   vm_name, params, None)
+        if not vm.is_alive():
+            vm.create()
+
+    @classmethod
+    def unset_root(cls, params, object=None):
+        """
+        Unset a root state to prevent object from running.
+
+        All arguments match the base class.
+        """
+        vm_name = params["vms"]
+        logging.info("Shutting down %s to prevent boot state", vm_name)
+        vm = object
+        if vm is not None and vm.is_alive():
+            vm.destroy(gracefully=False)
 
 
 def get_image_path(params):
