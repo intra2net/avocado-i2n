@@ -159,15 +159,18 @@ class QCOW2ExtBackend(QCOW2Backend):
 
         All arguments match the base class.
         """
-        qemu_img = QemuImg(params, params["images_base_dir"], params["images"])
+        image = params["images"]
+        qemu_img = QemuImg(params, params["images_base_dir"], image)
         logging.debug("Showing %s external states for image %s", cls.state_type(), params["images"])
-        images_dir = os.path.dirname(qemu_img.image_filename)
-        snapshots = os.listdir(images_dir)
+        image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image)
+        if not os.path.exists(image_dir):
+            return []
+        snapshots = os.listdir(image_dir)
         states = []
         for snapshot in snapshots:
             if not snapshot.endswith(".qcow2"):
                 continue
-            size = os.stat(os.path.join(images_dir, snapshot)).st_size
+            size = os.stat(os.path.join(image_dir, snapshot)).st_size
             state = snapshot[:-6]
             logging.info(f"Detected {cls.state_type()} state '{state}' of size "
                          f"{round(size / 1024**3, 3)} GB ({size})")
@@ -184,7 +187,7 @@ class QCOW2ExtBackend(QCOW2Backend):
         vm, vm_name = object, params["vms"]
         state, image = params["get_state"], params["images"]
         params["image_chain"] = f"snapshot {image}"
-        params["image_name_snapshot"] = state
+        params["image_name_snapshot"] = os.path.join(image, state)
         params["image_format_snapshot"] = "qcow2"
         qemu_img = QemuImg(params, params["images_base_dir"], image)
         logging.info("Reusing %s state '%s' of %s/%s", cls.state_type(), state,
@@ -203,9 +206,9 @@ class QCOW2ExtBackend(QCOW2Backend):
         qemu_img = QemuImg(params, params["images_base_dir"], image)
         logging.info("Creating %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image)
-        images_dir = os.path.dirname(qemu_img.image_filename)
-        os.makedirs(images_dir, exist_ok=True)
-        shutil.copy(qemu_img.image_filename, os.path.join(images_dir, state + ".qcow2"))
+        image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image)
+        os.makedirs(image_dir, exist_ok=True)
+        shutil.copy(qemu_img.image_filename, os.path.join(image_dir, state + ".qcow2"))
 
     @classmethod
     def unset(cls, params, object=None):
@@ -219,9 +222,9 @@ class QCOW2ExtBackend(QCOW2Backend):
         qemu_img = QemuImg(params, params["images_base_dir"], image)
         logging.info("Removing %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image)
-        images_dir = os.path.dirname(qemu_img.image_filename)
+        image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image)
         # TODO: should we mv to pointer image in case removed state is in backing chain?
-        os.unlink(os.path.join(images_dir, state + ".qcow2"))
+        os.unlink(os.path.join(image_dir, state + ".qcow2"))
 
 
 class QCOW2VTBackend(StateOnBackend, QCOW2Backend):
