@@ -367,7 +367,8 @@ def check_states(run_params, env=None):
                 vm.destroy(gracefully=state_params.get_dict("check_opts").get("soft_boot", "yes")=="yes")
             else:
                 state_backend.unset_root(state_params, state_object)
-            root_exists = False
+            state_backend.set_root(state_params, state_object)
+            root_exists = True
 
         if state in ROOTS:
             state_exists = root_exists
