@@ -154,6 +154,25 @@ class TestNode(object):
 
         self.params["hostname"] = env_id if env_id else self.params["hostname"]
 
+    @staticmethod
+    def start_environment(env_id):
+        """
+        Start the environment for executing a test node.
+
+        :returns: whether the environment is available after current or previous start
+        :rtype: bool
+
+        ..todo:: As we can start containers this code will have to differentiate
+            between a remote host and a remote or local container later on with a
+            wake-on-lan implementation for the latter.
+        """
+        import lxc
+        container = lxc.Container(env_id)
+        if not container.running:
+            logging.info(f"Starting bootable environment {env_id}")
+            return container.start()
+        return container.running
+
     def is_occupied(self):
         return self.spawner is not None
 

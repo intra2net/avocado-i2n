@@ -340,6 +340,9 @@ class CartesianRunner(RunnerInterface):
 
         self.tasks = []
         self.slots = params.get("slots", "").split(" ")
+        for slot in self.slots:
+            if not TestNode.start_environment(slot):
+                raise RuntimeError(f"Failed to start environment {slot}")
 
         try:
             graph.visualize(self.job.logdir)

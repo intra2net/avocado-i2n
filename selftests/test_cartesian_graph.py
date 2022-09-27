@@ -654,7 +654,8 @@ class CartesianGraphTest(Test):
 
     @mock.patch('avocado_i2n.runner.StatusRepo')
     @mock.patch('avocado_i2n.runner.StatusServer')
-    def test_loader_runner_entries(self, mock_status_server, mock_status_repo):
+    @mock.patch('avocado_i2n.runner.TestNode.start_environment')
+    def test_loader_runner_entries(self, mock_start_environment, mock_status_server, mock_status_repo):
         """Test that the default loader and runner entries work as expected."""
         self.config["tests_str"] += "only tutorial1\n"
         reference = "only=tutorial1 key1=val1"
