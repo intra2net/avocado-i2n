@@ -61,7 +61,7 @@ class TestObject(object):
         """
         Construct a test object (vm) for any test nodes (tests).
 
-        :param str name: name of the test object
+        :param str suffix: name of the test object
         :param config: variant configuration for the test object
         :type config: :py:class:`param.Reparsable`
         """

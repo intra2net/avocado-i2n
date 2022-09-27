@@ -103,6 +103,20 @@ class TestNode(object):
         for test_object in object.components:
             self.objects += [test_object]
             self.objects += test_object.components
+            # TODO: dynamically added additional images will not be detected here
+            from . import ImageObject
+            from .. import params_parser as param
+            vm_name = test_object.suffix
+            parsed_images = [c.suffix for c in test_object.components]
+            for image_name in self.params.object_params(vm_name).objects("images"):
+                if image_name not in parsed_images:
+                    image_suffix = f"{image_name}_{vm_name}"
+                    config = param.Reparsable()
+                    config.parse_next_dict(test_object.params.object_params(image_name))
+                    config.parse_next_dict({"object_suffix": image_suffix, "object_type": "images"})
+                    image = ImageObject(image_suffix, config)
+                    image.composites.append(test_object)
+                    self.objects += [image]
 
         # lists of parent and children test nodes
         self.setup_nodes = []
@@ -270,7 +284,10 @@ class TestNode(object):
         :rtype: bool
         """
         for test_node in self.setup_nodes:
-            if test_object in test_node.objects:
+            # TODO: direct object compairson will not work for dynamically
+            # (within node) created objects like secondary images
+            node_object_suffices = [t.long_suffix for t in test_node.objects]
+            if test_object in test_node.objects or test_object.long_suffix in node_object_suffices:
                 if re.search("(\.|^)" + state + "(\.|$)", test_node.params.get("name")):
                     return True
                 setup_object_params = test_object.object_typed_params(test_node.params)
