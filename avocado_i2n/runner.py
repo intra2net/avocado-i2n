@@ -247,7 +247,7 @@ class CartesianRunner(RunnerInterface):
             else:
                 # since the loop is discontinued if len(traverse_path) == 0 or root.is_cleanup_ready()
                 # a valid current node with at least one child is guaranteed
-                traverse_path.append(next.pick_next_child(slot))
+                traverse_path.append(next.pick_child(slot))
                 continue
             if next.is_occupied() and next.params.get_boolean("wait_for_occupied", True):
                 # ending with an occupied node would mean we wait for a permill of its duration
@@ -281,33 +281,33 @@ class CartesianRunner(RunnerInterface):
             # if previous in path is the child of the next, then the path is reversed
             # looking for setup so if the next is setup ready and already run, remove
             # the previous' reference to it and pop the current next from the path
-            if previous in next.cleanup_nodes or previous in next.visited_cleanup_nodes:
+            if previous in next.cleanup_nodes:
 
                 if next.is_setup_ready(slot):
-                    previous.visit_node(next, slot)
+                    previous.visit_parent(next, slot)
                     await self._traverse_test_node(graph, next, params, slot)
                     traverse_path.pop()
                 else:
                     # inverse DFS
-                    traverse_path.append(next.pick_next_parent(slot))
-            elif previous in next.setup_nodes or previous in next.visited_setup_nodes:
+                    traverse_path.append(next.pick_parent(slot))
+            elif previous in next.setup_nodes:
 
                 # stop if test is not a setup leaf since parents have higher priority than children
                 if not next.is_setup_ready(slot):
-                    traverse_path.append(next.pick_next_parent(slot))
+                    traverse_path.append(next.pick_parent(slot))
                     continue
                 else:
                     await self._traverse_test_node(graph, next, params, slot)
 
                 if next.is_cleanup_ready(slot):
-                    for setup in next.visited_setup_nodes:
-                        setup.visit_node(next, slot)
+                    for setup in next.setup_nodes:
+                        setup.visit_child(next, slot)
                     await self._reverse_test_node(graph, next, params, slot)
                     traverse_path.pop()
                     graph.report_progress()
                 else:
                     # normal DFS
-                    traverse_path.append(next.pick_next_child(slot))
+                    traverse_path.append(next.pick_child(slot))
             else:
                 raise AssertionError("Discontinuous path in the test dependency graph detected")
 

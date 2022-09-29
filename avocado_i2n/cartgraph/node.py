@@ -29,6 +29,7 @@ INTERFACE
 
 import os
 import re
+from functools import cmp_to_key
 import logging as log
 logging = log.getLogger('avocado.test.' + __name__)
 
@@ -221,40 +222,39 @@ class TestNode(object):
         """Check if the test node is not defined with any test object."""
         return len(self.objects) == 0 or self.params["vms"] == ""
 
-    def is_setup_ready(self, worker=None):
+    def is_setup_ready(self, worker):
         """
         Check if all dependencies of the test were run or there were none.
 
         :param str worker: relative setup readiness with respect to a worker ID
         """
-        if worker:
-            for node in self.visited_setup_nodes:
-                if worker not in self.visited_setup_nodes[node]:
-                    return False
-        return len(self.setup_nodes) == 0
+        for node in self.setup_nodes:
+            if worker not in self.visited_setup_nodes.get(node, set()):
+                return False
+        return True
 
-    def is_cleanup_ready(self, worker=None):
+    def is_cleanup_ready(self, worker):
         """
         Check if all dependent tests were run or there were none.
 
         :param str worker: relative setup readiness with respect to a worker ID
         """
-        if worker:
-            for node in self.visited_cleanup_nodes:
-                if worker not in self.visited_cleanup_nodes[node]:
-                    return False
-        return len(self.cleanup_nodes) == 0
+        for node in self.cleanup_nodes:
+            if worker not in self.visited_cleanup_nodes.get(node, set()):
+                return False
+        return True
 
     def is_finished(self):
         """
-        The test and all its dependent tests were run and the test will not
-        be run anymore.
-        """
-        return self.is_cleanup_ready() and not self.should_run
+        The test was run by at least one worker.
 
-    def is_reachable_from(self, node):
-        """The current node is setup or cleanup node for another node."""
-        return self in node.setup_nodes or self in node.cleanup_nodes
+        This choice of criterion makes sure that already available
+        setup nodes are considered finished. If we instead wait for
+        this setup to be cleaned up or synced, this would count most
+        of the setup as finished in the end of the traversal while
+        we would prefer to do so in an eager manner.
+        """
+        return len(self.workers) > 0 and not self.should_run
 
     def is_terminal_node_for(self):
         """
@@ -306,98 +306,148 @@ class TestNode(object):
                     return True
         return False
 
-    @staticmethod
-    def comes_before(node1, node2):
-        def compare_part(prefix1, prefix2):
-            match1, match2 = re.match(r"^(\d+)(\w)(.+)", prefix1), re.match(r"^(\d+)(\w)(.+)", prefix2)
-            digit1, alpha1, else1 = (prefix1, None, None) if match1 is None else match1.group(1, 2, 3)
-            digit2, alpha2, else2 = (prefix2, None, None) if match2 is None else match2.group(1, 2, 3)
+    @classmethod
+    def prefix_priority(cls, prefix1, prefix2):
+        """
+        Class method for secondary prioritization using test prefixes.
 
-            # compare order of parsing if simple leaf nodes
-            if digit1.isdigit() and digit2.isdigit():
-                digit1, digit2 = int(digit1), int(digit2)
-                if digit1 != digit2:
-                    return digit1 < digit2
-            # we no longer match and are at the end ofthe prefix
-            else:
-                return digit1 < digit2
+        :param str prefix1: first prefix to use for the priority comparison
+        :param str prefix2: second prefix to use for the priority comparison
 
-            # compare the node type flags next
-            if alpha1 != alpha2:
-                if alpha1 is None:
-                    return False if alpha2 == "a" else True  # reverse order for "c" (cleanup), "b" (byproduct), "d" (duplicate)
-                if alpha2 is None:
-                    return True if alpha1 == "a" else False  # reverse order for "c" (cleanup), "b" (byproduct), "d" (duplicate)
-                return alpha1 < alpha2
-            # redo the comparison for the next prefix part
-            else:
-                return compare_part(else1, else2)
-        return compare_part(node1.long_prefix, node2.long_prefix)
+        This function also does recursive calls of sub-prefixes.
+        """
+        match1, match2 = re.match(r"^(\d+)(\w)(.+)", prefix1), re.match(r"^(\d+)(\w)(.+)", prefix2)
+        digit1, alpha1, else1 = (prefix1, None, None) if match1 is None else match1.group(1, 2, 3)
+        digit2, alpha2, else2 = (prefix2, None, None) if match2 is None else match2.group(1, 2, 3)
 
-    def pick_next_parent(self, slot):
+        # compare order of parsing if simple leaf nodes
+        if digit1.isdigit() and digit2.isdigit():
+            digit1, digit2 = int(digit1), int(digit2)
+            if digit1 != digit2:
+                return digit1 - digit2
+        # we no longer match and are at the end of the prefix
+        else:
+            if digit1 != digit2:
+                return 1 if digit1 > digit2 else -1
+
+        # compare the node type flags next
+        if alpha1 != alpha2:
+            if alpha1 is None:
+                return 1 if alpha2 == "a" else -1  # reverse order for "c" (cleanup), "b" (byproduct), "d" (duplicate)
+            if alpha2 is None:
+                return -1 if alpha1 == "a" else 1  # reverse order for "c" (cleanup), "b" (byproduct), "d" (duplicate)
+            return 1 if alpha1 > alpha2 else -1
+        # redo the comparison for the next prefix part
+        else:
+            return cls.prefix_priority(else1, else2)
+
+    @classmethod
+    def setup_priority(cls, node1, node2):
+        """
+        Class method for setup traversal scheduling and prioritization.
+
+        :param node1: first node to use for the priority comparison
+        :type node1: :py:class:`TestNode`
+        :param node2: first node to use for the priority comparison
+        :type node2: :py:class:`TestNode`
+
+        By default (if not externally set), it implements the divergent paths
+        policy whereby workers will spread and explore the test space or
+        equidistribute if confined within overlapping paths.
+        """
+        if len(node1.visited_setup_nodes) != len(node2.visited_setup_nodes):
+            return len(node1.visited_setup_nodes) - len(node2.visited_setup_nodes)
+        if len(node1.visited_cleanup_nodes) != len(node2.visited_cleanup_nodes):
+            return len(node1.visited_cleanup_nodes) - len(node2.visited_cleanup_nodes)
+        if len(node1.workers) != len(node2.workers):
+            return len(node1.workers) - len(node2.workers)
+
+        return cls.prefix_priority(node1.long_prefix, node2.long_prefix)
+
+    @classmethod
+    def cleanup_priority(cls, node1, node2):
+        """
+        Class method for cleanup traversal scheduling and prioritization.
+
+        :param node1: first node to use for the priority comparison
+        :type node1: :py:class:`TestNode`
+        :param node2: first node to use for the priority comparison
+        :type node2: :py:class:`TestNode`
+
+        By default (if not externally set), it implements the divergent paths
+        policy whereby workers will spread and explore the test space or
+        equidistribute if confined within overlapping paths.
+        """
+        if len(node1.visited_cleanup_nodes) != len(node2.visited_cleanup_nodes):
+            return len(node1.visited_cleanup_nodes) - len(node2.visited_cleanup_nodes)
+        if len(node1.visited_setup_nodes) != len(node2.visited_setup_nodes):
+            return len(node1.visited_setup_nodes) - len(node2.visited_setup_nodes)
+        if len(node1.workers) != len(node2.workers):
+            return len(node1.workers) - len(node2.workers)
+
+        return cls.prefix_priority(node1.long_prefix, node2.long_prefix)
+
+    def pick_parent(self, slot):
         """
         Pick the next available parent based on some priority.
 
         :returns: the next parent node
-        :rtype: TestNode object
+        :rtype: :py:class:`TestNode`
+        :raises: :py:class:`RuntimeError`
 
-        The current basic priority is test name.
+        The current order will prioritize less traversed test paths.
         """
-        nodes = [n for n in self.setup_nodes if self.is_reachable_from(n)]
-        nodes = self.setup_nodes if len(nodes) == 0 else nodes
-        nodes = [n for n in self.visited_setup_nodes if slot not in self.visited_setup_nodes[n]] if len(nodes) == 0 else nodes
-        next_node = nodes[0]
-        for node in nodes[1:]:
-            if node.is_occupied():
-                continue
-            if TestNode.comes_before(node, next_node):
-                next_node = node
-        return next_node
+        available_nodes = [n for n in self.setup_nodes if slot not in self.visited_setup_nodes.get(n, set())]
+        nodes = sorted(available_nodes, key=cmp_to_key(TestNode.setup_priority))
+        if len(nodes) == 0:
+            raise RuntimeError("Picked a parent of a node without remaining parents")
+        return nodes[0]
 
-    def pick_next_child(self, slot):
+    def pick_child(self, slot):
         """
         Pick the next available child based on some priority.
 
         :returns: the next child node
-        :rtype: TestNode object
+        :rtype: :py:class:`TestNode`
+        :raises: :py:class:`RuntimeError`
 
-        The current order is defined by soft early fail then basic test name priority.
+        The current order will prioritize less traversed test paths.
         """
-        nodes = [n for n in self.cleanup_nodes if self.is_reachable_from(n)]
-        nodes = self.cleanup_nodes if len(nodes) == 0 else nodes
-        nodes = [n for n in self.visited_cleanup_nodes if slot not in self.visited_cleanup_nodes[n]] if len(nodes) == 0 else nodes
-        next_node = nodes[0]
-        for node in nodes[1:]:
-            if node.is_occupied():
-                continue
-            if TestNode.comes_before(node, next_node):
-                next_node = node
-        return next_node
+        available_nodes = [n for n in self.cleanup_nodes if slot not in self.visited_cleanup_nodes.get(n, set())]
+        nodes = sorted(available_nodes, key=cmp_to_key(TestNode.cleanup_priority))
+        if len(nodes) == 0:
+            raise RuntimeError("Picked a child of a node without remaining children")
+        return nodes[0]
 
-    def visit_node(self, test_node, worker):
+    def visit_parent(self, test_node, worker):
         """
-        Move a parent or child node to the set of visited nodes for this test.
+        Add a parent node to the set of visited nodes for this test.
 
         :param test_node: visited node
         :type test_node: TestNode object
         :param str worker: slot ID of worker visiting the node
         :raises: :py:class:`ValueError` if visited node is not directly dependent
         """
-        if test_node in self.setup_nodes or test_node in self.visited_setup_nodes:
-            if test_node in self.setup_nodes:
-                self.setup_nodes.remove(test_node)
-            if test_node not in self.visited_setup_nodes:
-                self.visited_setup_nodes[test_node] = set()
-            self.visited_setup_nodes[test_node].add(worker)
-        elif test_node in self.cleanup_nodes or test_node in self.visited_cleanup_nodes:
-            if test_node in self.cleanup_nodes:
-                self.cleanup_nodes.remove(test_node)
-            if test_node not in self.visited_cleanup_nodes:
-                self.visited_cleanup_nodes[test_node] = set()
-            self.visited_cleanup_nodes[test_node].add(worker)
-        else:
-            raise ValueError("Invalid test node - %s and %s are not directly dependent "
-                             "in any way" % (test_node.params["shortname"], self.params["shortname"]))
+        if test_node not in self.setup_nodes:
+            raise ValueError(f"Invalid parent to visit: {test_node} not a parent of {self}")
+        visitors = self.visited_setup_nodes.get(test_node, set())
+        visitors.add(worker)
+        self.visited_setup_nodes[test_node] = visitors
+
+    def visit_child(self, test_node, worker):
+        """
+        Add a child node to the set of visited nodes for this test.
+
+        :param test_node: visited node
+        :type test_node: TestNode object
+        :param str worker: slot ID of worker visiting the node
+        :raises: :py:class:`ValueError` if visited node is not directly dependent
+        """
+        if test_node not in self.cleanup_nodes:
+            raise ValueError(f"Invalid child to visit: {test_node} not a child of {self}")
+        visitors = self.visited_cleanup_nodes.get(test_node, set())
+        visitors.add(worker)
+        self.visited_cleanup_nodes[test_node] = visitors
 
     def regenerate_params(self, verbose=False):
         """

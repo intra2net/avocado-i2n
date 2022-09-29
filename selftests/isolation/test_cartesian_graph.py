@@ -498,16 +498,17 @@ class CartesianGraphTest(Test):
         DummyTestRunning.asserted_tests = [
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "hostname": "^c2$"},
+            # this tests reentry of traversed path by an extra worker c4 reusing setup from c1
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "hostname": "^c3$"},
             # c4 would step back from already occupied on_customize (by c1) for the time being
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             # c2 would step back from already occupied linux_virtuser (by c3) and c3 proceeds instead
             {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "hostname": "^c3$"},
-            # this tests reentry of traversed path by an extra worker c4 reusing setup from c1
-            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "hostname": "^c4$"},
-            # c1 would now step back from already occupied tutorial2.names (by c4)
-            # c2 would now step back from already occupied client_noop (by c3)
-            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "hostname": "^c2$"},
+            # c4 now picks up available setup and tests from its own reentered branch
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "hostname": "^c4$"},
+            # c1 would now pick its second local tutorial2.names
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            # all others now step back from already occupied tutorial2.names (by c1)
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
