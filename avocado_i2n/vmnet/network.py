@@ -606,6 +606,7 @@ class VMNetwork(object):
             dns_dhcp_config = DNSMASQ_CONFIG
             with open(dns_dhcp_config, "w") as f:
                 f.write(dns_dhcp_string)
+            logging.debug("Writing new DHCP/DNS hosts file:\n%s", dns_declarations["hosts"])
             with open(DNSMASQ_HOSTS, "w") as f:
                 f.write(dns_declarations["hosts"])
             logging.debug("Resetting DHCP/DNS service")
@@ -623,6 +624,7 @@ class VMNetwork(object):
         netdst = interface.netconfig.netdst
         host_ip = interface.netconfig.host_ip
         mask_bit = interface.netconfig.mask_bit
+        host_mac = interface.mac.replace("02:00", "02:20")
 
         def _debug_bridge_ip(netdst):
             output = process.run('ip addr show %s' % netdst, shell=True)
@@ -640,6 +642,7 @@ class VMNetwork(object):
             # TODO: no original avocado-vt method in utils_net like set_ip() and
             # set_netmask() could do this for us at least from the research at the time
             process.run("ip addr add %s/%s dev %s" % (host_ip, mask_bit, netdst))
+            process.run("ip link set %s address %s" % (netdst, host_mac))
             process.run("ip link set %s up" % netdst)
             # DEBUG only: See if setting the IP address worked
             _debug_bridge_ip(netdst)
