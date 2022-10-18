@@ -243,7 +243,7 @@ class CartesianRunner(RunnerInterface):
                 continue
             if next.is_occupied() and next.params.get_boolean("wait_for_occupied", True):
                 # ending with an occupied node would mean we wait for a permill of its duration
-                test_duration = next.params.get_numeric("test_timeout", 3600)
+                test_duration = next.params.get_numeric("test_timeout", 3600) * (next.params.get_numeric("retry_attempts", 0) + 1)
                 occupied_timeout = round(max(test_duration/1000, 0.1), 2)
                 if next == occupied_at:
                     if occupied_wait > test_duration:
