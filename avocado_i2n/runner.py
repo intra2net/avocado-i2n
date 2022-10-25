@@ -129,13 +129,12 @@ class CartesianRunner(RunnerInterface):
                      spawner=node.spawner, max_running=1,
                      task_timeout=job.config.get('task.timeout.running')).run()
 
-    async def run_test_node(self, node, can_retry=False):
+    async def run_test_node(self, node):
         """
         Run a node once, and optionally re-run it depending on the parameters.
 
         :param node: test node to run
         :type node: :py:class:`TestNode`
-        :param bool can_retry: whether this node can be re-run
         :returns: run status of :py:meth:`run_test`
         :rtype: bool
         :raises: :py:class:`AssertionError` if the ran test node contains no objects
@@ -159,7 +158,7 @@ class CartesianRunner(RunnerInterface):
 
         retry_stop = node.params.get("retry_stop", "none")
         # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
-        runs_left = 1 + node.params.get_numeric("retry_attempts", 0) if can_retry else 1
+        runs_left = 1 + node.params.get_numeric("retry_attempts", 0)
         # do not log when the user is not using the retry feature
         if runs_left > 1:
             logging.debug(f"Running test with retry_stop={retry_stop} and retry_attempts={runs_left}")
@@ -418,14 +417,14 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_dict=setup_dict)
         pre_node = TestNode("0t", install_config, test_node.objects[0])
         pre_node.set_environment(self.job, test_node.params["hostname"])
-        status = await self.run_test_node(pre_node, can_retry=True)
+        status = await self.run_test_node(pre_node)
         if not status:
             logging.error("Could not configure the installation for %s on %s", object_vm, object_image)
             return status
 
         logging.info("Installing virtual machine %s", test_object.suffix)
         test_node.params["type"] = test_node.params["configure_install"]
-        return await self.run_test_node(test_node, can_retry=True)
+        return await self.run_test_node(test_node)
 
     """internals"""
     async def _traverse_test_node(self, graph, test_node, params, slot):
@@ -461,7 +460,7 @@ class CartesianRunner(RunnerInterface):
 
             else:
                 # finally, good old running of an actual test
-                status = await self.run_test_node(test_node, can_retry=True)
+                status = await self.run_test_node(test_node)
                 if not status:
                     logging.error("Got nonzero status from the test %s", test_node)
 
