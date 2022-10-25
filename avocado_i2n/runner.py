@@ -140,12 +140,8 @@ class CartesianRunner(RunnerInterface):
         :raises: :py:class:`AssertionError` if the ran test node contains no objects
 
         The retry parameters are `retry_attempts` and `retry_stop`. The first is
-        the maximum number of retries, and the second indicates when to stop retrying.
-        The possible combinations of these values are:
-
-        - `retry_stop = error`: retry until error or a maximum of `retry_attempts` number of times
-        - `retry_stop = success`: retry until success or a maximum of `retry_attempts` number of times
-        - `retry_stop = none`: retry a maximum of `retry_attempts` number of times
+        the maximum number of retries, and the second indicates when to stop retrying
+        in terms of encountered test status and can be a list of statuses to stop on.
 
         Only tests with the status of pass, warning, error or failure will be retried.
         Other statuses will be ignored and the test will run only once.
@@ -156,16 +152,18 @@ class CartesianRunner(RunnerInterface):
         if node.is_objectless():
             raise AssertionError("Cannot run test nodes not using any test objects, here %s" % node)
 
-        retry_stop = node.params.get("retry_stop", "none")
+        retry_stop = node.params.get_list("retry_stop", [])
         # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
         runs_left = 1 + node.params.get_numeric("retry_attempts", 0)
         # do not log when the user is not using the retry feature
         if runs_left > 1:
-            logging.debug(f"Running test with retry_stop={retry_stop} and retry_attempts={runs_left}")
+            logging.debug(f"Running test with retry_stop={', '.join(retry_stop)} and retry_attempts={runs_left}")
         if runs_left < 1:
             raise ValueError("Value of retry_attempts cannot be less than zero")
-        if retry_stop not in ["none", "error", "success"]:
-            raise ValueError("Value of retry_stop must be 'none', 'error' or 'success'")
+        disallowed_status = set(retry_stop).difference(set(["fail", "error", "pass", "warn", "skip"]))
+        if len(disallowed_status) > 0:
+            raise ValueError(f"Value of retry_stop must be a valid test status,"
+                             f" found {', '.join(disallowed_status)}")
 
         original_prefix = node.prefix
         for r in range(runs_left):
@@ -187,11 +185,8 @@ class CartesianRunner(RunnerInterface):
                 # it doesn't make sense to retry with other status
                 logging.info(f"Will not attempt to retry test with status {test_status}")
                 break
-            if retry_stop == "success" and test_status in ["PASS", "WARN"]:
-                logging.info("Stopping after first successful run")
-                break
-            if retry_stop == "error" and test_status in ["ERROR", "FAIL"]:
-                logging.info("Stopping after first failed run")
+            if test_status.lower() in retry_stop:
+                logging.info(f"Stop retrying after test status {test_status.lower()}")
                 break
         node.prefix = original_prefix
         logging.info(f"Finished running test with status {test_status}")
@@ -246,7 +241,7 @@ class CartesianRunner(RunnerInterface):
                 # a valid current node with at least one child is guaranteed
                 traverse_path.append(next.pick_next_child(slot))
                 continue
-            if next.is_occupied():
+            if next.is_occupied() and next.params.get_boolean("wait_for_occupied", True):
                 # ending with an occupied node would mean we wait for a permill of its duration
                 test_duration = next.params.get_numeric("test_timeout", 3600)
                 occupied_timeout = round(max(test_duration/1000, 0.1), 2)
