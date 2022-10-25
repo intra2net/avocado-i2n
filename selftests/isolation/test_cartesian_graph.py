@@ -856,7 +856,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
         ]
-        to_run = self.runner.run_test_node(test_node, self.config["param_dict"])
+        to_run = self.runner.run_test_node(test_node)
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         # all runs succeed - status must be True
         self.assertTrue(status)
@@ -868,7 +868,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
         ]
-        to_run = self.runner.run_test_node(test_node, self.config["param_dict"])
+        to_run = self.runner.run_test_node(test_node)
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         # last run fails - status must be False
         self.assertFalse(status, "Runner did not preserve last run fail status")
@@ -880,7 +880,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
         ]
-        to_run = self.runner.run_test_node(test_node, self.config["param_dict"])
+        to_run = self.runner.run_test_node(test_node)
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         # fourth run fails - status must be True
         self.assertTrue(status, "Runner did not preserve last pass status after previous fail")
