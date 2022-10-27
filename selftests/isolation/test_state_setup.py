@@ -1157,19 +1157,29 @@ class StatesPoolTest(Test):
                 mock.MagicMock(return_value=False))
     def test_check_root(self):
         """Test that root checking prioritizes local root then pool root."""
-        self.run_params["image_name"] = "image1"
         self._create_mock_sourced_backend()
 
-        # consider local root with priority
+        # consider pool root with priority
+        self.backend._check_root.reset_mock()
+        self.backend.transport.check_root.reset_mock()
+        self.backend._check_root.return_value = False
+        self.backend.transport.check_root.return_value = True
+        exists = self.backend.check_root(self.run_params, self.env)
+        self.backend._check_root.assert_called_once()
+        self.backend.transport.check_root.assert_called_once()
+        self.assertTrue(exists)
+
+        # consider local root as well
         self.backend._check_root.reset_mock()
         self.backend.transport.check_root.reset_mock()
         self.backend._check_root.return_value = True
+        self.backend.transport.check_root.return_value = False
         exists = self.backend.check_root(self.run_params, self.env)
         self.backend._check_root.assert_called_once()
-        self.backend.transport.check_root.assert_not_called()
+        self.backend.transport.check_root.assert_called_once()
         self.assertTrue(exists)
 
-        # consider pool root as well
+        # the root state does not exist if both counterparts do not exist
         self.backend._check_root.reset_mock()
         self.backend.transport.check_root.reset_mock()
         self.backend._check_root.return_value = False
@@ -1178,17 +1188,6 @@ class StatesPoolTest(Test):
         self.backend._check_root.assert_called_once()
         self.backend.transport.check_root.assert_called_once()
         self.assertFalse(exists)
-
-        # the root state exists (and is downloaded) if its pool counterpart exists
-        self.backend._check_root.reset_mock()
-        self.backend.transport.check_root.reset_mock()
-        self.backend._check_root.return_value = False
-        self.backend.transport.check_root.return_value = True
-        exists = self.backend.check_root(self.run_params, self.env)
-        self.backend._check_root.assert_called_once()
-        self.backend.transport.check_root.assert_called_once()
-        self.backend.transport.get_root.assert_called_once()
-        self.assertTrue(exists)
 
     def test_check_root_use(self):
         """Test that root checking uses only local root with disabled pool."""
@@ -1213,33 +1212,58 @@ class StatesPoolTest(Test):
 
     def test_get_root(self):
         """Test that root getting with the pool backend works."""
+        self.run_params["image_name"] = "image1"
         self._create_mock_sourced_backend()
 
-        # consider local root with priority
-        self.backend._check_root.return_value = True
+        # consider local root with priority if valid
         self.backend._get_root.reset_mock()
-        self.backend.transport.get_root.reset_mock()
+        self.backend.transport.reset_mock()
+        self.backend._check_root.return_value = True
+        self.backend.transport.check_root.return_value = True
+        self.backend.transport.compare_chain.return_value = True
+        self.backend.get_root(self.run_params, self.env)
+        self.backend._get_root.assert_called_once()
+        self.backend.transport.get_root.assert_not_called()
+        self.backend.transport.compare_chain.assert_called_once_with("image1", mock.ANY)
+
+        # use pool root if enabled and no local root
+        self.backend._get_root.reset_mock()
+        self.backend.transport.reset_mock()
+        self.backend._check_root.return_value = False
+        self.backend.transport.check_root.return_value = True
+        self.backend.get_root(self.run_params, self.env)
+        self.backend._get_root.assert_called_once()
+        self.backend.transport.get_root.assert_called_once()
+        self.backend.transport.compare_chain.assert_not_called()
+
+        # use pool root if local root is not valid
+        self.backend._get_root.reset_mock()
+        self.backend.transport.reset_mock()
+        self.backend._check_root.return_value = True
+        self.backend.transport.check_root.return_value = True
+        self.backend.transport.compare_chain.return_value = False
+        self.backend.get_root(self.run_params, self.env)
+        self.backend._get_root.assert_called_once()
+        self.backend.transport.get_root.assert_called_once()
+        self.backend.transport.compare_chain.assert_called_once_with("image1", mock.ANY)
+
+    def test_get_root_use(self):
+        """Test that root getting uses only local root with disabled pool."""
+        self.run_params["use_pool"] = "no"
+        self._create_mock_sourced_backend()
+
         self.backend.get_root(self.run_params, self.env)
         self.backend._get_root.assert_called_once()
         self.backend.transport.get_root.assert_not_called()
 
-        # use pool root if enabled and no local root
-        self.backend._check_root.return_value = False
-        self.backend.transport.check_root.return_value = True
-        self.backend._get_root.reset_mock()
-        self.backend.transport.get_root.reset_mock()
+    def test_get_root_update(self):
+        """Test that root getting can be forced to pool only via the update switch."""
+        self.run_params["update_pool"] = "yes"
+        self._create_mock_sourced_backend()
+
         self.backend.get_root(self.run_params, self.env)
         self.backend._get_root.assert_not_called()
         self.backend.transport.get_root.assert_called_once()
-
-        # do not use pool root if disabled and no local root
-        self.run_params["use_pool"] = "no"
-        self.backend._check_root.return_value = False
-        self.backend._get_root.reset_mock()
-        self.backend.transport.get_root.reset_mock()
-        self.backend.get_root(self.run_params, self.env)
-        self.backend._get_root.assert_called_once()
-        self.backend.transport.get_root.assert_not_called()
 
     def test_set_root(self):
         """Test that root setting with the pool backend works."""
@@ -1312,20 +1336,29 @@ class StatesPoolTest(Test):
 
     def test_check(self):
         """Test that state checking with the pool backend works correctly."""
-        self.run_params["check_state"] = "launch"
         self._create_mock_sourced_backend(source_type="state")
 
-        # consider local state with priority
+        # consider pool state with priority
         self.backend._check.reset_mock()
         self.backend.transport.reset_mock()
-        self.backend.transport.compare_chain.return_value = True
-        self.backend._check.return_value = True
+        self.backend._check.return_value = False
+        self.backend.transport.check.return_value = True
         exists = self.backend.check(self.run_params, self.env)
         self.backend._check.assert_called_once()
         self.backend.transport.check.assert_called_once()
         self.assertTrue(exists)
 
-        # consider pool state as well
+        # consider local state as well
+        self.backend._check.reset_mock()
+        self.backend.transport.reset_mock()
+        self.backend._check.return_value = True
+        self.backend.transport.check.return_value = False
+        exists = self.backend.check(self.run_params, self.env)
+        self.backend._check.assert_called_once()
+        self.backend.transport.check.assert_called_once()
+        self.assertTrue(exists)
+
+        # the state does not exist if both counterparts do not exist
         self.backend._check.reset_mock()
         self.backend.transport.reset_mock()
         self.backend._check.return_value = False
@@ -1334,48 +1367,6 @@ class StatesPoolTest(Test):
         self.backend._check.assert_called_once()
         self.backend.transport.check.assert_called_once()
         self.assertFalse(exists)
-
-        # the state exists (and is downloaded) if its pool counterpart exists
-        self.backend._check.reset_mock()
-        self.backend.transport.reset_mock()
-        self.backend._check.return_value = False
-        self.backend.transport.check.return_value = True
-        exists = self.backend.check(self.run_params, self.env)
-        self.backend._check.assert_called_once()
-        self.backend.transport.check.assert_called_once()
-        self.backend.transport.get.assert_called_once()
-        self.assertTrue(exists)
-
-    def test_check_chains(self):
-        """Test implicit state downloading via backing chain comparison."""
-        self.run_params["check_state"] = "launch"
-        self._create_mock_sourced_backend(source_type="state")
-
-        # the states chains are identical
-        self.backend._check.reset_mock()
-        self.backend.transport.reset_mock()
-        self.backend._check.return_value = True
-        self.backend.transport.check.return_value = True
-        self.backend.transport.compare_chain.return_value = True
-        exists = self.backend.check(self.run_params, self.env)
-        self.backend._check.assert_called_once()
-        self.backend.transport.compare_chain.assert_called_once_with("launch", mock.ANY)
-        self.backend.transport.check.assert_called_once()
-        self.backend.transport.get.assert_not_called()
-        self.assertTrue(exists)
-
-        # the states chains are not identical
-        self.backend._check.reset_mock()
-        self.backend.transport.reset_mock()
-        self.backend._check.return_value = True
-        self.backend.transport.check.return_value = True
-        self.backend.transport.compare_chain.return_value = False
-        exists = self.backend.check(self.run_params, self.env)
-        self.backend._check.assert_called_once()
-        self.backend.transport.check.assert_called_once()
-        self.backend.transport.compare_chain.assert_called_once_with("launch", mock.ANY)
-        self.backend.transport.get.assert_called_once()
-        self.assertTrue(exists)
 
     def test_check_use(self):
         """Test that state checking uses only local root with disabled pool."""
@@ -1401,33 +1392,60 @@ class StatesPoolTest(Test):
 
     def test_get(self):
         """Test that state getting with the pool backend works correctly."""
+        self.run_params["get_state"] = "launch"
         self._create_mock_sourced_backend(source_type="state")
 
-        # consider local state with priority
-        self.backend._check.return_value = True
+        # consider local state with priority if valid
         self.backend._get.reset_mock()
-        self.backend.transport.get.reset_mock()
+        self.backend.transport.reset_mock()
+        self.backend._check.return_value = True
+        self.backend.transport.check.return_value = True
+        self.backend.transport.compare_chain.return_value = True
         self.backend.get(self.run_params, self.env)
         self.backend._get.assert_called_once()
         self.backend.transport.get.assert_not_called()
+        self.backend.transport.compare_chain.assert_called_once_with("launch", mock.ANY)
 
         # use pool state if enabled and no local root
+        self.backend._get.reset_mock()
+        self.backend.transport.reset_mock()
         self.backend._check.return_value = False
         self.backend.transport.check.return_value = True
-        self.backend._get.reset_mock()
-        self.backend.transport.get.reset_mock()
         self.backend.get(self.run_params, self.env)
         self.backend._get.assert_called_once()
         self.backend.transport.get.assert_called_once()
+        self.backend.transport.compare_chain.assert_not_called()
 
-        # do not use pool state if disabled and no local root
-        self.run_params["use_pool"] = "no"
-        self.backend._check.return_value = False
+        # use pool state if local state is not valid
         self.backend._get.reset_mock()
-        self.backend.transport.get.reset_mock()
+        self.backend.transport.reset_mock()
+        self.backend._check.return_value = True
+        self.backend.transport.check.return_value = True
+        self.backend.transport.compare_chain.return_value = False
+        self.backend.get(self.run_params, self.env)
+        self.backend._get.assert_called_once()
+        self.backend.transport.get.assert_called_once()
+        self.backend.transport.compare_chain.assert_called_once_with("launch", mock.ANY)
+
+    def test_get_use(self):
+        """Test that state getting uses only local root with disabled pool."""
+        self.run_params["use_pool"] = "no"
+        self.run_params["get_state"] = "launch"
+        self._create_mock_sourced_backend(source_type="state")
+
         self.backend.get(self.run_params, self.env)
         self.backend._get.assert_called_once()
         self.backend.transport.get.assert_not_called()
+
+    def test_get_update(self):
+        """Test that state getting can be forced to pool only via the update switch."""
+        self.run_params["update_pool"] = "yes"
+        self.run_params["get_state"] = "launch"
+        self._create_mock_sourced_backend(source_type="state")
+
+        self.backend.get(self.run_params, self.env)
+        self.backend._get.assert_not_called()
+        self.backend.transport.get.assert_called_once()
 
     def test_set(self):
         """Test that state setting with the pool backend works correctly."""
@@ -1710,8 +1728,25 @@ class StatesSetupTest(Test):
             self.mock_vms[vm_name].name = vm_name
             self.mock_vms[vm_name].params = self.run_params.object_params(vm_name)
 
+    def test_check_root(self):
+        """Test that state checking with a state backend can get roots."""
+        self._set_up_generic_params("check", "state", "objects", "object1")
+
+        # assert root state is not detected then created to check the actual state
+        self.backend.check_root.return_value = True
+        self.backend.check.return_value = False
+        exists = ss.check_states(self.run_params, self.env)
+        # assert root state is checked as a prerequisite
+        self.backend.check_root.assert_called_once()
+        # assert root state is always made available (provision for state checks)
+        self.backend.get_root.assert_called_once()
+
+        # assert actual state is still checked and not available
+        self.backend.check.assert_called_once()
+        self.assertFalse(exists)
+
     def test_check_forced_root(self):
-        """Test that state checking with a state backend can provide roots."""
+        """Test that state checking with a state backend can set roots."""
         self._set_up_generic_params("check", "state", "objects", "object1")
         # TODO: should we check other policies or keep root-related behavior at all?
         self.run_params["check_mode"] = "ff"

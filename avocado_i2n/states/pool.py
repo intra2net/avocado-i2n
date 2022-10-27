@@ -730,21 +730,8 @@ class RootSourcedStateBackend(StateBackend):
             return local_root_exists
         elif params.get_boolean("update_pool", False) and not local_root_exists:
             raise RuntimeError("Updating state pool requires local root states")
-        elif (not params.get_boolean("update_pool", False) and local_root_exists):
-            return True
-
-        shared_root_exists = cls.transport.check_root(params, object)
-        # TODO: extra complexity as it is possible that the root state is partially provided
-        # so get rid of this instead of adding it to test contract
-        target_image = cls.transport.get_image_path(params)
-        if os.path.exists(target_image) and not params.get_boolean("update_pool", False):
-            return False
-        if shared_root_exists:
-            cache_valid = cls.transport.compare_chain(params["image_name"], params)
-            if not local_root_exists or not cache_valid:
-                cls.transport.get_root(params, object)
-                return True
-        return local_root_exists
+        pool_root_exists = cls.transport.check_root(params, object)
+        return local_root_exists or pool_root_exists
 
     @classmethod
     def get_root(cls, params, object=None):
@@ -753,14 +740,24 @@ class RootSourcedStateBackend(StateBackend):
 
         All arguments match the base class.
         """
-        if params.get_boolean("update_pool", True):
-            cls.transport.get(params, object)
+        if params.get_boolean("update_pool", False):
+            cls.transport.get_root(params, object)
             return
-        if (cls._check_root(params, object) or
-                not params.get_boolean("use_pool", True)):
+        if not params.get_boolean("use_pool", True):
             cls._get_root(params, object)
             return
-        cls.transport.get_root(params, object)
+
+        local_root_exists = cls._check_root(params, object)
+        pool_root_exists = cls.transport.check_root(params, object)
+
+        if pool_root_exists:
+            if local_root_exists:
+                cache_valid = cls.transport.compare_chain(params["image_name"], params)
+            else:
+                cache_valid = False
+            if not cache_valid:
+                cls.transport.get_root(params, object)
+        cls._get_root(params, object)
 
     @classmethod
     def set_root(cls, params, object=None):
@@ -832,15 +829,8 @@ class SourcedStateBackend(StateBackend):
             raise RuntimeError("Updating state pool requires local states")
         elif not params.get_boolean("use_pool", True):
             return local_state_exists
-
         pool_state_exists = cls.transport.check(params, object)
-        if pool_state_exists:
-            cache_valid = cls.transport.compare_chain(params["check_state"], params)
-            if not local_state_exists or not cache_valid:
-                params["get_state"] = params["check_state"]
-                cls.transport.get(params, object)
-                return True
-        return local_state_exists
+        return local_state_exists or pool_state_exists
 
     @classmethod
     def get(cls, params, object=None):
@@ -849,14 +839,23 @@ class SourcedStateBackend(StateBackend):
 
         All arguments match the base class.
         """
-        if params.get_boolean("update_pool", True):
+        if params.get_boolean("update_pool", False):
             cls.transport.get(params, object)
             return
-        if (cls._check(params, object) or
-                not params.get_boolean("use_pool", True)):
+        if not params.get_boolean("use_pool", True):
             cls._get(params, object)
             return
-        cls.transport.get(params, object)
+
+        local_state_exists = cls._check(params, object)
+        pool_state_exists = cls.transport.check(params, object)
+
+        if pool_state_exists:
+            if local_state_exists:
+                cache_valid = cls.transport.compare_chain(params["get_state"], params)
+            else:
+                cache_valid = False
+            if not cache_valid:
+                cls.transport.get(params, object)
         cls._get(params, object)
 
     @classmethod
