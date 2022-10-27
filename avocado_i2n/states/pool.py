@@ -36,7 +36,8 @@ import contextlib
 import fcntl
 import errno
 
-from aexpect import remote
+from aexpect import remote, ops
+from avocado.utils import crypto
 
 from .setup import StateBackend
 from .qcow2 import QCOW2Backend, QCOW2ExtBackend, get_image_path
@@ -201,7 +202,6 @@ class QCOW2PoolBackend(StateBackend):
         :param bool down: whether the chain is downloaded or uploaded
         """
         transfer_operation = download_from_pool if down else upload_to_pool
-        transfer_name = "download" if down else "upload"
 
         shared_pool = params["image_pool"]
         cache_dir = params["vms_base_dir"]
@@ -214,17 +214,11 @@ class QCOW2PoolBackend(StateBackend):
                 cache_path = os.path.join(cache_dir, vm_name, image_name, next_state + ".qcow2")
                 pool_path = os.path.join(shared_pool, vm_name, image_name, next_state + ".qcow2")
                 # if only vm state is not available this would indicate image corruption
-                if os.path.exists(cache_path):
-                    logging.info(f"Skip {transfer_name} of an already available {image_name} state {next_state}")
-                    continue
                 transfer_operation(cache_path, pool_path, image_params)
             if next_state == state and params["object_type"] in ["vms", "nets/vms"]:
                 cache_path = os.path.join(cache_dir, vm_name, next_state + ".state")
                 pool_path = os.path.join(shared_pool, vm_name, next_state + ".state")
-                if os.path.exists(cache_path):
-                    logging.info(f"Skip {transfer_name} of an already available {vm_name} state {next_state}")
-                else:
-                    transfer_operation(cache_path, pool_path, params)
+                transfer_operation(cache_path, pool_path, params)
             # download of state chain is not yet complete if the state has backing dependencies
             next_state = backend.get_dependency(next_state, params)
 
@@ -484,11 +478,31 @@ def download_from_pool(cache_path, pool_path, params):
     :param params: configuration parameters
     :type params: {str, str}
     """
+    if os.path.exists(cache_path):
+        local_hash = crypto.hash_file(cache_path, 1048576, "md5")
+    else:
+        local_hash = ""
+
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+
     update_timeout = params.get_numeric("update_pool_timeout", 300)
     if ":" in pool_path:
         # TODO: no support for remote lock files yet
         host, path = pool_path.split(":")
+
+        session = remote.remote_login(params["nets_shell_client"],
+                                      host,
+                                      params["nets_shell_port"],
+                                      params["nets_username"], params["nets_password"],
+                                      params["nets_shell_prompt"])
+        remote_hash = ops.hash_file(session, path, "1M", "md5")
+
+        if local_hash == remote_hash:
+            logging.info(f"Skip download of an already available {cache_path} ({remote_hash})")
+            return
+        if local_hash is not None:
+            logging.info(f"Force download of an already available {cache_path} ({remote_hash})")
+
         remote.copy_files_from(host,
                                params["nets_file_transfer_client"],
                                params["nets_username"], params["nets_password"],
@@ -496,7 +510,12 @@ def download_from_pool(cache_path, pool_path, params):
                                path, cache_path,
                                timeout=update_timeout)
         return
+
     with image_lock(pool_path, update_timeout) as lock:
+        remote_hash = crypto.hash_file(pool_path, 1048576, "md5")
+        if local_hash == remote_hash:
+            logging.info(f"Skip download of an already available {cache_path}")
+            return
         shutil.copy(pool_path, cache_path)
 
 
@@ -509,11 +528,30 @@ def upload_to_pool(cache_path, pool_path, params):
     :param params: configuration parameters
     :type params: {str, str}
     """
+    if os.path.exists(cache_path):
+        local_hash = crypto.hash_file(cache_path, 1048576, "md5")
+    else:
+        local_hash = ""
+
     update_timeout = params.get_numeric("update_pool_timeout", 300)
     if ":" in pool_path:
         # TODO: need to create remote directory if not available
         # TODO: no support for remote lock files yet
         host, path = pool_path.split(":")
+
+        session = remote.remote_login(params["nets_shell_client"],
+                                      host,
+                                      params["nets_shell_port"],
+                                      params["nets_username"], params["nets_password"],
+                                      params["nets_shell_prompt"])
+        remote_hash = ops.hash_file(session, path, "1M", "md5")
+
+        if local_hash == remote_hash:
+            logging.info(f"Skip upload of an already available {cache_path} ({remote_hash})")
+            return
+        if local_hash is not None:
+            logging.info(f"Force upload of an already available {cache_path} ({remote_hash})")
+
         remote.copy_files_to(host,
                              params["nets_file_transfer_client"],
                              params["nets_username"], params["nets_password"],
@@ -521,7 +559,12 @@ def upload_to_pool(cache_path, pool_path, params):
                              cache_path, path,
                              timeout=update_timeout)
         return
+
     with image_lock(pool_path, update_timeout) as lock:
+        remote_hash = crypto.hash_file(pool_path, 1048576, "md5")
+        if local_hash == remote_hash:
+            logging.info(f"Skip upload of an already available {cache_path}")
+            return
         os.makedirs(os.path.dirname(pool_path), exist_ok=True)
         shutil.copy(cache_path, pool_path)
 
