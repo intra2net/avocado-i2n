@@ -490,14 +490,17 @@ class TestNode(object):
                 break
 
             # ultimate consideration of whether the state is actually present
-            node_params[f"check_state_{test_object.key}_{test_object.long_suffix}"] = object_state
-            node_params[f"check_mode_{test_object.key}_{test_object.long_suffix}"] = object_params.get("check_mode", "rf")
+            object_suffix = f"_{test_object.key}_{test_object.long_suffix}"
+            node_params[f"check_state{object_suffix}"] = object_state
+            node_params[f"check_location{object_suffix}"] = object_params.get("set_location",
+                                                                              object_params.get("image_pool", ""))
+            node_params[f"check_mode{object_suffix}"] = object_params.get("check_mode", "rf")
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that
             # all vm state backends can check for states without a vm boot (root)
             if test_object.key == "vms":
-                node_params[f"use_env_{test_object.key}_{test_object.long_suffix}"] = "no"
-            node_params[f"soft_boot_{test_object.key}_{test_object.long_suffix}"] = "no"
+                node_params[f"use_env{object_suffix}"] = "no"
+            node_params[f"soft_boot{object_suffix}"] = "no"
 
         if not is_leaf:
             session = self.get_session_to_net(self.params["hostname"])
@@ -529,11 +532,6 @@ class TestNode(object):
             object_params = test_object.object_typed_params(self.params)
             object_state = object_params.get("set_state")
             if not object_state:
-                continue
-
-            # TODO: our current approach is to only sync setup differences across workers and
-            # thus exclude setup available from a shared pool or locally
-            if ":" not in object_params.get("image_pool", ""):
                 continue
 
             # avoid running any test unless the user really requires cleanup or setup is reusable
@@ -583,7 +581,8 @@ class TestNode(object):
             else:
                 # spread the state setup for the given test object
                 node_params.update({f"get_state{unset_suffixes}": object_state,
-                                    f"image_pool{unset_suffixes}": object_params["image_pool"],
+                                    f"get_location{unset_suffixes}": object_params.get("set_location",
+                                                                                       object_params.get("image_pool", "")),
                                     # TODO: force use only of transport is still too indirect
                                     f"update_pool": "yes"})
                 do = "get"

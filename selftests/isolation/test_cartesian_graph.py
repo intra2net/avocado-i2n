@@ -86,16 +86,19 @@ class DummyStateControl(object):
             vm_params = params.object_params(vm)
             for image in params.objects("images"):
                 image_params = vm_params.object_params(image)
-                do_source = image_params.get("image_pool")
+                do_source = image_params.get(f"{do}_location_images", "")
                 do_state = image_params.get(f"{do}_state_images")
                 if not do_state:
                     do_state = image_params.get(f"{do}_state_vms")
+                    do_source = image_params.get(f"{do}_location_vms", "")
                     if not do_state:
                         continue
 
                 assert do_state in self.asserted_states[do], f"Unexpected state {do_state} to {do}"
+                if image_params.get_boolean("use_pool"):
+                    assert do_source != "", f"Empty {do} state location for {do_state}"
                 if do == "check":
-                    if not self.asserted_states[do][do_state] and ":" not in do_source:
+                    if not self.asserted_states[do][do_state] and params.get("set_location") is None:
                         self.result = False
                 else:
                     self.asserted_states[do][do_state] += 1
@@ -496,15 +499,19 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "hostname": "^c2$"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "hostname": "^c1$"},
-            {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "hostname": "^c2$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "hostname": "^c1$", "get_location_vm1": r"[\d\.]+\.1:"},
+            {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "hostname": "^c2$", "get_location_image1_vm1": r"[\d\.]+\.2:"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
         # expect four sync and no other cleanup calls, one for each worker
         for action in ["get"]:
-            for state in ["install", "customize", "on_customize", "connect"]:
-                self.assertGreaterEqual(DummyStateControl.asserted_states[action][state], 4)
+            for state in ["install", "customize"]:
+                # called once by worker for for each of two vms
+                self.assertEqual(DummyStateControl.asserted_states[action][state], 8)
+            for state in ["on_customize", "connect"]:
+                # called once by worker only for vm1
+                self.assertEqual(DummyStateControl.asserted_states[action][state], 4)
         for action in ["set", "unset"]:
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state], 0)
@@ -531,13 +538,13 @@ class CartesianGraphTest(Test):
             # this tests reentry of traversed path by an extra worker c4 reusing setup from c1
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "hostname": "^c3$"},
             # c4 would step back from already occupied on_customize (by c1) for the time being
-            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "hostname": "^c1$", "get_location_vm1": r"[\d\.]+\.1:"},
             # c2 would step back from already occupied linux_virtuser (by c3) and c3 proceeds instead
-            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "hostname": "^c3$"},
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "hostname": "^c3$", "get_location_image1_vm1": r"[\d\.]+\.3:", "get_location_image1_vm2": r"[\d\.]+\.2:"},
             # c4 now picks up available setup and tests from its own reentered branch
-            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "hostname": "^c4$"},
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "hostname": "^c4$", "get_location_image1_vm1": r"[\d\.]+\.3:", "get_location_image1_vm2": r"[\d\.]+\.2:"},
             # c1 would now pick its second local tutorial2.names
-            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "hostname": "^c1$", "get_location_vm1": r"[\d\.]+\.1:"},
             # all others now step back from already occupied tutorial2.names (by c1)
         ]
         self._run_traversal(graph, self.config["param_dict"])

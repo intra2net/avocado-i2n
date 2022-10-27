@@ -510,14 +510,20 @@ class CartesianRunner(RunnerInterface):
         # free the node for traversal by other workers
         test_node.workers.add(slot)
         test_node.spawner = None
-        if test_node.is_shared_root():
+        # node is either shared and thus without owned setup or with setup that is already claimed
+        if test_node.is_shared_root() or len(test_node.workers) > 1:
             return
         setup_host = test_node.params["hostname"]
         setup_path = test_node.params["vms_base_dir"]
         setup_nets = test_node.params["nets_ip_prefix"]
         setup_source_ip = f"{setup_nets}.{setup_host[1:]}" if setup_host else ""
         setup_source = setup_source_ip + ":" if setup_source_ip else ""
-        test_node.params["image_pool"] = setup_source + setup_path
+        test_node.params["set_location"] = setup_source + setup_path
+        # TODO: networks need further refactoring possibly as node environments
+        object_suffix = test_node.params["object_suffix"]
+        suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
+        for node in test_node.cleanup_nodes:
+            node.params[f"get_location{suffix}"] = setup_source + setup_path
 
     async def _reverse_test_node(self, graph, test_node, params, slot):
         """
