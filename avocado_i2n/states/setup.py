@@ -328,6 +328,8 @@ def check_states(run_params, env=None):
                 state_backend.unset_root(state_params, state_object)
             state_backend.set_root(state_params, state_object)
             root_exists = True
+        else:
+            state_backend.get_root(state_params, state_object)
 
         if state in ROOTS:
             state_exists = root_exists
