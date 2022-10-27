@@ -1579,6 +1579,7 @@ class StatesPoolTest(Test):
         """Test that a state and its complete backing chain will be downloaded."""
         self._set_minimal_pool_params()
         self.run_params["get_state"] = "launch"
+        self.run_params["get_location"] = self.run_params["image_pool"]
         self.run_params["object_type"] = "nets/vms/images"
 
         self._create_mock_transfer_backend()
@@ -1607,6 +1608,7 @@ class StatesPoolTest(Test):
         """Test that a state and its complete backing chain will be uploaded."""
         self._set_minimal_pool_params()
         self.run_params["set_state"] = "launch"
+        self.run_params["set_location"] = self.run_params["image_pool"]
         self.run_params["object_type"] = "nets/vms/images"
 
         self._create_mock_transfer_backend()
