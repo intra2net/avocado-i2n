@@ -470,7 +470,7 @@ class CartesianRunner(RunnerInterface):
             test_node.scan_states()
             test_node.should_scan = False
 
-            # TODO: this is best handled as unset_mode=r meaning "sync" and f meaning do-not-sync-but-remove
+            # TODO: in addition to syncing this also needs generalized run decision instead of the old flags
             is_cleaned_up = test_node.params.get("unset_mode_images", test_node.params["unset_mode"])[0] == "f"
             is_cleaned_up |= test_node.params.get("unset_mode_vms", test_node.params["unset_mode"])[0] == "f"
             test_node.should_run &= not (is_cleaned_up and len(test_node.workers) > 0)
@@ -530,6 +530,7 @@ class CartesianRunner(RunnerInterface):
                 logging.info("Cleaning a dry %s", test_node.params["shortname"])
             elif test_node.is_shared_root():
                 logging.debug("Test run on %s ended at the shared root", slot)
+            #elif test_node.is_object_root() and test_object.is_permanent:
 
             elif test_node.produces_setup():
                 setup_dict = {} if params is None else params.copy()
@@ -543,8 +544,9 @@ class CartesianRunner(RunnerInterface):
                     if not object_state:
                         continue
 
-                    # avoid running any test unless the user really requires cleanup and such is needed
-                    if object_params.get("unset_mode", "ri")[0] != "f":
+                    # avoid running any test unless the user really requires cleanup or setup is reusable
+                    unset_policy = object_params.get("unset_mode", "ri")
+                    if unset_policy[0] not in ["f", "r"]:
                         continue
                     # avoid running any test for unselected vms
                     if test_object.key == "nets":
@@ -568,17 +570,23 @@ class CartesianRunner(RunnerInterface):
                                 setup_dict[f"remove_image_{image_name}_{vm_name}"] = "yes"
                                 setup_dict["skip_image_processing"] = "no"
 
-                    # reverse the state setup for the given test object
                     unset_suffixes = f"_{test_object.key}_{test_object.suffix}"
                     unset_suffixes += f"_{vm_name}" if test_object.key == "images" else ""
-                    # NOTE: we are forcing the unset_mode to be the one defined for the test node because
-                    # the unset manual step behaves differently now (all this extra complexity starts from
-                    # the fact that it has different default value which is noninvasive
-                    setup_dict.update({f"unset_state{unset_suffixes}": object_state,
-                                       f"unset_mode{unset_suffixes}": object_params.get("unset_mode", "ri")})
+                    if unset_policy[0] == "f":
+                        # reverse the state setup for the given test object
+                        # NOTE: we are forcing the unset_mode to be the one defined for the test node because
+                        # the unset manual step behaves differently now (all this extra complexity starts from
+                        # the fact that it has different default value which is noninvasive
+                        setup_dict.update({f"unset_state{unset_suffixes}": object_state,
+                                           f"unset_mode{unset_suffixes}": object_params.get("unset_mode", "ri")})
+                    else:
+                        # spread the state setup for the given test object
+                        setup_dict.update({f"get_state{unset_suffixes}": object_state,
+                                           f"image_pool{unset_suffixes}": object_params["image_pool"]})
 
                 if has_selected_object_setup:
-                    logging.info("Cleaning up %s on %s", test_node, slot)
+                    action = "Cleaning up" if unset_policy[1] == "f" else "Syncing"
+                    logging.info(f"{action} {test_node} on {slot}")
                     setup_str = param.re_str("all..internal..manage.unchanged")
                     net = test_node.objects[0]
                     forward_config = net.config.get_copy()
