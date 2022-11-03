@@ -17,7 +17,7 @@ from avocado_i2n.loader import CartesianLoader
 from avocado_i2n.runner import CartesianRunner
 
 
-class DummyTestRunning(object):
+class DummyTestRun(object):
 
     asserted_tests = []
 
@@ -60,61 +60,77 @@ class DummyTestRunning(object):
             "logdir": logdir,
         })
 
+    @staticmethod
+    async def mock_run_test(_self, _job, node):
+        # define ID-s and other useful parameter filtering
+        node.get_runnable()
+        node.params["_uid"] = node.id_test.uid
+        # small enough not to slow down our tests too much for a test timeout of 300 but
+        # large enough to surpass the minimal occupation waiting timeout for more realism
+        await asyncio.sleep(0.5)
+        return DummyTestRun(node.params, _self.job.result.tests).get_test_result()
 
-class DummyStateCheck(object):
 
-    present_states = []
+class DummyStateControl(object):
+
+    asserted_states = {"check": {}, "get": {}, "set": {}, "unset": {}}
     states_params = {}
+    action = "check"
 
     def __init__(self):
         params = self.states_params
-        check_state, check_source = None, None
+        do = self.action
+        self.result = True
+
         for vm in params.objects("vms"):
             vm_params = params.object_params(vm)
             for image in params.objects("images"):
                 image_params = vm_params.object_params(image)
-                check_source = image_params.get("image_pool")
-                check_state = image_params.get("check_state_images")
-                if check_state:
-                    break
-                check_state = image_params.get("check_state_vms")
-                if check_state:
-                    break
-        if check_state in self.present_states or ":" in check_source:
-            self.result = True
-        else:
-            self.result = False
+                do_source = image_params.get("image_pool")
+                do_state = image_params.get(f"{do}_state_images")
+                if not do_state:
+                    do_state = image_params.get(f"{do}_state_vms")
+                    if not do_state:
+                        continue
 
+                assert do_state in self.asserted_states[do], f"Unexpected state {do_state} to {do}"
+                if do == "check":
+                    if not self.asserted_states[do][do_state] and ":" not in do_source:
+                        self.result = False
+                else:
+                    self.asserted_states[do][do_state] += 1
 
-async def mock_run_test(_self, _job, node):
-    # define ID-s and other useful parameter filtering
-    node.get_runnable()
-    node.params["_uid"] = node.id_test.uid
-    # small enough not to slow down our tests too much for a test timeout of 200 but
-    # large enough to surpass the minimal occupation waiting timeout for more realism
-    await asyncio.sleep(0.2)
-    return DummyTestRunning(node.params, _self.job.result.tests).get_test_result()
+    @staticmethod
+    def run_subcontrol(session, mod_control_path):
+        if not DummyStateControl().result:
+            raise ShellCmdError(1, "command", "AssertionError")
 
+    @staticmethod
+    def set_subcontrol_parameter(_, __, do):
+        DummyStateControl.action = do
 
-def mock_check_states(session, mod_control_path):
-    if not DummyStateCheck().result:
-        raise ShellCmdError(1, "command", "AssertionError")
-
-
-def get_check_states_params(_, __, node_params):
-    DummyStateCheck.states_params = node_params
+    @staticmethod
+    def set_subcontrol_parameter_dict(_, __, node_params):
+        DummyStateControl.states_params = node_params
 
 
 @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
-@mock.patch('avocado_i2n.cartgraph.node.door.run_subcontrol', mock_check_states)
-@mock.patch('avocado_i2n.cartgraph.node.door.set_subcontrol_parameter_dict', get_check_states_params)
+@mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
 @mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
-@mock.patch.object(CartesianRunner, 'run_test', mock_run_test)
+@mock.patch.object(CartesianRunner, 'run_test', DummyTestRun.mock_run_test)
 class CartesianGraphTest(Test):
 
     def setUp(self):
-        DummyTestRunning.asserted_tests = []
-        DummyStateCheck.present_states = []
+        DummyTestRun.asserted_tests = []
+        DummyStateControl.asserted_states = {"check": {}, "get": {}, "set": {}, "unset": {}}
+        DummyStateControl.asserted_states["check"] = {"install": False,
+                                                      "customize": False, "on_customize": False,
+                                                      "connect": False,
+                                                      "linux_virtuser": False, "windows_virtuser": False}
+        DummyStateControl.asserted_states["get"] = {"install": 0,
+                                                    "customize": 0, "on_customize": 0,
+                                                    "connect": 0,
+                                                    "linux_virtuser": 0, "windows_virtuser": 0}
 
         self.config = {}
         self.config["param_dict"] = {"test_timeout": 100}
@@ -302,7 +318,7 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyTestRunning.asserted_tests = [
+        DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "set_state_images": "^install$"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_images": "^install$", "set_state_images": "^customize$"},
@@ -310,7 +326,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state_vms": "^on_customize$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_one_leaf(self):
         """Test traversal path of one test without any reusable setup."""
@@ -318,7 +334,7 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyTestRunning.asserted_tests = [
+        DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "set_state_images": "^install$"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_images": "^install$", "set_state_images": "^customize$"},
@@ -326,7 +342,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state_vms": "^on_customize$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_one_leaf_with_setup(self):
         """Test traversal path of one test with a reusable setup."""
@@ -335,15 +351,15 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["install"]
-        DummyTestRunning.asserted_tests = [
+        DummyStateControl.asserted_states["check"]["install"] = True
+        DummyTestRun.asserted_tests = [
             # cleanup is expected only if at least one of the states is reusable (here root+install)
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "hostname": "^c1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_one_leaf_with_step_setup(self):
         """Test traversal path of one test with a single reusable setup test node."""
@@ -351,15 +367,15 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["customize"]
-        DummyTestRunning.asserted_tests = [
+        DummyStateControl.asserted_states["check"]["customize"] = True
+        DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_one_leaf_with_failed_setup(self):
         """Test traversal path of one test with a failed reusable setup test node."""
@@ -367,14 +383,14 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["install"]
-        DummyTestRunning.asserted_tests = [
+        DummyStateControl.asserted_states["check"]["install"] = True
+        DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "hostname": "^c1$", "_status": "FAIL"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_one_leaf_validation(self):
         """Test graph (and component) retrieval and validation methods."""
@@ -411,14 +427,14 @@ class CartesianGraphTest(Test):
                                                prefix=self.prefix)
         test_node = graph.get_node_by(param_val="tutorial1")
         test_node.set_environment(self.job, "dead")
-        DummyStateCheck.present_states = ["install"]
-        DummyTestRunning.asserted_tests = [
+        DummyStateControl.asserted_states["check"]["install"] = True
+        DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
         ]
         with self.assertRaisesRegex(RuntimeError, r"^Worker .+ spent [\d\.]+ seconds waiting for occupied node"):
             self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_one_leaf_dry_run(self):
         """Test dry run of a single leaf test where no test should end up really running."""
@@ -427,10 +443,10 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyTestRunning.asserted_tests = [
+        DummyTestRun.asserted_tests = [
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_two_objects_without_setup(self):
         """Test a two-object test run without a reusable setup."""
@@ -438,8 +454,7 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = []
-        DummyTestRunning.asserted_tests = [
+        DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
@@ -451,7 +466,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_two_objects_with_setup(self):
         """Test a two-object test run with reusable setup."""
@@ -460,13 +475,14 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["install", "customize"]
-        DummyTestRunning.asserted_tests = [
+        DummyStateControl.asserted_states["check"]["install"] = True
+        DummyStateControl.asserted_states["check"]["customize"] = True
+        DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "hostname": "^c1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_diverging_paths_with_setup(self):
         """Test a multi-object test run with reusable setup of diverging workers."""
@@ -475,15 +491,23 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["install", "customize"]
-        DummyTestRunning.asserted_tests = [
+        DummyStateControl.asserted_states["check"]["install"] = True
+        DummyStateControl.asserted_states["check"]["customize"] = True
+        DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "hostname": "^c2$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "hostname": "^c2$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        # expect four sync and no other cleanup calls, one for each worker
+        for action in ["get"]:
+            for state in ["install", "customize", "on_customize", "connect"]:
+                self.assertGreaterEqual(DummyStateControl.asserted_states[action][state], 4)
+        for action in ["set", "unset"]:
+            for state in DummyStateControl.asserted_states[action]:
+                self.assertEqual(DummyStateControl.asserted_states[action][state], 0)
 
     def test_diverging_paths_with_swarm_reused_setup(self):
         """Test a multi-object test run where the workers will run multiple tests reusing their own local setup."""
@@ -493,9 +517,15 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        # this is not what we test but simply a means to remove some inital nodes for simpler testing
-        DummyStateCheck.present_states = ["install", "customize"]
-        DummyTestRunning.asserted_tests = [
+        # this is not what we test but simply a means to remove some initial nodes for simpler testing
+        DummyStateControl.asserted_states["check"]["install"] = True
+        DummyStateControl.asserted_states["check"]["customize"] = True
+        DummyStateControl.asserted_states["check"]["guisetup.noop"] = False
+        DummyStateControl.asserted_states["check"]["guisetup.clicked"] = False
+        DummyStateControl.asserted_states["get"]["guisetup.noop"] = 0
+        DummyStateControl.asserted_states["get"]["guisetup.clicked"] = 0
+        DummyStateControl.asserted_states["unset"] = {"guisetup.noop": 0}
+        DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
             {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "hostname": "^c2$"},
             # this tests reentry of traversed path by an extra worker c4 reusing setup from c1
@@ -511,7 +541,10 @@ class CartesianGraphTest(Test):
             # all others now step back from already occupied tutorial2.names (by c1)
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        # expect four sync and respectively cleanup calls, one for each worker
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"], 4)
+        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"], 4)
 
     def test_permanent_object_and_simple_cloning(self):
         """Test a complete test run including complex setup."""
@@ -520,8 +553,19 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["root"]
-        DummyTestRunning.asserted_tests = [
+        DummyStateControl.asserted_states["check"]["root"] = True
+        DummyStateControl.asserted_states["check"].update({"guisetup.noop": False, "guisetup.clicked": False,
+                                                           "getsetup.noop": False, "getsetup.clicked": False,
+                                                           "getsetup.guisetup.noop": False,
+                                                           "getsetup.guisetup.clicked": False})
+        # test syncing also for permanent vms
+        DummyStateControl.asserted_states["get"]["ready"] = 0
+        DummyStateControl.asserted_states["get"].update({"guisetup.noop": 0, "guisetup.clicked": 0,
+                                                         "getsetup.noop": 0, "getsetup.clicked": 0,
+                                                         "getsetup.guisetup.noop": 0,
+                                                         "getsetup.guisetup.clicked": 0})
+        DummyStateControl.asserted_states["unset"] = {"guisetup.noop": 0, "getsetup.noop": 0}
+        DummyTestRun.asserted_tests = [
             # automated setup of vm1
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
@@ -548,7 +592,14 @@ class CartesianGraphTest(Test):
             {"shortname": "^leaves.tutorial_get.implicit_both.vm1", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        # expect four sync and respectively cleanup calls, one for each worker
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"], 1)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.noop"], 1)
+        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"], 1)
+        self.assertEqual(DummyStateControl.asserted_states["get"]["getsetup.clicked"], 1)
+        # permanent vms are not synced
+        self.assertEqual(DummyStateControl.asserted_states["get"]["ready"], 0)
 
     def test_deep_cloning(self):
         """Test for correct deep cloning."""
@@ -557,8 +608,16 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["install", "customize"]
-        DummyTestRunning.asserted_tests = [
+        DummyStateControl.asserted_states["check"]["install"] = True
+        DummyStateControl.asserted_states["check"]["customize"] = True
+        DummyStateControl.asserted_states["check"].update({"guisetup.noop": False, "guisetup.clicked": False,
+                                                           "getsetup.guisetup.noop": False,
+                                                           "getsetup.guisetup.clicked": False})
+        DummyStateControl.asserted_states["get"].update({"guisetup.noop": 0, "guisetup.clicked": 0,
+                                                         "getsetup.guisetup.noop": 0,
+                                                         "getsetup.guisetup.clicked": 0})
+        DummyStateControl.asserted_states["unset"] = {"guisetup.noop": 0, "getsetup.noop": 0}
+        DummyTestRun.asserted_tests = [
             # automated setup of vm1
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$"},
             # automated setup of vm2
@@ -577,20 +636,30 @@ class CartesianGraphTest(Test):
             {"shortname": "^leaves.tutorial_finale.+getsetup.guisetup.clicked", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "getsetup.guisetup.clicked"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        # expect four sync and respectively cleanup calls, one for each worker
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"], 1)
+        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"], 1)
 
     def test_complete_graph_dry_run(self):
         """Test a complete dry run traversal of a graph."""
         self.config["tests_str"] = "only all\n"
         self.config["param_dict"]["dry_run"] = "yes"
-        DummyStateCheck.present_states = []
-        DummyTestRunning.asserted_tests = [
+
+        DummyStateControl.asserted_states["check"].update({"guisetup.noop": False, "guisetup.clicked": False,
+                                                           "getsetup.noop": False, "getsetup.clicked": False,
+                                                           "getsetup.guisetup.noop": False,
+                                                           "getsetup.guisetup.clicked": False})
+        DummyTestRun.asserted_tests = [
         ]
 
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                 self.config["tests_str"], self.config["vm_strs"],
                                                 prefix=self.prefix, verbose=True)
         self._run_traversal(graph, self.config["param_dict"])
+        for action in ["get", "set", "unset"]:
+            for state in DummyStateControl.asserted_states[action]:
+                self.assertEqual(DummyStateControl.asserted_states[action][state], 0)
 
     def test_abort_run(self):
         """Test that traversal is aborted through explicit configuration."""
@@ -599,8 +668,8 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        DummyStateCheck.present_states = ["install"]
-        DummyTestRunning.asserted_tests = [
+        DummyStateControl.asserted_states["check"]["install"] = True
+        DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "set_state_vms_on_error": "^$", "_status": "FAIL"},
         ]
@@ -616,8 +685,8 @@ class CartesianGraphTest(Test):
         test_node = graph.get_node_by(param_val="tutorial1")
         # assume we are parsing invalid configuration
         test_node.params["vms"] = ""
-        DummyStateCheck.present_states = ["install"]
-        DummyTestRunning.asserted_tests = [
+        DummyStateControl.asserted_states["check"]["install"] = True
+        DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
         ]
@@ -635,10 +704,10 @@ class CartesianGraphTest(Test):
                                                prefix=self.prefix)
         graph.flag_parent_intersection(graph, flag_type="run", flag=False)
         graph.flag_parent_intersection(graph, flag_type="scan", flag=False)
-        DummyTestRunning.asserted_tests = [
+        DummyTestRun.asserted_tests = [
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     @skip("The run, scan, and other flags are no longer compatible with manual setting")
     def test_trees_difference(self):
@@ -657,11 +726,11 @@ class CartesianGraphTest(Test):
                                                      prefix=self.prefix)
 
         graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
-        DummyTestRunning.asserted_tests = [
+        DummyTestRun.asserted_tests = [
             {"shortname": "^nonleaves.internal.automated.connect.vm2", "vms": "^vm2$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     @mock.patch('avocado_i2n.runner.StatusRepo')
     @mock.patch('avocado_i2n.runner.StatusServer')
@@ -684,8 +753,7 @@ class CartesianGraphTest(Test):
                                tests=runnables,
                                resolutions=resolutions)
 
-        DummyStateCheck.present_states = []
-        DummyTestRunning.asserted_tests = [
+        DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "set_state_images": "^install$"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_images": "^install$", "set_state_images": "^customize$"},
@@ -707,7 +775,7 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(
             self.config["param_dict"], self.config["tests_str"],
             self.config["vm_strs"], prefix="")
-        DummyTestRunning.asserted_tests = [
+        DummyTestRun.asserted_tests = [
             {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
             {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
             {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
@@ -737,12 +805,13 @@ class CartesianGraphTest(Test):
             graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                    self.config["tests_str"], self.config["vm_strs"],
                                                    prefix=self.prefix)
-            DummyStateCheck.present_states = ["root", "install", "customize", "on_customize"]
-            DummyTestRunning.asserted_tests = [
+            DummyStateControl.asserted_states["check"] = {"root": True, "install": True,
+                                                          "customize": True, "on_customize": True}
+            DummyTestRun.asserted_tests = [
                 {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
             ]
             self._run_traversal(graph, self.config["param_dict"])
-            self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+            self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
             # assert that tests were not repeated
             self.assertEqual(len(self.runner.job.result.tests), 1)
@@ -755,15 +824,16 @@ class CartesianGraphTest(Test):
             graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                    self.config["tests_str"], self.config["vm_strs"],
                                                    prefix=self.prefix)
-            DummyStateCheck.present_states = ["root", "install", "customize", "on_customize"]
-            DummyTestRunning.asserted_tests = [
+            DummyStateControl.asserted_states["check"] = {"root": True, "install": True,
+                                                          "customize": True, "on_customize": True}
+            DummyTestRun.asserted_tests = [
                 {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
                 {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
                 {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
                 {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
             ]
             self._run_traversal(graph, self.config["param_dict"])
-            self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+            self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
             # assert that tests were repeated
             self.assertEqual(len(self.runner.job.result.tests), 4)
@@ -783,12 +853,13 @@ class CartesianGraphTest(Test):
             graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                 self.config["tests_str"], self.config["vm_strs"],
                                                 prefix=self.prefix)
-            DummyStateCheck.present_states = ["root", "install", "customize", "on_customize"]
-            DummyTestRunning.asserted_tests = [
+            DummyStateControl.asserted_states["check"] = {"root": True, "install": True,
+                                                          "customize": True, "on_customize": True}
+            DummyTestRun.asserted_tests = [
                 {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
             ]
             self._run_traversal(graph, self.config["param_dict"])
-            self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+            self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
             # assert that tests were not repeated
             self.assertEqual(len(self.runner.job.result.tests), 1)
@@ -799,8 +870,9 @@ class CartesianGraphTest(Test):
     def test_run_retry_invalid(self):
         """Test if an exception is thrown with invalid retry parameter values."""
         self.config["tests_str"] += "only tutorial1\n"
-        DummyStateCheck.present_states = ["root", "install", "customize", "on_customize"]
-        DummyTestRunning.asserted_tests = [
+        DummyStateControl.asserted_states["check"] = {"root": True, "install": True,
+                                                        "customize": True, "on_customize": True}
+        DummyTestRun.asserted_tests = [
         ]
 
         with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3",
@@ -849,7 +921,7 @@ class CartesianGraphTest(Test):
         test_node = self.loader.parse_node_from_object(net, self.config["param_dict"].copy(),
                                                        param.re_str("normal..tutorial1"))
 
-        DummyTestRunning.asserted_tests = [
+        DummyTestRun.asserted_tests = [
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
@@ -858,10 +930,10 @@ class CartesianGraphTest(Test):
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         # all runs succeed - status must be True
         self.assertTrue(status)
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
         self.runner.job.result.tests.clear()
 
-        DummyTestRunning.asserted_tests = [
+        DummyTestRun.asserted_tests = [
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
@@ -870,10 +942,10 @@ class CartesianGraphTest(Test):
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         # last run fails - status must be False
         self.assertFalse(status, "Runner did not preserve last run fail status")
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
         self.runner.job.result.tests.clear()
 
-        DummyTestRunning.asserted_tests = [
+        DummyTestRun.asserted_tests = [
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
@@ -882,7 +954,7 @@ class CartesianGraphTest(Test):
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         # fourth run fails - status must be True
         self.assertTrue(status, "Runner did not preserve last pass status after previous fail")
-        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
         self.runner.job.result.tests.clear()
 
 

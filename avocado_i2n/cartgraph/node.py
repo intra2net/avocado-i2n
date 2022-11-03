@@ -457,6 +457,17 @@ class TestNode(object):
         """
         self._params_cache = self.config.get_params(show_dictionaries=verbose)
 
+    def get_session_to_net(self, slot):
+        log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
+        node_host = slot
+        node_nets = self.params["nets_ip_prefix"]
+        node_source_ip = f"{node_nets}.{node_host[1:]}" if node_host else ""
+        return remote.wait_for_login(self.params["nets_shell_client"],
+                                     node_source_ip,
+                                     self.params["nets_shell_port"],
+                                     self.params["nets_username"], self.params["nets_password"],
+                                     self.params["nets_shell_prompt"])
+
     def scan_states(self):
         """Scan for present object states to reuse the test from previous runs."""
         self.should_run = True
@@ -489,18 +500,10 @@ class TestNode(object):
             node_params[f"soft_boot_{test_object.key}_{test_object.long_suffix}"] = "no"
 
         if not is_leaf:
-            log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
-            node_host = self.params["hostname"]
-            node_nets = self.params["nets_ip_prefix"]
-            node_source_ip = f"{node_nets}.{node_host[1:]}" if node_host != "localhost" else node_host
-            session = remote.wait_for_login(self.params["nets_shell_client"],
-                                            node_source_ip,
-                                            self.params["nets_shell_port"],
-                                            self.params["nets_username"], self.params["nets_password"],
-                                            self.params["nets_shell_prompt"])
-
+            session = self.get_session_to_net(self.params["hostname"])
             control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
-            mod_control_path = door.set_subcontrol_parameter_dict(control_path, "params", node_params)
+            mod_control_path = door.set_subcontrol_parameter(control_path, "action", "check")
+            mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)
             try:
                 door.run_subcontrol(session, mod_control_path)
                 self.should_run = False
@@ -509,7 +512,92 @@ class TestNode(object):
                     self.should_run = True
                 else:
                     raise RuntimeError("Could not complete state scan due to control file error")
-        logging.info("The test node %s %s run", self, "should" if self.should_run else "should not")
+        logging.info("The test node %s %s run from a scan on %s", self,
+                     "should" if self.should_run else "should not", self.params["hostname"])
+
+    def sync_states(self, params):
+        """Sync or drop present object states to clean or later skip tests from previous runs."""
+        node_params = self.params.copy()
+        for key in list(node_params.keys()):
+            if key.startswith("get_state") or key.startswith("unset_state"):
+                del node_params[key]
+
+        # the sync cleanup will be performed if at least one selected object has a cleanable state
+        slot = self.params["hostname"]
+        has_selected_object_setup = False
+        for test_object in self.objects:
+            object_params = test_object.object_typed_params(self.params)
+            object_state = object_params.get("set_state")
+            if not object_state:
+                continue
+
+            # TODO: our current approach is to only sync setup differences across workers and
+            # thus exclude setup available from a shared pool or locally
+            if ":" not in object_params.get("image_pool", ""):
+                continue
+
+            # avoid running any test unless the user really requires cleanup or setup is reusable
+            unset_policy = object_params.get("unset_mode", "ri")
+            if unset_policy[0] not in ["f", "r"]:
+                continue
+            # avoid running any test for unselected vms
+            if test_object.key == "nets":
+                logging.warning("Net state cleanup is not supported")
+                continue
+            vm_name = test_object.suffix if test_object.key == "vms" else test_object.composites[0].suffix
+            # TODO: is this needed?
+            from .. import params_parser as param
+            if vm_name in params.get("vms", param.all_objects("vms")):
+                has_selected_object_setup = True
+            else:
+                continue
+
+            # TODO: cannot remove ad-hoc root states, is this even needed?
+            if test_object.key == "vms":
+                vm_params = object_params
+                node_params["images_" + vm_name] = vm_params["images"]
+                for image_name in vm_params.objects("images"):
+                    image_params = vm_params.object_params(image_name)
+                    node_params[f"image_name_{image_name}_{vm_name}"] = image_params["image_name"]
+                    node_params[f"image_format_{image_name}_{vm_name}"] = image_params["image_format"]
+                    if image_params.get_boolean("create_image", False):
+                        node_params[f"remove_image_{image_name}_{vm_name}"] = "yes"
+                        node_params["skip_image_processing"] = "no"
+
+            unset_suffixes = f"_{test_object.key}_{test_object.suffix}"
+            unset_suffixes += f"_{vm_name}" if test_object.key == "images" else ""
+            if unset_policy[0] == "f":
+                # reverse the state setup for the given test object
+                # NOTE: we are forcing the unset_mode to be the one defined for the test node because
+                # the unset manual step behaves differently now (all this extra complexity starts from
+                # the fact that it has different default value which is noninvasive
+                node_params.update({f"unset_state{unset_suffixes}": object_state,
+                                    f"unset_mode{unset_suffixes}": object_params.get("unset_mode", "ri")})
+                do = "unset"
+            else:
+                # spread the state setup for the given test object
+                node_params.update({f"get_state{unset_suffixes}": object_state,
+                                    f"image_pool{unset_suffixes}": object_params["image_pool"]})
+                do = "get"
+            # TODO: unfortunately we need env object with pre-processed vms in order
+            # to provide ad-hoc root vm states so we use the current advantage that
+            # all vm state backends can check for states without a vm boot (root)
+            if test_object.key == "vms":
+                node_params[f"use_env_{test_object.key}_{test_object.suffix}"] = "no"
+
+        if has_selected_object_setup:
+            action = "Cleaning up" if unset_policy[0] == "f" else "Syncing"
+            logging.info(f"{action} {self} on {slot}")
+            session = self.get_session_to_net(slot)
+            control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
+            mod_control_path = door.set_subcontrol_parameter(control_path, "action", do)
+            mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)
+            try:
+                door.run_subcontrol(session, mod_control_path)
+            except ShellCmdError as error:
+                logging.warning(f"Could not sync/clean {self} due to control file error: {error}")
+        else:
+            logging.info(f"No need to clean up {self} on {slot}")
 
     def validate(self):
         """Validate the test node for sane attribute-parameter correspondence."""
