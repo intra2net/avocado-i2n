@@ -438,6 +438,12 @@ class CartesianRunner(RunnerInterface):
         if test_node.should_scan:
             test_node.scan_states()
             test_node.should_scan = False
+
+            # TODO: this is best handled as unset_mode=r meaning "sync" and f meaning do-not-sync-but-remove
+            is_cleaned_up = test_node.params.get("unset_mode_images", test_node.params["unset_mode"])[0] == "f"
+            is_cleaned_up |= test_node.params.get("unset_mode_vms", test_node.params["unset_mode"])[0] == "f"
+            test_node.should_run &= not (is_cleaned_up and len(test_node.workers) > 0)
+
         if test_node.should_run:
 
             # the primary setup nodes need special treatment
