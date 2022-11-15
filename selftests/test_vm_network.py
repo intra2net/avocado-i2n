@@ -9,7 +9,7 @@ from avocado import Test
 from avocado.core import exceptions
 from virttest import utils_params
 
-#import unittest_importer
+import unittest_importer
 from avocado_i2n import vmnet
 from avocado_i2n.vmnet import VMNetwork
 
