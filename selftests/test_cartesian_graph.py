@@ -7,7 +7,7 @@ import asyncio
 import re
 
 from aexpect.exceptions import ShellCmdError
-from avocado import Test
+from avocado import Test, skip
 from avocado.core import exceptions
 from avocado.core.suite import TestSuite, resolutions_to_runnables
 
@@ -616,6 +616,7 @@ class CartesianGraphTest(Test):
         with self.assertRaisesRegex(AssertionError, r"^Cannot run test nodes not using any test objects"):
             self._run_traversal(graph, self.config["param_dict"])
 
+    @skip("The run, scan, and other flags are no longer compatible with manual setting")
     def test_trees_difference_zero(self):
         """Test for proper node difference of two Cartesian graphs."""
         self.config["tests_str"] = "only nonleaves\n"
@@ -625,11 +626,13 @@ class CartesianGraphTest(Test):
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
         graph.flag_parent_intersection(graph, flag_type="run", flag=False)
+        graph.flag_parent_intersection(graph, flag_type="scan", flag=False)
         DummyTestRunning.asserted_tests = [
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
+    @skip("The run, scan, and other flags are no longer compatible with manual setting")
     def test_trees_difference(self):
         """Test for correct node difference of two Cartesian graphs."""
         self.config["tests_str"] = "only nonleaves\n"

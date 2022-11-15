@@ -6,7 +6,7 @@ import contextlib
 import re
 
 from aexpect.exceptions import ShellCmdError
-from avocado import Test
+from avocado import Test, skip
 from avocado.core import exceptions
 from virttest import utils_params
 
@@ -180,6 +180,7 @@ class IntertestSetupTest(Test):
         intertest_setup.full(self.config, tag="1r")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
+    @skip("The run, scan, and other flags are no longer compatible with manual setting")
     def test_update_default(self):
         """Test the general usage of the manual update-setup tool."""
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
@@ -200,6 +201,7 @@ class IntertestSetupTest(Test):
         intertest_setup.update(self.config, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
+    @skip("The run, scan, and other flags are no longer compatible with manual setting")
     def test_update_custom_cleanup(self):
         """Test the custom cleanup usage of the manual update-setup tool."""
         self.config["vms_params"]["remove_set"] = "minimal"
@@ -239,6 +241,7 @@ class IntertestSetupTest(Test):
             intertest_setup.update(self.config, tag="0")
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
+    @skip("The run, scan, and other flags are no longer compatible with manual setting")
     def test_update_custom(self):
         """Test the custom state usage of the manual update-setup tool."""
         self.config["vms_params"]["from_state"] = "install"
