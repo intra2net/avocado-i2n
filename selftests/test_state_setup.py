@@ -352,8 +352,9 @@ class StateSetupTest(Test):
         self.run_params["vms"] = "vm1"
         self.run_params["images"] = "image1"
         self.run_params["main_vm"] = "vm1"
-        self.run_params["image_name_vm1"] = "vm1/image"
-        self.run_params["images_base_dir"] = "/images"
+        self.run_params["image_name_vm1"] = "image"
+        self.run_params["vms_base_dir"] = "/images"
+        self.run_params["images_base_dir_vm1"] = "/images/vm1"
         self.run_params["nets"] = "net1"
         self.run_params["states_chain"] = "nets vms images"
         self.run_params["states_nets"] = "vmnet"
@@ -1436,6 +1437,8 @@ class StateSetupTest(Test):
         self.run_params["vg_name_vm1"] = "disk_vm1"
         self.run_params["vg_name_vm2"] = "disk_vm2"
         self.run_params["vg_name_vm3"] = "disk_vm3"
+        self.run_params["images_base_dir_vm2"] = "/images/vm2"
+        self.run_params["images_base_dir_vm3"] = "/images/vm3"
         self.run_params["image_name_vm1"] = "vm1/image"
         self.run_params["image_name_vm2"] = "vm2/image"
         self.run_params["image_name_vm3"] = "vm3/image"
@@ -1564,9 +1567,10 @@ class StateSetupTest(Test):
 
                 # check internal state name format
                 self.run_params[f"{do}_state"] = "launch-ready_123"
+                run_params = self.run_params.object_params("vm1")
                 with self.driver.mock_check("launch-ready_123", backend_type) as driver:
-                    ss.BACKENDS["qcow2"]().__getattribute__(do)(self.run_params, self.env)
-                    ss.BACKENDS["qcow2vt"]().__getattribute__(do)(self.run_params, self.env)
+                    ss.BACKENDS["qcow2"]().__getattribute__(do)(run_params, self.env)
+                    ss.BACKENDS["qcow2vt"]().__getattribute__(do)(run_params, self.env)
                 del self.run_params[f"{do}_state"]
 
     @mock.patch('avocado_i2n.states.qcow2.os.path.isfile')
@@ -1575,6 +1579,7 @@ class StateSetupTest(Test):
         self.run_params["raw_image"] = "ext_image"
         # set a generic one not restricted to vm1
         self.run_params["image_name"] = "vm1/image"
+        self.run_params = self.run_params.object_params("vm1")
         backend = "qcow2"
         backend_type = self._prepare_driver_from_backend(backend)
 

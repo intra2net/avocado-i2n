@@ -43,33 +43,27 @@ class RamfileBackend(StateBackend):
     image_state_backend = None
 
     @classmethod
-    def _get_state_dir(cls, params):
-        """
-        Get the path to the ramfile dumps directory.
-
-        :param params: configuration parameters
-        :type params: {str, str}
-        :returns: validated to be the same directory to dump ramfile states
-        :rtype: str
-        """
-        if len(params.objects("images")) > 1:
-            raise NotImplementedError("Currently only one image per vm is supported")
-        image_name = params["image_name"]
-        if not os.path.isabs(image_name):
-            image_name = os.path.join(params["images_base_dir"], image_name)
-        return os.path.dirname(image_name)
-
-    @classmethod
     def show(cls, params, object=None):
         """
         Return a list of available states of a specific type.
 
         All arguments match the base class.
         """
-        logging.debug(f"Showing states for vm {params['vms']}")
-        state_dir = RamfileBackend._get_state_dir(params)
+        logging.debug(f"Showing external states for vm {params['vms']}")
+        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
         snapshots = os.listdir(state_dir)
-        image_snapshots = cls.image_state_backend.show(params, object)
+
+        images_states = set()
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            # TODO: refine method arguments by providing at least the image name directly
+            image_params["images"] = image_name
+            image_snapshots = cls.image_state_backend.show(image_params, object=object)
+            if len(images_states) == 0:
+                images_states = image_snapshots
+            else:
+                images_states = states.intersect(image_snapshots)
+
         states = []
         for snapshot in snapshots:
             if not snapshot.endswith(".state"):
@@ -78,7 +72,7 @@ class RamfileBackend(StateBackend):
             state = snapshot[:-6]
             logging.info(f"Detected memory state '{snapshot}' of size "
                          f"{round(size / 1024**3, 3)} GB ({size})")
-            if state in image_snapshots:
+            if state in images_states:
                 logging.info(f"Memory state '{snapshot}' is a complete vm state")
                 states.append(state)
         return states
@@ -113,8 +107,14 @@ class RamfileBackend(StateBackend):
         vm, vm_name = object, params["vms"]
         logging.info("Reusing vm state '%s' of %s", params["get_state"], vm_name)
         vm.destroy(gracefully=False)
-        cls.image_state_backend.get(params, vm)
-        state_dir = RamfileBackend._get_state_dir(params)
+
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            # TODO: refine method arguments by providing at least the image name directly
+            image_params["images"] = image_name
+            cls.image_state_backend.get(image_params, vm)
+
+        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
         state_file = os.path.join(state_dir, params["check_state"] + ".state")
         vm.restore_from_file(state_file)
         vm.resume(timeout=3)
@@ -129,11 +129,17 @@ class RamfileBackend(StateBackend):
         vm, vm_name = object, params["vms"]
         logging.info("Setting vm state '%s' of %s", params["set_state"], vm_name)
         vm.pause()
-        state_dir = RamfileBackend._get_state_dir(params)
+        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
         state_file = os.path.join(state_dir, params["check_state"] + ".state")
         vm.save_to_file(state_file)
         vm.destroy(gracefully=False)
-        cls.image_state_backend.set(params, vm)
+
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            # TODO: refine method arguments by providing at least the image name directly
+            image_params["images"] = image_name
+            cls.image_state_backend.set(image_params, vm)
+
         # BUG: because the built-in functionality uses system_reset
         # which leads to unclean file systems in some cases it is
         # better to restore from the saved state
@@ -150,8 +156,14 @@ class RamfileBackend(StateBackend):
         vm, vm_name = object, params["vms"]
         logging.info("Removing vm state '%s' of %s", params["unset_state"], vm_name)
         vm.pause()
-        cls.image_state_backend.unset(params, vm)
-        state_dir = RamfileBackend._get_state_dir(params)
+
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            # TODO: refine method arguments by providing at least the image name directly
+            image_params["images"] = image_name
+            cls.image_state_backend.unset(image_params, vm)
+
+        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
         state_file = os.path.join(state_dir, params["check_state"] + ".state")
         os.unlink(state_file)
         vm.resume(timeout=3)
@@ -172,16 +184,16 @@ class RamfileBackend(StateBackend):
             return False
 
         # we cannot use local image backend because root conditions here require running vm
-        for image in params.objects("images"):
-            image_params = params.object_params(image)
-            image_name = image_params["image_name"]
-            if not os.path.isabs(image_name):
-                image_name = os.path.join(image_params["images_base_dir"], image_name)
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            image_path = image_params["image_name"]
+            if not os.path.isabs(image_path):
+                image_path = os.path.join(image_params["images_base_dir"], image_path)
             image_format = image_params.get("image_format", "qcow2")
             image_format = "" if image_format in ["raw", ""] else "." + image_format
-            if not os.path.exists(image_name + image_format):
+            if not os.path.exists(image_path + image_format):
                 logging.info("The required virtual machine %s has a missing image %s",
-                             vm_name, image_name + image_format)
+                             vm_name, image_path + image_format)
                 return False
 
         if not params.get_boolean("use_env", True):
@@ -215,8 +227,7 @@ class RamfileBackend(StateBackend):
                  chains of dependencies.
         """
         vm_name = params["vms"]
-        os.makedirs(os.path.join(params["images_base_dir"],
-                                 vm_name), exist_ok=True)
+        os.makedirs(os.path.join(params["vms_base_dir"], vm_name), exist_ok=True)
 
         if not params.get_boolean("use_env", True):
             return
@@ -231,18 +242,18 @@ class RamfileBackend(StateBackend):
             try:
                 vm.create()
             except VMCreateError as error:
-                for image in params.objects("images"):
-                    image_params = params.object_params(image)
-                    image_name = image_params["image_name"]
-                    if not os.path.isabs(image_name):
-                        image_name = os.path.join(image_params["images_base_dir"], image_name)
+                for image_name in params.objects("images"):
+                    image_params = params.object_params(image_name)
+                    image_path = image_params["image_name"]
+                    if not os.path.isabs(image_path):
+                        image_path = os.path.join(image_params["images_base_dir"], image_path)
                     image_format = image_params.get("image_format")
                     image_format = "" if image_format in ["raw", ""] else "." + image_format
                     logging.info("Creating image %s in order to boot %s",
-                                 image_name + image_format, vm_name)
-                    os.makedirs(os.path.dirname(image_name), exist_ok=True)
+                                 image_path + image_format, vm_name)
+                    os.makedirs(os.path.dirname(image_path), exist_ok=True)
                     image_params.update({"create_image": "yes", "force_create_image": "yes"})
-                    env_process.preprocess_image(None, image_params, image_name)
+                    env_process.preprocess_image(None, image_params, image_path)
                 vm.create()
 
     @classmethod

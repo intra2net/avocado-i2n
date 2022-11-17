@@ -234,6 +234,26 @@ class QCOW2VTBackend(QCOW2Backend):
     _require_running_object = True
 
     @classmethod
+    def show(cls, params, object=None):
+        """
+        Return a list of available states of a specific type.
+
+        All arguments match the base class.
+        """
+        logging.debug(f"Showing external states for vm {params['vms']}")
+        states = set()
+        for image_name in params.objects("images"):
+            image_params = params.object_params(image_name)
+            # TODO: refine method arguments by providing at least the image name directly
+            image_params["images"] = image_name
+            image_states = super().show(image_params, object=object)
+            if len(states) == 0:
+                states = image_states
+            else:
+                states = states.intersect(image_states)
+        return states
+
+    @classmethod
     def get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.
