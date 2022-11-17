@@ -399,7 +399,8 @@ class StateSetupTest(Test):
         self.driver = None
 
         self.mock_file_exists = mock.MagicMock()
-        exists_patch = mock.patch('avocado_i2n.states.setup.os.path.exists',
+        # needed for current default state backend selection (above)
+        exists_patch = mock.patch('avocado_i2n.states.qcow2.os.path.exists',
                                   self.mock_file_exists)
         exists_patch.start()
         self.addCleanup(exists_patch.stop)
@@ -454,6 +455,9 @@ class StateSetupTest(Test):
         if backend in ["qcow2", "qcow2ext", "lvm", "rootpool"]:
             backend_type = "image"
             self.run_params["skip_types"] = "nets nets/vms"
+        elif backend in ["vmnet", "lxc", "btrfs"]:
+            backend_type = "net"
+            self.run_params["skip_types"] = "nets/vms nets/vms/images"
         else:
             backend_type = "vm"
             self.run_params["skip_types"] = "nets nets/vms/images"
@@ -1063,16 +1067,22 @@ class StateSetupTest(Test):
             exists = ss.check_states(self.run_params, self.env)
         self.assertFalse(exists)
 
-    def test_get_root_image(self):
-        """Test that root getting with an image state backend works."""
+    def test_get_root(self):
+        """Test that root getting with a state backend works."""
         # only test with most default backends
-        backend = "qcow2"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"get_state_{backend_type}s_vm1"] = "root"
+        for backend in ss.BACKENDS:
+            # TODO: not fully isolated backends
+            if backend in ["qcow2ext", "pool"]:
+                continue
+            # TODO: net-based not fulyl isolated backends
+            if backend in ["lxc", "btrfs", "vmnet"]:
+                continue
+            backend_type = self._prepare_driver_from_backend(backend)
+            self.run_params[f"get_state_{backend_type}s_vm1"] = "root"
 
-        # cannot verify that the operation is NOOP so simply run it for coverage
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
-            ss.get_states(self.run_params, self.env)
+            # cannot verify that the operation is NOOP so simply run it for coverage
+            with self.driver.mock_check("launch", backend_type, False, True) as driver:
+                ss.get_states(self.run_params, self.env)
 
     @mock.patch('avocado_i2n.states.pool.download_from_pool')
     def test_get_root_image_pool(self, mock_download):
@@ -1107,19 +1117,7 @@ class StateSetupTest(Test):
                 ss.get_states(self.run_params, self.env)
         mock_download.assert_not_called()
 
-    def test_get_root_vm(self):
-        """Test that root getting with an vm state backend works."""
-        # only test with most default backends
-        backend = "qcow2vt"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"get_state_{backend_type}s_vm1"] = "root"
-
-        # cannot verify that the operation is NOOP so simply run it for coverage
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
-            ss.get_states(self.run_params, self.env)
-
-    # TODO: LVM is not supposed to reach to QCOW2 but we have in-code TODO about it
-    @mock.patch('avocado_i2n.states.setup.env_process', mock.Mock(return_value=0))
+    @mock.patch('avocado_i2n.states.lvm.env_process', mock.Mock(return_value=0))
     @mock.patch('avocado_i2n.states.lvm.process')
     def test_set_root_image_lvm(self, mock_process):
         """Test that root setting with the LVM backend works."""
@@ -1171,7 +1169,7 @@ class StateSetupTest(Test):
             driver.lv_take_snapshot.assert_called_once_with('disk_vm1', 'LogVol', 'current_state')
         mock_process.run.assert_called_with('vgcreate disk_vm1 /dev/loop0', sudo=True)
 
-    @mock.patch('avocado_i2n.states.setup.env_process')
+    @mock.patch('avocado_i2n.states.qcow2.env_process')
     def test_set_root_image_qcow2(self, mock_env_process):
         """Test that root setting with the QCOW2 backend works."""
         backend = "qcow2"
@@ -1304,8 +1302,8 @@ class StateSetupTest(Test):
             driver.vg_check.assert_called_once_with('disk_vm1')
         mock_vg_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/disk_vm1', 'disk_vm1', None, True)
 
-    @mock.patch('avocado_i2n.states.setup.os')
-    @mock.patch('avocado_i2n.states.setup.env_process')
+    @mock.patch('avocado_i2n.states.qcow2.os')
+    @mock.patch('avocado_i2n.states.qcow2.env_process')
     def test_unset_root_image_qcow2(self, mock_env_process, mock_os):
         """Test that root unsetting with the QCOW2 backend works."""
         backend = "qcow2"
@@ -1508,11 +1506,10 @@ class StateSetupTest(Test):
                     mock.call("disk_vm3", "launch2")]
         self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
 
-    # TODO: LVM is not supposed to reach to QCOW2 but we have in-code TODO about it
-    @mock.patch('avocado_i2n.states.setup.env_process', mock.Mock(return_value=0))
     @mock.patch('avocado_i2n.states.qcow2.QemuImg')
     @mock.patch('avocado_i2n.states.lvm.lv_utils')
     @mock.patch('avocado_i2n.states.lvm.process')
+    @mock.patch('avocado_i2n.states.lvm.env_process', mock.Mock(return_value=0))
     def test_set_multivm(self, mock_process, mock_lv_utils, _mock_qemu_class):
         """Test that setting various states of multiple vms works."""
         self.run_params["vms"] = "vm2 vm3 vm4"
