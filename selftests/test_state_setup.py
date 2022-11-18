@@ -60,7 +60,13 @@ class MockDriver(unittest.TestCase):
     def mock_show(self, state_names, state_type):
         mock_driver = mock.MagicMock()
         backend = self.state_backends[state_type]
-        if backend == "lvm":
+        if backend == "pool":
+            pool.QCOW2PoolBackend.local_image_state_backend.show.return_value = state_names
+            pool.QCOW2PoolBackend.local_vm_state_backend.show.return_value = state_names
+            mock_driver.return_value = state_names
+            with mock.patch('avocado_i2n.states.pool.list_pool', mock_driver):
+                yield mock_driver
+        elif backend == "lvm":
             mock_driver.lv_list.return_value = state_names
             with mock.patch('avocado_i2n.states.lvm.lv_utils', mock_driver):
                 yield mock_driver
@@ -90,7 +96,14 @@ class MockDriver(unittest.TestCase):
         mock_driver = mock.MagicMock()
         self._reset_extra_mocks()
         backend = self.state_backends[state_type]
-        if backend == "rootpool":
+        if backend == "pool":
+            # TODO: this is in fact way too much mocking since it requires mocking various
+            # other backends like shutil, QemuImg, etc. all of which are used - better define
+            # proper isolated tests here with further pool refactoring - one where there will
+            # be no separate pool state backends but cross-environment extensions of all actual
+            # state backends like qcow2, qcow2ext, etc.
+            raise NotImplementedError("Not isolated backend - test via integration")
+        elif backend == "rootpool":
             pool.QCOW2RootPoolBackend.local_state_backend.check.return_value = exists
             pool.QCOW2RootPoolBackend.local_state_backend.check_root.return_value = root_exists
             mock_driver.stat.return_value.st_size = 0
@@ -153,7 +166,9 @@ class MockDriver(unittest.TestCase):
 
     def assert_show(self, mock_driver, _state_names, state_type):
         backend = self.state_backends[state_type]
-        if backend == "lvm":
+        if backend == "pool":
+            mock_driver.assert_called_once_with("/images", "/data/pool", mock.ANY, mock.ANY, mock.ANY)
+        elif backend == "lvm":
             mock_driver.lv_list.assert_called_once_with("disk_vm1")
         elif backend in ["qcow2", "qcow2vt"]:
             mock_driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
@@ -356,6 +371,8 @@ class StateSetupTest(Test):
                        "vmnet": vmnet.VMNetBackend}
         ramfile.RamfileBackend.image_state_backend = mock.MagicMock()
         pool.QCOW2RootPoolBackend.local_state_backend = mock.MagicMock()
+        pool.QCOW2PoolBackend.local_image_state_backend = mock.MagicMock()
+        pool.QCOW2PoolBackend.local_vm_state_backend = mock.MagicMock()
 
         # disable pool locks for easier mocking
         pool.SKIP_LOCKS = True
@@ -371,7 +388,7 @@ class StateSetupTest(Test):
         self.run_params["nets"] = "net1"
         self.run_params["states_chain"] = "nets vms images"
         self.run_params["states_nets"] = "vmnet"
-        self.run_params["states_images"] = "pool"
+        self.run_params["states_images"] = "rootpool"
         self.run_params["states_vms"] = "qcow2vt"
         self.run_params["check_mode"] = "rr"
 
@@ -412,6 +429,12 @@ class StateSetupTest(Test):
     def _set_vm_ramfile_params(self):
         self.run_params["states_vms"] = "ramfile"
 
+    def _set_any_pool_params(self):
+        self.run_params["states_images"] = "pool"
+        self.run_params["states_vms"] = "pool"
+        self.run_params["image_pool"] = "/data/pool"
+        self.run_params["image_format"] = "qcow2"
+
     def _get_mock_vm(self, vm_name):
         return self.mock_vms[vm_name]
 
@@ -434,7 +457,9 @@ class StateSetupTest(Test):
         else:
             backend_type = "vm"
             self.run_params["skip_types"] = "nets nets/vms/images"
-        if backend == "rootpool":
+        if backend == "pool":
+            self._set_any_pool_params()
+        elif backend == "rootpool":
             self._set_image_pool_params()
         elif backend == "qcow2":
             self._set_image_qcow2_params()
@@ -553,6 +578,10 @@ class StateSetupTest(Test):
     def test_show_vm_ramfile(self):
         """Test that state listing with the ramfile backend works correctly."""
         self._test_show_states("ramfile")
+
+    def test_show_any_pool(self):
+        """Test that state listing with the pool backend works correctly."""
+        self._test_show_states("pool")
 
     def test_check_image_lvm(self):
         """Test that state checking with the LVM backend works correctly."""
