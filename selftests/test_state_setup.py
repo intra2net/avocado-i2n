@@ -368,7 +368,8 @@ class StateSetupTest(Test):
                        "lvm": lvm.LVMBackend,
                         "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
                        "qcow2vt": qcow2.QCOW2VTBackend, "ramfile": ramfile.RamfileBackend,
-                       "vmnet": vmnet.VMNetBackend}
+                       "vmnet": vmnet.VMNetBackend,
+                       "mock": mock.MagicMock(spec=ss.StateBackend)}
         ramfile.RamfileBackend.image_state_backend = mock.MagicMock()
         pool.QCOW2RootPoolBackend.local_state_backend = mock.MagicMock()
         pool.QCOW2PoolBackend.local_image_state_backend = mock.MagicMock()
@@ -387,9 +388,9 @@ class StateSetupTest(Test):
         self.run_params["images_base_dir_vm1"] = "/images/vm1"
         self.run_params["nets"] = "net1"
         self.run_params["states_chain"] = "nets vms images"
-        self.run_params["states_nets"] = "vmnet"
-        self.run_params["states_images"] = "rootpool"
-        self.run_params["states_vms"] = "qcow2vt"
+        self.run_params["states_nets"] = "mock"
+        self.run_params["states_images"] = "mock"
+        self.run_params["states_vms"] = "mock"
         self.run_params["check_mode"] = "rr"
 
         self.env = mock.MagicMock(name='env')
@@ -399,7 +400,7 @@ class StateSetupTest(Test):
         self.driver = None
 
         self.mock_file_exists = mock.MagicMock()
-        # needed for current default state backend selection (above)
+        # TODO: qcow2 is still needed for LVM root setting and too many tests
         exists_patch = mock.patch('avocado_i2n.states.qcow2.os.path.exists',
                                   self.mock_file_exists)
         exists_patch.start()
@@ -435,6 +436,17 @@ class StateSetupTest(Test):
         self.run_params["states_vms"] = "pool"
         self.run_params["image_pool"] = "/data/pool"
         self.run_params["image_format"] = "qcow2"
+
+    def _set_up_generic_params(self, state_op, state_name, state_type, state_object):
+        self.run_params["states_chain"] = state_type
+        self.run_params[f"states_{state_type}"] = "mock"
+        self.run_params[state_type] = state_object
+        self.run_params[f"{state_op}_state_{state_type}_{state_object}"] = state_name
+
+        # TODO: actual stateful object treatment is not fully defined yet
+        self._create_mock_vms()
+
+        return ss.BACKENDS["mock"]
 
     def _get_mock_vm(self, vm_name):
         return self.mock_vms[vm_name]
@@ -660,23 +672,21 @@ class StateSetupTest(Test):
 
     def test_check_forced_root(self):
         """Test that state checking with a state backend can provide roots."""
-        backend = "qcow2vt"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"check_state_{backend_type}s_vm1"] = "launch"
+        state_backend = self._set_up_generic_params("check", "state", "objects", "object1")
+        # TODO: should we check other policies or keep root-related behavior at all?
         self.run_params["check_mode"] = "ff"
 
         # assert root state is not detected then created to check the actual state
-        with self.driver.mock_check("launch", backend_type, False, False) as driver:
-            exists = ss.check_states(self.run_params, self.env)
-            # TODO: define more action types to achieve backend independence here,
-            # perhaps after we generalize run vm requirement to all backend roots
-            #self.driver.assert_check(driver, "launch", backend_type, 2)
-            # assert root state is checked as a prerequisite
-            self.mock_vms["vm1"].is_alive.assert_called()
-            # assert root state is provided from the check
-            self.mock_vms["vm1"].create.assert_called_once()
-            # assert actual state is still checked and not available
-            driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
+        state_backend.check_root.return_value = False
+        state_backend.check.return_value = False
+        exists = ss.check_states(self.run_params, self.env)
+        # assert root state is checked as a prerequisite
+        state_backend.check_root.assert_called_once()
+        # assert root state is provided from the check
+        state_backend.set_root.assert_called_once()
+
+        # assert actual state is still checked and not available
+        state_backend.check.assert_called_once()
         self.assertFalse(exists)
 
     def test_get_image_lvm(self):
@@ -691,72 +701,97 @@ class StateSetupTest(Test):
         self.run_params["get_mode_vm1"] = "ri"
         self._test_get_state("qcow2")
 
-    def test_get_aa(self):
-        """Test that state getting works with abort policies."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"get_state_{backend_type}s_vm1"] = "launch"
-        self.run_params["get_mode_vm1"] = "aa"
+    def test_get(self):
+        """Test that state getting works with default policies."""
+        state_backend = self._set_up_generic_params("get", "state", "objects", "object1")
 
-        # assert state retrieval is aborted if state is available
-        with self.driver.mock_check("launch", backend_type, True) as driver:
-            with self.assertRaises(exceptions.TestAbortError):
-                ss.get_states(self.run_params, self.env)
-            self.driver.assert_get(driver, "launch", backend_type, False)
+        # assert state retrieval is performed if state is available
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
+            ss.get_states(self.run_params, self.env)
+            state_backend.get.assert_called_once()
 
         # assert state retrieval is aborted if state is not available
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             with self.assertRaises(exceptions.TestAbortError):
                 ss.get_states(self.run_params, self.env)
-            self.driver.assert_get(driver, "launch", backend_type, False)
+            state_backend.get.assert_not_called()
+
+    def test_get_aa(self):
+        """Test that state getting works with abort policies."""
+        state_backend = self._set_up_generic_params("get", "state", "objects", "object1")
+        self.run_params["get_mode"] = "aa"
+
+        # assert state retrieval is aborted if state is available
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
+            with self.assertRaises(exceptions.TestAbortError):
+                ss.get_states(self.run_params, self.env)
+            state_backend.get.assert_not_called()
+
+        # assert state retrieval is aborted if state is not available
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
+            with self.assertRaises(exceptions.TestAbortError):
+                ss.get_states(self.run_params, self.env)
+            state_backend.get.assert_not_called()
 
     def test_get_rx(self):
         """Test that state getting works with reuse policy."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"get_state_{backend_type}s_vm1"] = "launch"
-        self.run_params["get_mode_vm1"] = "rx"
+        state_backend = self._set_up_generic_params("get", "state", "objects", "object1")
+        self.run_params["get_mode"] = "rx"
 
         # assert state retrieval is reused if available
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
             ss.get_states(self.run_params, self.env)
-            self.driver.assert_get(driver, "launch", backend_type, True)
+            state_backend.get.assert_called_once()
 
     def test_get_ii(self):
         """Test that state getting works with ignore policies."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"get_state_{backend_type}s_vm1"] = "launch"
-        self.run_params["get_mode_vm1"] = "ii"
+        state_backend = self._set_up_generic_params("get", "state", "objects", "object1")
+        self.run_params["get_mode"] = "ii"
 
         # assert state retrieval is ignored if state is available
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
             ss.get_states(self.run_params, self.env)
-            self.driver.assert_get(driver, "launch", backend_type, False)
+            state_backend.get.assert_not_called()
 
         # assert state retrieval is ignored if state is not available
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             ss.get_states(self.run_params, self.env)
-            self.driver.assert_get(driver, "launch", backend_type, False)
+            state_backend.get.assert_not_called()
 
     def test_get_xx(self):
         """Test that state getting detects invalid policies."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"get_state_{backend_type}s_vm1"] = "launch"
-        self.run_params["get_mode_vm1"] = "xx"
+        state_backend = self._set_up_generic_params("get", "state", "objects", "object1")
+        self.run_params["get_mode"] = "xx"
 
         # assert invalid policy x if state is available
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
             with self.assertRaises(exceptions.TestError):
                 ss.get_states(self.run_params, self.env)
-            self.driver.assert_get(driver, "launch", backend_type, False)
+            state_backend.get.assert_not_called()
 
         # assert invalid policy x if state is not available
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             with self.assertRaises(exceptions.TestError):
                 ss.get_states(self.run_params, self.env)
-            self.driver.assert_get(driver, "launch", backend_type, False)
+            state_backend.get.assert_not_called()
 
     def test_get_vm_qcow2(self):
         """Test that state getting with the QCOW2VT backend works with available root."""
@@ -778,80 +813,118 @@ class StateSetupTest(Test):
         """Test that state setting with the QCOW2 backend works with available root."""
         self._test_set_state("qcow2")
 
+    def test_set(self):
+        """Test that state setting works with default policies."""
+        state_backend = self._set_up_generic_params("set", "state", "objects", "object1")
+
+        # assert state saving is forced if state is available
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
+            ss.set_states(self.run_params, self.env)
+            state_backend.unset.assert_called_once()
+            state_backend.set.assert_called_once()
+
+        # assert state saving is forced if state is not available
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
+            ss.set_states(self.run_params, self.env)
+            state_backend.unset.assert_not_called()
+            state_backend.set.assert_called_once()
+
+        # assert state saving cannot be forced if state root is not available
+        state_backend.reset_mock()
+        state_backend.check_root.return_value = False
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
+            with self.assertRaises(exceptions.TestError):
+                ss.set_states(self.run_params, self.env)
+            state_backend.set.assert_not_called()
+
     def test_set_aa(self):
         """Test that state setting works with abort policies."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"set_state_{backend_type}s_vm1"] = "launch"
-        self.run_params["set_mode_vm1"] = "aa"
+        state_backend = self._set_up_generic_params("set", "state", "objects", "object1")
+        self.run_params["set_mode"] = "aa"
 
         # assert state saving is aborted if state is available
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
             with self.assertRaises(exceptions.TestAbortError):
                 ss.set_states(self.run_params, self.env)
-            self.driver.assert_set(driver, "launch", backend_type, 0)
+            state_backend.set.assert_not_called()
 
         # assert state saving is aborted if state is not available
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             with self.assertRaises(exceptions.TestAbortError):
                 ss.set_states(self.run_params, self.env)
-            self.driver.assert_set(driver, "launch", backend_type, 0)
+            state_backend.set.assert_not_called()
 
     def test_set_rx(self):
         """Test that state setting works with reuse policy."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"set_state_{backend_type}s_vm1"] = "launch"
-        self.run_params["set_mode_vm1"] = "rx"
+        state_backend = self._set_up_generic_params("set", "state", "objects", "object1")
+        self.run_params["set_mode"] = "rx"
 
         # assert state saving is skipped if reusable state is available
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
             ss.set_states(self.run_params, self.env)
-            self.driver.assert_set(driver, "launch", backend_type, 0)
+            state_backend.set.assert_not_called()
 
     def test_set_ff(self):
         """Test that state setting works with force policies."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"set_state_{backend_type}s_vm1"] = "launch"
-        self.run_params["set_mode_vm1"] = "ff"
+        state_backend = self._set_up_generic_params("set", "state", "objects", "object1")
+        self.run_params["set_mode"] = "ff"
 
         # assert state saving is forced if state is available
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
             ss.set_states(self.run_params, self.env)
-            self.driver.assert_set(driver, "launch", backend_type, 2)
+            state_backend.unset.assert_called_once()
+            state_backend.set.assert_called_once()
 
         # assert state saving is forced if state is not available
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             ss.set_states(self.run_params, self.env)
-            self.driver.assert_set(driver, "launch", backend_type, 1)
+            state_backend.unset.assert_not_called()
+            state_backend.set.assert_called_once()
 
         # assert state saving cannot be forced if state root is not available
-        with self.driver.mock_check("launch", backend_type, False) as driver:
-            driver.lv_check.side_effect = None
-            driver.lv_check.return_value = False
+        state_backend.reset_mock()
+        state_backend.check_root.return_value = False
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             with self.assertRaises(exceptions.TestError):
                 ss.set_states(self.run_params, self.env)
-            self.driver.assert_set(driver, "launch", backend_type, 0)
+            state_backend.set.assert_not_called()
 
     def test_set_xx(self):
         """Test that state setting detects invalid policies."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"set_state_{backend_type}s_vm1"] = "launch"
-        self.run_params["set_mode_vm1"] = "xx"
+        state_backend = self._set_up_generic_params("set", "state", "objects", "object1")
+        self.run_params["set_mode"] = "xx"
 
         # assert invalid policy x if state is available
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
             with self.assertRaises(exceptions.TestError):
                 ss.set_states(self.run_params, self.env)
-            self.driver.assert_set(driver, "launch", backend_type, 0)
+            state_backend.set.assert_not_called()
 
         # assert invalid policy x if state is not available
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             with self.assertRaises(exceptions.TestError):
                 ss.set_states(self.run_params, self.env)
-            self.driver.assert_set(driver, "launch", backend_type, 0)
+            state_backend.set.assert_not_called()
 
     def test_set_vm_qcow2(self):
         """Test that state setting with the QCOW2VT backend works with available root."""
@@ -873,59 +946,82 @@ class StateSetupTest(Test):
         """Test that state unsetting with the QCOW2 external state backend works with available root."""
         self._test_unset_state("qcow2ext")
 
+    def test_unset(self):
+        """Test that state unsetting works with default policies."""
+        state_backend = self._set_up_generic_params("unset", "state", "objects", "object1")
+
+        # assert state removal is forced if state is available
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
+            ss.unset_states(self.run_params, self.env)
+            state_backend.unset.assert_called_once()
+
+        # assert state removal is ignored if state is not available
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
+            ss.unset_states(self.run_params, self.env)
+            state_backend.unset.assert_not_called()
+
     def test_unset_ra(self):
         """Test that state unsetting works with reuse and abort policy."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"unset_state_{backend_type}s_vm1"] = "launch"
-        self.run_params["unset_mode_vm1"] = "ra"
+        state_backend = self._set_up_generic_params("unset", "state", "objects", "object1")
+        self.run_params["unset_mode"] = "ra"
 
         # assert state removal is skipped if reusable state is available
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
             ss.unset_states(self.run_params, self.env)
-            self.driver.assert_unset(driver, "launch", backend_type, 0)
+            state_backend.unset.assert_not_called()
 
         # assert state removal is aborted if state is not available
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             with self.assertRaises(exceptions.TestAbortError):
                 ss.unset_states(self.run_params, self.env)
-            self.driver.assert_unset(driver, "launch", backend_type, 0)
+            state_backend.unset.assert_not_called()
 
     def test_unset_fi(self):
         """Test that state unsetting works with force and ignore policy."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"unset_state_{backend_type}s_vm1"] = "launch"
-        self.run_params["unset_mode_vm1"] = "fi"
+        state_backend = self._set_up_generic_params("unset", "state", "objects", "object1")
+        self.run_params["unset_mode"] = "fi"
 
         # assert state removal is forced if state is available
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
             ss.unset_states(self.run_params, self.env)
-            self.driver.assert_unset(driver, "launch", backend_type, 1)
+            state_backend.unset.assert_called_once()
 
         # assert state removal is ignored if state is not available
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             ss.unset_states(self.run_params, self.env)
-            self.driver.assert_unset(driver, "launch", backend_type, 0)
+            state_backend.unset.assert_not_called()
 
     def test_unset_xx(self):
         """Test that state unsetting detects invalid policies."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"unset_state_{backend_type}s_vm1"] = "launch"
-        self.run_params["unset_mode_vm1"] = "xx"
+        state_backend = self._set_up_generic_params("unset", "state", "objects", "object1")
+        self.run_params["unset_mode"] = "xx"
 
         # assert invalid policy x if state is available
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
             with self.assertRaises(exceptions.TestError):
                 ss.unset_states(self.run_params, self.env)
-            self.driver.assert_unset(driver, "launch", backend_type, 0)
+            state_backend.unset.assert_not_called()
 
         # assert invalid policy x if state is not available
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             with self.assertRaises(exceptions.TestError):
                 ss.unset_states(self.run_params, self.env)
-            self.driver.assert_unset(driver, "launch", backend_type, 0)
+            state_backend.unset.assert_not_called()
 
     def test_unset_vm_qcow2(self):
         """Test that state unsetting with the QCOW2VT backend works with available root."""
@@ -1362,229 +1458,250 @@ class StateSetupTest(Test):
 
     def test_push(self):
         """Test that pushing with a state backend works."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params["push_state_images_vm1"] = "launch"
-        self.run_params["push_mode_vm1"] = "ff"
+        state_backend = self._set_up_generic_params("push", "state", "objects", "object1")
+        self.run_params["push_mode"] = "ff"
 
-        # assert state saving is skipped if reusable state is available
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        state_backend.reset_mock()
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             ss.push_states(self.run_params, self.env)
-            self.driver.assert_set(driver, "launch", backend_type, 1)
+            state_backend.unset.assert_not_called()
+            state_backend.set.assert_called_once()
 
         # test push disabled for root/boot states
-        del self.run_params["push_state_images_vm1"]
-        self.run_params["push_state_vm1"] = "root"
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        state_backend.reset_mock()
+        self._set_up_generic_params("push", "root", "objects", "object1")
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             ss.push_states(self.run_params, self.env)
-            driver.assert_not_called()
-        self.run_params["push_state_vm1"] = "boot"
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+            state_backend.unset.assert_not_called()
+            state_backend.set.assert_not_called()
+        state_backend.reset_mock()
+        self._set_up_generic_params("push", "boot", "objects", "object1")
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             ss.push_states(self.run_params, self.env)
-            driver.assert_not_called()
+            state_backend.unset.assert_not_called()
+            state_backend.set.assert_not_called()
 
-    def test_pop_image(self):
-        """Test that popping with an image state backend works."""
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params["pop_state_images_vm1"] = "launch"
-        self.run_params["image_name_vm1"] = "vm1/image"
-        self.run_params["image_raw_device_vm1"] = "no"
+    def test_pop(self):
+        """Test that popping with a state backend works."""
+        state_backend = self._set_up_generic_params("pop", "state", "objects", "object1")
 
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=True)):
             ss.pop_states(self.run_params, self.env)
-            # TODO: once called assertions are too strong
-            #self.driver.assert_get(driver, "launch", backend_type, 1)
-            #self.driver.assert_unset(driver, "launch", backend_type, 1)
-            driver.lv_check.assert_called_with("disk_vm1", "launch")
-            driver.lv_take_snapshot.assert_called_once_with('disk_vm1', 'launch', 'current_state')
-            expected = [mock.call('disk_vm1', 'current_state'), mock.call('disk_vm1', 'launch')]
-            self.assertListEqual(driver.lv_remove.call_args_list, expected)
+            state_backend.get.assert_called_once()
+            state_backend.unset.assert_called_once()
 
         # test pop disabled for root/boot states
-        del self.run_params["pop_state_images_vm1"]
-        self.run_params["pop_state_vm1"] = "root"
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        state_backend.reset_mock()
+        self._set_up_generic_params("pop", "root", "objects", "object1")
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             ss.pop_states(self.run_params, self.env)
-            driver.assert_not_called()
-        self.run_params["pop_state_vm1"] = "boot"
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+            state_backend.get.assert_not_called()
+            state_backend.unset.assert_not_called()
+        state_backend.reset_mock()
+        self._set_up_generic_params("pop", "root", "objects", "object1")
+        with mock.patch('avocado_i2n.states.setup.check_states',
+                        mock.MagicMock(return_value=False)):
             ss.pop_states(self.run_params, self.env)
-            driver.assert_not_called()
+            state_backend.get.assert_not_called()
+            state_backend.unset.assert_not_called()
 
-    def test_pop_vm(self):
-        """Test that popping with a vm state backend works."""
-        backend = "qcow2vt"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params["pop_state_vms_vm1"] = "launch"
-
-        with self.driver.mock_check("launch", backend_type, True) as driver:
-            ss.pop_states(self.run_params, self.env)
-            # TODO: once called assertions are too strong
-            #self.driver.assert_get(driver, "launch", backend_type, 1)
-            #self.driver.assert_unset(driver, "launch", backend_type, 1)
-            driver.return_value.snapshot_list.assert_called_with(force_share=True)
-            self.mock_vms["vm1"].is_alive.assert_called_with()
-            self.mock_vms["vm1"].loadvm.assert_called_once_with('launch')
-            self.mock_vms["vm1"].monitor.send_args_cmd.assert_called_once_with("delvm id=launch")
-
-    @mock.patch('avocado_i2n.states.qcow2.QemuImg')
-    @mock.patch('avocado_i2n.states.lvm.lv_utils')
-    def test_check_multivm(self, mock_lv_utils, _mock_qemu_class):
-        """Test that checking various states of multiple vms works."""
+    def test_check_multiobj(self):
+        """Test that checking various states of multiple vms and their images works."""
         self.run_params["vms"] = "vm1 vm2"
+        self.run_params["images_vm1"] = "image1 image2"
+        self.run_params["images_vm2"] = "image21"
         self.run_params["check_state_images"] = "launch"
+        self.run_params["check_state_images_image2_vm1"] = "launch2"
         self.run_params["check_state_images_vm2"] = "launcher"
-        self.run_params["vg_name_vm1"] = "disk_vm1"
-        self.run_params["vg_name_vm2"] = "disk_vm2"
-        self.run_params["image_name_vm1"] = "vm1/image"
-        self.run_params["image_name_vm2"] = "vm2/image"
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
         self.run_params["skip_types"] = "nets"
-        self._set_vm_qcow2_params()
 
-        mock_lv_utils.reset_mock()
-        mock_lv_utils.lv_check.return_value = True
+        self._create_mock_vms()
+        state_backend = ss.BACKENDS["mock"]
+
+        state_backend.reset_mock()
+        state_backend.check.return_value = True
         exists = ss.check_states(self.run_params, self.env)
-        expected = [mock.call("disk_vm1", "LogVol"),
-                    mock.call("disk_vm1", "launch"),
-                    mock.call("disk_vm2", "LogVol"),
-                    mock.call("disk_vm2", "launcher")]
-        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
+        call_params = [call.args[0] for call in state_backend.check.call_args_list]
+        self.assertEqual(len(call_params), 3)
+        self.assertEqual(call_params[0]["vms"], "vm1")
+        self.assertEqual(call_params[0]["images"], "image1")
+        self.assertEqual(call_params[0]["object_name"], "net1/vm1/image1")
+        self.assertEqual(call_params[0]["object_type"], "nets/vms/images")
+        self.assertEqual(call_params[0]["check_state"], "launch")
+        self.assertEqual(call_params[1]["vms"], "vm1")
+        self.assertEqual(call_params[1]["images"], "image2")
+        self.assertEqual(call_params[1]["object_name"], "net1/vm1/image2")
+        self.assertEqual(call_params[1]["object_type"], "nets/vms/images")
+        self.assertEqual(call_params[1]["check_state"], "launch2")
+        self.assertEqual(call_params[2]["vms"], "vm2")
+        self.assertEqual(call_params[2]["images"], "image21")
+        self.assertEqual(call_params[2]["object_name"], "net1/vm2/image21")
+        self.assertEqual(call_params[2]["object_type"], "nets/vms/images")
+        self.assertEqual(call_params[2]["check_state"], "launcher")
         self.assertTrue(exists)
 
         # break on first false state check
-        mock_lv_utils.reset_mock()
-        mock_lv_utils.lv_check.return_value = False
+        state_backend.reset_mock()
+        state_backend.check.side_effect = lambda params, _: params.get("images") == "image2"
         exists = ss.check_states(self.run_params, self.env)
-        expected = [mock.call("disk_vm1", "LogVol")]
-        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
+        call_params = [call.args[0] for call in state_backend.check.call_args_list]
+        self.assertEqual(len(call_params), 1)
+        self.assertEqual(call_params[0]["vms"], "vm1")
+        self.assertEqual(call_params[0]["images"], "image1")
+        self.assertEqual(call_params[0]["check_state"], "launch")
         self.assertFalse(exists)
 
-    @mock.patch('avocado_i2n.states.lvm.lv_utils')
-    def test_get_multivm(self, mock_lv_utils):
-        """Test that getting various states of multiple vms works."""
+    def test_get_multiobj(self):
+        """Test that getting various states of multiple vms and their images works."""
         self.run_params["vms"] = "vm1 vm2 vm3"
-        self.run_params["get_state_images"] = "launch2"
+        self.run_params["images_vm1"] = "image1 image2"
         self.run_params["get_state_images_vm1"] = "launch1"
+        self.run_params["get_state_images_image2_vm1"] = "launch21"
+        self.run_params["get_state_images_vm2"] = "launch2"
         self.run_params["get_state_vms_vm3"] = "launch3"
-        self.run_params["get_mode_vm1"] = "rx"
-        self.run_params["get_mode"] = "ii"
-        self.run_params["vg_name_vm1"] = "disk_vm1"
-        self.run_params["vg_name_vm2"] = "disk_vm2"
-        self.run_params["vg_name_vm3"] = "disk_vm3"
-        self.run_params["images_base_dir_vm2"] = "/images/vm2"
-        self.run_params["images_base_dir_vm3"] = "/images/vm3"
-        self.run_params["image_name_vm1"] = "vm1/image"
-        self.run_params["image_name_vm2"] = "vm2/image"
-        self.run_params["image_name_vm3"] = "vm3/image"
-        self.run_params["image_raw_device"] = "no"
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
+        self.run_params["get_mode"] = "ra"
+        self.run_params["get_mode_vm2"] = "ii"
         self.run_params["skip_types"] = "nets"
-        self._set_vm_qcow2_params()
 
-        # test on/off switch as well
-        with self.driver.mock_check("launch3", "vm", True) as driver:
-            def lv_check_side_effect(_vgname, lvname):
-                return True if lvname in ["LogVol", "launch1"] else False if lvname == "launch2" else False
-            mock_lv_utils.lv_check.side_effect = lv_check_side_effect
-            self.mock_vms["vm1"].is_alive.return_value = False
-            self.mock_vms["vm3"].is_alive.return_value = True
+        self._create_mock_vms()
+        state_backend = ss.BACKENDS["mock"]
 
+        state_backend.reset_mock()
+        state_backend.check.return_value = True
+        ss.get_states(self.run_params, self.env)
+        call_params = [call.args[0] for call in state_backend.get.call_args_list]
+        self.assertEqual(len(call_params), 3)
+        self.assertEqual(call_params[0]["vms"], "vm1")
+        self.assertEqual(call_params[0]["images"], "image1")
+        self.assertEqual(call_params[0]["object_name"], "net1/vm1/image1")
+        self.assertEqual(call_params[0]["object_type"], "nets/vms/images")
+        self.assertEqual(call_params[0]["get_state"], "launch1")
+        self.assertEqual(call_params[1]["vms"], "vm1")
+        self.assertEqual(call_params[1]["images"], "image2")
+        self.assertEqual(call_params[1]["object_name"], "net1/vm1/image2")
+        self.assertEqual(call_params[1]["object_type"], "nets/vms/images")
+        self.assertEqual(call_params[1]["get_state"], "launch21")
+        self.assertEqual(call_params[2]["vms"], "vm3")
+        self.assertEqual(call_params[2]["object_name"], "net1/vm3")
+        self.assertEqual(call_params[2]["object_type"], "nets/vms")
+        self.assertEqual(call_params[2]["get_state"], "launch3")
+
+        # break on first false state check with incompatible policy
+        state_backend.reset_mock()
+        state_backend.check.side_effect = lambda params, _: params["vms"] == "vm1"
+        with self.assertRaises(exceptions.TestAbortError):
             ss.get_states(self.run_params, self.env)
+        call_params = [call.args[0] for call in state_backend.get.call_args_list]
+        self.assertEqual(len(call_params), 2)
+        self.assertEqual(call_params[0]["vms"], "vm1")
+        self.assertEqual(call_params[0]["images"], "image1")
+        self.assertEqual(call_params[0]["get_state"], "launch1")
+        self.assertEqual(call_params[1]["vms"], "vm1")
+        self.assertEqual(call_params[1]["images"], "image2")
+        self.assertEqual(call_params[1]["get_state"], "launch21")
 
-            self.mock_vms["vm3"].is_alive.assert_called_once_with()
-            driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
-
-        expected = [mock.call("disk_vm1", "LogVol"),
-                    mock.call("disk_vm1", "launch1"),
-                    mock.call("disk_vm2", "LogVol"),
-                    mock.call("disk_vm2", "launch2"),
-                    mock.call("disk_vm3", "LogVol"),
-                    mock.call("disk_vm3", "launch2")]
-        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
-
-    @mock.patch('avocado_i2n.states.qcow2.QemuImg')
-    @mock.patch('avocado_i2n.states.lvm.lv_utils')
-    @mock.patch('avocado_i2n.states.lvm.process')
-    @mock.patch('avocado_i2n.states.lvm.env_process', mock.Mock(return_value=0))
-    def test_set_multivm(self, mock_process, mock_lv_utils, _mock_qemu_class):
-        """Test that setting various states of multiple vms works."""
+    def test_set_multiobj(self):
+        """Test that setting various states of multiple vms and their images works."""
         self.run_params["vms"] = "vm2 vm3 vm4"
-        self.run_params["set_state_images"] = "launch2"
+        self.run_params["images_vm2"] = "image21 image22"
         self.run_params["set_state_images_vm2"] = "launch2"
-        self.run_params["set_state_images_vm3"] = "root"
-        self.run_params["set_state_images_vm4"] = "launch4"
-        self.run_params["set_mode_vm2"] = "rx"
+        self.run_params["set_state_images_image22_vm2"] = "launch22"
+        self.run_params["set_state_images_vm3"] = "launch3"
+        self.run_params["set_state_vms_vm4"] = "launch4"
+        self.run_params["set_mode"] = "fa"
         self.run_params["set_mode_vm3"] = "ff"
-        self.run_params["set_mode_vm4"] = "aa"
-        self.run_params["lv_size"] = "30G"
-        self.run_params["lv_pool_name"] = "thin_pool"
-        self.run_params["lv_pool_size"] = "30G"
-        self.run_params["vg_name_vm2"] = "disk_vm2"
-        self.run_params["vg_name_vm3"] = "disk_vm3"
-        self.run_params["vg_name_vm4"] = "disk_vm4"
-        self.run_params["image_name_vm2"] = "vm2/image"
-        self.run_params["image_name_vm3"] = "vm3/image"
-        self.run_params["image_name_vm4"] = "vm4/image"
-        self.run_params["image_format"] = "raw"
-        self.run_params["disk_sparse_filename_vm3"] = "virtual_hdd_vm3"
-        self.run_params["use_tmpfs"] = "yes"
-        self.run_params["disk_basedir"] = "/tmp"
-        self.run_params["disk_vg_size"] = "40000"
-        self.run_params["skip_types"] = "nets/vms"
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
+        self.run_params["skip_types"] = "nets"
 
-        self.driver.exist_switch = False
-        def lv_check_side_effect(_vgname, lvname):
-            return True if lvname in ["LogVol", "launch2"] else False if lvname == "launch4" else False
-        mock_lv_utils.lv_check.side_effect = lv_check_side_effect
-        mock_lv_utils.vg_check.return_value = False
-        mock_process.run.return_value = process.CmdResult("dummy-command")
+        self._create_mock_vms()
+        state_backend = ss.BACKENDS["mock"]
 
+        state_backend.reset_mock()
+        state_backend.check.return_value = True
+        ss.set_states(self.run_params, self.env)
+        call_params = [call.args[0] for call in state_backend.set.call_args_list]
+        self.assertEqual(len(call_params), 4)
+        self.assertEqual(call_params[0]["vms"], "vm2")
+        self.assertEqual(call_params[0]["images"], "image21")
+        self.assertEqual(call_params[0]["object_name"], "net1/vm2/image21")
+        self.assertEqual(call_params[0]["object_type"], "nets/vms/images")
+        self.assertEqual(call_params[0]["set_state"], "launch2")
+        self.assertEqual(call_params[1]["vms"], "vm2")
+        self.assertEqual(call_params[1]["images"], "image22")
+        self.assertEqual(call_params[1]["object_name"], "net1/vm2/image22")
+        self.assertEqual(call_params[1]["object_type"], "nets/vms/images")
+        self.assertEqual(call_params[1]["set_state"], "launch22")
+        self.assertEqual(call_params[2]["vms"], "vm3")
+        self.assertEqual(call_params[2]["object_name"], "net1/vm3/image1")
+        self.assertEqual(call_params[2]["object_type"], "nets/vms/images")
+        self.assertEqual(call_params[2]["set_state"], "launch3")
+        self.assertEqual(call_params[3]["vms"], "vm4")
+        self.assertEqual(call_params[3]["object_name"], "net1/vm4")
+        self.assertEqual(call_params[3]["object_type"], "nets/vms")
+        self.assertEqual(call_params[3]["set_state"], "launch4")
+
+        # break on first false state check with incompatible policy
+        state_backend.reset_mock()
+        state_backend.check.side_effect = lambda params, _: params["vms"] == "vm2"
         with self.assertRaises(exceptions.TestAbortError):
             ss.set_states(self.run_params, self.env)
+        call_params = [call.args[0] for call in state_backend.set.call_args_list]
+        self.assertEqual(len(call_params), 3)
+        self.assertEqual(call_params[0]["vms"], "vm2")
+        self.assertEqual(call_params[0]["images"], "image21")
+        self.assertEqual(call_params[0]["set_state"], "launch2")
+        self.assertEqual(call_params[1]["vms"], "vm2")
+        self.assertEqual(call_params[1]["images"], "image22")
+        self.assertEqual(call_params[1]["set_state"], "launch22")
+        self.assertEqual(call_params[2]["vms"], "vm3")
+        self.assertEqual(call_params[2]["object_name"], "net1/vm3/image1")
+        self.assertEqual(call_params[2]["object_type"], "nets/vms/images")
+        self.assertEqual(call_params[2]["set_state"], "launch3")
 
-        expected = [mock.call("disk_vm2", "LogVol"),
-                    mock.call("disk_vm2", "launch2"),
-                    mock.call("disk_vm3", "LogVol"),
-                    mock.call("disk_vm4", "LogVol"),
-                    mock.call("disk_vm4", "launch4")]
-        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
-        mock_process.run.assert_called_with('vgcreate disk_vm3 ', sudo=True)
-        mock_lv_utils.lv_create.assert_called_once_with('disk_vm3', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
-        mock_lv_utils.lv_take_snapshot.assert_called_once_with('disk_vm3', 'LogVol', 'current_state')
-
-    @mock.patch('avocado_i2n.states.qcow2.QemuImg')
-    @mock.patch('avocado_i2n.states.lvm.lv_utils')
-    def test_unset_multivm(self, mock_lv_utils, _mock_qemu_class):
-        """Test that unsetting various states of multiple vms works."""
+    def test_unset_multiobj(self):
+        """Test that unsetting various states of multiple vms and their images works."""
         self.run_params["vms"] = "vm1 vm4"
-        self.run_params["unset_state_images_vm1"] = "root"
+        self.run_params["images_vm1"] = "image1 image2"
+        self.run_params["unset_state_images_vm1"] = "launch1"
+        self.run_params["unset_state_images_image2_vm1"] = "launch2"
         self.run_params["unset_state_images_vm4"] = "launch4"
-        self.run_params["unset_mode_vm1"] = "ra"
-        self.run_params["unset_mode_vm4"] = "fi"
-        self.run_params["lv_name"] = "LogVol"
-        self.run_params["vg_name_vm1"] = "disk_vm1"
-        self.run_params["vg_name_vm4"] = "disk_vm4"
-        self.run_params["image_name_vm1"] = "vm1/image"
-        self.run_params["image_name_vm4"] = "vm4/image"
-        self.run_params["image_raw_device"] = "no"
-        backend = "lvm"
-        backend_type = self._prepare_driver_from_backend(backend)
+        self.run_params["unset_mode_vm1"] = "fi"
+        self.run_params["unset_mode_vm4"] = "fa"
+        self.run_params["skip_types"] = "nets"
 
-        self.driver.exist_switch = False
-        mock_lv_utils.lv_check.side_effect = self.driver._only_lvm_root_exists
+        self._create_mock_vms()
+        state_backend = ss.BACKENDS["mock"]
 
+        state_backend.reset_mock()
+        state_backend.check.return_value = True
         ss.unset_states(self.run_params, self.env)
+        call_params = [call.args[0] for call in state_backend.unset.call_args_list]
+        self.assertEqual(len(call_params), 3)
+        self.assertEqual(call_params[0]["vms"], "vm1")
+        self.assertEqual(call_params[0]["images"], "image1")
+        self.assertEqual(call_params[0]["object_name"], "net1/vm1/image1")
+        self.assertEqual(call_params[0]["object_type"], "nets/vms/images")
+        self.assertEqual(call_params[0]["unset_state"], "launch1")
+        self.assertEqual(call_params[1]["vms"], "vm1")
+        self.assertEqual(call_params[1]["images"], "image2")
+        self.assertEqual(call_params[1]["object_name"], "net1/vm1/image2")
+        self.assertEqual(call_params[1]["object_type"], "nets/vms/images")
+        self.assertEqual(call_params[1]["unset_state"], "launch2")
+        self.assertEqual(call_params[2]["vms"], "vm4")
+        self.assertEqual(call_params[2]["object_name"], "net1/vm4/image1")
+        self.assertEqual(call_params[2]["object_type"], "nets/vms/images")
+        self.assertEqual(call_params[2]["unset_state"], "launch4")
 
-        expected = [mock.call("disk_vm1", "LogVol"),
-                    mock.call("disk_vm4", "LogVol"),
-                    mock.call("disk_vm4", "launch4")]
-        self.assertListEqual(mock_lv_utils.lv_check.call_args_list, expected)
+        state_backend.reset_mock()
+        state_backend.check.return_value = False
+        with self.assertRaises(exceptions.TestAbortError):
+            ss.unset_states(self.run_params, self.env)
+        call_params = [call.args[0] for call in state_backend.unset.call_args_list]
+        self.assertEqual(len(call_params), 0)
 
     def test_qcow2_dash(self):
         """Test the special character suppot for the QCOW2 backends."""
@@ -1670,21 +1787,15 @@ class StateSetupTest(Test):
         mock_fcntl.lockf.assert_called_once()
 
     def test_skip_type(self):
-        """Test that QCOW2 format filter for the QCOW2 backends."""
-        backend = "qcow2"
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params["skip_types"] = "nets"
-        self._set_vm_qcow2_params()
+        """Test that given state types are skipped via a devoted parameter."""
+        state_backend = self._set_up_generic_params("pop", "state", "objects", "object1")
+        self.run_params["skip_types"] = "objects"
 
         for do in ["check", "get", "set", "unset"]:
             self.run_params[f"{do}_state"] = "launch"
-            self.run_params["skip_types"] = "nets nets/vms nets/vms/images"
 
-            with self.driver.mock_check("launch", backend_type, False, False) as driver:
-                ss.__dict__[f"{do}_states"](self.run_params, self.env)
-                driver.run.assert_not_called()
-                self.mock_vms["vm1"].assert_not_called()
-
+            ss.__dict__[f"{do}_states"](self.run_params, self.env)
+            self.assertEqual(len(state_backend.__dict__["_mock_children"]), 0)
 
 if __name__ == '__main__':
     unittest.main()
