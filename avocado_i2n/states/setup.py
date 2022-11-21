@@ -288,6 +288,7 @@ def check_states(run_params, env=None):
 
         # if the snapshot is not defined skip (leaf tests that are no setup)
         if not state_params.get("check_state"):
+            logging.debug(f"Skip checking any {params_obj_type} state for {params_obj_name}")
             continue
         else:
             state = state_params["check_state"]
@@ -364,6 +365,7 @@ def get_states(run_params, env=None):
 
         # if the state is not defined skip (leaf tests that are no setup)
         if not state_params.get("get_state"):
+            logging.debug(f"Skip getting any {params_obj_type} state for {params_obj_name}")
             continue
         else:
             state = state_params["get_state"]
@@ -433,6 +435,7 @@ def set_states(run_params, env=None):
 
         # if the state is not defined skip (leaf tests that are no setup)
         if not state_params.get("set_state"):
+            logging.debug(f"Skip setting any {params_obj_type} state for {params_obj_name}")
             continue
         else:
             state = state_params["set_state"]
@@ -508,6 +511,7 @@ def unset_states(run_params, env=None):
 
         # if the state is not defined skip (leaf tests that are no setup)
         if not state_params.get("unset_state"):
+            logging.debug(f"Skip unsetting any {params_obj_type} state for {params_obj_name}")
             continue
         else:
             state = state_params["unset_state"]
