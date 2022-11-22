@@ -37,7 +37,7 @@ logging = log.getLogger('avocado.test.' + __name__)
 from virttest import env_process
 from virttest.qemu_storage import QemuImg
 
-from .setup import StateBackend
+from .pool import RootSourcedStateBackend, SourcedStateBackend
 
 
 #: off qemu states regex (0 vm size)
@@ -46,7 +46,7 @@ QEMU_OFF_STATES_REGEX = re.compile(r"^\d+\s+([\w\.-]+)\s*(0 B)\s+\d{4}-\d\d-\d\d
 QEMU_ON_STATES_REGEX = re.compile(r"^\d+\s+([\w\.-]+)\s*(?!0 B)(\d+e?[\-\+]?[\.\d]* \w+)\s+\d{4}-\d\d-\d\d", flags=re.MULTILINE)
 
 
-class QCOW2Backend(StateBackend):
+class QCOW2Backend(RootSourcedStateBackend):
     """Backend manipulating image states as internal QCOW2 snapshots."""
 
     _require_running_object = False
@@ -149,9 +149,9 @@ class QCOW2Backend(StateBackend):
         qemu_img.snapshot_del()
 
     @classmethod
-    def check_root(cls, params, object=None):
+    def _check_root(cls, params, object=None):
         """
-        Check whether a root state or essentially the object exists.
+        Check whether a root state or essentially the object exists locally.
 
         All arguments match the base class.
         """
@@ -175,7 +175,16 @@ class QCOW2Backend(StateBackend):
             return False
 
     @classmethod
-    def set_root(cls, params, object=None):
+    def _get_root(cls, params, object=None):
+        """
+        Get a root state or essentially due to pre-existence do nothing.
+
+        All arguments match the base class.
+        """
+        pass
+
+    @classmethod
+    def _set_root(cls, params, object=None):
         """
         Set a root state to provide object existence.
 
@@ -196,7 +205,7 @@ class QCOW2Backend(StateBackend):
             env_process.preprocess_image(None, params, image_name)
 
     @classmethod
-    def unset_root(cls, params, object=None):
+    def _unset_root(cls, params, object=None):
         """
         Unset a root state to prevent object existence.
 
@@ -217,7 +226,7 @@ class QCOW2Backend(StateBackend):
             logging.debug("Image directory not yet empty: %s", error)
 
 
-class QCOW2ExtBackend(QCOW2Backend):
+class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
     """Backend manipulating image states as external QCOW2 snapshots."""
 
     _require_running_object = False
@@ -245,7 +254,7 @@ class QCOW2ExtBackend(QCOW2Backend):
         return os.path.basename(image_file.replace(".qcow2", ""))
 
     @classmethod
-    def show(cls, params, object=None):
+    def _show(cls, params, object=None):
         """
         Return a list of available states of a specific type.
 
@@ -271,7 +280,17 @@ class QCOW2ExtBackend(QCOW2Backend):
         return states
 
     @classmethod
-    def get(cls, params, object=None):
+    def _check(cls, params, object=None):
+        """
+        Check whether a given state exists.
+
+        All arguments match the base class.
+        """
+        # use QCOW2Backend's check but with current class
+        return super(SourcedStateBackend, cls).check(params, object)
+
+    @classmethod
+    def _get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.
 
@@ -289,7 +308,7 @@ class QCOW2ExtBackend(QCOW2Backend):
         qemu_img.create(params, ignore_errors=False)
 
     @classmethod
-    def set(cls, params, object=None):
+    def _set(cls, params, object=None):
         """
         Store a state saving the current changes.
 
@@ -306,7 +325,7 @@ class QCOW2ExtBackend(QCOW2Backend):
         shutil.copy(qemu_img.image_filename, os.path.join(image_dir, state + ".qcow2"))
 
     @classmethod
-    def unset(cls, params, object=None):
+    def _unset(cls, params, object=None):
         """
         Remove a state with previous changes.
 
@@ -321,6 +340,42 @@ class QCOW2ExtBackend(QCOW2Backend):
         image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image_name)
         # TODO: should we mv to pointer image in case removed state is in backing chain?
         os.unlink(os.path.join(image_dir, state + ".qcow2"))
+
+    @classmethod
+    def check_root(cls, params, object=None):
+        """
+        Check whether a root state or essentially the object exists locally.
+
+        All arguments match the base class.
+        """
+        return QCOW2Backend._check_root(params, object)
+
+    @classmethod
+    def get_root(cls, params, object=None):
+        """
+        Get a root state or essentially due to pre-existence do nothing.
+
+        All arguments match the base class.
+        """
+        QCOW2Backend._get_root(params, object)
+
+    @classmethod
+    def set_root(cls, params, object=None):
+        """
+        Set a root state to provide object existence.
+
+        All arguments match the base class.
+        """
+        QCOW2Backend._set_root(params, object)
+
+    @classmethod
+    def unset_root(cls, params, object=None):
+        """
+        Unset a root state to prevent object existence.
+
+        All arguments match the base class.
+        """
+        QCOW2Backend._unset_root(params, object)
 
 
 class QCOW2VTBackend(QCOW2Backend):
@@ -393,7 +448,7 @@ class QCOW2VTBackend(QCOW2Backend):
         vm.resume(timeout=3)
 
     @classmethod
-    def check_root(cls, params, object=None):
+    def _check_root(cls, params, object=None):
         """
         Check whether a root state or essentially the object is running.
 
@@ -426,7 +481,7 @@ class QCOW2VTBackend(QCOW2Backend):
             return False
 
     @classmethod
-    def set_root(cls, params, object=None):
+    def _set_root(cls, params, object=None):
         """
         Set a root state to provide running object.
 
@@ -463,7 +518,7 @@ class QCOW2VTBackend(QCOW2Backend):
             vm.create()
 
     @classmethod
-    def unset_root(cls, params, object=None):
+    def _unset_root(cls, params, object=None):
         """
         Unset a root state to prevent object from running.
 
