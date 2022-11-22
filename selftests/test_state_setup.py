@@ -1021,7 +1021,9 @@ class StatesPoolTest(Test):
 
     def setUp(self):
         self.run_params = utils_params.Params()
+        self.run_params["nets"] = "net1"
         self.run_params["vms"] = "vm1"
+        self.run_params["images"] = "image1"
         self.run_params["use_pool"] = "yes"
 
         # TODO: actual stateful object treatment is not fully defined yet
@@ -1035,23 +1037,13 @@ class StatesPoolTest(Test):
         # disable pool locks for easier mocking
         pool.SKIP_LOCKS = True
 
-    def _set_up_generic_params(self, state_op, state_name, state_type, state_object):
-        self.run_params["states_chain"] = state_type
-        self.run_params[f"states_{state_type}"] = "mock"
-        self.run_params[state_type] = state_object
-        self.run_params[f"{state_op}_state_{state_type}_{state_object}"] = state_name
+        self.maxDiff = None
 
-    def _set_image_pool_params(self):
-        self.run_params["states_images"] = "rootpool"
+    def _set_minimal_pool_params(self):
+        self.run_params["vms_base_dir"] = "/images"
         self.run_params["image_pool"] = "/data/pool"
         self.run_params["image_format"] = "qcow2"
         self.run_params["qemu_img_binary"] = "qemu-img"
-
-    def _set_any_pool_params(self):
-        self.run_params["states_images"] = "pool"
-        self.run_params["states_vms"] = "pool"
-        self.run_params["image_pool"] = "/data/pool"
-        self.run_params["image_format"] = "qcow2"
 
     def _create_mock_sourced_backend(self, source_type="root"):
         if source_type == "root":
@@ -1070,6 +1062,19 @@ class StatesPoolTest(Test):
         self.backend.transport = mock.MagicMock()
         ss.BACKENDS = {"mock": self.backend}
 
+    def _create_mock_transfer_backend(self):
+        self.backend = pool.QCOW2ImageTransfer
+        self.deps = [""]
+
+        ops_patch = mock.patch.object(pool.QCOW2ImageTransfer, "ops", mock.MagicMock())
+        ops_patch.start()
+        self.addCleanup(ops_patch.stop)
+
+        deps_patch = mock.patch.object(self.backend, "get_dependency",
+                                       lambda state, _: self.deps[self.deps.index(state)+1])
+        deps_patch.start()
+        self.addCleanup(deps_patch.stop)
+
     def _get_mock_vm(self, vm_name):
         return self.mock_vms[vm_name]
 
@@ -1083,7 +1088,6 @@ class StatesPoolTest(Test):
     @mock.patch('avocado_i2n.states.pool.fcntl')
     def test_pool_locks(self, mock_fcntl):
         """Test auxiliary pool module locks functionality."""
-        self._set_image_pool_params()
         self._create_mock_vms()
 
         image_locked = False
@@ -1389,6 +1393,109 @@ class StatesPoolTest(Test):
         self.backend.unset(self.run_params, self.env)
         self.backend._unset.assert_not_called()
         self.backend.transport.unset.assert_called_once()
+
+    def test_list_bundle(self):
+        """Test that a state bundle (e.g. image with internal states) will be listed."""
+        self._set_minimal_pool_params()
+        self.run_params["image_name"] = "image1"
+
+        self._create_mock_transfer_backend()
+
+        exists = self.backend.check_root(self.run_params, self.env)
+        self.backend.ops.list.assert_called_with("/data/pool", mock.ANY)
+
+    def test_list_chain(self):
+        """Test that a state and its complete backing chain will be listed."""
+        self._set_minimal_pool_params()
+        self.run_params["check_state"] = "launch"
+        self.run_params["object_type"] = "nets/vms/images"
+
+        self._create_mock_transfer_backend()
+        self.deps = ["launch", "prelaunch", ""]
+
+        self.backend.check(self.run_params, self.env)
+        expected_checks = [mock.call("/data/pool", mock.ANY)]
+        self.assertListEqual(self.backend.ops.list.call_args_list, expected_checks)
+
+    def test_download_bundle(self):
+        """Test that a state bundle (e.g. image with internal states) will be downloaded."""
+        self._set_minimal_pool_params()
+        self.run_params["image_name"] = "image1"
+
+        self._create_mock_transfer_backend()
+
+        self.backend.get_root(self.run_params, self.env)
+        self.backend.ops.download.assert_called_with("/images/vm1/image1.qcow2",
+                                                     "/data/pool/vm1/image1.qcow2",
+                                                     mock.ANY)
+
+    def test_download_chain(self):
+        """Test that a state and its complete backing chain will be downloaded."""
+        self._set_minimal_pool_params()
+        self.run_params["get_state"] = "launch"
+        self.run_params["object_type"] = "nets/vms/images"
+
+        self._create_mock_transfer_backend()
+        self.deps = ["launch", "prelaunch", ""]
+
+        self.backend.get(self.run_params, self.env)
+        expected_checks = [mock.call("/images/vm1/image1/launch.qcow2",
+                                     "/data/pool/vm1/image1/launch.qcow2", mock.ANY),
+                           mock.call("/images/vm1/image1/prelaunch.qcow2",
+                                     "/data/pool/vm1/image1/prelaunch.qcow2", mock.ANY)]
+        self.assertListEqual(self.backend.ops.download.call_args_list, expected_checks)
+
+    def test_upload_bundle(self):
+        """Test that a state bundle (e.g. image with internal states) will be uploaded."""
+        self._set_minimal_pool_params()
+        self.run_params["image_name"] = "image1"
+
+        self._create_mock_transfer_backend()
+
+        self.backend.set_root(self.run_params, self.env)
+        self.backend.ops.upload.assert_called_with("/images/vm1/image1.qcow2",
+                                                   "/data/pool/vm1/image1.qcow2",
+                                                   mock.ANY)
+
+    def test_upload_chain(self):
+        """Test that a state and its complete backing chain will be uploaded."""
+        self._set_minimal_pool_params()
+        self.run_params["set_state"] = "launch"
+        self.run_params["object_type"] = "nets/vms/images"
+
+        self._create_mock_transfer_backend()
+        self.deps = ["launch", "prelaunch", ""]
+
+        self.backend.set(self.run_params, self.env)
+        expected_checks = [mock.call("/images/vm1/image1/launch.qcow2",
+                                     "/data/pool/vm1/image1/launch.qcow2", mock.ANY),
+                           mock.call("/images/vm1/image1/prelaunch.qcow2",
+                                     "/data/pool/vm1/image1/prelaunch.qcow2", mock.ANY)]
+        self.assertListEqual(self.backend.ops.upload.call_args_list, expected_checks)
+
+    def test_delete_bundle(self):
+        """Test that a state bundle (e.g. image with internal states) will be deleted."""
+        self._set_minimal_pool_params()
+        self.run_params["image_name"] = "image1"
+
+        self._create_mock_transfer_backend()
+
+        self.backend.unset_root(self.run_params, self.env)
+        self.backend.ops.delete.assert_called_with("/data/pool/vm1/image1.qcow2",
+                                                   mock.ANY)
+
+    def test_delete_chain(self):
+        """Test that a state but not its complete backing chain will be deleted."""
+        self._set_minimal_pool_params()
+        self.run_params["unset_state"] = "launch"
+        self.run_params["object_type"] = "nets/vms/images"
+
+        self._create_mock_transfer_backend()
+        self.deps = ["launch", "prelaunch", ""]
+
+        self.backend.unset(self.run_params, self.env)
+        expected_checks = [mock.call("/data/pool/vm1/image1/launch.qcow2", mock.ANY)]
+        self.assertListEqual(self.backend.ops.delete.call_args_list, expected_checks)
 
 
 class StatesSetupTest(Test):
