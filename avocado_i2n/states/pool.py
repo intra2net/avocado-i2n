@@ -52,22 +52,320 @@ SKIP_LOCKS = False
 
 
 class TransferOps():
+    """A small namespace for pool transfer operations of multiple types."""
 
     @staticmethod
     def list(pool_path, params):
-        list_pool(cache_path, pool_path, params, object)
+        """
+        List all states in a path from the pool.
+
+        :param str pool_path: pool path to list pool states from
+        :param params: configuration parameters
+        :type params: {str, str}
+        """
+        if ":" in pool_path:
+            return TransferOps.list_remote(pool_path, params)
+        elif ";" in pool_path:
+            return TransferOps.list_link(pool_path, params)
+        else:
+            return TransferOps.list_local(pool_path, params)
 
     @staticmethod
     def download(cache_path, pool_path, params):
-        download_from_pool(cache_path, pool_path, params)
+        """
+        Download a path from the pool depending on the pool location.
+
+        :param str cache_path: cache path to download to
+        :param str pool_path: pool path to download from
+        :param params: configuration parameters
+        :type params: {str, str}
+        """
+        if ":" in pool_path:
+            TransferOps.download_remote(cache_path, pool_path, params)
+        elif ";" in pool_path:
+            TransferOps.download_link(cache_path, pool_path, params)
+        else:
+            TransferOps.download_local(cache_path, pool_path, params)
 
     @staticmethod
     def upload(cache_path, pool_path, params):
-        upload_to_pool(cache_path, pool_path, params)
+        """
+        Upload a path to the pool depending on the pool location.
+
+        :param str cache_path: cache path to upload from
+        :param str pool_path: pool path to upload to
+        :param params: configuration parameters
+        :type params: {str, str}
+        """
+        if ":" in pool_path:
+            TransferOps.upload_remote(cache_path, pool_path, params)
+        elif ";" in pool_path:
+            TransferOps.upload_link(cache_path, pool_path, params)
+        else:
+            TransferOps.upload_local(cache_path, pool_path, params)
 
     @staticmethod
     def delete(pool_path, params):
-        delete_in_pool(pool_path, params)
+        """
+        Delete a path in the pool depending on the pool location.
+
+        :param str pool_path: path in the pool to delete
+        :param params: configuration parameters
+        :type params: {str, str}
+        """
+        if ":" in pool_path:
+            TransferOps.delete_remote(pool_path, params)
+        elif ";" in pool_path:
+            TransferOps.delete_link(pool_path, params)
+        else:
+            TransferOps.delete_local(pool_path, params)
+
+    @staticmethod
+    def list_local(pool_path, params):
+        """
+        List all states in a path from the pool.
+
+        All arguments are identical to the main entry method.
+        """
+        # TODO: not local backend agnostic so use a remote control file
+        if params["object_type"] in ["images", "nets/vms/images"]:
+            state_tag = f"{params['vms']}/{params['images']}"
+            format = ".qcow2"
+        else:
+            state_tag = f"{params['vms']}"
+            format = ".state"
+
+        path = os.path.join(pool_path, state_tag)
+
+        states = os.listdir(path)
+        states = [p.replace(format, "") for p in states]
+        return states
+
+    @staticmethod
+    def download_local(cache_path, pool_path, params):
+        """
+        Download a path from the pool depending on the pool location.
+
+        All arguments are identical to the main entry method.
+        """
+        if os.path.exists(cache_path):
+            local_hash = crypto.hash_file(cache_path, 1048576, "md5")
+        else:
+            local_hash = ""
+
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+
+        update_timeout = params.get_numeric("update_pool_timeout", 300)
+        with image_lock(pool_path, update_timeout) as lock:
+            remote_hash = crypto.hash_file(pool_path, 1048576, "md5")
+            if local_hash == remote_hash:
+                logging.info(f"Skip download of an already available {cache_path}")
+                return
+            shutil.copy(pool_path, cache_path)
+
+    @staticmethod
+    def upload_local(cache_path, pool_path, params):
+        """
+        Upload a path to the pool depending on the pool location.
+
+        All arguments are identical to the main entry method.
+        """
+        if os.path.exists(cache_path):
+            local_hash = crypto.hash_file(cache_path, 1048576, "md5")
+        else:
+            local_hash = ""
+
+        update_timeout = params.get_numeric("update_pool_timeout", 300)
+        with image_lock(pool_path, update_timeout) as lock:
+            remote_hash = crypto.hash_file(pool_path, 1048576, "md5")
+            if local_hash == remote_hash:
+                logging.info(f"Skip upload of an already available {cache_path}")
+                return
+            os.makedirs(os.path.dirname(pool_path), exist_ok=True)
+            shutil.copy(cache_path, pool_path)
+
+    @staticmethod
+    def delete_local(pool_path, params):
+        """
+        Delete a path in the pool depending on the pool location.
+
+        All arguments are identical to the main entry method.
+        """
+        update_timeout = params.get_numeric("update_pool_timeout", 300)
+        with image_lock(pool_path, update_timeout) as lock:
+            os.unlink(pool_path)
+
+    @staticmethod
+    def list_remote(pool_path, params):
+        """
+        List all states in a path from the pool.
+
+        All arguments are identical to the main entry method.
+        """
+        # TODO: not local backend agnostic so use a remote control file
+        if params["object_type"] in ["images", "nets/vms/images"]:
+            state_tag = f"{params['vms']}/{params['images']}"
+            format = ".qcow2"
+        else:
+            state_tag = f"{params['vms']}"
+            format = ".state"
+
+        host, path = pool_path.split(":")
+        session = remote.remote_login(params["nets_shell_client"],
+                                      host,
+                                      params["nets_shell_port"],
+                                      params["nets_username"], params["nets_password"],
+                                      params["nets_shell_prompt"])
+        path = os.path.join(path, state_tag)
+
+        states = session.cmd_output(f"ls {path}").split()
+        states = [p.replace(format, "") for p in states]
+        return states
+
+    @staticmethod
+    def download_remote(cache_path, pool_path, params):
+        """
+        Download a path from the pool depending on the pool location.
+
+        All arguments are identical to the main entry method.
+        """
+        if os.path.exists(cache_path):
+            local_hash = crypto.hash_file(cache_path, 1048576, "md5")
+        else:
+            local_hash = ""
+
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+
+        update_timeout = params.get_numeric("update_pool_timeout", 300)
+        # TODO: no support for remote lock files yet
+        host, path = pool_path.split(":")
+
+        session = remote.remote_login(params["nets_shell_client"],
+                                      host,
+                                      params["nets_shell_port"],
+                                      params["nets_username"], params["nets_password"],
+                                      params["nets_shell_prompt"])
+        remote_hash = ops.hash_file(session, path, "1M", "md5")
+
+        if local_hash == remote_hash:
+            logging.info(f"Skip download of an already available {cache_path} ({remote_hash})")
+            return
+        if local_hash is not None:
+            logging.info(f"Force download of an already available {cache_path} ({remote_hash})")
+
+        remote.copy_files_from(host,
+                               params["nets_file_transfer_client"],
+                               params["nets_username"], params["nets_password"],
+                               params["nets_file_transfer_port"],
+                               path, cache_path,
+                               timeout=update_timeout)
+
+    @staticmethod
+    def upload_remote(cache_path, pool_path, params):
+        """
+        Upload a path to the pool depending on the pool location.
+
+        All arguments are identical to the main entry method.
+        """
+        if os.path.exists(cache_path):
+            local_hash = crypto.hash_file(cache_path, 1048576, "md5")
+        else:
+            local_hash = ""
+
+        update_timeout = params.get_numeric("update_pool_timeout", 300)
+        # TODO: need to create remote directory if not available
+        # TODO: no support for remote lock files yet
+        host, path = pool_path.split(":")
+
+        session = remote.remote_login(params["nets_shell_client"],
+                                      host,
+                                      params["nets_shell_port"],
+                                      params["nets_username"], params["nets_password"],
+                                      params["nets_shell_prompt"])
+        remote_hash = ops.hash_file(session, path, "1M", "md5")
+
+        if local_hash == remote_hash:
+            logging.info(f"Skip upload of an already available {cache_path} ({remote_hash})")
+            return
+        if local_hash is not None:
+            logging.info(f"Force upload of an already available {cache_path} ({remote_hash})")
+
+        remote.copy_files_to(host,
+                             params["nets_file_transfer_client"],
+                             params["nets_username"], params["nets_password"],
+                             params["nets_file_transfer_port"],
+                             cache_path, path,
+                             timeout=update_timeout)
+
+    @staticmethod
+    def delete_remote(pool_path, params):
+        """
+        Delete a path in the pool depending on the pool location.
+
+        All arguments are identical to the main entry method.
+        """
+        host, path = pool_path.split(":")
+        session = remote.remote_login(params["nets_shell_client"],
+                                      host,
+                                      params["nets_shell_port"],
+                                      params["nets_username"], params["nets_password"],
+                                      params["nets_shell_prompt"])
+        session.cmd(f"rm {path}")
+
+    @staticmethod
+    def list_link(pool_path, params):
+        """
+        List all states in a path from the pool.
+
+        All arguments are identical to the main entry method.
+        """
+        return TransferOps.list_local(pool_path, params)
+
+    @staticmethod
+    def download_link(cache_path, pool_path, params):
+        """
+        Download a path from the pool depending on the pool location.
+
+        All arguments are identical to the main entry method.
+        """
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+
+        update_timeout = params.get_numeric("update_pool_timeout", 300)
+        with image_lock(pool_path, update_timeout) as lock:
+            if os.path.realpath(cache_path) == pool_path:
+                logging.info(f"Skip link of an already available {cache_path}")
+                return
+            # actual data must be kept safe
+            if not os.path.islink(cache_path) and os.path.exists(cache_path):
+                raise RuntimeError(f"Cannot link to {pool_path}, {cache_path} data exists")
+            # clean up dead links
+            if os.path.islink(cache_path) and not os.path.exists(cache_path):
+                logging.warning(f"Dead link {cache_path} image detected")
+            # possibly reset the symlink pointer
+            if os.path.islink(cache_path):
+                os.unlink(cache_path)
+            os.symlink(pool_path, cache_path)
+
+    @staticmethod
+    def upload_link(cache_path, pool_path, params):
+        """
+        Upload a path to the pool depending on the pool location.
+
+        All arguments are identical to the main entry method.
+        """
+        if os.path.islink(cache_path):
+            raise ValueError("Cannot upload a symlink to its destination")
+        else:
+            TransferOps.upload_local(cache_path, pool_path, params)
+
+    @staticmethod
+    def delete_link(pool_path, params):
+        """
+        Delete a path in the pool depending on the pool location.
+
+        All arguments are identical to the main entry method.
+        """
+        TransferOps.delete_local(pool_path, params)
 
 
 class QCOW2ImageTransfer(StateBackend):
@@ -514,163 +812,6 @@ class SourcedStateBackend(StateBackend):
             cls._unset(params, object)
         else:
             cls.transport.unset(params, object)
-
-
-def list_pool(cache_path, pool_path, params, object):
-    """
-    List all states in a path from the pool.
-
-    :param str cache_path: cache path to list local states from
-    :param str pool_path: pool path to list pool states from
-    :param params: configuration parameters
-    :type params: {str, str}
-    :param object: object whose states are manipulated
-    :type object: :py:class:`virttest.qemu_vm.VM` or None
-    """
-    # TODO: not local backend agnostic so use a remote control file
-    if params["object_type"] in ["images", "nets/vms/images"]:
-        state_tag = f"{params['vms']}/{params['images']}"
-        format = ".qcow2"
-    else:
-        state_tag = f"{params['vms']}"
-        format = ".state"
-
-    if ":" in pool_path:
-        host, path = pool_path.split(":")
-        session = remote.remote_login(params["nets_shell_client"],
-                                      host,
-                                      params["nets_shell_port"],
-                                      params["nets_username"], params["nets_password"],
-                                      params["nets_shell_prompt"])
-        path = os.path.join(path, state_tag)
-        states = session.cmd_output(f"ls {path}").split()
-    else:
-        path = os.path.join(pool_path, state_tag)
-        states = os.listdir(path)
-    states = [p.replace(format, "") for p in states]
-    return states
-
-
-def download_from_pool(cache_path, pool_path, params):
-    """
-    Download a path from the pool depending on the pool location.
-
-    :param str cache_path: cache path to download to
-    :param str pool_path: pool path to download from
-    :param params: configuration parameters
-    :type params: {str, str}
-    """
-    if os.path.exists(cache_path):
-        local_hash = crypto.hash_file(cache_path, 1048576, "md5")
-    else:
-        local_hash = ""
-
-    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-
-    update_timeout = params.get_numeric("update_pool_timeout", 300)
-    if ":" in pool_path:
-        # TODO: no support for remote lock files yet
-        host, path = pool_path.split(":")
-
-        session = remote.remote_login(params["nets_shell_client"],
-                                      host,
-                                      params["nets_shell_port"],
-                                      params["nets_username"], params["nets_password"],
-                                      params["nets_shell_prompt"])
-        remote_hash = ops.hash_file(session, path, "1M", "md5")
-
-        if local_hash == remote_hash:
-            logging.info(f"Skip download of an already available {cache_path} ({remote_hash})")
-            return
-        if local_hash is not None:
-            logging.info(f"Force download of an already available {cache_path} ({remote_hash})")
-
-        remote.copy_files_from(host,
-                               params["nets_file_transfer_client"],
-                               params["nets_username"], params["nets_password"],
-                               params["nets_file_transfer_port"],
-                               path, cache_path,
-                               timeout=update_timeout)
-        return
-
-    with image_lock(pool_path, update_timeout) as lock:
-        remote_hash = crypto.hash_file(pool_path, 1048576, "md5")
-        if local_hash == remote_hash:
-            logging.info(f"Skip download of an already available {cache_path}")
-            return
-        shutil.copy(pool_path, cache_path)
-
-
-def upload_to_pool(cache_path, pool_path, params):
-    """
-    Upload a path to the pool depending on the pool location.
-
-    :param str cache_path: cache path to upload from
-    :param str pool_path: pool path to upload to
-    :param params: configuration parameters
-    :type params: {str, str}
-    """
-    if os.path.exists(cache_path):
-        local_hash = crypto.hash_file(cache_path, 1048576, "md5")
-    else:
-        local_hash = ""
-
-    update_timeout = params.get_numeric("update_pool_timeout", 300)
-    if ":" in pool_path:
-        # TODO: need to create remote directory if not available
-        # TODO: no support for remote lock files yet
-        host, path = pool_path.split(":")
-
-        session = remote.remote_login(params["nets_shell_client"],
-                                      host,
-                                      params["nets_shell_port"],
-                                      params["nets_username"], params["nets_password"],
-                                      params["nets_shell_prompt"])
-        remote_hash = ops.hash_file(session, path, "1M", "md5")
-
-        if local_hash == remote_hash:
-            logging.info(f"Skip upload of an already available {cache_path} ({remote_hash})")
-            return
-        if local_hash is not None:
-            logging.info(f"Force upload of an already available {cache_path} ({remote_hash})")
-
-        remote.copy_files_to(host,
-                             params["nets_file_transfer_client"],
-                             params["nets_username"], params["nets_password"],
-                             params["nets_file_transfer_port"],
-                             cache_path, path,
-                             timeout=update_timeout)
-        return
-
-    with image_lock(pool_path, update_timeout) as lock:
-        remote_hash = crypto.hash_file(pool_path, 1048576, "md5")
-        if local_hash == remote_hash:
-            logging.info(f"Skip upload of an already available {cache_path}")
-            return
-        os.makedirs(os.path.dirname(pool_path), exist_ok=True)
-        shutil.copy(cache_path, pool_path)
-
-
-def delete_in_pool(pool_path, params):
-    """
-    Delete a path in the pool depending on the pool location.
-
-    :param str pool_path: path in the pool to delete
-    :param params: configuration parameters
-    :type params: {str, str}
-    """
-    update_timeout = params.get_numeric("update_pool_timeout", 300)
-    if ":" in pool_path:
-        host, path = pool_path.split(":")
-        session = remote.remote_login(params["nets_shell_client"],
-                                      host,
-                                      params["nets_shell_port"],
-                                      params["nets_username"], params["nets_password"],
-                                      params["nets_shell_prompt"])
-        # TODO: not local backend agnostic so use a remote control file
-        session.cmd(f"rm {path}")
-    with image_lock(pool_path, update_timeout) as lock:
-        os.unlink(pool_path)
 
 
 @contextlib.contextmanager
