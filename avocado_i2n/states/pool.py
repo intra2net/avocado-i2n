@@ -35,9 +35,12 @@ import shutil
 import contextlib
 import fcntl
 import errno
+import json
 
 from aexpect import remote, ops
 from avocado.utils import crypto
+
+from virttest.qemu_storage import QemuImg
 
 from .setup import StateBackend
 
@@ -48,8 +51,29 @@ from .setup import StateBackend
 SKIP_LOCKS = False
 
 
-class StateBundleTransfer():
-    """Backend manipulating root states from a shared pool of QCOW2 images."""
+class TransferOps():
+
+    @staticmethod
+    def list(pool_path, params):
+        list_pool(cache_path, pool_path, params, object)
+
+    @staticmethod
+    def download(cache_path, pool_path, params):
+        download_from_pool(cache_path, pool_path, params)
+
+    @staticmethod
+    def upload(cache_path, pool_path, params):
+        upload_to_pool(cache_path, pool_path, params)
+
+    @staticmethod
+    def delete(pool_path, params):
+        delete_in_pool(pool_path, params)
+
+
+class QCOW2ImageTransfer(StateBackend):
+    """Backend manipulating root or external states from a shared pool of QCOW2 images."""
+
+    ops = TransferOps
 
     @staticmethod
     def get_image_path(params):
@@ -61,18 +85,20 @@ class StateBundleTransfer():
         :returns: absolute path to the QCOW2 image
         :rtype: str
         """
-        image_name = params["image_name"]
-        image_format = params.get("image_format")
+        vm_name, image_name = params["vms"], params["images"]
+        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+
+        image_path, image_format = params["image_name"], params.get("image_format")
         if image_format is None:
             raise ValueError(f"Unspecified image format for {image_name} - "
                             "must be qcow2 or raw")
         if image_format not in ["raw", "qcow2"]:
             raise ValueError(f"Incompatible image format {image_format} for"
                             f" {image_name} - must be qcow2 or raw")
-        if not os.path.isabs(image_name):
-            image_name = os.path.join(params["images_base_dir"], image_name)
+        if not os.path.isabs(image_path):
+            image_path = os.path.join(vm_dir, image_path)
         image_format = "" if image_format == "raw" else "." + image_format
-        image_path = image_name + image_format
+        image_path = image_path + image_format
         return image_path
 
     @classmethod
@@ -84,7 +110,7 @@ class StateBundleTransfer():
         """
         vm_name = params["vms"]
         image_name = params["image_name"]
-        target_image = StateBundleTransfer.get_image_path(params)
+        target_image = cls.get_image_path(params)
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
         image_base_name = os.path.join(vm_name, os.path.basename(target_image))
 
@@ -92,7 +118,8 @@ class StateBundleTransfer():
                       f" in the shared pool {shared_pool}")
         src_image_name = os.path.join(shared_pool, image_base_name)
         # it is possible that the the root state is partially provided
-        if os.path.exists(src_image_name):
+        pool_images = cls.ops.list(shared_pool, params)
+        if image_name in pool_images:
             logging.info("The shared %s image exists", src_image_name)
             return True
         else:
@@ -108,14 +135,14 @@ class StateBundleTransfer():
         """
         vm_name = params["vms"]
         image_name = params["image_name"]
-        target_image = StateBundleTransfer.get_image_path(params)
+        target_image = cls.get_image_path(params)
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Downloading shared {vm_name}/{image_name} "
                      f"from the shared pool {shared_pool}")
         src_image_name = os.path.join(shared_pool, image_base_names)
-        download_from_pool(target_image, src_image_name, params)
+        cls.ops.download(target_image, src_image_name, params)
 
     @classmethod
     def set_root(cls, params, object=None):
@@ -126,14 +153,14 @@ class StateBundleTransfer():
         """
         vm_name = params["vms"]
         image_name = params["image_name"]
-        target_image = StateBundleTransfer.get_image_path(params)
+        target_image = cls.get_image_path(params)
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Uploading shared {vm_name}/{image_name} "
                      f"to the shared pool {shared_pool}")
         dst_image_name = os.path.join(shared_pool, image_base_names)
-        upload_to_pool(target_image, dst_image_name, params)
+        cls.ops.upload(target_image, dst_image_name, params)
 
     @classmethod
     def unset_root(cls, params, object=None):
@@ -144,47 +171,48 @@ class StateBundleTransfer():
         """
         vm_name = params["vms"]
         image_name = params["image_name"]
-        target_image = StateBundleTransfer.get_image_path(params)
+        target_image = cls.get_image_path(params)
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Removing shared {vm_name}/{image_name} "
                      f"from the shared pool {shared_pool}")
         dst_image_name = os.path.join(shared_pool, image_base_names)
-        delete_in_pool(dst_image_name, params)
-
-
-class StateChainTransfer():
-    """Backend manipulating image states from a shared pool of QCOW2 images."""
+        cls.ops.delete(dst_image_name, params)
 
     @classmethod
-    def _type_decorator(cls, state_type):
+    def get_dependency(cls, state, params):
         """
-        Determine the local state backend to use from the required state type.
+        Return a backing state that the current state depends on.
 
-        :param str state_type: "vms" or "images" (supported)
+        :param str state: state name to retrieve the backing dependency of
+
+        The rest of the arguments match the signature of the other methods here.
         """
-        # TODO: there is some inconsistency in the object type specification
-        if state_type in ["images", "nets/vms/images"]:
-            return cls.local_image_state_backend
-        elif state_type in ["vms", "nets/vms"]:
-            return cls.local_vm_state_backend
-        else:
-            raise ValueError(f"Unsupported state type for pooling {state_type}")
+        vm_name, image_name = params["vms"], params["images"]
+        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        params["image_chain"] = f"snapshot {image_name}"
+        params["image_name_snapshot"] = os.path.join(image_name, state)
+        params["image_format_snapshot"] = "qcow2"
+        # TODO: we might want to return the complete backing chain but in some
+        # cases parts of it are stored in a remote location
+        #params["backing_chain"] = "yes"
+        qemu_img = QemuImg(params.object_params("snapshot"), vm_dir, "snapshot")
+        image_info = qemu_img.info(force_share=True, output="json")
+        image_file = json.loads(image_info).get("backing-filename", "")
+        return os.path.basename(image_file.replace(".qcow2", ""))
 
     @classmethod
-    def _transfer_chain(cls, state, backend, params, down=True):
+    def _transfer_chain(cls, state, params, down=True):
         """
         Repeat pool operation an all dependencies states backing a given state.
 
         :param str state: state name
         :param params: configuration parameters
-        :param backend: local state backend to show states with
-        :type backend: :py:class:`avocado_i2n.states.setup.StateBackend`
         :type params: {str, str}
         :param bool down: whether the chain is downloaded or uploaded
         """
-        transfer_operation = download_from_pool if down else upload_to_pool
+        transfer_operation = cls.ops.download if down else cls.ops.upload
 
         shared_pool = params["image_pool"]
         cache_dir = params["vms_base_dir"]
@@ -203,7 +231,7 @@ class StateChainTransfer():
                 pool_path = os.path.join(shared_pool, vm_name, next_state + ".state")
                 transfer_operation(cache_path, pool_path, params)
             # download of state chain is not yet complete if the state has backing dependencies
-            next_state = backend.get_dependency(next_state, params)
+            next_state = cls.get_dependency(next_state, params)
 
     @classmethod
     def show(cls, params, object=None):
@@ -213,7 +241,6 @@ class StateChainTransfer():
         All arguments match the base class.
         """
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
-        cache_dir = params["vms_base_dir"]
 
         vm_name = params["vms"]
         state_tag = f"{vm_name}"
@@ -224,8 +251,7 @@ class StateChainTransfer():
                       f"in the shared pool {shared_pool}")
 
         # TODO: list in vm dir or image dir
-        pool_states = list_pool(cache_dir, shared_pool,
-                                params, object, local_state_backend)
+        pool_states = cls.ops.list(shared_pool, params)
         return pool_states
 
     @classmethod
@@ -272,7 +298,7 @@ class StateChainTransfer():
                      f"from the shared pool {shared_pool} to {cache_dir}")
 
         try:
-            cls._transfer_chain(state, local_state_backend, params, down=True)
+            cls._transfer_chain(state, params, down=True)
         except Exception as error:
             remove_path = os.path.join(cache_dir, state_tag, state + "." + format)
             os.unlink(remove_path)
@@ -298,10 +324,10 @@ class StateChainTransfer():
                      f"to the shared pool {shared_pool} from {cache_dir}")
 
         try:
-            cls._transfer_chain(state, local_state_backend, params, down=False)
+            cls._transfer_chain(state, params, down=False)
         except Exception as error:
             remove_path = os.path.join(shared_pool, state_tag, state + "." + format)
-            delete_in_pool(remove_path, params)
+            cls.ops.delete(remove_path, params)
             raise error
 
     @classmethod
@@ -325,16 +351,16 @@ class StateChainTransfer():
         for image_name in params.objects("images"):
             image_params = params.object_params(image_name)
             pool_path = os.path.join(shared_pool, vm_name, image_name, state + ".qcow2")
-            delete_in_pool(pool_path, image_params)
+            cls.ops.delete(pool_path, image_params)
         if params["object_type"] in ["vms", "nets/vms"]:
             pool_path = os.path.join(shared_pool, vm_name, state + ".state")
-            delete_in_pool(pool_path, params)
+            cls.ops.delete(pool_path, params)
 
 
 class RootSourcedStateBackend(StateBackend):
     """Backend manipulating root states from a possibly shared source."""
 
-    transport = StateBundleTransfer
+    transport = QCOW2ImageTransfer
 
     @classmethod
     def check_root(cls, params, object=None):
@@ -406,7 +432,7 @@ class RootSourcedStateBackend(StateBackend):
 class SourcedStateBackend(StateBackend):
     """Backend manipulating states from a possibly shared source."""
 
-    transport = StateChainTransfer
+    transport = QCOW2ImageTransfer
 
     @classmethod
     def show(cls, params, object=None):
@@ -490,7 +516,7 @@ class SourcedStateBackend(StateBackend):
             cls.transport.unset(params, object)
 
 
-def list_pool(cache_path, pool_path, params, object, backend):
+def list_pool(cache_path, pool_path, params, object):
     """
     List all states in a path from the pool.
 
@@ -500,9 +526,15 @@ def list_pool(cache_path, pool_path, params, object, backend):
     :type params: {str, str}
     :param object: object whose states are manipulated
     :type object: :py:class:`virttest.qemu_vm.VM` or None
-    :param backend: local state backend to show states with
-    :type backend: :py:class:`avocado_i2n.states.setup.StateBackend`
     """
+    # TODO: not local backend agnostic so use a remote control file
+    if params["object_type"] in ["images", "nets/vms/images"]:
+        state_tag = f"{params['vms']}/{params['images']}"
+        format = ".qcow2"
+    else:
+        state_tag = f"{params['vms']}"
+        format = ".state"
+
     if ":" in pool_path:
         host, path = pool_path.split(":")
         session = remote.remote_login(params["nets_shell_client"],
@@ -510,20 +542,12 @@ def list_pool(cache_path, pool_path, params, object, backend):
                                       params["nets_shell_port"],
                                       params["nets_username"], params["nets_password"],
                                       params["nets_shell_prompt"])
-        # TODO: not local backend agnostic so use a remote control file
-        if params["object_type"] in ["images", "nets/vms/images"]:
-            state_tag = f"{params['vms']}/{params['images']}"
-            format = ".qcow2"
-        else:
-            state_tag = f"{params['vms']}"
-            format = ".state"
         path = os.path.join(path, state_tag)
         states = session.cmd_output(f"ls {path}").split()
-        states = [p.replace(format, "") for p in states]
     else:
-        params["vms_base_dir"] = pool_path
-        states = backend.show(params, object)
-        params["vms_base_dir"] = cache_path
+        path = os.path.join(pool_path, state_tag)
+        states = os.listdir(path)
+    states = [p.replace(format, "") for p in states]
     return states
 
 
