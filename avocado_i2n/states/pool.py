@@ -40,21 +40,40 @@ from aexpect import remote, ops
 from avocado.utils import crypto
 
 from .setup import StateBackend
-from .qcow2 import QCOW2Backend, QCOW2ExtBackend, get_image_path
-from .ramfile import RamfileBackend
 
 
 #: skip waiting on locks if we only read from the pool for all processes, i.e.
-#: use update_pool=no for all parallel operations
+#: use update_pool=no for all parallel operations or else
 #: WARNING: use it only if you know what you are doing
 SKIP_LOCKS = False
 
 
-class QCOW2RootPoolBackend(StateBackend):
+class StateBundleTransfer():
     """Backend manipulating root states from a shared pool of QCOW2 images."""
 
-    # TODO: currently only qcow2 is supported
-    local_state_backend = QCOW2Backend
+    @staticmethod
+    def get_image_path(params):
+        """
+        Get the absolute path to a QCOW2 image.
+
+        :param params: configuration parameters
+        :type params: {str, str}
+        :returns: absolute path to the QCOW2 image
+        :rtype: str
+        """
+        image_name = params["image_name"]
+        image_format = params.get("image_format")
+        if image_format is None:
+            raise ValueError(f"Unspecified image format for {image_name} - "
+                            "must be qcow2 or raw")
+        if image_format not in ["raw", "qcow2"]:
+            raise ValueError(f"Incompatible image format {image_format} for"
+                            f" {image_name} - must be qcow2 or raw")
+        if not os.path.isabs(image_name):
+            image_name = os.path.join(params["images_base_dir"], image_name)
+        image_format = "" if image_format == "raw" else "." + image_format
+        image_path = image_name + image_format
+        return image_path
 
     @classmethod
     def check_root(cls, params, object=None):
@@ -63,31 +82,17 @@ class QCOW2RootPoolBackend(StateBackend):
 
         All arguments match the base class.
         """
-        if not params.get_boolean("use_pool", True):
-            return cls.local_state_backend.check_root(params, object)
-        elif (params.get_boolean("update_pool", False) and
-                not cls.local_state_backend.check_root(params, object)):
-            raise RuntimeError("Updating state pool requires local root states")
-        elif (not params.get_boolean("update_pool", False) and
-                cls.local_state_backend.check_root(params, object)):
-            return True
-
         vm_name = params["vms"]
         image_name = params["image_name"]
-        target_image = get_image_path(params)
+        target_image = StateBundleTransfer.get_image_path(params)
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
-        image_base_names = os.path.join(vm_name, os.path.basename(target_image))
+        image_base_name = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.debug(f"Checking for shared {vm_name}/{image_name} existence"
                       f" in the shared pool {shared_pool}")
-        src_image_name = os.path.join(shared_pool, image_base_names)
+        src_image_name = os.path.join(shared_pool, image_base_name)
         # it is possible that the the root state is partially provided
-        if os.path.exists(target_image) and not params.get_boolean("update_pool", False):
-            logging.info("The local %s image exists but from partial root state",
-                         src_image_name)
-            return False
-        elif os.path.exists(src_image_name):
-            cls.get_root(params, object)
+        if os.path.exists(src_image_name):
             logging.info("The shared %s image exists", src_image_name)
             return True
         else:
@@ -101,14 +106,9 @@ class QCOW2RootPoolBackend(StateBackend):
 
         All arguments match the base class.
         """
-        if (cls.local_state_backend.check_root(params, object) or
-                not params.get_boolean("use_pool", True)):
-            cls.local_state_backend.get_root(params, object)
-            return
-
         vm_name = params["vms"]
         image_name = params["image_name"]
-        target_image = get_image_path(params)
+        target_image = StateBundleTransfer.get_image_path(params)
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
@@ -124,15 +124,9 @@ class QCOW2RootPoolBackend(StateBackend):
 
         All arguments match the base class.
         """
-        # local and pool root setting are mutually exclusive as we usually want
-        # to set the pool root from an existing local root with some states on it
-        if not params.get_boolean("update_pool", False):
-            cls.local_state_backend.set_root(params, object)
-            return
-
         vm_name = params["vms"]
         image_name = params["image_name"]
-        target_image = get_image_path(params)
+        target_image = StateBundleTransfer.get_image_path(params)
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
@@ -148,15 +142,9 @@ class QCOW2RootPoolBackend(StateBackend):
 
         All arguments match the base class and in addition:
         """
-        # local and pool root setting are mutually exclusive as we usually want
-        # to set the pool root from an existing local root with some states on it
-        if not params.get_boolean("update_pool", False):
-            cls.local_state_backend.unset_root(params, object)
-            return
-
         vm_name = params["vms"]
         image_name = params["image_name"]
-        target_image = get_image_path(params)
+        target_image = StateBundleTransfer.get_image_path(params)
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
@@ -166,13 +154,8 @@ class QCOW2RootPoolBackend(StateBackend):
         delete_in_pool(dst_image_name, params)
 
 
-class QCOW2PoolBackend(StateBackend):
+class StateChainTransfer():
     """Backend manipulating image states from a shared pool of QCOW2 images."""
-
-    # TODO: currently only qcow2ext is supported
-    local_image_state_backend = QCOW2ExtBackend
-    # TODO: currently only ramfile is supported
-    local_vm_state_backend = RamfileBackend
 
     @classmethod
     def _type_decorator(cls, state_type):
@@ -229,15 +212,6 @@ class QCOW2PoolBackend(StateBackend):
 
         All arguments match the base class.
         """
-        local_state_backend = cls._type_decorator(params["object_type"])
-        if not params.get_boolean("use_pool", True):
-            return local_state_backend.show(params, object)
-        elif (params.get_boolean("update_pool", False) and
-                not local_state_backend.check(params, object)):
-            raise RuntimeError("Updating state pool requires local states")
-
-        cache_states = local_state_backend.show(params, object)
-
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
         cache_dir = params["vms_base_dir"]
 
@@ -252,8 +226,7 @@ class QCOW2PoolBackend(StateBackend):
         # TODO: list in vm dir or image dir
         pool_states = list_pool(cache_dir, shared_pool,
                                 params, object, local_state_backend)
-
-        return list(set(cache_states).union(set(pool_states)))
+        return pool_states
 
     @classmethod
     def check(cls, params, object=None):
@@ -262,31 +235,20 @@ class QCOW2PoolBackend(StateBackend):
 
         All arguments match the base class.
         """
-        local_state_backend = cls._type_decorator(params["object_type"])
-        locally_present = local_state_backend.check(params, object)
-        if params.get_boolean("update_pool", False) and not locally_present:
-            raise RuntimeError("Updating state pool requires local states")
-        elif params.get_boolean("update_pool", False):
-            return False
-        else:
-            vm_name = params["vms"]
-            state_tag = f"{vm_name}"
-            if params["object_type"] in ["images", "nets/vms/images"]:
-                image_name = params["images"]
-                state_tag += f"/{image_name}"
-            logging.debug(f"Checking for {state_tag} state '{params['check_state']}'")
-            states = cls.show(params, object)
-            for state in states:
-                if state == params["check_state"]:
-                    if not locally_present:
-                        params["get_state"] = state
-                        params["pool_only"] = "yes"
-                        cls.get(params, object)
-                    logging.info(f"The {state_tag} state '{params['check_state']}' exists")
-                    return True
-            # at this point we didn't find the state in the listed ones
-            logging.info(f"The {state_tag} state '{params['check_state']}' doesn't exist")
-            return False
+        vm_name = params["vms"]
+        state_tag = f"{vm_name}"
+        if params["object_type"] in ["images", "nets/vms/images"]:
+            image_name = params["images"]
+            state_tag += f"/{image_name}"
+        logging.debug(f"Checking for {state_tag} state '{params['check_state']}'")
+        states = cls.show(params, object)
+        for state in states:
+            if state == params["check_state"]:
+                logging.info(f"The {state_tag} state '{params['check_state']}' exists")
+                return True
+        # at this point we didn't find the state in the listed ones
+        logging.info(f"The {state_tag} state '{params['check_state']}' doesn't exist")
+        return False
 
     @classmethod
     def get(cls, params, object=None):
@@ -295,12 +257,6 @@ class QCOW2PoolBackend(StateBackend):
 
         All arguments match the base class.
         """
-        local_state_backend = cls._type_decorator(params["object_type"])
-        if (local_state_backend.check(params, object) or
-                not params.get_boolean("use_pool", True)):
-            local_state_backend.get(params, object)
-            return
-
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
         cache_dir = params["vms_base_dir"]
 
@@ -322,9 +278,6 @@ class QCOW2PoolBackend(StateBackend):
             os.unlink(remove_path)
             raise error
 
-        if not params.get_boolean("pool_only"):
-            local_state_backend.get(params, object)
-
     @classmethod
     def set(cls, params, object=None):
         """
@@ -332,13 +285,6 @@ class QCOW2PoolBackend(StateBackend):
 
         All arguments match the base class.
         """
-        local_state_backend = cls._type_decorator(params["object_type"])
-        # local and pool root setting are mutually exclusive as we usually want
-        # to set the pool root from an existing local root with some states on it
-        if not params.get_boolean("update_pool", False):
-            local_state_backend.set(params, object)
-            return
-
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
         cache_dir = params["vms_base_dir"]
 
@@ -365,13 +311,6 @@ class QCOW2PoolBackend(StateBackend):
 
         All arguments match the base class and in addition:
         """
-        local_state_backend = cls._type_decorator(params["object_type"])
-        # local and pool root setting are mutually exclusive as we usually want
-        # to set the pool root from an existing local root with some states on it
-        if not params.get_boolean("update_pool", False):
-            local_state_backend.unset(params, object)
-            return
-
         shared_pool = params.get("image_pool", "/mnt/local/images/pool")
 
         vm_name = params["vms"]
@@ -391,6 +330,12 @@ class QCOW2PoolBackend(StateBackend):
             pool_path = os.path.join(shared_pool, vm_name, state + ".state")
             delete_in_pool(pool_path, params)
 
+
+class RootSourcedStateBackend(StateBackend):
+    """Backend manipulating root states from a possibly shared source."""
+
+    transport = StateBundleTransfer
+
     @classmethod
     def check_root(cls, params, object=None):
         """
@@ -398,8 +343,23 @@ class QCOW2PoolBackend(StateBackend):
 
         All arguments match the base class.
         """
-        local_state_backend = cls._type_decorator(params["object_type"])
-        return local_state_backend.check_root(params, object)
+        local_root_exists = cls._check_root(params, object)
+        if not params.get_boolean("use_pool", True):
+            return local_root_exists
+        elif params.get_boolean("update_pool", False) and not local_root_exists:
+            raise RuntimeError("Updating state pool requires local root states")
+        elif (not params.get_boolean("update_pool", False) and local_root_exists):
+            return True
+
+        shared_root_exists = cls.transport.check_root(params, object)
+        # TODO: extra complexity as it is possible that the root state is partially provided
+        # so get rid of this instead of adding it to test contract
+        target_image = cls.transport.get_image_path(params)
+        if os.path.exists(target_image) and not params.get_boolean("update_pool", False):
+            return False
+        elif not local_root_exists and shared_root_exists:
+            cls.transport.get_root(params, object)
+            return True
 
     @classmethod
     def get_root(cls, params, object=None):
@@ -408,8 +368,11 @@ class QCOW2PoolBackend(StateBackend):
 
         All arguments match the base class.
         """
-        local_state_backend = cls._type_decorator(params["object_type"])
-        local_state_backend.get_root(params, object)
+        if (cls._check_root(params, object) or
+                not params.get_boolean("use_pool", True)):
+            cls._get_root(params, object)
+            return
+        cls.transport.get_root(params, object)
 
     @classmethod
     def set_root(cls, params, object=None):
@@ -418,8 +381,12 @@ class QCOW2PoolBackend(StateBackend):
 
         All arguments match the base class.
         """
-        local_state_backend = cls._type_decorator(params["object_type"])
-        local_state_backend.set_root(params, object)
+        # local and pool root setting are mutually exclusive as we usually want
+        # to set the pool root from an existing local root with some states on it
+        if not params.get_boolean("update_pool", False):
+            cls._set_root(params, object)
+        else:
+            cls.transport.set_root(params, object)
 
     @classmethod
     def unset_root(cls, params, object=None):
@@ -428,8 +395,99 @@ class QCOW2PoolBackend(StateBackend):
 
         All arguments match the base class and in addition:
         """
-        local_state_backend = cls._type_decorator(params["object_type"])
-        local_state_backend.unset_root(params, object)
+        # local and pool root setting are mutually exclusive as we usually want
+        # to set the pool root from an existing local root with some states on it
+        if not params.get_boolean("update_pool", False):
+            cls._unset_root(params, object)
+        else:
+            cls.transport.unset_root(params, object)
+
+
+class SourcedStateBackend(StateBackend):
+    """Backend manipulating states from a possibly shared source."""
+
+    transport = StateChainTransfer
+
+    @classmethod
+    def show(cls, params, object=None):
+        """
+        Return a list of available states of a specific type.
+
+        All arguments match the base class.
+        """
+        cache_states = cls._show(params, object)
+        if not params.get_boolean("use_pool", True):
+            return cache_states
+
+        pool_states = cls.transport.show(params, object)
+        return list(set(cache_states).union(set(pool_states)))
+
+    @classmethod
+    def check(cls, params, object=None):
+        """
+        Check whether a given state exists.
+
+        All arguments match the base class.
+        """
+        local_state_exists = cls._check(params, object)
+        if params.get_boolean("update_pool", False) and not local_state_exists:
+            raise RuntimeError("Updating state pool requires local states")
+        # TODO: excessive complexity, get rid of this instead of adding it to test contract
+        elif params.get_boolean("update_pool", False):
+            return False
+        elif not params.get_boolean("use_pool", True):
+            return local_state_exists
+        elif local_state_exists:
+            return True
+
+        pool_state_exists = cls.transport.check(params, object)
+        if pool_state_exists and not local_state_exists:
+            params["get_state"] = params["check_state"]
+            cls.transport.get(params, object)
+            return True
+        return local_state_exists
+
+    @classmethod
+    def get(cls, params, object=None):
+        """
+        Get a root state or essentially due to pre-existence do nothing.
+
+        All arguments match the base class.
+        """
+        if (cls._check(params, object) or
+                not params.get_boolean("use_pool", True)):
+            cls._get(params, object)
+            return
+        cls.transport.get(params, object)
+        cls._get(params, object)
+
+    @classmethod
+    def set(cls, params, object=None):
+        """
+        Set a root state to provide object existence.
+
+        All arguments match the base class.
+        """
+        # local and pool root setting are mutually exclusive as we usually want
+        # to set the pool root from an existing local root with some states on it
+        if not params.get_boolean("update_pool", False):
+            cls._set(params, object)
+        else:
+            cls.transport.set(params, object)
+
+    @classmethod
+    def unset(cls, params, object=None):
+        """
+        Unset a root state to prevent object existence.
+
+        All arguments match the base class and in addition:
+        """
+        # local and pool root setting are mutually exclusive as we usually want
+        # to set the pool root from an existing local root with some states on it
+        if not params.get_boolean("update_pool", False):
+            cls._unset(params, object)
+        else:
+            cls.transport.unset(params, object)
 
 
 def list_pool(cache_path, pool_path, params, object, backend):
