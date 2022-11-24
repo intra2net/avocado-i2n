@@ -127,19 +127,7 @@ class TransferOps():
 
         All arguments are identical to the main entry method.
         """
-        # TODO: not local backend agnostic so use a remote control file
-        if params["object_type"] in ["images", "nets/vms/images"]:
-            state_tag = f"{params['vms']}/{params['images']}"
-            format = ".qcow2"
-        else:
-            state_tag = f"{params['vms']}"
-            format = ".state"
-
-        path = os.path.join(pool_path, state_tag)
-
-        states = os.listdir(path)
-        states = [p.replace(format, "") for p in states]
-        return states
+        return os.listdir(pool_path)
 
     @staticmethod
     def download_local(cache_path, pool_path, params):
@@ -202,25 +190,13 @@ class TransferOps():
 
         All arguments are identical to the main entry method.
         """
-        # TODO: not local backend agnostic so use a remote control file
-        if params["object_type"] in ["images", "nets/vms/images"]:
-            state_tag = f"{params['vms']}/{params['images']}"
-            format = ".qcow2"
-        else:
-            state_tag = f"{params['vms']}"
-            format = ".state"
-
         host, path = pool_path.split(":")
         session = remote.remote_login(params["nets_shell_client"],
                                       host,
                                       params["nets_shell_port"],
                                       params["nets_username"], params["nets_password"],
                                       params["nets_shell_prompt"])
-        path = os.path.join(path, state_tag)
-
-        states = session.cmd_output(f"ls {path}").split()
-        states = [p.replace(format, "") for p in states]
-        return states
+        return session.cmd_output(f"ls {path}").split()
 
     @staticmethod
     def download_remote(cache_path, pool_path, params):
@@ -416,8 +392,8 @@ class QCOW2ImageTransfer(StateBackend):
                       f" in the shared pool {shared_pool}")
         src_image_name = os.path.join(shared_pool, image_base_name)
         # it is possible that the the root state is partially provided
-        pool_images = cls.ops.list(shared_pool, params)
-        if image_name in pool_images:
+        pool_images = cls.ops.list(os.path.join(shared_pool, vm_name), params)
+        if image_name + ".qcow2" in pool_images:
             logging.info("The shared %s image exists", src_image_name)
             return True
         else:
@@ -538,19 +514,22 @@ class QCOW2ImageTransfer(StateBackend):
 
         All arguments match the base class.
         """
-        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
-
         vm_name = params["vms"]
         state_tag = f"{vm_name}"
+        format = ".state"
         if params["object_type"] in ["images", "nets/vms/images"]:
             image_name = params["images"]
             state_tag += f"/{image_name}"
+            format = ".qcow2"
+
+        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        path = os.path.join(shared_pool, state_tag)
         logging.debug(f"Checking for shared {state_tag} states "
                       f"in the shared pool {shared_pool}")
 
-        # TODO: list in vm dir or image dir
-        pool_states = cls.ops.list(shared_pool, params)
-        return pool_states
+        states = cls.ops.list(path, params)
+        states = [p.replace(format, "") for p in states]
+        return states
 
     @classmethod
     def check(cls, params, object=None):
