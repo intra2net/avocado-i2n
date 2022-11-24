@@ -71,6 +71,23 @@ class TransferOps():
             return TransferOps.list_local(pool_path, params)
 
     @staticmethod
+    def compare(cache_path, pool_path, params):
+        """
+        Compare cache and pool external state version.
+
+        :param str cache_path: cache path to compare with
+        :param str pool_path: pool path to compare with
+        :param params: configuration parameters
+        :type params: {str, str}
+        """
+        if ":" in pool_path:
+            return TransferOps.compare_remote(cache_path, pool_path, params)
+        elif ";" in pool_path:
+            return TransferOps.compare_link(cache_path, pool_path.replace(";", ""), params)
+        else:
+            return TransferOps.compare_local(cache_path, pool_path, params)
+
+    @staticmethod
     def download(cache_path, pool_path, params):
         """
         Download a path from the pool depending on the pool location.
@@ -130,9 +147,9 @@ class TransferOps():
         return os.listdir(pool_path)
 
     @staticmethod
-    def download_local(cache_path, pool_path, params):
+    def compare_local(cache_path, pool_path, params):
         """
-        Download a path from the pool depending on the pool location.
+        Compare cache and pool external state version.
 
         All arguments are identical to the main entry method.
         """
@@ -140,13 +157,25 @@ class TransferOps():
             local_hash = crypto.hash_file(cache_path, 1048576, "md5")
         else:
             local_hash = ""
+        if os.path.exists(pool_path):
+            remote_hash = crypto.hash_file(pool_path, 1048576, "md5")
+        else:
+            remote_hash = ""
 
+        return local_hash == remote_hash
+
+    @staticmethod
+    def download_local(cache_path, pool_path, params):
+        """
+        Download a path from the pool depending on the pool location.
+
+        All arguments are identical to the main entry method.
+        """
         os.makedirs(os.path.dirname(cache_path), exist_ok=True)
 
         update_timeout = params.get_numeric("update_pool_timeout", 300)
         with image_lock(pool_path, update_timeout) as lock:
-            remote_hash = crypto.hash_file(pool_path, 1048576, "md5")
-            if local_hash == remote_hash:
+            if TransferOps.compare_local(cache_path, pool_path, params):
                 logging.info(f"Skip download of an already available {cache_path}")
                 return
             shutil.copy(pool_path, cache_path)
@@ -158,15 +187,9 @@ class TransferOps():
 
         All arguments are identical to the main entry method.
         """
-        if os.path.exists(cache_path):
-            local_hash = crypto.hash_file(cache_path, 1048576, "md5")
-        else:
-            local_hash = ""
-
         update_timeout = params.get_numeric("update_pool_timeout", 300)
         with image_lock(pool_path, update_timeout) as lock:
-            remote_hash = crypto.hash_file(pool_path, 1048576, "md5")
-            if local_hash == remote_hash:
+            if TransferOps.compare_local(cache_path, pool_path, params):
                 logging.info(f"Skip upload of an already available {cache_path}")
                 return
             os.makedirs(os.path.dirname(pool_path), exist_ok=True)
@@ -199,9 +222,9 @@ class TransferOps():
         return session.cmd_output(f"ls {path}").split()
 
     @staticmethod
-    def download_remote(cache_path, pool_path, params):
+    def compare_remote(cache_path, pool_path, params):
         """
-        Download a path from the pool depending on the pool location.
+        Compare cache and pool external state version.
 
         All arguments are identical to the main entry method.
         """
@@ -209,11 +232,6 @@ class TransferOps():
             local_hash = crypto.hash_file(cache_path, 1048576, "md5")
         else:
             local_hash = ""
-
-        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-
-        update_timeout = params.get_numeric("update_pool_timeout", 300)
-        # TODO: no support for remote lock files yet
         host, path = pool_path.split(":")
 
         session = remote.remote_login(params["nets_shell_client"],
@@ -223,18 +241,31 @@ class TransferOps():
                                       params["nets_shell_prompt"])
         remote_hash = ops.hash_file(session, path, "1M", "md5")
 
-        if local_hash == remote_hash:
-            logging.info(f"Skip download of an already available {cache_path} ({remote_hash})")
+        return local_hash == remote_hash
+
+    @staticmethod
+    def download_remote(cache_path, pool_path, params):
+        """
+        Download a path from the pool depending on the pool location.
+
+        All arguments are identical to the main entry method.
+        """
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        # TODO: no support for remote lock files yet
+        host, path = pool_path.split(":")
+
+        if TransferOps.compare_remote(cache_path, pool_path, params):
+            logging.info(f"Skip download of an already available and valid {cache_path}")
             return
-        if local_hash is not None:
-            logging.info(f"Force download of an already available {cache_path} ({remote_hash})")
+        if os.path.exists(cache_path):
+            logging.info(f"Force download of an already available {cache_path}")
 
         remote.copy_files_from(host,
                                params["nets_file_transfer_client"],
                                params["nets_username"], params["nets_password"],
                                params["nets_file_transfer_port"],
                                path, cache_path,
-                               timeout=update_timeout)
+                               timeout=params.get_numeric("update_pool_timeout", 300))
 
     @staticmethod
     def upload_remote(cache_path, pool_path, params):
@@ -243,35 +274,21 @@ class TransferOps():
 
         All arguments are identical to the main entry method.
         """
-        if os.path.exists(cache_path):
-            local_hash = crypto.hash_file(cache_path, 1048576, "md5")
-        else:
-            local_hash = ""
-
-        update_timeout = params.get_numeric("update_pool_timeout", 300)
         # TODO: need to create remote directory if not available
         # TODO: no support for remote lock files yet
         host, path = pool_path.split(":")
 
-        session = remote.remote_login(params["nets_shell_client"],
-                                      host,
-                                      params["nets_shell_port"],
-                                      params["nets_username"], params["nets_password"],
-                                      params["nets_shell_prompt"])
-        remote_hash = ops.hash_file(session, path, "1M", "md5")
-
-        if local_hash == remote_hash:
-            logging.info(f"Skip upload of an already available {cache_path} ({remote_hash})")
+        if TransferOps.compare_remote(cache_path, pool_path, params):
+            logging.info(f"Skip upload of an already available {pool_path}")
             return
-        if local_hash is not None:
-            logging.info(f"Force upload of an already available {cache_path} ({remote_hash})")
+        logging.info(f"Will possibly force upload to {pool_path}")
 
         remote.copy_files_to(host,
                              params["nets_file_transfer_client"],
                              params["nets_username"], params["nets_password"],
                              params["nets_file_transfer_port"],
                              cache_path, path,
-                             timeout=update_timeout)
+                             timeout=params.get_numeric("update_pool_timeout", 300))
 
     @staticmethod
     def delete_remote(pool_path, params):
@@ -287,6 +304,18 @@ class TransferOps():
                                       params["nets_username"], params["nets_password"],
                                       params["nets_shell_prompt"])
         session.cmd(f"rm {path}")
+
+    @staticmethod
+    def compare_link(cache_path, pool_path, params):
+        """
+        Compare cache and pool external state version.
+
+        All arguments are identical to the main entry method.
+        """
+        if os.path.islink(cache_path):
+            return os.path.realpath(cache_path) == pool_path
+        else:
+            return TransferOps.compare_local(cache_path, pool_path, params)
 
     @staticmethod
     def list_link(pool_path, params):
@@ -308,7 +337,7 @@ class TransferOps():
 
         update_timeout = params.get_numeric("update_pool_timeout", 300)
         with image_lock(pool_path, update_timeout) as lock:
-            if os.path.realpath(cache_path) == pool_path:
+            if TransferOps.compare_link(cache_path, pool_path, params):
                 logging.info(f"Skip link of an already available {cache_path}")
                 return
             # actual data must be kept safe
