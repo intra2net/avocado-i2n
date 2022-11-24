@@ -506,6 +506,41 @@ class QCOW2ImageTransfer(StateBackend):
         return os.path.basename(image_file.replace(".qcow2", ""))
 
     @classmethod
+    def compare_chain(cls, state, params):
+        """
+        Compare checksums for all dependencies states backing a given state.
+
+        :param str state: state name
+        :param params: configuration parameters
+        :type params: {str, str}
+        """
+        shared_pool = params["image_pool"]
+        cache_dir = params["vms_base_dir"]
+        vm_name = params["vms"]
+
+        next_state = state
+        while next_state != "":
+            for image_name in params.objects("images"):
+                image_params = params.object_params(image_name)
+                if next_state == image_params["image_name"]:
+                    cache_path = os.path.join(cache_dir, vm_name, next_state + ".qcow2")
+                    pool_path = os.path.join(shared_pool, vm_name, next_state + ".qcow2")
+                else:
+                    cache_path = os.path.join(cache_dir, vm_name, image_name, next_state + ".qcow2")
+                    pool_path = os.path.join(shared_pool, vm_name, image_name, next_state + ".qcow2")
+                if not cls.ops.compare(cache_path, pool_path, image_params):
+                    return False
+            if next_state == state and params["object_type"] in ["vms", "nets/vms"]:
+                cache_path = os.path.join(cache_dir, vm_name, next_state + ".state")
+                pool_path = os.path.join(shared_pool, vm_name, next_state + ".state")
+                if not cls.ops.compare(cache_path, pool_path, params):
+                    return False
+            # comparison of state chain is not yet complete if the state has backing dependencies
+            next_state = cls.get_dependency(next_state, params) if next_state != image_params["image_name"] else ""
+
+        return True
+
+    @classmethod
     def _transfer_chain(cls, state, params, down=True):
         """
         Repeat pool operation an all dependencies states backing a given state.
@@ -533,7 +568,7 @@ class QCOW2ImageTransfer(StateBackend):
                 cache_path = os.path.join(cache_dir, vm_name, next_state + ".state")
                 pool_path = os.path.join(shared_pool, vm_name, next_state + ".state")
                 transfer_operation(cache_path, pool_path, params)
-            # download of state chain is not yet complete if the state has backing dependencies
+            # transfer of state chain is not yet complete if the state has backing dependencies
             next_state = cls.get_dependency(next_state, params)
 
     @classmethod
@@ -689,9 +724,12 @@ class RootSourcedStateBackend(StateBackend):
         target_image = cls.transport.get_image_path(params)
         if os.path.exists(target_image) and not params.get_boolean("update_pool", False):
             return False
-        elif not local_root_exists and shared_root_exists:
-            cls.transport.get_root(params, object)
-            return True
+        if shared_root_exists:
+            cache_valid = cls.transport.compare_chain(params["image_name"], params)
+            if not local_root_exists or not cache_valid:
+                cls.transport.get_root(params, object)
+                return True
+        return local_root_exists
 
     @classmethod
     def get_root(cls, params, object=None):
@@ -769,14 +807,14 @@ class SourcedStateBackend(StateBackend):
             return False
         elif not params.get_boolean("use_pool", True):
             return local_state_exists
-        elif local_state_exists:
-            return True
 
         pool_state_exists = cls.transport.check(params, object)
-        if pool_state_exists and not local_state_exists:
-            params["get_state"] = params["check_state"]
-            cls.transport.get(params, object)
-            return True
+        if pool_state_exists:
+            cache_valid = cls.transport.compare_chain(params["check_state"], params)
+            if not local_state_exists or not cache_valid:
+                params["get_state"] = params["check_state"]
+                cls.transport.get(params, object)
+                return True
         return local_state_exists
 
     @classmethod
