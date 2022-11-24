@@ -1401,10 +1401,12 @@ class StatesPoolTest(Test):
 
         self._create_mock_transfer_backend()
 
+        self.backend.ops.list.return_value = ["image1.qcow2"]
         exists = self.backend.check_root(self.run_params, self.env)
-        self.backend.ops.list.assert_called_with("/data/pool", mock.ANY)
+        self.backend.ops.list.assert_called_with("/data/pool/vm1", mock.ANY)
+        self.assertTrue(exists)
 
-    def test_list_chain(self):
+    def test_list_chain_image(self):
         """Test that a state and its complete backing chain will be listed."""
         self._set_minimal_pool_params()
         self.run_params["check_state"] = "launch"
@@ -1413,9 +1415,26 @@ class StatesPoolTest(Test):
         self._create_mock_transfer_backend()
         self.deps = ["launch", "prelaunch", ""]
 
-        self.backend.check(self.run_params, self.env)
-        expected_checks = [mock.call("/data/pool", mock.ANY)]
+        self.backend.ops.list.return_value = ["launch.qcow2", "prelaunch.qcow2"]
+        exists = self.backend.check(self.run_params, self.env)
+        expected_checks = [mock.call("/data/pool/vm1/image1", mock.ANY)]
         self.assertListEqual(self.backend.ops.list.call_args_list, expected_checks)
+        self.assertTrue(exists)
+
+    def test_list_chain_vm(self):
+        """Test that a state and its complete backing chain will be listed."""
+        self._set_minimal_pool_params()
+        self.run_params["check_state"] = "launch"
+        self.run_params["object_type"] = "nets/vms"
+
+        self._create_mock_transfer_backend()
+        self.deps = ["launch", "prelaunch", ""]
+
+        self.backend.ops.list.return_value = ["launch.state", "prelaunch.state"]
+        exists = self.backend.check(self.run_params, self.env)
+        expected_checks = [mock.call("/data/pool/vm1", mock.ANY)]
+        self.assertListEqual(self.backend.ops.list.call_args_list, expected_checks)
+        self.assertTrue(exists)
 
     def test_download_bundle(self):
         """Test that a state bundle (e.g. image with internal states) will be downloaded."""
