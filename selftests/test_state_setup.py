@@ -1111,6 +1111,7 @@ class StatesPoolTest(Test):
                 mock.MagicMock(return_value=False))
     def test_check_root(self):
         """Test that root checking prioritizes local root then pool root."""
+        self.run_params["image_name"] = "image1"
         self._create_mock_sourced_backend()
 
         # consider local root with priority
@@ -1270,16 +1271,17 @@ class StatesPoolTest(Test):
 
         # consider local state with priority
         self.backend._check.reset_mock()
-        self.backend.transport.check.reset_mock()
+        self.backend.transport.reset_mock()
+        self.backend.transport.compare_chain.return_value = True
         self.backend._check.return_value = True
         exists = self.backend.check(self.run_params, self.env)
         self.backend._check.assert_called_once()
-        self.backend.transport.check.assert_not_called()
+        self.backend.transport.check.assert_called_once()
         self.assertTrue(exists)
 
         # consider pool state as well
         self.backend._check.reset_mock()
-        self.backend.transport.check.reset_mock()
+        self.backend.transport.reset_mock()
         self.backend._check.return_value = False
         self.backend.transport.check.return_value = False
         exists = self.backend.check(self.run_params, self.env)
@@ -1289,12 +1291,43 @@ class StatesPoolTest(Test):
 
         # the state exists (and is downloaded) if its pool counterpart exists
         self.backend._check.reset_mock()
-        self.backend.transport.check.reset_mock()
+        self.backend.transport.reset_mock()
         self.backend._check.return_value = False
         self.backend.transport.check.return_value = True
         exists = self.backend.check(self.run_params, self.env)
         self.backend._check.assert_called_once()
         self.backend.transport.check.assert_called_once()
+        self.backend.transport.get.assert_called_once()
+        self.assertTrue(exists)
+
+    def test_check_chains(self):
+        """Test implicit state downloading via backing chain comparison."""
+        self.run_params["check_state"] = "launch"
+        self._create_mock_sourced_backend(source_type="state")
+
+        # the states chains are identical
+        self.backend._check.reset_mock()
+        self.backend.transport.reset_mock()
+        self.backend._check.return_value = True
+        self.backend.transport.check.return_value = True
+        self.backend.transport.compare_chain.return_value = True
+        exists = self.backend.check(self.run_params, self.env)
+        self.backend._check.assert_called_once()
+        self.backend.transport.compare_chain.assert_called_once_with("launch", mock.ANY)
+        self.backend.transport.check.assert_called_once()
+        self.backend.transport.get.assert_not_called()
+        self.assertTrue(exists)
+
+        # the states chains are not identical
+        self.backend._check.reset_mock()
+        self.backend.transport.reset_mock()
+        self.backend._check.return_value = True
+        self.backend.transport.check.return_value = True
+        self.backend.transport.compare_chain.return_value = False
+        exists = self.backend.check(self.run_params, self.env)
+        self.backend._check.assert_called_once()
+        self.backend.transport.check.assert_called_once()
+        self.backend.transport.compare_chain.assert_called_once_with("launch", mock.ANY)
         self.backend.transport.get.assert_called_once()
         self.assertTrue(exists)
 
@@ -1435,6 +1468,36 @@ class StatesPoolTest(Test):
         expected_checks = [mock.call("/data/pool/vm1", mock.ANY)]
         self.assertListEqual(self.backend.ops.list.call_args_list, expected_checks)
         self.assertTrue(exists)
+
+    def test_compare_chain_valid(self):
+        """Test that a local and remote state and their complete backing chains are validated."""
+        self._set_minimal_pool_params()
+        self.run_params["image_name"] = "image1"
+        self.run_params["object_type"] = "nets/vms/images"
+
+        self._create_mock_transfer_backend()
+        self.deps = ["launch", "prelaunch", ""]
+
+        # the states chains are identical
+        self.backend.ops.reset_mock()
+        self.backend.ops.compare.return_value = True
+        valid = self.backend.compare_chain("launch", self.run_params)
+        expected_checks = [mock.call("/images/vm1/image1/launch.qcow2",
+                                     "/data/pool/vm1/image1/launch.qcow2", mock.ANY),
+                           mock.call("/images/vm1/image1/prelaunch.qcow2",
+                                     "/data/pool/vm1/image1/prelaunch.qcow2", mock.ANY)]
+        self.assertListEqual(self.backend.ops.compare.call_args_list, expected_checks)
+        self.assertTrue(valid)
+
+        # the states chains are not identical
+        self.deps = ["launch", "invalid", "prelaunch", ""]
+        self.backend.ops.reset_mock()
+        self.backend.ops.compare.side_effect = lambda x, _, __: True if "invalid" in x else False
+        valid = self.backend.compare_chain("launch", self.run_params)
+        expected_checks = [mock.call("/images/vm1/image1/launch.qcow2",
+                                     "/data/pool/vm1/image1/launch.qcow2", mock.ANY)]
+        self.assertListEqual(self.backend.ops.compare.call_args_list, expected_checks)
+        self.assertFalse(valid)
 
     def test_download_bundle(self):
         """Test that a state bundle (e.g. image with internal states) will be downloaded."""
