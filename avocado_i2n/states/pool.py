@@ -144,6 +144,8 @@ class TransferOps():
 
         All arguments are identical to the main entry method.
         """
+        if not os.path.exists(pool_path):
+            return []
         return os.listdir(pool_path)
 
     @staticmethod
@@ -219,7 +221,11 @@ class TransferOps():
                                       params["nets_shell_port"],
                                       params["nets_username"], params["nets_password"],
                                       params["nets_shell_prompt"])
-        return session.cmd_output(f"ls {path}").split()
+        status, output = session.cmd_status_output(f"ls {path}")
+        if status != 0:
+            logging.debug(f"Path {path} not found: {output}")
+            return []
+        return output.split()
 
     @staticmethod
     def compare_remote(cache_path, pool_path, params):
