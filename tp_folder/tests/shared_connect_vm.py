@@ -42,3 +42,4 @@ def run(test, params, env):
     vm, session = vmnet.get_single_vm_with_session()
 
     vmnet.ping_all()
+    session.cmd("pip3 install Pyro4")
