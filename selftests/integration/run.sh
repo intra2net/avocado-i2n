@@ -1,7 +1,14 @@
 #!/bin/bash
 set -eu
 
+# must install locally
+echo
+echo "Install locally the current plugin source"
+pip install -e .
+
 # minimal effect runs
+echo
+echo "Perform minimal supported manual steps (run minimal tools)"
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=noop
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=list
 
@@ -10,6 +17,8 @@ coverage run --append --source=avocado_i2n $(which avocado) manu setup=list
 #coverage run --append --source=avocado_i2n $(which avocado) run --auto "only=tutorial1 dry_run=yes"
 
 # full integration run
+echo
+echo "Perform a full sample test suite run"
 test_slots="c101,c102,c103,c104,c105"
 test_sets="leaves"
 test_options="cartgraph_verbose_level=0"
@@ -32,4 +41,5 @@ for cid in $containers; do
     diff -r /$ims/c101/rootfs/$ims /$ims/$cid/rootfs/$ims -x el8-64* -x win10-64* -x vm3
 done
 
+echo
 echo "Integration tests passed successfully"
