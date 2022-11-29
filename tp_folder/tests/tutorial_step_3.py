@@ -123,13 +123,16 @@ def run(test, params, env):
 
         # The most advanced remote methods require serialization backend.
         serialization_cmd = door.REMOTE_PYTHON_BINARY + " -c 'import Pyro4'"
-        host_serialization = server_vm.session.cmd_status(serialization_cmd) == 0
+        guest_serialization = server_vm.session.cmd_status(serialization_cmd) == 0
+        if not guest_serialization:
+            logging.warning("The remote door object backend not found on guest")
         try:
             import Pyro4
         except ImportError:
-            guest_serialization = False
+            logging.warning("The remote door object backend not found on host")
+            host_serialization = False
         else:
-            guest_serialization = True
+            host_serialization = True
 
         # The simplest remote execution we can perform is through a single call to
         # a utility or module. Under the hood, this is similar to running a
