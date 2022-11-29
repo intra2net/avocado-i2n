@@ -401,14 +401,14 @@ class TestNode(object):
                 break
 
             # ultimate consideration of whether the state is actually present
-            node_params[f"check_state_{test_object.key}_{test_object.suffix}"] = object_state
-            node_params[f"check_mode_{test_object.key}_{test_object.suffix}"] = object_params.get("check_mode", "rf")
+            node_params[f"check_state_{test_object.key}_{test_object.long_suffix}"] = object_state
+            node_params[f"check_mode_{test_object.key}_{test_object.long_suffix}"] = object_params.get("check_mode", "rf")
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that
             # all vm state backends can check for states without a vm boot (root)
             if test_object.key == "vms":
-                node_params[f"use_env_{test_object.key}_{test_object.suffix}"] = "no"
-            node_params[f"soft_boot_{test_object.key}_{test_object.suffix}"] = "no"
+                node_params[f"use_env_{test_object.key}_{test_object.long_suffix}"] = "no"
+            node_params[f"soft_boot_{test_object.key}_{test_object.long_suffix}"] = "no"
 
         if not is_leaf:
             log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
