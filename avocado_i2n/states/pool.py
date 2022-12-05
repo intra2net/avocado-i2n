@@ -753,6 +753,9 @@ class RootSourcedStateBackend(StateBackend):
 
         All arguments match the base class.
         """
+        if params.get_boolean("update_pool", True):
+            cls.transport.get(params, object)
+            return
         if (cls._check_root(params, object) or
                 not params.get_boolean("use_pool", True)):
             cls._get_root(params, object)
@@ -827,9 +830,6 @@ class SourcedStateBackend(StateBackend):
         local_state_exists = cls._check(params, object)
         if params.get_boolean("update_pool", False) and not local_state_exists:
             raise RuntimeError("Updating state pool requires local states")
-        # TODO: excessive complexity, get rid of this instead of adding it to test contract
-        elif params.get_boolean("update_pool", False):
-            return False
         elif not params.get_boolean("use_pool", True):
             return local_state_exists
 
@@ -849,6 +849,9 @@ class SourcedStateBackend(StateBackend):
 
         All arguments match the base class.
         """
+        if params.get_boolean("update_pool", True):
+            cls.transport.get(params, object)
+            return
         if (cls._check(params, object) or
                 not params.get_boolean("use_pool", True)):
             cls._get(params, object)
