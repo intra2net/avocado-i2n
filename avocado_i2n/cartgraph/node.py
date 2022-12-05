@@ -576,12 +576,16 @@ class TestNode(object):
                 # the unset manual step behaves differently now (all this extra complexity starts from
                 # the fact that it has different default value which is noninvasive
                 node_params.update({f"unset_state{unset_suffixes}": object_state,
-                                    f"unset_mode{unset_suffixes}": object_params.get("unset_mode", "ri")})
+                                    f"unset_mode{unset_suffixes}": object_params.get("unset_mode", "ri"),
+                                    # TODO: force use only of local operations is still too indirect
+                                    f"use_pool": "no"})
                 do = "unset"
             else:
                 # spread the state setup for the given test object
                 node_params.update({f"get_state{unset_suffixes}": object_state,
-                                    f"image_pool{unset_suffixes}": object_params["image_pool"]})
+                                    f"image_pool{unset_suffixes}": object_params["image_pool"],
+                                    # TODO: force use only of transport is still too indirect
+                                    f"update_pool": "yes"})
                 do = "get"
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that
