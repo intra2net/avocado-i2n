@@ -515,8 +515,7 @@ class CartesianRunner(RunnerInterface):
             return
         setup_host = test_node.params["hostname"]
         setup_path = test_node.params["vms_base_dir"]
-        setup_nets = test_node.params["nets_ip_prefix"]
-        setup_source_ip = f"{setup_nets}.{setup_host[1:]}" if setup_host else ""
+        setup_source_ip = test_node.get_session_ip(setup_host) if setup_host else ""
         setup_source = setup_source_ip + ":" if setup_source_ip else ""
         test_node.params["set_location"] = setup_source + setup_path
         # TODO: networks need further refactoring possibly as node environments

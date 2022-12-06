@@ -507,11 +507,11 @@ class CartesianGraphTest(Test):
         # expect four sync and no other cleanup calls, one for each worker
         for action in ["get"]:
             for state in ["install", "customize"]:
-                # called once by worker for for each of two vms
-                self.assertEqual(DummyStateControl.asserted_states[action][state], 8)
+                # called once by worker for for each of two vms (excluding self-sync)
+                self.assertEqual(DummyStateControl.asserted_states[action][state], 6)
             for state in ["on_customize", "connect"]:
                 # called once by worker only for vm1
-                self.assertEqual(DummyStateControl.asserted_states[action][state], 4)
+                self.assertEqual(DummyStateControl.asserted_states[action][state], 3)
         for action in ["set", "unset"]:
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state], 0)
@@ -549,9 +549,9 @@ class CartesianGraphTest(Test):
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        # expect four sync and respectively cleanup calls, one for each worker
+        # expect three sync and four cleanup calls, one for each worker without self-sync
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"], 4)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"], 4)
+        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"], 3)
 
     def test_permanent_object_and_simple_cloning(self):
         """Test a complete test run including complex setup."""
@@ -600,11 +600,10 @@ class CartesianGraphTest(Test):
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        # expect a single cleanup call only for the states of enforcing cleanup policy
         # expect four sync and respectively cleanup calls, one for each worker
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"], 1)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.noop"], 1)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"], 1)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["getsetup.clicked"], 1)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["ready"], 0)
         # root state of a permanent vm is not synced from a single worker to itself
         self.assertEqual(DummyStateControl.asserted_states["get"]["ready"], 0)
@@ -645,9 +644,8 @@ class CartesianGraphTest(Test):
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        # expect four sync and respectively cleanup calls, one for each worker
+        # expect a single cleanup call only for the states of enforcing cleanup policy
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"], 1)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"], 1)
 
     def test_complete_graph_dry_run(self):
         """Test a complete dry run traversal of a graph."""
