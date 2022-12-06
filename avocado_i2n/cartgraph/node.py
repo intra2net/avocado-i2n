@@ -457,13 +457,29 @@ class TestNode(object):
         """
         self._params_cache = self.config.get_params(show_dictionaries=verbose)
 
-    def get_session_to_net(self, slot):
-        log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
+    def get_session_ip(self, slot):
+        """
+        Get an IP to a slot for the given test node's IP prefix.
+
+        :param str slot: slot to restrict the IP prefix to
+        :returns: IP in string parameter format for the given slot
+        :rtype: str
+        """
         node_host = slot
         node_nets = self.params["nets_ip_prefix"]
-        node_source_ip = f"{node_nets}.{node_host[1:]}" if node_host else ""
+        return f"{node_nets}.{node_host[1:]}" if node_host else ""
+
+    def get_session_to_net(self, slot):
+        """
+        Get a remote session to a slot for the given test node's IP prefix.
+
+        :param str slot: slot to connect to
+        :returns: remote session to the slot
+        :rtype: :type session: :py:class:`aexpect.ShellSession`
+        """
+        log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
         return remote.wait_for_login(self.params["nets_shell_client"],
-                                     node_source_ip,
+                                     self.get_session_ip(slot),
                                      self.params["nets_shell_port"],
                                      self.params["nets_username"], self.params["nets_password"],
                                      self.params["nets_shell_prompt"])
@@ -527,7 +543,7 @@ class TestNode(object):
 
         # the sync cleanup will be performed if at least one selected object has a cleanable state
         slot = self.params["hostname"]
-        has_selected_object_setup = False
+        should_clean = False
         for test_object in self.objects:
             object_params = test_object.object_typed_params(self.params)
             object_state = object_params.get("set_state")
@@ -546,7 +562,7 @@ class TestNode(object):
             # TODO: is this needed?
             from .. import params_parser as param
             if vm_name in params.get("vms", param.all_objects("vms")):
-                has_selected_object_setup = True
+                should_clean = True
             else:
                 continue
 
@@ -576,19 +592,25 @@ class TestNode(object):
                 do = "unset"
             else:
                 # spread the state setup for the given test object
+                sync_location = object_params.get("set_location", object_params.get("image_pool", ""))
                 node_params.update({f"get_state{unset_suffixes}": object_state,
-                                    f"get_location{unset_suffixes}": object_params.get("set_location",
-                                                                                       object_params.get("image_pool", "")),
+                                    f"get_location{unset_suffixes}": sync_location,
                                     # TODO: force use only of transport is still too indirect
                                     f"update_pool": "yes"})
                 do = "get"
+                # TODO: this won't work with links
+                if sync_location.startswith(self.get_session_ip(slot)):
+                    logging.info(f"No need to sync {self} from {slot} to itself")
+                    should_clean = False
+                else:
+                    logging.info(f"Need to sync {self} from {sync_location} to {slot}")
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that
             # all vm state backends can check for states without a vm boot (root)
             if test_object.key == "vms":
                 node_params[f"use_env_{test_object.key}_{test_object.suffix}"] = "no"
 
-        if has_selected_object_setup:
+        if should_clean:
             action = "Cleaning up" if unset_policy[0] == "f" else "Syncing"
             logging.info(f"{action} {self} on {slot}")
             session = self.get_session_to_net(slot)
@@ -600,7 +622,7 @@ class TestNode(object):
             except ShellCmdError as error:
                 logging.warning(f"Could not sync/clean {self} due to control file error: {error}")
         else:
-            logging.info(f"No need to clean up {self} on {slot}")
+            logging.info(f"No need to clean up or sync {self} on {slot}")
 
     def validate(self):
         """Validate the test node for sane attribute-parameter correspondence."""
