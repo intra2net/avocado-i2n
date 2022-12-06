@@ -212,6 +212,7 @@ def _state_check_chain(do, env,
     :type state_params: {str, str}
     """
     state_params["check_state"] = state_params[f"{do}_state"]
+    state_params["check_location"] = state_params.get(f"{do}_location", "")
     if do == "set":
         state_params["check_opts"] = "soft_boot=yes"
         state_params["soft_boot"] = "yes"

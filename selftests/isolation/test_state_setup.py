@@ -1706,6 +1706,7 @@ class StatesSetupTest(Test):
         self.run_params[f"states_{state_type}"] = "mock"
         self.run_params[state_type] = state_object
         self.run_params[f"{state_op}_state_{state_type}_{state_object}"] = state_name
+        self.run_params[f"{state_op}_location_{state_type}_{state_object}"] = "/loc"
 
     def _set_up_multiobj_params(self):
         self.run_params["nets"] = "net1"
@@ -1766,24 +1767,33 @@ class StatesSetupTest(Test):
         self.backend.check.assert_called_once()
         self.assertFalse(exists)
 
-    def test_get(self):
+    @mock.patch("avocado_i2n.states.setup.check_states")
+    def test_get(self, mock_check):
         """Test that state getting works with default policies."""
         self._set_up_generic_params("get", "state", "objects", "object1")
 
         # assert state retrieval is performed if state is available
+        mock_check.reset()
+        mock_check.return_value = True
         self.backend.reset_mock()
-        with mock.patch('avocado_i2n.states.setup.check_states',
-                        mock.MagicMock(return_value=True)):
-            ss.get_states(self.run_params, self.env)
-            self.backend.get.assert_called_once()
+        ss.get_states(self.run_params, self.env)
+        mock_check.assert_called_once()
+        call_params = [call.args[0] for call in mock_check.call_args_list]
+        self.assertEqual(len(call_params), 1)
+        self.assertEqual(call_params[0]["check_state"], "state")
+        self.assertEqual(call_params[0]["check_location"], "/loc")
+        self.assertEqual(call_params[0]["objects"], "object1")
+        self.assertEqual(call_params[0]["object_name"], "object1")
+        self.assertEqual(call_params[0]["object_type"], "objects")
+        self.backend.get.assert_called_once()
 
         # assert state retrieval is aborted if state is not available
+        mock_check.reset()
+        mock_check.return_value = False
         self.backend.reset_mock()
-        with mock.patch('avocado_i2n.states.setup.check_states',
-                        mock.MagicMock(return_value=False)):
-            with self.assertRaises(exceptions.TestAbortError):
-                ss.get_states(self.run_params, self.env)
-            self.backend.get.assert_not_called()
+        with self.assertRaises(exceptions.TestAbortError):
+            ss.get_states(self.run_params, self.env)
+        self.backend.get.assert_not_called()
 
     def test_get_aa(self):
         """Test that state getting works with abort policies."""
@@ -1858,34 +1868,43 @@ class StatesSetupTest(Test):
                 ss.get_states(self.run_params, self.env)
             self.backend.get.assert_not_called()
 
-    def test_set(self):
+    @mock.patch("avocado_i2n.states.setup.check_states")
+    def test_set(self, mock_check):
         """Test that state setting works with default policies."""
         self._set_up_generic_params("set", "state", "objects", "object1")
 
         # assert state saving is forced if state is available
+        mock_check.reset()
+        mock_check.return_value = True
         self.backend.reset_mock()
-        with mock.patch('avocado_i2n.states.setup.check_states',
-                        mock.MagicMock(return_value=True)):
-            ss.set_states(self.run_params, self.env)
-            self.backend.unset.assert_called_once()
-            self.backend.set.assert_called_once()
+        ss.set_states(self.run_params, self.env)
+        mock_check.assert_called_once()
+        call_params = [call.args[0] for call in mock_check.call_args_list]
+        self.assertEqual(len(call_params), 1)
+        self.assertEqual(call_params[0]["check_state"], "state")
+        self.assertEqual(call_params[0]["check_location"], "/loc")
+        self.assertEqual(call_params[0]["objects"], "object1")
+        self.assertEqual(call_params[0]["object_name"], "object1")
+        self.assertEqual(call_params[0]["object_type"], "objects")
+        self.backend.unset.assert_called_once()
+        self.backend.set.assert_called_once()
 
         # assert state saving is forced if state is not available
+        mock_check.reset()
+        mock_check.return_value = False
         self.backend.reset_mock()
-        with mock.patch('avocado_i2n.states.setup.check_states',
-                        mock.MagicMock(return_value=False)):
-            ss.set_states(self.run_params, self.env)
-            self.backend.unset.assert_not_called()
-            self.backend.set.assert_called_once()
+        ss.set_states(self.run_params, self.env)
+        self.backend.unset.assert_not_called()
+        self.backend.set.assert_called_once()
 
         # assert state saving cannot be forced if state root is not available
+        mock_check.reset()
+        mock_check.return_value = False
         self.backend.reset_mock()
         self.backend.check_root.return_value = False
-        with mock.patch('avocado_i2n.states.setup.check_states',
-                        mock.MagicMock(return_value=False)):
-            with self.assertRaises(exceptions.TestError):
-                ss.set_states(self.run_params, self.env)
-            self.backend.set.assert_not_called()
+        with self.assertRaises(exceptions.TestError):
+            ss.set_states(self.run_params, self.env)
+        self.backend.set.assert_not_called()
 
     def test_set_aa(self):
         """Test that state setting works with abort policies."""
@@ -1971,23 +1990,32 @@ class StatesSetupTest(Test):
                 ss.set_states(self.run_params, self.env)
             self.backend.set.assert_not_called()
 
-    def test_unset(self):
+    @mock.patch("avocado_i2n.states.setup.check_states")
+    def test_unset(self, mock_check):
         """Test that state unsetting works with default policies."""
         self._set_up_generic_params("unset", "state", "objects", "object1")
 
         # assert state removal is forced if state is available
+        mock_check.reset()
+        mock_check.return_value = True
         self.backend.reset_mock()
-        with mock.patch('avocado_i2n.states.setup.check_states',
-                        mock.MagicMock(return_value=True)):
-            ss.unset_states(self.run_params, self.env)
-            self.backend.unset.assert_called_once()
+        ss.unset_states(self.run_params, self.env)
+        mock_check.assert_called_once()
+        call_params = [call.args[0] for call in mock_check.call_args_list]
+        self.assertEqual(len(call_params), 1)
+        self.assertEqual(call_params[0]["check_state"], "state")
+        self.assertEqual(call_params[0]["check_location"], "/loc")
+        self.assertEqual(call_params[0]["objects"], "object1")
+        self.assertEqual(call_params[0]["object_name"], "object1")
+        self.assertEqual(call_params[0]["object_type"], "objects")
+        self.backend.unset.assert_called_once()
 
         # assert state removal is ignored if state is not available
+        mock_check.reset()
+        mock_check.return_value = False
         self.backend.reset_mock()
-        with mock.patch('avocado_i2n.states.setup.check_states',
-                        mock.MagicMock(return_value=False)):
-            ss.unset_states(self.run_params, self.env)
-            self.backend.unset.assert_not_called()
+        ss.unset_states(self.run_params, self.env)
+        self.backend.unset.assert_not_called()
 
     def test_unset_ra(self):
         """Test that state unsetting works with reuse and abort policy."""
