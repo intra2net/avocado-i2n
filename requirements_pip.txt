@@ -1,12 +1,12 @@
-coverage==5.3
-codecov==2.1.9
+coverage
+codecov
 
 simplejson==3.8.0
 netaddr>=0.7.18
 netifaces>=0.10.5
 
-aexpect==1.6.1
-# this is used only for the API doc, the CI installs local versions
-avocado-framework-plugin-vt==82.0
+aexpect==1.7.0
+avocado-framework==98.0
+avocado-framework-plugin-vt==98.0
 
 graphviz==0.14.1
