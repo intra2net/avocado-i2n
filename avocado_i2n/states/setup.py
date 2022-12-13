@@ -32,7 +32,6 @@ import logging as log
 logging = log.getLogger('avocado.test.' + __name__)
 
 from avocado.core import exceptions
-from virttest import env_process
 
 
 #: list of all available state backends and operations
@@ -121,24 +120,7 @@ class StateBackend():
         :returns: whether the object (root state) is exists
         :rtype: bool
         """
-        vm_name = params["vms"]
-        image_name = params["image_name"]
-        logging.debug("Checking whether %s's %s exists (root state requested)",
-                      vm_name, image_name)
-        if not os.path.isabs(image_name):
-            image_name = os.path.join(params["images_base_dir"], image_name)
-        image_format = params.get("image_format", "qcow2")
-        logging.debug("Checking for %s image %s", image_format, image_name)
-        image_format = "" if image_format in ["raw", ""] else "." + image_format
-        if object is not None and object.is_alive():
-            logging.info("The required virtual machine %s is alive and it shouldn't be", vm_name)
-            return False
-        if os.path.exists(image_name + image_format):
-            logging.info("The required virtual machine %s's %s exists", vm_name, image_name)
-            return True
-        else:
-            logging.info("The required virtual machine %s's %s doesn't exist", vm_name, image_name)
-            return False
+        raise NotImplementedError("Cannot use abstract state backend")
 
     @classmethod
     def get_root(cls, params, object=None):
@@ -162,19 +144,7 @@ class StateBackend():
         :param object: object whose states are manipulated
         :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
-        vm_name = params["vms"]
-        if object is not None and object.is_alive():
-            object.destroy(gracefully=params.get_boolean("soft_boot", True))
-        image_name = params["image_name"]
-        if not os.path.isabs(image_name):
-            image_name = os.path.join(params["images_base_dir"], image_name)
-        image_format = params.get("image_format")
-        image_format = "" if image_format in ["raw", ""] else "." + image_format
-        if not os.path.exists(image_name + image_format):
-            os.makedirs(os.path.dirname(image_name), exist_ok=True)
-            logging.info("Creating image %s for %s", image_name, vm_name)
-            params.update({"create_image": "yes", "force_create_image": "yes"})
-            env_process.preprocess_image(None, params, image_name)
+        raise NotImplementedError("Cannot use abstract state backend")
 
     @classmethod
     def unset_root(cls, params, object=None):
@@ -186,19 +156,7 @@ class StateBackend():
         :param object: object whose states are manipulated
         :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
-        vm_name = params["vms"]
-        if object is not None and object.is_alive():
-            object.destroy(gracefully=params.get_boolean("soft_boot", True))
-        image_name = params["image_name"]
-        if not os.path.isabs(image_name):
-            image_name = os.path.join(params["images_base_dir"], image_name)
-        logging.info("Removing image %s for %s", image_name, vm_name)
-        params.update({"remove_image": "yes"})
-        env_process.postprocess_image(None, params, image_name)
-        try:
-            os.rmdir(os.path.dirname(image_name))
-        except OSError as error:
-            logging.debug("Image directory not yet empty: %s", error)
+        raise NotImplementedError("Cannot use abstract state backend")
 
 
 #: available state backend implementations
@@ -330,6 +288,7 @@ def check_states(run_params, env=None):
 
         # if the snapshot is not defined skip (leaf tests that are no setup)
         if not state_params.get("check_state"):
+            logging.debug(f"Skip checking any {params_obj_type} state for {params_obj_name}")
             continue
         else:
             state = state_params["check_state"]
@@ -406,6 +365,7 @@ def get_states(run_params, env=None):
 
         # if the state is not defined skip (leaf tests that are no setup)
         if not state_params.get("get_state"):
+            logging.debug(f"Skip getting any {params_obj_type} state for {params_obj_name}")
             continue
         else:
             state = state_params["get_state"]
@@ -475,6 +435,7 @@ def set_states(run_params, env=None):
 
         # if the state is not defined skip (leaf tests that are no setup)
         if not state_params.get("set_state"):
+            logging.debug(f"Skip setting any {params_obj_type} state for {params_obj_name}")
             continue
         else:
             state = state_params["set_state"]
@@ -550,6 +511,7 @@ def unset_states(run_params, env=None):
 
         # if the state is not defined skip (leaf tests that are no setup)
         if not state_params.get("unset_state"):
+            logging.debug(f"Skip unsetting any {params_obj_type} state for {params_obj_name}")
             continue
         else:
             state = state_params["unset_state"]

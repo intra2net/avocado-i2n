@@ -34,27 +34,16 @@ logging = log.getLogger('avocado.test.' + __name__)
 from virttest import env_process
 from virttest.virt_vm import VMCreateError
 
-from .setup import StateBackend
+from .pool import SourcedStateBackend
 
 
-class RamfileBackend(StateBackend):
+class RamfileBackend(SourcedStateBackend):
     """Backend manipulating vm states as ram dump files."""
 
     image_state_backend = None
 
     @classmethod
-    def get_dependency(cls, state, params):
-        """
-        Return a backing state that the current state depends on.
-
-        :param str state: state name to retriee the backing dependency of
-
-        The rest of the arguments match the signature of the other methods here.
-        """
-        return cls.image_state_backend.get_dependency(state, params)
-
-    @classmethod
-    def show(cls, params, object=None):
+    def _show(cls, params, object=None):
         """
         Return a list of available states of a specific type.
 
@@ -89,7 +78,7 @@ class RamfileBackend(StateBackend):
         return states
 
     @classmethod
-    def check(cls, params, object=None):
+    def _check(cls, params, object=None):
         """
         Check whether a given state exists.
 
@@ -109,7 +98,7 @@ class RamfileBackend(StateBackend):
         return False
 
     @classmethod
-    def get(cls, params, object=None):
+    def _get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.
 
@@ -131,7 +120,7 @@ class RamfileBackend(StateBackend):
         vm.resume(timeout=3)
 
     @classmethod
-    def set(cls, params, object=None):
+    def _set(cls, params, object=None):
         """
         Store a state saving the current changes.
 
@@ -158,7 +147,7 @@ class RamfileBackend(StateBackend):
         vm.resume(timeout=3)
 
     @classmethod
-    def unset(cls, params, object=None):
+    def _unset(cls, params, object=None):
         """
         Remove a state with previous changes.
 
