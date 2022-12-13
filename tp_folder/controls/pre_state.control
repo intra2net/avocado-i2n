@@ -22,7 +22,6 @@ logging.info("%s control file.", NAME)
 
 logging.info(f"Adding default state backends")
 ss.BACKENDS = {"qcow2": qcow2.QCOW2Backend, "qcow2ext": qcow2.QCOW2ExtBackend,
-               "pool": pool.QCOW2PoolBackend, "rootpool": pool.QCOW2RootPoolBackend,
                "lvm": lvm.LVMBackend,
                "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
                "qcow2vt": qcow2.QCOW2VTBackend, "ramfile": ramfile.RamfileBackend,

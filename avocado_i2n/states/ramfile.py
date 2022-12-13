@@ -34,35 +34,25 @@ logging = log.getLogger('avocado.test.' + __name__)
 from virttest import env_process
 from virttest.virt_vm import VMCreateError
 
-from .setup import StateBackend
+from .pool import SourcedStateBackend
 
 
-class RamfileBackend(StateBackend):
+class RamfileBackend(SourcedStateBackend):
     """Backend manipulating vm states as ram dump files."""
 
     image_state_backend = None
 
     @classmethod
-    def get_dependency(cls, state, params):
-        """
-        Return a backing state that the current state depends on.
-
-        :param str state: state name to retriee the backing dependency of
-
-        The rest of the arguments match the signature of the other methods here.
-        """
-        return cls.image_state_backend.get_dependency(state, params)
-
-    @classmethod
-    def show(cls, params, object=None):
+    def _show(cls, params, object=None):
         """
         Return a list of available states of a specific type.
 
         All arguments match the base class.
         """
         logging.debug(f"Showing external states for vm {params['vms']}")
-        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
-        snapshots = os.listdir(state_dir)
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, params["vms"])
+        snapshots = os.listdir(vm_dir)
 
         images_states = set()
         for image_name in params.objects("images"):
@@ -79,7 +69,7 @@ class RamfileBackend(StateBackend):
         for snapshot in snapshots:
             if not snapshot.endswith(".state"):
                 continue
-            size = os.stat(os.path.join(state_dir, snapshot)).st_size
+            size = os.stat(os.path.join(vm_dir, snapshot)).st_size
             state = snapshot[:-6]
             logging.info(f"Detected memory state '{snapshot}' of size "
                          f"{round(size / 1024**3, 3)} GB ({size})")
@@ -89,7 +79,7 @@ class RamfileBackend(StateBackend):
         return states
 
     @classmethod
-    def check(cls, params, object=None):
+    def _check(cls, params, object=None):
         """
         Check whether a given state exists.
 
@@ -109,7 +99,7 @@ class RamfileBackend(StateBackend):
         return False
 
     @classmethod
-    def get(cls, params, object=None):
+    def _get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.
 
@@ -125,13 +115,14 @@ class RamfileBackend(StateBackend):
             image_params["images"] = image_name
             cls.image_state_backend.get(image_params, vm)
 
-        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
-        state_file = os.path.join(state_dir, params["check_state"] + ".state")
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, params["vms"])
+        state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         vm.restore_from_file(state_file)
         vm.resume(timeout=3)
 
     @classmethod
-    def set(cls, params, object=None):
+    def _set(cls, params, object=None):
         """
         Store a state saving the current changes.
 
@@ -140,8 +131,10 @@ class RamfileBackend(StateBackend):
         vm, vm_name = object, params["vms"]
         logging.info("Setting vm state '%s' of %s", params["set_state"], vm_name)
         vm.pause()
-        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
-        state_file = os.path.join(state_dir, params["check_state"] + ".state")
+
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, params["vms"])
+        state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         vm.save_to_file(state_file)
         vm.destroy(gracefully=False)
 
@@ -158,7 +151,7 @@ class RamfileBackend(StateBackend):
         vm.resume(timeout=3)
 
     @classmethod
-    def unset(cls, params, object=None):
+    def _unset(cls, params, object=None):
         """
         Remove a state with previous changes.
 
@@ -174,8 +167,9 @@ class RamfileBackend(StateBackend):
             image_params["images"] = image_name
             cls.image_state_backend.unset(image_params, vm)
 
-        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
-        state_file = os.path.join(state_dir, params["check_state"] + ".state")
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, params["vms"])
+        state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         os.unlink(state_file)
         vm.resume(timeout=3)
 
@@ -189,8 +183,9 @@ class RamfileBackend(StateBackend):
         vm_name = params["vms"]
         logging.debug("Checking whether %s's root state is fully available", vm_name)
 
-        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
-        if not os.path.exists(state_dir):
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, params["vms"])
+        if not os.path.exists(vm_dir):
             logging.info("The base directory for the virtual machine %s is missing", vm_name)
             return False
 
@@ -238,7 +233,9 @@ class RamfileBackend(StateBackend):
                  chains of dependencies.
         """
         vm_name = params["vms"]
-        os.makedirs(os.path.join(params["vms_base_dir"], vm_name), exist_ok=True)
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, vm_name)
+        os.makedirs(vm_dir, exist_ok=True)
 
         if not params.get_boolean("use_env", True):
             return
