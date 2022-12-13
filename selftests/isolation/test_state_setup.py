@@ -341,6 +341,10 @@ class MockDriver(unittest.TestCase):
             raise ValueError(f"Unsupported backend for testing {backend}")
 
 
+# TODO: keep these boundary tests until they are useful and the state backends
+# they cover still supported, any newly introduced state backends should be
+# covered by actual integration tests though (currently qcow2ext and some
+# repeated but highly refurbished backends here)
 @mock.patch('avocado_i2n.states.lvm.os.mkdir', mock.Mock(return_value=0))
 @mock.patch('avocado_i2n.states.lvm.os.makedirs', mock.Mock(return_value=0))
 @mock.patch('avocado_i2n.states.lvm.os.rmdir', mock.Mock(return_value=0))

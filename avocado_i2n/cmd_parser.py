@@ -24,6 +24,7 @@ from avocado.core.output import LOG_UI as ui
 from virttest import env_process
 
 from . import params_parser as param
+from .cartgraph import graph
 from .states import setup as ss
 
 
@@ -134,6 +135,8 @@ def params_from_cmd(config):
 
     # log into files for each major level the way it was done for autotest
     config["run.store_logging_stream"] = [":10", ":20", ":30", ":40"]
+    # dump parsed and traversed graph at each test loading and running step
+    graph.set_graph_logging_level(level=config["tests_params"].get_numeric("cartgraph_verbose_level", 20))
 
     # set default off and on state backends
     from .states import lvm, qcow2, lxc, btrfs, ramfile, pool, vmnet
