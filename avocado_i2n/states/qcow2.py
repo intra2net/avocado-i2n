@@ -28,7 +28,6 @@ INTERFACE
 """
 
 import os
-import json
 import re
 import shutil
 import logging as log
@@ -37,7 +36,7 @@ logging = log.getLogger('avocado.test.' + __name__)
 from virttest import env_process
 from virttest.qemu_storage import QemuImg
 
-from .setup import StateBackend
+from .pool import RootSourcedStateBackend, SourcedStateBackend
 
 
 #: off qemu states regex (0 vm size)
@@ -46,7 +45,7 @@ QEMU_OFF_STATES_REGEX = re.compile(r"^\d+\s+([\w\.-]+)\s*(0 B)\s+\d{4}-\d\d-\d\d
 QEMU_ON_STATES_REGEX = re.compile(r"^\d+\s+([\w\.-]+)\s*(?!0 B)(\d+e?[\-\+]?[\.\d]* \w+)\s+\d{4}-\d\d-\d\d", flags=re.MULTILINE)
 
 
-class QCOW2Backend(StateBackend):
+class QCOW2Backend(RootSourcedStateBackend):
     """Backend manipulating image states as internal QCOW2 snapshots."""
 
     _require_running_object = False
@@ -148,45 +147,102 @@ class QCOW2Backend(StateBackend):
                      vm_name, image)
         qemu_img.snapshot_del()
 
+    @classmethod
+    def _check_root(cls, params, object=None):
+        """
+        Check whether a root state or essentially the object exists locally.
 
-class QCOW2ExtBackend(QCOW2Backend):
+        All arguments match the base class.
+        """
+        vm_name = params["vms"]
+        image_name = params["image_name"]
+        logging.debug("Checking whether %s's %s exists (root state requested)",
+                      vm_name, image_name)
+        if not os.path.isabs(image_name):
+            image_name = os.path.join(params["images_base_dir"], image_name)
+        image_format = params.get("image_format", "qcow2")
+        logging.debug("Checking for %s image %s", image_format, image_name)
+        image_format = "" if image_format in ["raw", ""] else "." + image_format
+        if object is not None and object.is_alive():
+            logging.info("The required virtual machine %s is alive and it shouldn't be", vm_name)
+            return False
+        if os.path.exists(image_name + image_format):
+            logging.info("The required virtual machine %s's %s exists", vm_name, image_name)
+            return True
+        else:
+            logging.info("The required virtual machine %s's %s doesn't exist", vm_name, image_name)
+            return False
+
+    @classmethod
+    def _get_root(cls, params, object=None):
+        """
+        Get a root state or essentially due to pre-existence do nothing.
+
+        All arguments match the base class.
+        """
+        pass
+
+    @classmethod
+    def _set_root(cls, params, object=None):
+        """
+        Set a root state to provide object existence.
+
+        All arguments match the base class.
+        """
+        vm_name = params["vms"]
+        if object is not None and object.is_alive():
+            object.destroy(gracefully=params.get_boolean("soft_boot", True))
+        image_name = params["image_name"]
+        if not os.path.isabs(image_name):
+            image_name = os.path.join(params["images_base_dir"], image_name)
+        image_format = params.get("image_format")
+        image_format = "" if image_format in ["raw", ""] else "." + image_format
+        if not os.path.exists(image_name + image_format):
+            os.makedirs(os.path.dirname(image_name), exist_ok=True)
+            logging.info("Creating image %s for %s", image_name, vm_name)
+            params.update({"create_image": "yes", "force_create_image": "yes"})
+            env_process.preprocess_image(None, params, image_name)
+
+    @classmethod
+    def _unset_root(cls, params, object=None):
+        """
+        Unset a root state to prevent object existence.
+
+        All arguments match the base class.
+        """
+        vm_name = params["vms"]
+        if object is not None and object.is_alive():
+            object.destroy(gracefully=params.get_boolean("soft_boot", True))
+        image_name = params["image_name"]
+        if not os.path.isabs(image_name):
+            image_name = os.path.join(params["images_base_dir"], image_name)
+        logging.info("Removing image %s for %s", image_name, vm_name)
+        params.update({"remove_image": "yes"})
+        env_process.postprocess_image(None, params, image_name)
+        try:
+            os.rmdir(os.path.dirname(image_name))
+        except OSError as error:
+            logging.debug("Image directory not yet empty: %s", error)
+
+
+class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
     """Backend manipulating image states as external QCOW2 snapshots."""
 
     _require_running_object = False
 
     @classmethod
-    def get_dependency(cls, state, params):
-        """
-        Return a backing state that the current state depends on.
-
-        :param str state: state name to retriee the backing dependency of
-
-        The rest of the arguments match the signature of the other methods here.
-        """
-        vm_name, image_name = params["vms"], params["images"]
-        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
-        params["image_chain"] = f"snapshot {image_name}"
-        params["image_name_snapshot"] = os.path.join(image_name, state)
-        params["image_format_snapshot"] = "qcow2"
-        # TODO: we might want to return the complete backing chain but in some
-        # cases parts of it are stored in a remote location
-        #params["backing_chain"] = "yes"
-        qemu_img = QemuImg(params.object_params("snapshot"), vm_dir, "snapshot")
-        image_info = qemu_img.info(force_share=True, output="json")
-        image_file = json.loads(image_info).get("backing-filename", "")
-        return os.path.basename(image_file.replace(".qcow2", ""))
-
-    @classmethod
-    def show(cls, params, object=None):
+    def _show(cls, params, object=None):
         """
         Return a list of available states of a specific type.
 
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
-        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, vm_name)
         qemu_img = QemuImg(params, vm_dir, image_name)
-        logging.debug("Showing %s external states for image %s", cls.state_type(), image_name)
+        logging.debug("Showing %s external states for image %s locally in %s",
+                      cls.state_type(), image_name, state_dir)
         image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image_name)
         if not os.path.exists(image_dir):
             return []
@@ -203,56 +259,107 @@ class QCOW2ExtBackend(QCOW2Backend):
         return states
 
     @classmethod
-    def get(cls, params, object=None):
+    def _check(cls, params, object=None):
+        """
+        Check whether a given state exists.
+
+        All arguments match the base class.
+        """
+        # use QCOW2Backend's check but with current class
+        return super(SourcedStateBackend, cls).check(params, object)
+
+    @classmethod
+    def _get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.
 
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
-        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, vm_name)
+        image_dir = os.path.join(vm_dir, image_name)
         state = params["get_state"]
         params["image_chain"] = f"snapshot {image_name}"
-        params["image_name_snapshot"] = os.path.join(image_name, state)
+        params["image_name_snapshot"] = os.path.join(image_dir, state)
         params["image_format_snapshot"] = "qcow2"
-        qemu_img = QemuImg(params, vm_dir, image_name)
+        qemu_img = QemuImg(params, os.path.join(params["vms_base_dir"], vm_name), image_name)
         logging.info("Reusing %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image_name)
         qemu_img.create(params, ignore_errors=False)
 
     @classmethod
-    def set(cls, params, object=None):
+    def _set(cls, params, object=None):
         """
         Store a state saving the current changes.
 
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
-        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, vm_name)
+        image_dir = os.path.join(vm_dir, image_name)
         state = params["set_state"]
-        qemu_img = QemuImg(params, vm_dir, image_name)
+        qemu_img = QemuImg(params, os.path.join(params["vms_base_dir"], vm_name), image_name)
         logging.info("Creating %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image_name)
-        image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image_name)
         os.makedirs(image_dir, exist_ok=True)
         shutil.copy(qemu_img.image_filename, os.path.join(image_dir, state + ".qcow2"))
 
     @classmethod
-    def unset(cls, params, object=None):
+    def _unset(cls, params, object=None):
         """
         Remove a state with previous changes.
 
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
-        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, vm_name)
+        image_dir = os.path.join(vm_dir, image_name)
         state = params["unset_state"]
-        qemu_img = QemuImg(params, vm_dir, image_name)
+        # TODO: the qemu img could become useful if we implement the below todo
+        #qemu_img = QemuImg(params, os.path.join(params["vms_base_dir"], vm_name), image_name)
         logging.info("Removing %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image_name)
-        image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image_name)
-        # TODO: should we mv to pointer image in case removed state is in backing chain?
+        # TODO: should we move to pointer image in case removed state is in backing chain?
         os.unlink(os.path.join(image_dir, state + ".qcow2"))
+
+    @classmethod
+    def check_root(cls, params, object=None):
+        """
+        Check whether a root state or essentially the object exists locally.
+
+        All arguments match the base class.
+        """
+        return QCOW2Backend._check_root(params, object)
+
+    @classmethod
+    def get_root(cls, params, object=None):
+        """
+        Get a root state or essentially due to pre-existence do nothing.
+
+        All arguments match the base class.
+        """
+        QCOW2Backend._get_root(params, object)
+
+    @classmethod
+    def set_root(cls, params, object=None):
+        """
+        Set a root state to provide object existence.
+
+        All arguments match the base class.
+        """
+        QCOW2Backend._set_root(params, object)
+
+    @classmethod
+    def unset_root(cls, params, object=None):
+        """
+        Unset a root state to prevent object existence.
+
+        All arguments match the base class.
+        """
+        QCOW2Backend._unset_root(params, object)
 
 
 class QCOW2VTBackend(QCOW2Backend):
@@ -325,7 +432,7 @@ class QCOW2VTBackend(QCOW2Backend):
         vm.resume(timeout=3)
 
     @classmethod
-    def check_root(cls, params, object=None):
+    def _check_root(cls, params, object=None):
         """
         Check whether a root state or essentially the object is running.
 
@@ -358,7 +465,7 @@ class QCOW2VTBackend(QCOW2Backend):
             return False
 
     @classmethod
-    def set_root(cls, params, object=None):
+    def _set_root(cls, params, object=None):
         """
         Set a root state to provide running object.
 
@@ -395,7 +502,7 @@ class QCOW2VTBackend(QCOW2Backend):
             vm.create()
 
     @classmethod
-    def unset_root(cls, params, object=None):
+    def _unset_root(cls, params, object=None):
         """
         Unset a root state to prevent object from running.
 
