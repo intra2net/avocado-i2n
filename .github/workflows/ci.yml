@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: [3.6, 3.7, 3.8, 3.9, 3.10.0]
+        python-version: [3.8, 3.9, 3.10.9, 3.11]
       fail-fast: false
 
     steps:
@@ -40,32 +40,40 @@ jobs:
           VERSION=$(cat VERSION)
           echo "$VERSION"
       # TODO: currently rather install through pip and enable those only if more recent version needed
-      #- name: Installing Aexpect dependency in develop mode
+      #- name: Installing most up-to-date Aexpect dependency in develop mode
       #  run: |
       #    git clone --depth 1 https://github.com/avocado-framework/aexpect.git aexpect-libs
       #    cd aexpect-libs
       #    pip install -e .
       #    cd ..
-      #- name: Installing Avocado dependency in develop mode
+      #- name: Installing most up-to-date Avocado dependency in develop mode
       #  run: |
       #    git clone --depth 1 --branch $VERSION https://github.com/avocado-framework/avocado.git avocado-libs
       #    cd avocado-libs
       #    pip install -e .
       #    cd ..
-      #- name: Installing Avocado VT dependency in develop mode
+      #- name: Installing most up-to-date Avocado VT dependency in develop mode
       #  run: |
       #    git clone --depth 1 --branch $VERSION https://github.com/avocado-framework/avocado-vt.git avocado-vt-libs
       #    cd avocado-vt-libs
       #    pip install -e .
       #    cd ..
       - run: sleep 3
-      # TODO: python3.8 adds phantom lines reducing the coverage so update to a fixed version
-      - run: if [[ ${{ matrix.python-version }} == '3.8' ]]; then pip install coverage==5.0; fi
+      - name: Create some fake binaries to make vt-bootstrap happy
+        run: |
+         mkdir -p /tmp/dummy_bin
+         touch /tmp/dummy_bin/arping
+         touch /tmp/dummy_bin/tcpdump
+         chmod 777 /tmp/dummy_bin/*
+         echo "/tmp/dummy_bin" >> $GITHUB_PATH
       - name: Bootstrapping Avocado VT
         run: avocado vt-bootstrap --vt-skip-verify-download-assets --yes-to-all
       - name: Isolation tests using parallel avocado runner
-        run: make check
-      # TODO: investigate coverage report with avocado runs
+        # if later on we decide that unit tests are still more appropriate here just do
+        #run: make check
+        run: PYTHONPATH=:. avocado run --nrunner-max-parallel-tasks=4 selftests/isolation/test_*
+        # TODO: coverage report with avocado runs ends in 0% or ~0%, perhaps due to avocado or its async testing
+        #run: PYTHONPATH=:. coverage run --append --source=avocado_i2n $(which avocado) run --nrunner-max-parallel-tasks=4 selftests/isolation/test_*
       #- name: Collect all coverage
       #  run: coverage report -m
       #- name: Upload coverage to Codecov
