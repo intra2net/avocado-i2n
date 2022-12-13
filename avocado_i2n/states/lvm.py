@@ -21,6 +21,11 @@ Module for the LVM state management backend.
 
 Copyright: Intra2net AG
 
+..warning:: This state backend is mostly legacy and is not fully
+    maintained (only tested in isolation) but kept here for backwards
+    portability as well as completeness in case there is interest to
+    revive it by contributors that actually need it.
+
 
 INTERFACE
 ------------------------------------------------------

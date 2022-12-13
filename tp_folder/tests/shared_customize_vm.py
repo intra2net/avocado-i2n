@@ -39,7 +39,7 @@ log = logging.getLogger('avocado.test.log')
 ###############################################################################
 
 
-source_avocado_path = "/usr/lib/python3.7/site-packages/avocado/utils"
+source_avocado_path = "/usr/lib/python3.10/site-packages/avocado/utils"
 destination_avocado_path = "/tmp/utils/avocado"
 
 
