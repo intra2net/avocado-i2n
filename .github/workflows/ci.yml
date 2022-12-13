@@ -1,0 +1,79 @@
+name: GH Actions
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+      - tp-i2n
+
+jobs:
+
+  smokecheck-linux:
+    name: Linux with Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: [3.6, 3.7, 3.8, 3.9, 3.10.0]
+      fail-fast: false
+
+    steps:
+      - run: echo "Job triggered by a ${{ github.event_name }} event on branch is ${{ github.ref }} in repository is ${{ github.repository }}, runner on ${{ runner.os }}"
+      - name: Check out repository code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: 'requirements_pip.txt'
+      - name: Display Python version
+        run: python -c "import sys; print(sys.version)"
+      - name: Install dependencies
+        run: pip install -r requirements_pip.txt
+      - name: Display own version
+        run: |
+          VERSION=$(cat VERSION)
+          echo "$VERSION"
+      # TODO: currently rather install through pip and enable those only if more recent version needed
+      #- name: Installing Aexpect dependency in develop mode
+      #  run: |
+      #    git clone --depth 1 https://github.com/avocado-framework/aexpect.git aexpect-libs
+      #    cd aexpect-libs
+      #    pip install -e .
+      #    cd ..
+      #- name: Installing Avocado dependency in develop mode
+      #  run: |
+      #    git clone --depth 1 --branch $VERSION https://github.com/avocado-framework/avocado.git avocado-libs
+      #    cd avocado-libs
+      #    pip install -e .
+      #    cd ..
+      #- name: Installing Avocado VT dependency in develop mode
+      #  run: |
+      #    git clone --depth 1 --branch $VERSION https://github.com/avocado-framework/avocado-vt.git avocado-vt-libs
+      #    cd avocado-vt-libs
+      #    pip install -e .
+      #    cd ..
+      - run: sleep 3
+      # TODO: python3.8 adds phantom lines reducing the coverage so update to a fixed version
+      - run: if [[ ${{ matrix.python-version }} == '3.8' ]]; then pip install coverage==5.0; fi
+      - name: Bootstrapping Avocado VT
+        run: avocado vt-bootstrap --vt-skip-verify-download-assets --yes-to-all
+      - name: Isolation tests using parallel avocado runner
+        run: make check
+      # TODO: investigate coverage report with avocado runs
+      #- name: Collect all coverage
+      #  run: coverage report -m
+      #- name: Upload coverage to Codecov
+      #  uses: codecov/codecov-action@v3
+      #  with:
+      #   verbose: true
+      - name: Cleaning up avocado(-vt) libs
+        run: |
+          rm -rf avocado-vt-libs
+          rm -rf avocado-libs
+      - run: echo "🥑 This job's status is ${{ job.status }}."
