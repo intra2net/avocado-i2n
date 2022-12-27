@@ -161,7 +161,10 @@ class TestNode(object):
         This isolating environment could be a container, a virtual machine, or
         a less-isolated process and is managed by a specialized spawner.
         """
-        spawner_name = job.config.get('nrunner.spawner', 'lxc')
+        # NOTE: at present handle the lack of slots as an indicator of using
+        # non-isolated serial runs via the old process environment spawner
+        spawner_name = "lxc" if job.config["param_dict"].get("slots") else "process"
+
         # TODO: move cid in constructor in the upstream PR
         self.spawner = SpawnerDispatcher(job.config, job)[spawner_name].obj
         self.spawner.cid = env_id
@@ -431,7 +434,7 @@ class TestNode(object):
             log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
             node_host = self.params["hostname"]
             node_nets = self.params["nets_ip_prefix"]
-            node_source_ip = f"{node_nets}.{node_host[1:]}" if node_host else ""
+            node_source_ip = f"{node_nets}.{node_host[1:]}" if node_host != "localhost" else node_host
             session = remote.wait_for_login(self.params["nets_shell_client"],
                                             node_source_ip,
                                             self.params["nets_shell_port"],
