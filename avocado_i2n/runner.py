@@ -339,8 +339,10 @@ class CartesianRunner(RunnerInterface):
         params = self.job.config["param_dict"]
 
         self.tasks = []
-        self.slots = params.get("slots", "").split(" ")
+        self.slots = params.get("slots", "localhost").split(" ")
         for slot in self.slots:
+            if slot == "localhost":
+                continue
             if not TestNode.start_environment(slot):
                 raise RuntimeError(f"Failed to start environment {slot}")
 
