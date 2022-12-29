@@ -40,6 +40,9 @@ from avocado.core.nrunner.runnable import Runnable
 from avocado.core.dispatcher import SpawnerDispatcher
 
 
+door.DUMP_CONTROL_DIR = "/tmp"
+
+
 class TestNode(object):
     """
     A wrapper for all test relevant parts like parameters, parser, used
