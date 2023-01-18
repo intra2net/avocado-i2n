@@ -37,7 +37,7 @@ import fcntl
 import errno
 import json
 
-from aexpect import remote, ops
+from aexpect import remote, ops_linux as ops
 from avocado.utils import crypto
 
 from virttest.qemu_storage import QemuImg
