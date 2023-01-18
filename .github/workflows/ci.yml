@@ -40,12 +40,12 @@ jobs:
           VERSION=$(cat VERSION)
           echo "$VERSION"
       # TODO: currently rather install through pip and enable those only if more recent version needed
-      #- name: Installing most up-to-date Aexpect dependency in develop mode
-      #  run: |
-      #    git clone --depth 1 https://github.com/avocado-framework/aexpect.git aexpect-libs
-      #    cd aexpect-libs
-      #    pip install -e .
-      #    cd ..
+      - name: Installing most up-to-date Aexpect dependency in develop mode
+        run: |
+          git clone --depth 1 https://github.com/avocado-framework/aexpect.git aexpect-libs
+          cd aexpect-libs
+          pip install -e .
+          cd ..
       #- name: Installing most up-to-date Avocado dependency in develop mode
       #  run: |
       #    git clone --depth 1 --branch $VERSION https://github.com/avocado-framework/avocado.git avocado-libs

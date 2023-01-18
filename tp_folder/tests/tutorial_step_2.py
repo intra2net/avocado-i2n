@@ -26,7 +26,7 @@ import logging
 # avocado imports
 from avocado.core import exceptions
 try:
-    from aexpect import session_ops
+    from aexpect import ops_linux as ops
     OPS_AVAILABLE = True
 except ImportError:
     log.warning("The session ops of an upgraded aexpect package are not available")
@@ -114,10 +114,10 @@ def run_extracted_script(params, vm):
     # session (usually one but more available after additional logins)
     vm.session.cmd("test -f " + scriptabspath)
     if OPS_AVAILABLE:
-        # We can also use the `session_ops` module, which contains some IO functions
+        # We can also use the `linux_ops` module, which contains some IO functions
         # to be executed on a guest VM. This can be considered another way to remotely
         # run operations on a guest.
-        if not session_ops.is_regular_file(vm.session, scriptabspath):
+        if not ops.is_regular_file(vm.session, scriptabspath):
             raise exceptions.TestError("Expected file %s to have been extracted, "
                                        "but it doesn't exist." % scriptabspath)
         else:
@@ -149,7 +149,7 @@ def check_files(params, vm):
         result = vm.session.cmd_status("! test -f " + fullpath)
         # alternatively, use more python interface through session ops
         if OPS_AVAILABLE:
-            result2 = session_ops.is_regular_file(vm.session, fullpath)
+            result2 = ops.is_regular_file(vm.session, fullpath)
             assert result == result2
         log.info(f"  - Verifying the presence of file {fullpath} -> "
                  f"{result and 'exists' or 'nil'}.")
