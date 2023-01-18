@@ -29,6 +29,7 @@ INTERFACE
 
 import os
 import time
+import json
 import logging as log
 logging = log.getLogger('avocado.test.' + __name__)
 import signal
@@ -72,6 +73,8 @@ class CartesianRunner(RunnerInterface):
 
         self.status_repo = None
         self.status_server = None
+
+        self.skip_tests = []
 
     """running functionality"""
     async def _update_status(self, job):
@@ -332,6 +335,29 @@ class CartesianRunner(RunnerInterface):
         summary = set()
         params = self.job.config["param_dict"]
 
+        # TODO: we could really benefit from using an appropriate params object here
+        replay_jobs = params.get("replay", "").split(" ")
+        replay_status = params.get("replay_status", "fail,error,warn").split(",")
+        disallowed_status = set(replay_status).difference(set(["fail", "error", "pass", "warn", "skip"]))
+        if len(disallowed_status) > 0:
+            raise ValueError(f"Value of replay_status must be a valid test status,"
+                             f" found {', '.join(disallowed_status)}")
+        for replay_job in replay_jobs:
+            if not replay_job:
+                continue
+            replay_dir = self.job.config.get("datadir.paths.logs_dir", ".")
+            replay_results = os.path.join(replay_dir, replay_job, "results.json")
+            if not os.path.isfile(replay_results):
+                raise RuntimeError("Cannot find replay job results file %s" % replay_results)
+            with open(replay_results) as json_file:
+                logging.info(f"Parsing previous results to replay {replay_results}")
+                data = json.load(json_file)
+                if 'tests' not in data:
+                    raise RuntimeError(f"Cannot find tests to replay against in {replay_results}")
+                for test_details in data["tests"]:
+                    if test_details["status"].lower() not in replay_status and test_details["name"] not in self.skip_tests:
+                        self.skip_tests += [test_details["name"]]
+
         self.tasks = []
         self.slots = params.get("slots", "localhost").split(" ")
         for slot in self.slots:
@@ -353,7 +379,7 @@ class CartesianRunner(RunnerInterface):
         except KeyboardInterrupt:
             summary.add('INTERRUPTED')
 
-        # TODO: the avocado implementation needs a workaround here:
+        # TODO: The avocado implementation needs a workaround here:
         # Wait until all messages may have been processed by the
         # status_updater. This should be replaced by a mechanism
         # that only waits if there are missing status messages to
@@ -364,7 +390,10 @@ class CartesianRunner(RunnerInterface):
 
         self.job.result.end_tests()
         self.job.funcatexit.run()
-        self.status_server.close()
+        # the status server does not provide a way to verify it is fully initialized
+        # so zero test runs need to access an internal attribute before closing
+        if self.status_server._server_task:
+            self.status_server.close()
         signal.signal(signal.SIGTSTP, signal.SIG_IGN)
         return summary
 
@@ -441,7 +470,10 @@ class CartesianRunner(RunnerInterface):
             is_cleaned_up |= test_node.params.get("unset_mode_vms", test_node.params["unset_mode"])[0] == "f"
             test_node.should_run &= not (is_cleaned_up and len(test_node.workers) > 0)
 
-        if test_node.should_run:
+        replay_skip = test_node.params["name"] in self.skip_tests
+        if replay_skip:
+            logging.debug(f"Test {test_node.params['shortname']} will be skipped via previous job")
+        if test_node.should_run and (not replay_skip or test_node.produces_setup()):
 
             # the primary setup nodes need special treatment
             if params.get("dry_run", "no") == "yes":
