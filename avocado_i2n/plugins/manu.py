@@ -56,7 +56,7 @@ class Manu(CLICmd):
         # set English environment (command output might be localized, need to be safe)
         os.environ['LANG'] = 'en_US.UTF-8'
 
-        config["run.test_runner"] = "traverser"
+        config["run.suite_runner"] = "traverser"
         config["params"] = config["i2n.manu.params"]
         try:
             cmd_parser.params_from_cmd(config)

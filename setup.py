@@ -97,7 +97,7 @@ setup(name='avocado-framework-plugin-i2n',
           'avocado.plugins.cli.cmd': [
               'manu = avocado_i2n.plugins.manu:Manu',
               ],
-          'avocado.plugins.runner': [
+          'avocado.plugins.suite.runner': [
               # TODO: wait for the upstream to make the default loader a plugin as well
               'traverser = avocado_i2n.runner:CartesianRunner',
               ],

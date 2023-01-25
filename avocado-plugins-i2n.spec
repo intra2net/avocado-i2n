@@ -85,7 +85,7 @@ graph structure.
 # TODO: some circular complexity of avocado's extension manager could affect our
 # ability to run isolation tests in certain environments (with some preinstalled
 # dependencies)
-PYTHONPATH=:. avocado run --nrunner-max-parallel-tasks=4 selftests/isolation/test_*
+PYTHONPATH=:. avocado run --max-parallel-tasks=4 selftests/isolation/test_*
 %endif
 
 %files -n python3-%{name}

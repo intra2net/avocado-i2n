@@ -38,7 +38,7 @@ log.getLogger('asyncio').parent = log.getLogger('avocado.test')
 
 from avocado.core.nrunner.task import TASK_DEFAULT_CATEGORY, Task
 from avocado.core.messages import MessageHandler
-from avocado.core.plugin_interfaces import Runner as RunnerInterface
+from avocado.core.plugin_interfaces import SuiteRunner as RunnerInterface
 from avocado.core.status.repo import StatusRepo
 from avocado.core.status.server import StatusServer
 from avocado.core.teststatus import STATUSES_MAPPING
@@ -113,14 +113,14 @@ class CartesianRunner(RunnerInterface):
             node.set_environment(job, "")
         if not self.status_repo:
             self.status_repo = StatusRepo(job.unique_id)
-            self.status_server = StatusServer(job.config.get('nrunner.status_server_listen'),
+            self.status_server = StatusServer(job.config.get('run.status_server_listen'),
                                               self.status_repo)
             asyncio.ensure_future(self.status_server.serve_forever())
             # TODO: this needs more customization
             asyncio.ensure_future(self._update_status(job))
 
         raw_task = Task(node.get_runnable(), node.id_test,
-                        [job.config.get('nrunner.status_server_uri')],
+                        [job.config.get('run.status_server_uri')],
                         category=TASK_DEFAULT_CATEGORY,
                         job_id=self.job.unique_id)
         task = RuntimeTask(raw_task)
@@ -332,7 +332,7 @@ class CartesianRunner(RunnerInterface):
         self.job = job
 
         self.status_repo = StatusRepo(job.unique_id)
-        self.status_server = StatusServer(job.config.get('nrunner.status_server_listen'),
+        self.status_server = StatusServer(job.config.get('run.status_server_listen'),
                                           self.status_repo)
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.status_server.create_server())
