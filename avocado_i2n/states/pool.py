@@ -54,6 +54,29 @@ SKIP_LOCKS = False
 class TransferOps():
     """A small namespace for pool transfer operations of multiple types."""
 
+    _session_cache = {}
+
+    @classmethod
+    def get_session(cls, host, params):
+        """
+        Get a possibly reused session to the remote location.
+
+        :param str host: remote host name for the remote location
+        :param params: configuration parameters
+        :type params: {str, str}
+        :returns: a new session or previously cached session
+        :rtype: :py:class:`aexpect.ShellSession`
+        """
+        session = cls._session_cache.get(host)
+        if not session:
+            session = remote.remote_login(params["nets_shell_client"],
+                                          host,
+                                          params["nets_shell_port"],
+                                          params["nets_username"], params["nets_password"],
+                                          params["nets_shell_prompt"])
+            cls._session_cache[host] = session
+        return session
+
     @staticmethod
     def list(pool_path, params):
         """
@@ -216,11 +239,7 @@ class TransferOps():
         All arguments are identical to the main entry method.
         """
         host, path = pool_path.split(":")
-        session = remote.remote_login(params["nets_shell_client"],
-                                      host,
-                                      params["nets_shell_port"],
-                                      params["nets_username"], params["nets_password"],
-                                      params["nets_shell_prompt"])
+        session = TransferOps.get_session(host, params)
         status, output = session.cmd_status_output(f"ls {path}")
         if status != 0:
             logging.debug(f"Path {path} not found: {output}")
@@ -240,11 +259,7 @@ class TransferOps():
             local_hash = ""
         host, path = pool_path.split(":")
 
-        session = remote.remote_login(params["nets_shell_client"],
-                                      host,
-                                      params["nets_shell_port"],
-                                      params["nets_username"], params["nets_password"],
-                                      params["nets_shell_prompt"])
+        session = TransferOps.get_session(host, params)
         remote_hash = ops.hash_file(session, path, "1M", "md5")
 
         return local_hash == remote_hash

@@ -102,6 +102,8 @@ class TestNode(object):
 
         self.spawner = None
         self.workers = set()
+        # TODO: also allow caching among container sessions?
+        #self._session_cache = {}
 
         # flattened list of objects (in composition) involved in the test
         self.objects = [object]
