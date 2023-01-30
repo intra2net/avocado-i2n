@@ -82,6 +82,8 @@ class TestNode(object):
         return TestID(full_prefix, self.params["name"])
     id_test = property(fget=id_test)
 
+    _session_cache = {}
+
     def __init__(self, prefix, config, object):
         """
         Construct a test node (test) for any test objects (vms).
@@ -478,11 +480,17 @@ class TestNode(object):
         :rtype: :type session: :py:class:`aexpect.ShellSession`
         """
         log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
-        return remote.wait_for_login(self.params["nets_shell_client"],
-                                     self.get_session_ip(slot),
-                                     self.params["nets_shell_port"],
-                                     self.params["nets_username"], self.params["nets_password"],
-                                     self.params["nets_shell_prompt"])
+        host = self.get_session_ip(slot)
+        cache = type(self)._session_cache
+        session = cache.get(host)
+        if not session:
+            session = remote.wait_for_login(self.params["nets_shell_client"],
+                                            host,
+                                            self.params["nets_shell_port"],
+                                            self.params["nets_username"], self.params["nets_password"],
+                                            self.params["nets_shell_prompt"])
+            cache[host] = session
+        return session
 
     def scan_states(self):
         """Scan for present object states to reuse the test from previous runs."""

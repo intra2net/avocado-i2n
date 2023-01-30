@@ -384,6 +384,10 @@ class CartesianRunner(RunnerInterface):
         except KeyboardInterrupt:
             summary.add('INTERRUPTED')
 
+        from .states import pool
+        for session in pool.TransferOps._session_cache.values():
+            session.close()
+
         # TODO: The avocado implementation needs a workaround here:
         # Wait until all messages may have been processed by the
         # status_updater. This should be replaced by a mechanism

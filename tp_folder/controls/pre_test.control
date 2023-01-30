@@ -37,6 +37,13 @@ logging.info(f"Setting network class for state backend")
 VMNetBackend.network_class = VMNetwork
 
 logging.info(f"Adding env process stage hooks")
+def close_sessions(fn):
+    def wrapper(test, params, env):
+        fn(test, params, env)
+        from avocado_i2n.states import pool
+        for session in pool.TransferOps._session_cache.values():
+            session.close()
+    return wrapper
 def on_state(fn):
     def wrapper(test, params, env):
         params["skip_types"] = "nets/vms/images nets"
@@ -52,7 +59,7 @@ def off_state(fn):
 env_process.preprocess_vm_off_hook = off_state(ss.get_states)
 env_process.preprocess_vm_on_hook = on_state(ss.get_states)
 env_process.postprocess_vm_on_hook = on_state(ss.set_states)
-env_process.postprocess_vm_off_hook = off_state(ss.set_states)
+env_process.postprocess_vm_off_hook = close_sessions(off_state(ss.set_states))
 logging.info(f"Adding default state backends")
 ss.BACKENDS = {"qcow2": qcow2.QCOW2Backend, "qcow2ext": qcow2.QCOW2ExtBackend,
                "lvm": lvm.LVMBackend,
