@@ -253,8 +253,8 @@ def show_states(run_params, env=None):
                             f"from readonly image {params_obj_name} - skipping")
             continue
 
-        logging.debug("Checking %s for available %s states",
-                      params_obj_name, params_obj_type)
+        logging.debug("Checking %s for available %s states using %s",
+                      params_obj_name, params_obj_type, state_params["states"])
         state_backend = BACKENDS[state_params["states"]]
         params_obj_states = state_backend.show(state_params, env)
         logging.info("Detected %s states for %s: %s",

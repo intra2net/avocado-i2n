@@ -74,6 +74,15 @@ class MockDriver(unittest.TestCase):
                 yield mock_driver
         elif backend == "qcow2ext":
             mock_driver.listdir.return_value = [s + ".qcow2" for s in state_names]
+            mock_driver.path.join = os.path.join
+            mock_driver.path.dirname = os.path.dirname
+            mock_driver.stat.return_value.st_size = 0
+            class QemuImgMock():
+                def __init__(self, params, root_dir, tag):
+                    self.image_filename = os.path.join(root_dir, tag)
+            with mock.patch('avocado_i2n.states.qcow2.QemuImg', QemuImgMock):
+                with mock.patch('avocado_i2n.states.qcow2.os', mock_driver):
+                    yield mock_driver
         elif backend == "ramfile":
             ramfile.RamfileBackend.image_state_backend.show.return_value = state_names
             mock_driver.listdir.return_value = [s + ".state" for s in state_names]
@@ -111,19 +120,26 @@ class MockDriver(unittest.TestCase):
             with mock.patch('avocado_i2n.states.qcow2.QemuImg', mock_driver):
                 yield mock_driver
         elif backend == "qcow2ext":
-            mock_driver.listdir.return_value = [state_name + ".state"] if exists else []
-            mock_driver.stat.return_value.st_size = 0
+            self.mock_vms["vm1"].is_alive.return_value = False
+            mock_driver.listdir.return_value = [state_name + ".qcow2"] if exists else []
             mock_driver.path.join = os.path.join
+            mock_driver.path.dirname = os.path.dirname
+            mock_driver.path.isabs = os.path.isabs
             mock_driver.path.exists = self.mock_file_exists
+            mock_driver.stat.return_value.st_size = 0
             self.exist_switch = exists
-            exist_lambda = lambda filename: filename.endswith("image.qcow2") or filename.endswith("/vm1")
+            exist_lambda = lambda filename: filename.endswith("image.qcow2") or filename.endswith("/image1")
             self.exist_lambda = exist_lambda if root_exists and not exists else None
             # TODO: this is in fact way too much mocking since it requires mocking various
             # other backends like shutil, QemuImg, etc. all of which are used - better convert
             # all these isolated boundary tests into proper integration tests to reduce mocking
             # the boundary of our dependencies and benefit from proper boundary change detection
-            with mock.patch('avocado_i2n.states.qcow2.os', mock_driver):
-                yield mock_driver
+            class QemuImgMock():
+                def __init__(self, params, root_dir, tag):
+                    self.image_filename = os.path.join(root_dir, tag)
+            with mock.patch('avocado_i2n.states.qcow2.QemuImg', QemuImgMock):
+                with mock.patch('avocado_i2n.states.qcow2.os', mock_driver):
+                    yield mock_driver
         elif backend == "ramfile":
             ramfile.RamfileBackend.image_state_backend.show.return_value = [state_name] if exists else []
             mock_driver.listdir.return_value = [state_name + ".state"] if exists else []
@@ -176,8 +192,8 @@ class MockDriver(unittest.TestCase):
                 mock_driver.return_value.snapshot_list.assert_not_called()
         elif backend == "qcow2ext":
             # assert root state is checked as a prerequisite
-            expected_checks = [mock.call(f"/images/vm1"),
-                               mock.call(f"/images/vm1/image.qcow2")]
+            expected_checks = [mock.call(f"/images/vm1/image.qcow2"),
+                               mock.call(f"/images/vm1/image1")]
             if not root_exists:
                 expected_checks = expected_checks[:1]
             self.assertListEqual(mock_driver.path.exists.call_args_list, expected_checks)
@@ -311,7 +327,7 @@ class MockDriver(unittest.TestCase):
             # TODO: cannot assert state_name as we need more isolated testing here
             mock_driver.listdir.assert_called_once_with(f"/images/vm1/image1")
             if action_type == 1:
-                mock_driver.unlink.assert_called_once_with(f"/images/vm1/{state_name}.qcow2")
+                mock_driver.unlink.assert_called_once_with(f"/images/vm1/image1/{state_name}.qcow2")
             else:
                 mock_driver.unlink.assert_not_called()
         elif backend == "ramfile":
@@ -335,7 +351,7 @@ class StatesBoundaryTest(Test):
     def setUp(self):
         self.run_str = ""
 
-        ss.BACKENDS = {"qcow2": qcow2.QCOW2Backend, "qcow2ext": qcow2.QCOW2Backend,
+        ss.BACKENDS = {"qcow2": qcow2.QCOW2Backend, "qcow2ext": qcow2.QCOW2ExtBackend,
                        "lvm": lvm.LVMBackend,
                        "lxc": lxc.LXCBackend, "btrfs": btrfs.BtrfsBackend,
                        "qcow2vt": qcow2.QCOW2VTBackend, "ramfile": ramfile.RamfileBackend,
@@ -383,6 +399,11 @@ class StatesBoundaryTest(Test):
         self.run_params["image_format"] = "qcow2"
         self.run_params["qemu_img_binary"] = "qemu-img"
 
+    def _set_image_qcow2ext_params(self):
+        self.run_params["states_images"] = "qcow2ext"
+        self.run_params["image_format"] = "qcow2"
+        self.run_params["qemu_img_binary"] = "qemu-img"
+
     def _set_vm_qcow2_params(self):
         self.run_params["states_vms"] = "qcow2vt"
         self.run_params["image_format"] = "qcow2"
@@ -419,7 +440,7 @@ class StatesBoundaryTest(Test):
         if backend == "qcow2":
             self._set_image_qcow2_params()
         elif backend == "qcow2ext":
-            self._set_image_qcow2_params()
+            self._set_image_qcow2ext_params()
         elif backend == "lvm":
             self._set_image_lvm_params()
         elif backend == "qcow2vt":
@@ -526,6 +547,17 @@ class StatesBoundaryTest(Test):
         """Test that state listing with the QCOW2 external state backend works correctly."""
         self._test_show_states("qcow2ext")
 
+    def test_show_image_qcow2ext_swarm(self):
+        """Test that state listing with the QCOW2 external state prioritizes swarm pool."""
+        self.run_params["swarm_pool"] = "/swarm"
+        backend = "qcow2ext"
+        backend_type = self._prepare_driver_from_backend(backend)
+        with self.driver.mock_show(["launch"], backend_type) as driver:
+            print(self.run_params)
+            states = ss.show_states(self.run_params, self.env)
+            driver.listdir.assert_called_once_with("/swarm/vm1/image1")
+        self.assertEqual(len(states), 1)
+
     def test_show_vm_qcow2(self):
         """Test that state listing with the QCOW2VT backend works correctly."""
         self._test_show_states("qcow2vt")
@@ -533,6 +565,16 @@ class StatesBoundaryTest(Test):
     def test_show_vm_ramfile(self):
         """Test that state listing with the ramfile backend works correctly."""
         self._test_show_states("ramfile")
+
+    def test_show_vm_ramfile_swarm(self):
+        """Test that state listing with the ramfile external state prioritizes swarm pool."""
+        self.run_params["swarm_pool"] = "/swarm"
+        backend = "ramfile"
+        backend_type = self._prepare_driver_from_backend(backend)
+        with self.driver.mock_show(["launch"], backend_type) as driver:
+            states = ss.show_states(self.run_params, self.env)
+            driver.listdir.assert_called_once_with("/swarm/vm1")
+        self.assertEqual(len(states), 1)
 
     def test_check_image_lvm(self):
         """Test that state checking with the LVM backend works correctly."""
@@ -1578,6 +1620,46 @@ class StatesPoolTest(Test):
         self.backend.unset(self.run_params, self.env)
         expected_checks = [mock.call("/data/pool/vm1/image1/launch.qcow2", mock.ANY)]
         self.assertListEqual(self.backend.ops.delete.call_args_list, expected_checks)
+
+    def test_local_pool_override(self):
+        """Test that given state types are skipped via a devoted parameter."""
+        self._set_minimal_pool_params()
+
+        self._create_mock_transfer_backend()
+        self.deps = ["launch", "prelaunch", ""]
+
+        for do in ["get", "set", "unset"]:
+            for swarm_pool in ["/swarm", ""]:
+                for shared_pool in ["/shared", "/else"]:
+                    self.run_params[f"{do}_state"] = "launch"
+                    self.run_params["object_type"] = "nets/vms/images"
+                    self.run_params["image_pool"] = shared_pool
+                    self.run_params["swarm_pool"] = swarm_pool
+                    location = "/images" if swarm_pool == "" else swarm_pool
+
+                    self.backend.ops.reset_mock()
+                    if do == "get":
+                        self.backend.get(self.run_params, self.env)
+                        expected_checks = [mock.call(f"{location}/vm1/image1/launch.qcow2",
+                                                     f"{shared_pool}/vm1/image1/launch.qcow2",
+                                                     mock.ANY),
+                                           mock.call(f"{location}/vm1/image1/prelaunch.qcow2",
+                                                     f"{shared_pool}/vm1/image1/prelaunch.qcow2",
+                                                     mock.ANY)]
+                        self.assertListEqual(self.backend.ops.download.call_args_list, expected_checks)
+                    elif do == "set":
+                        self.backend.set(self.run_params, self.env)
+                        expected_checks = [mock.call(f"{location}/vm1/image1/launch.qcow2",
+                                                     f"{shared_pool}/vm1/image1/launch.qcow2",
+                                                     mock.ANY),
+                                           mock.call(f"{location}/vm1/image1/prelaunch.qcow2",
+                                                     f"{shared_pool}/vm1/image1/prelaunch.qcow2",
+                                                     mock.ANY)]
+                        self.assertListEqual(self.backend.ops.upload.call_args_list, expected_checks)
+                    elif do == "unset":
+                        self.backend.unset(self.run_params, self.env)
+                        expected_checks = [mock.call(f"{shared_pool}/vm1/image1/launch.qcow2", mock.ANY)]
+                        self.assertListEqual(self.backend.ops.delete.call_args_list, expected_checks)
 
 
 class StatesSetupTest(Test):
