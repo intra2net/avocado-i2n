@@ -524,8 +524,8 @@ class CartesianGraphTest(Test):
         # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
         self.assertEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 3)
 
-    def test_diverging_paths_with_setup(self):
-        """Test a multi-object test run with reusable setup of diverging workers."""
+    def test_diverging_paths_with_external_setup(self):
+        """Test a multi-object test run with reusable setup of diverging workers and shared pool or previous runs."""
         self.runner.slots = [f"{i+1}" for i in range(4)]
         self.config["tests_str"] += "only tutorial1,tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -548,8 +548,10 @@ class CartesianGraphTest(Test):
         # expect four sync and no other cleanup calls, one for each worker
         for action in ["get"]:
             for state in ["install", "customize"]:
-                # called once by worker for for each of two vms (excluding self-sync)
-                self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 6)
+                # called once by worker for for each of two vms (no self-sync as setup is from previous run or shared pool)
+                # NOTE: any such use cases assume the previous setup is fully synced across all workers, if this is not the case
+                # it must be due to interrupted run in which case the setup is not guaranteed to be reusable on the first place
+                self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 8)
             for state in ["on_customize", "connect"]:
                 # called once by worker only for vm1 (excluding self-sync as setup is provided by the swarm pool)
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 3)

@@ -546,26 +546,26 @@ class QCOW2ImageTransfer(StateBackend):
         """
         vm_name = params["vms"]
 
+        logging.debug(f"Comparing backing chain for {state}")
         next_state = state
         while next_state != "":
             for image_name in params.objects("images"):
                 image_params = params.object_params(image_name)
-                if next_state == image_params["image_name"]:
-                    cache_path = os.path.join(cache_dir, vm_name, next_state + ".qcow2")
-                    pool_path = os.path.join(pool_dir, vm_name, next_state + ".qcow2")
-                else:
-                    cache_path = os.path.join(cache_dir, vm_name, image_name, next_state + ".qcow2")
-                    pool_path = os.path.join(pool_dir, vm_name, image_name, next_state + ".qcow2")
+                cache_path = os.path.join(cache_dir, vm_name, image_name, next_state + ".qcow2")
+                pool_path = os.path.join(pool_dir, vm_name, image_name, next_state + ".qcow2")
                 if not cls.ops.compare(cache_path, pool_path, image_params):
+                    logging.warning(f"The image {image_name} has different {next_state} between cache {cache_path} and pool {pool_path}")
                     return False
             if next_state == state and params["object_type"] in ["vms", "nets/vms"]:
                 cache_path = os.path.join(cache_dir, vm_name, next_state + ".state")
                 pool_path = os.path.join(pool_dir, vm_name, next_state + ".state")
                 if not cls.ops.compare(cache_path, pool_path, params):
+                    logging.warning(f"The vm {vm_name} has different {next_state} between cache {cache_path} and pool {pool_path}")
                     return False
             # comparison of state chain is not yet complete if the state has backing dependencies
-            next_state = cls.get_dependency(next_state, params) if next_state != image_params["image_name"] else ""
+            next_state = cls.get_dependency(next_state, params)
 
+        logging.debug(f"The backing chain for {state} is identical between cache {cache_dir} and pool {pool_dir}")
         return True
 
     @classmethod
@@ -583,6 +583,7 @@ class QCOW2ImageTransfer(StateBackend):
         transfer_operation = cls.ops.download if down else cls.ops.upload
         vm_name = params["vms"]
 
+        logging.debug(f"Transferring backing chain for {state}")
         next_state = state
         while next_state != "":
             for image_name in params.objects("images"):
@@ -597,6 +598,8 @@ class QCOW2ImageTransfer(StateBackend):
                 transfer_operation(cache_path, pool_path, params)
             # transfer of state chain is not yet complete if the state has backing dependencies
             next_state = cls.get_dependency(next_state, params)
+
+        logging.debug(f"The backing chain for {state} is fully transferred to cache {cache_dir} from pool {pool_dir}")
 
     @classmethod
     def show(cls, params, object=None):
@@ -665,12 +668,7 @@ class QCOW2ImageTransfer(StateBackend):
         logging.info(f"Downloading shared {state_tag} state {state} "
                      f"from the shared pool {pool_dir} to {cache_dir}")
 
-        try:
-            cls.transfer_chain(state, cache_dir, pool_dir, params, down=True)
-        except Exception as error:
-            remove_path = os.path.join(cache_dir, state_tag, state + "." + format)
-            os.unlink(remove_path)
-            raise error
+        cls.transfer_chain(state, cache_dir, pool_dir, params, down=True)
 
     @classmethod
     def set(cls, params, object=None):
@@ -691,12 +689,7 @@ class QCOW2ImageTransfer(StateBackend):
         logging.info(f"Uploading shared {state_tag} state {state} "
                      f"to the shared pool {pool_dir} from {cache_dir}")
 
-        try:
-            cls.transfer_chain(state, cache_dir, pool_dir, params, down=False)
-        except Exception as error:
-            remove_path = os.path.join(pool_dir, state_tag, state + "." + format)
-            cls.ops.delete(remove_path, params)
-            raise error
+        cls.transfer_chain(state, cache_dir, pool_dir, params, down=False)
 
     @classmethod
     def unset(cls, params, object=None):
@@ -768,7 +761,17 @@ class RootSourcedStateBackend(StateBackend):
 
         if pool_root_exists:
             if local_root_exists:
-                cache_valid = cls.transport.compare_chain(params["image_name"], params)
+                cache_valid = True
+                vm_name = params["vms"]
+                for image_name in params.objects("images"):
+                    image_params = params.object_params(image_name)
+                    image_filename = image_params["image_name"]
+                    cache_path = os.path.join(image_params["vms_base_dir"], vm_name, image_filename + ".qcow2")
+                    pool_path = os.path.join(image_params.get("get_location", image_params.get("image_pool", "")), vm_name, image_filename + ".qcow2")
+                    if not cls.transport.ops.compare(cache_path, pool_path, image_params):
+                        logging.warning(f"The image {image_name} is different between cache {cache_path} and pool {pool_path}")
+                        cache_valid = False
+                        break
             else:
                 cache_valid = False
             if not cache_valid:

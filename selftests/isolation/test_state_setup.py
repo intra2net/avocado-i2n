@@ -1219,6 +1219,7 @@ class StatesPoolTest(Test):
 
     def test_get_root(self):
         """Test that root getting with the pool backend works."""
+        self._set_minimal_pool_params()
         self.run_params["image_name"] = "image1"
         self._create_mock_sourced_backend()
 
@@ -1227,11 +1228,13 @@ class StatesPoolTest(Test):
         self.backend.transport.reset_mock()
         self.backend._check_root.return_value = True
         self.backend.transport.check_root.return_value = True
-        self.backend.transport.compare_chain.return_value = True
+        self.backend.transport.ops.compare.return_value = True
         self.backend.get_root(self.run_params, self.env)
         self.backend._get_root.assert_called_once()
         self.backend.transport.get_root.assert_not_called()
-        self.backend.transport.compare_chain.assert_called_once_with("image1", mock.ANY)
+        self.backend.transport.ops.compare.assert_called_once_with('/images/vm1/image1.qcow2',
+                                                                   '/:/data/pool/vm1/image1.qcow2',
+                                                                   mock.ANY)
 
         # use pool root if enabled and no local root
         self.backend._get_root.reset_mock()
@@ -1241,18 +1244,20 @@ class StatesPoolTest(Test):
         self.backend.get_root(self.run_params, self.env)
         self.backend._get_root.assert_called_once()
         self.backend.transport.get_root.assert_called_once()
-        self.backend.transport.compare_chain.assert_not_called()
+        self.backend.transport.ops.compare.assert_not_called()
 
         # use pool root if local root is not valid
         self.backend._get_root.reset_mock()
         self.backend.transport.reset_mock()
         self.backend._check_root.return_value = True
         self.backend.transport.check_root.return_value = True
-        self.backend.transport.compare_chain.return_value = False
+        self.backend.transport.ops.compare.return_value = False
         self.backend.get_root(self.run_params, self.env)
         self.backend._get_root.assert_called_once()
         self.backend.transport.get_root.assert_called_once()
-        self.backend.transport.compare_chain.assert_called_once_with("image1", mock.ANY)
+        self.backend.transport.ops.compare.assert_called_once_with('/images/vm1/image1.qcow2',
+                                                                   '/:/data/pool/vm1/image1.qcow2',
+                                                                   mock.ANY)
 
     def test_get_root_use(self):
         """Test that root getting uses only local root with disabled pool."""
