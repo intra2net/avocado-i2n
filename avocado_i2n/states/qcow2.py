@@ -238,9 +238,11 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
-        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, vm_name)
         qemu_img = QemuImg(params, vm_dir, image_name)
-        logging.debug("Showing %s external states for image %s", cls.state_type(), image_name)
+        logging.debug("Showing %s external states for image %s locally in %s",
+                      cls.state_type(), image_name, state_dir)
         image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image_name)
         if not os.path.exists(image_dir):
             return []
@@ -274,12 +276,14 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
-        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, vm_name)
+        image_dir = os.path.join(vm_dir, image_name)
         state = params["get_state"]
         params["image_chain"] = f"snapshot {image_name}"
-        params["image_name_snapshot"] = os.path.join(image_name, state)
+        params["image_name_snapshot"] = os.path.join(image_dir, state)
         params["image_format_snapshot"] = "qcow2"
-        qemu_img = QemuImg(params, vm_dir, image_name)
+        qemu_img = QemuImg(params, os.path.join(params["vms_base_dir"], vm_name), image_name)
         logging.info("Reusing %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image_name)
         qemu_img.create(params, ignore_errors=False)
@@ -292,12 +296,13 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
-        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, vm_name)
+        image_dir = os.path.join(vm_dir, image_name)
         state = params["set_state"]
-        qemu_img = QemuImg(params, vm_dir, image_name)
+        qemu_img = QemuImg(params, os.path.join(params["vms_base_dir"], vm_name), image_name)
         logging.info("Creating %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image_name)
-        image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image_name)
         os.makedirs(image_dir, exist_ok=True)
         shutil.copy(qemu_img.image_filename, os.path.join(image_dir, state + ".qcow2"))
 
@@ -309,13 +314,15 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
-        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, vm_name)
+        image_dir = os.path.join(vm_dir, image_name)
         state = params["unset_state"]
-        qemu_img = QemuImg(params, vm_dir, image_name)
+        # TODO: the qemu img could become useful if we implement the below todo
+        #qemu_img = QemuImg(params, os.path.join(params["vms_base_dir"], vm_name), image_name)
         logging.info("Removing %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image_name)
-        image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image_name)
-        # TODO: should we mv to pointer image in case removed state is in backing chain?
+        # TODO: should we move to pointer image in case removed state is in backing chain?
         os.unlink(os.path.join(image_dir, state + ".qcow2"))
 
     @classmethod

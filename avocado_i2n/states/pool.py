@@ -420,7 +420,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        shared_pool = params["image_pool"]
         image_base_name = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.debug(f"Checking for shared {vm_name}/{image_name} existence"
@@ -445,7 +445,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        shared_pool = params["image_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Downloading shared {vm_name}/{image_name} "
@@ -463,7 +463,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        shared_pool = params["image_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Uploading shared {vm_name}/{image_name} "
@@ -481,13 +481,22 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        shared_pool = params["image_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Removing shared {vm_name}/{image_name} "
                      f"from the shared pool {shared_pool}")
         dst_image_name = os.path.join(shared_pool, image_base_names)
         cls.ops.delete(dst_image_name, params)
+
+    @classmethod
+    def get_state_dir(cls, params):
+        """
+        Get the directory used for storing states according to internal criteria.
+
+        All of the arguments match the signature of the other methods here.
+        """
+        return params["swarm_pool"] if params.get("swarm_pool") else params["vms_base_dir"]
 
     @classmethod
     def get_dependency(cls, state, params):
@@ -499,7 +508,7 @@ class QCOW2ImageTransfer(StateBackend):
         The rest of the arguments match the signature of the other methods here.
         """
         vm_name, image_name = params["vms"], params["images"]
-        vm_dir = os.path.join(params["vms_base_dir"], vm_name)
+        vm_dir = os.path.join(cls.get_state_dir(params), vm_name)
         params["image_chain"] = f"snapshot {image_name}"
         params["image_name_snapshot"] = os.path.join(image_name, state)
         params["image_format_snapshot"] = "qcow2"
@@ -520,8 +529,8 @@ class QCOW2ImageTransfer(StateBackend):
         :param params: configuration parameters
         :type params: {str, str}
         """
+        cache_dir = cls.get_state_dir(params)
         shared_pool = params["image_pool"]
-        cache_dir = params["vms_base_dir"]
         vm_name = params["vms"]
 
         next_state = state
@@ -558,8 +567,8 @@ class QCOW2ImageTransfer(StateBackend):
         """
         transfer_operation = cls.ops.download if down else cls.ops.upload
 
+        cache_dir = cls.get_state_dir(params)
         shared_pool = params["image_pool"]
-        cache_dir = params["vms_base_dir"]
         vm_name = params["vms"]
 
         next_state = state
@@ -592,7 +601,7 @@ class QCOW2ImageTransfer(StateBackend):
             state_tag += f"/{image_name}"
             format = ".qcow2"
 
-        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        shared_pool = params["image_pool"]
         path = os.path.join(shared_pool, state_tag)
         logging.debug(f"Checking for shared {state_tag} states "
                       f"in the shared pool {shared_pool}")
@@ -630,8 +639,8 @@ class QCOW2ImageTransfer(StateBackend):
 
         All arguments match the base class.
         """
-        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
-        cache_dir = params["vms_base_dir"]
+        cache_dir = cls.get_state_dir(params)
+        shared_pool = params["image_pool"]
 
         vm_name = params["vms"]
         state_tag = f"{vm_name}"
@@ -658,8 +667,8 @@ class QCOW2ImageTransfer(StateBackend):
 
         All arguments match the base class.
         """
-        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
-        cache_dir = params["vms_base_dir"]
+        cache_dir = cls.get_state_dir(params)
+        shared_pool = params["image_pool"]
 
         vm_name = params["vms"]
         state_tag = f"{vm_name}"
@@ -684,7 +693,7 @@ class QCOW2ImageTransfer(StateBackend):
 
         All arguments match the base class and in addition:
         """
-        shared_pool = params.get("image_pool", "/mnt/local/images/pool")
+        shared_pool = params["image_pool"]
 
         vm_name = params["vms"]
         state_tag = f"{vm_name}"
@@ -783,6 +792,16 @@ class SourcedStateBackend(StateBackend):
     """Backend manipulating states from a possibly shared source."""
 
     transport = QCOW2ImageTransfer
+
+    @classmethod
+    def get_state_dir(cls, params):
+        """
+        Get the directory used for storing states according to internal criteria.
+
+        :param params: parameters for the current state manipulation
+        :type params: {str, str}
+        """
+        return params["swarm_pool"] if params.get("swarm_pool") else params["vms_base_dir"]
 
     @classmethod
     def show(cls, params, object=None):

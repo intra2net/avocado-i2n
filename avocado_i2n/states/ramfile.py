@@ -50,8 +50,9 @@ class RamfileBackend(SourcedStateBackend):
         All arguments match the base class.
         """
         logging.debug(f"Showing external states for vm {params['vms']}")
-        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
-        snapshots = os.listdir(state_dir)
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, params["vms"])
+        snapshots = os.listdir(vm_dir)
 
         images_states = set()
         for image_name in params.objects("images"):
@@ -68,7 +69,7 @@ class RamfileBackend(SourcedStateBackend):
         for snapshot in snapshots:
             if not snapshot.endswith(".state"):
                 continue
-            size = os.stat(os.path.join(state_dir, snapshot)).st_size
+            size = os.stat(os.path.join(vm_dir, snapshot)).st_size
             state = snapshot[:-6]
             logging.info(f"Detected memory state '{snapshot}' of size "
                          f"{round(size / 1024**3, 3)} GB ({size})")
@@ -114,8 +115,9 @@ class RamfileBackend(SourcedStateBackend):
             image_params["images"] = image_name
             cls.image_state_backend.get(image_params, vm)
 
-        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
-        state_file = os.path.join(state_dir, params["check_state"] + ".state")
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, params["vms"])
+        state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         vm.restore_from_file(state_file)
         vm.resume(timeout=3)
 
@@ -129,8 +131,10 @@ class RamfileBackend(SourcedStateBackend):
         vm, vm_name = object, params["vms"]
         logging.info("Setting vm state '%s' of %s", params["set_state"], vm_name)
         vm.pause()
-        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
-        state_file = os.path.join(state_dir, params["check_state"] + ".state")
+
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, params["vms"])
+        state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         vm.save_to_file(state_file)
         vm.destroy(gracefully=False)
 
@@ -163,8 +167,9 @@ class RamfileBackend(SourcedStateBackend):
             image_params["images"] = image_name
             cls.image_state_backend.unset(image_params, vm)
 
-        state_dir = os.path.join(params["vms_base_dir"], params["vms"])
-        state_file = os.path.join(state_dir, params["check_state"] + ".state")
+        state_dir = cls.get_state_dir(params)
+        vm_dir = os.path.join(state_dir, params["vms"])
+        state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         os.unlink(state_file)
         vm.resume(timeout=3)
 
