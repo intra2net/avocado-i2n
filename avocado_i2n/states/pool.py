@@ -548,6 +548,7 @@ class QCOW2ImageTransfer(StateBackend):
         pool_dir = params.get("get_location", params.get("image_pool", ""))
         vm_name = params["vms"]
 
+        logging.info("Compare chain!")
         next_state = state
         while next_state != "":
             for image_name in params.objects("images"):
@@ -559,15 +560,18 @@ class QCOW2ImageTransfer(StateBackend):
                     cache_path = os.path.join(cache_dir, vm_name, image_name, next_state + ".qcow2")
                     pool_path = os.path.join(pool_dir, vm_name, image_name, next_state + ".qcow2")
                 if not cls.ops.compare(cache_path, pool_path, image_params):
+                    logging.info("Different 1!")
                     return False
             if next_state == state and params["object_type"] in ["vms", "nets/vms"]:
                 cache_path = os.path.join(cache_dir, vm_name, next_state + ".state")
                 pool_path = os.path.join(pool_dir, vm_name, next_state + ".state")
                 if not cls.ops.compare(cache_path, pool_path, params):
+                    logging.info("Different 2!")
                     return False
             # comparison of state chain is not yet complete if the state has backing dependencies
             next_state = cls.get_dependency(next_state, params) if next_state != image_params["image_name"] else ""
 
+        logging.info("Same!")
         return True
 
     @classmethod
@@ -670,8 +674,9 @@ class QCOW2ImageTransfer(StateBackend):
         try:
             cls.transfer_chain(state, cache_dir, pool_dir, params, down=True)
         except Exception as error:
-            remove_path = os.path.join(cache_dir, state_tag, state + "." + format)
-            os.unlink(remove_path)
+            #remove_path = os.path.join(cache_dir, state_tag, state + "." + format)
+            # TODO: error in self-syncing could result in self-deletion!
+            #os.unlink(remove_path)
             raise error
 
     @classmethod
@@ -696,8 +701,8 @@ class QCOW2ImageTransfer(StateBackend):
         try:
             cls.transfer_chain(state, cache_dir, pool_dir, params, down=False)
         except Exception as error:
-            remove_path = os.path.join(pool_dir, state_tag, state + "." + format)
-            cls.ops.delete(remove_path, params)
+            #remove_path = os.path.join(pool_dir, state_tag, state + "." + format)
+            #cls.ops.delete(remove_path, params)
             raise error
 
     @classmethod
