@@ -2,7 +2,7 @@
 *Plugins for avocado extending avocado-vt with automated vm state setup,
 inheritance, and traversal*
 
-[![Build Status](https://travis-ci.org/intra2net/avocado-i2n.svg?branch=master)](https://travis-ci.org/intra2net/avocado-i2n) [![Documentation Status](https://readthedocs.org/projects/avocado-i2n/badge/?version=latest)](https://avocado-i2n.readthedocs.io/en/latest/?badge=latest) [![Language grade: Python](https://img.shields.io/lgtm/grade/python/g/intra2net/avocado-i2n.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/intra2net/avocado-i2n/context:python) [![codecov](https://codecov.io/gh/intra2net/avocado-i2n/branch/master/graph/badge.svg)](https://codecov.io/gh/intra2net/avocado-i2n)
+[![GH Actions](https://github.com/intra2net/avocado-i2n/actions/workflows/ci.yml/badge.svg)](https://github.com/intra2net/avocado-i2n/actions/workflows/ci.yml) [![Documentation Status](https://readthedocs.org/projects/avocado-i2n/badge/?version=latest)](https://avocado-i2n.readthedocs.io/en/latest/?badge=latest) [![CodeQL](https://github.com/intra2net/avocado-i2n/actions/workflows/codeql.yml/badge.svg)](https://github.com/intra2net/avocado-i2n/actions/workflows/codeql.yml) [![codecov](https://codecov.io/gh/intra2net/avocado-i2n/branch/master/graph/badge.svg)](https://codecov.io/gh/intra2net/avocado-i2n)
 
 This file provides a brief overview of the core concepts behind the current
 plugin and hopefully a compact explanation of how tests are being run.
