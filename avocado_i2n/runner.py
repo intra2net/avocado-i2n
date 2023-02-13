@@ -29,6 +29,7 @@ INTERFACE
 
 import os
 import time
+import json
 import logging as log
 logging = log.getLogger('avocado.test.' + __name__)
 import signal
@@ -72,6 +73,8 @@ class CartesianRunner(RunnerInterface):
 
         self.status_repo = None
         self.status_server = None
+
+        self.skip_tests = []
 
     """running functionality"""
     async def _update_status(self, job):
@@ -129,24 +132,19 @@ class CartesianRunner(RunnerInterface):
                      spawner=node.spawner, max_running=1,
                      task_timeout=job.config.get('task.timeout.running')).run()
 
-    async def run_test_node(self, node, can_retry=False):
+    async def run_test_node(self, node):
         """
         Run a node once, and optionally re-run it depending on the parameters.
 
         :param node: test node to run
         :type node: :py:class:`TestNode`
-        :param bool can_retry: whether this node can be re-run
         :returns: run status of :py:meth:`run_test`
         :rtype: bool
         :raises: :py:class:`AssertionError` if the ran test node contains no objects
 
         The retry parameters are `retry_attempts` and `retry_stop`. The first is
-        the maximum number of retries, and the second indicates when to stop retrying.
-        The possible combinations of these values are:
-
-        - `retry_stop = error`: retry until error or a maximum of `retry_attempts` number of times
-        - `retry_stop = success`: retry until success or a maximum of `retry_attempts` number of times
-        - `retry_stop = none`: retry a maximum of `retry_attempts` number of times
+        the maximum number of retries, and the second indicates when to stop retrying
+        in terms of encountered test status and can be a list of statuses to stop on.
 
         Only tests with the status of pass, warning, error or failure will be retried.
         Other statuses will be ignored and the test will run only once.
@@ -157,23 +155,25 @@ class CartesianRunner(RunnerInterface):
         if node.is_objectless():
             raise AssertionError("Cannot run test nodes not using any test objects, here %s" % node)
 
-        retry_stop = node.params.get("retry_stop", "none")
+        retry_stop = node.params.get_list("retry_stop", [])
         # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
-        runs_left = 1 + node.params.get_numeric("retry_attempts", 0) if can_retry else 1
+        runs_left = 1 + node.params.get_numeric("retry_attempts", 0)
         # do not log when the user is not using the retry feature
         if runs_left > 1:
-            logging.debug(f"Running test with retry_stop={retry_stop} and retry_attempts={runs_left}")
+            logging.debug(f"Running test with retry_stop={', '.join(retry_stop)} and retry_attempts={runs_left}")
         if runs_left < 1:
             raise ValueError("Value of retry_attempts cannot be less than zero")
-        if retry_stop not in ["none", "error", "success"]:
-            raise ValueError("Value of retry_stop must be 'none', 'error' or 'success'")
+        disallowed_status = set(retry_stop).difference(set(["fail", "error", "pass", "warn", "skip"]))
+        if len(disallowed_status) > 0:
+            raise ValueError(f"Value of retry_stop must be a valid test status,"
+                             f" found {', '.join(disallowed_status)}")
 
         original_prefix = node.prefix
         for r in range(runs_left):
             # appending a suffix to retries so we can tell them apart
             if r > 0:
                 node.prefix = original_prefix + f"r{r}"
-            uid = node.long_prefix
+            uid = node.id_test.uid
             name = node.params["name"]
 
             await self.run_test(self.job, node)
@@ -188,11 +188,8 @@ class CartesianRunner(RunnerInterface):
                 # it doesn't make sense to retry with other status
                 logging.info(f"Will not attempt to retry test with status {test_status}")
                 break
-            if retry_stop == "success" and test_status in ["PASS", "WARN"]:
-                logging.info("Stopping after first successful run")
-                break
-            if retry_stop == "error" and test_status in ["ERROR", "FAIL"]:
-                logging.info("Stopping after first failed run")
+            if test_status.lower() in retry_stop:
+                logging.info(f"Stop retrying after test status {test_status.lower()}")
                 break
         node.prefix = original_prefix
         logging.info(f"Finished running test with status {test_status}")
@@ -247,9 +244,9 @@ class CartesianRunner(RunnerInterface):
                 # a valid current node with at least one child is guaranteed
                 traverse_path.append(next.pick_next_child(slot))
                 continue
-            if next.is_occupied():
+            if next.is_occupied() and next.params.get_boolean("wait_for_occupied", True):
                 # ending with an occupied node would mean we wait for a permill of its duration
-                test_duration = next.params.get_numeric("test_timeout", 3600)
+                test_duration = next.params.get_numeric("test_timeout", 3600) * (next.params.get_numeric("retry_attempts", 0) + 1)
                 occupied_timeout = round(max(test_duration/1000, 0.1), 2)
                 if next == occupied_at:
                     if occupied_wait > test_duration:
@@ -338,6 +335,29 @@ class CartesianRunner(RunnerInterface):
         summary = set()
         params = self.job.config["param_dict"]
 
+        # TODO: we could really benefit from using an appropriate params object here
+        replay_jobs = params.get("replay", "").split(" ")
+        replay_status = params.get("replay_status", "fail,error,warn").split(",")
+        disallowed_status = set(replay_status).difference(set(["fail", "error", "pass", "warn", "skip"]))
+        if len(disallowed_status) > 0:
+            raise ValueError(f"Value of replay_status must be a valid test status,"
+                             f" found {', '.join(disallowed_status)}")
+        for replay_job in replay_jobs:
+            if not replay_job:
+                continue
+            replay_dir = self.job.config.get("datadir.paths.logs_dir", ".")
+            replay_results = os.path.join(replay_dir, replay_job, "results.json")
+            if not os.path.isfile(replay_results):
+                raise RuntimeError("Cannot find replay job results file %s" % replay_results)
+            with open(replay_results) as json_file:
+                logging.info(f"Parsing previous results to replay {replay_results}")
+                data = json.load(json_file)
+                if 'tests' not in data:
+                    raise RuntimeError(f"Cannot find tests to replay against in {replay_results}")
+                for test_details in data["tests"]:
+                    if test_details["status"].lower() not in replay_status and test_details["name"] not in self.skip_tests:
+                        self.skip_tests += [test_details["name"]]
+
         self.tasks = []
         self.slots = params.get("slots", "localhost").split(" ")
         for slot in self.slots:
@@ -359,7 +379,7 @@ class CartesianRunner(RunnerInterface):
         except KeyboardInterrupt:
             summary.add('INTERRUPTED')
 
-        # TODO: the avocado implementation needs a workaround here:
+        # TODO: The avocado implementation needs a workaround here:
         # Wait until all messages may have been processed by the
         # status_updater. This should be replaced by a mechanism
         # that only waits if there are missing status messages to
@@ -370,7 +390,10 @@ class CartesianRunner(RunnerInterface):
 
         self.job.result.end_tests()
         self.job.funcatexit.run()
-        self.status_server.close()
+        # the status server does not provide a way to verify it is fully initialized
+        # so zero test runs need to access an internal attribute before closing
+        if self.status_server._server_task:
+            self.status_server.close()
         signal.signal(signal.SIGTSTP, signal.SIG_IGN)
         return summary
 
@@ -418,14 +441,14 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_dict=setup_dict)
         pre_node = TestNode("0t", install_config, test_node.objects[0])
         pre_node.set_environment(self.job, test_node.params["hostname"])
-        status = await self.run_test_node(pre_node, can_retry=True)
+        status = await self.run_test_node(pre_node)
         if not status:
             logging.error("Could not configure the installation for %s on %s", object_vm, object_image)
             return status
 
         logging.info("Installing virtual machine %s", test_object.suffix)
         test_node.params["type"] = test_node.params["configure_install"]
-        return await self.run_test_node(test_node, can_retry=True)
+        return await self.run_test_node(test_node)
 
     """internals"""
     async def _traverse_test_node(self, graph, test_node, params, slot):
@@ -447,7 +470,10 @@ class CartesianRunner(RunnerInterface):
             is_cleaned_up |= test_node.params.get("unset_mode_vms", test_node.params["unset_mode"])[0] == "f"
             test_node.should_run &= not (is_cleaned_up and len(test_node.workers) > 0)
 
-        if test_node.should_run:
+        replay_skip = test_node.params["name"] in self.skip_tests
+        if replay_skip:
+            logging.debug(f"Test {test_node.params['shortname']} will be skipped via previous job")
+        if test_node.should_run and (not replay_skip or test_node.produces_setup()):
 
             # the primary setup nodes need special treatment
             if params.get("dry_run", "no") == "yes":
@@ -461,7 +487,7 @@ class CartesianRunner(RunnerInterface):
 
             else:
                 # finally, good old running of an actual test
-                status = await self.run_test_node(test_node, can_retry=True)
+                status = await self.run_test_node(test_node)
                 if not status:
                     logging.error("Got nonzero status from the test %s", test_node)
 

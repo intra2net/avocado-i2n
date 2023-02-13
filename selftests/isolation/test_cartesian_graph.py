@@ -89,7 +89,7 @@ class DummyStateCheck(object):
 async def mock_run_test(_self, _job, node):
     # define ID-s and other useful parameter filtering
     node.get_runnable()
-    node.params["_uid"] = node.long_prefix
+    node.params["_uid"] = node.id_test.uid
     # small enough not to slow down our tests too much for a test timeout of 200 but
     # large enough to surpass the minimal occupation waiting timeout for more realism
     await asyncio.sleep(0.2)
@@ -714,7 +714,7 @@ class CartesianGraphTest(Test):
         """Test that certain statuses are ignored when retrying a test."""
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_dict"]["retry_attempts"] = "3"
-        self.config["param_dict"]["retry_stop"] = "none"
+        self.config["param_dict"]["retry_stop"] = ""
 
         # test should not be re-run on these statuses
         for status in ["SKIP", "INTERRUPTED", "CANCEL"]:
@@ -761,30 +761,12 @@ class CartesianGraphTest(Test):
         self.config["param_dict"]["retry_attempts"] = "3"
 
         # expect success and get success -> should run only once
-        self.config["param_dict"]["retry_stop"] = "success"
-        for status in ["PASS", "WARN"]:
+        for stop_status in ["pass", "warn", "fail", "error"]:
+            self.config["param_dict"]["retry_stop"] = stop_status
+            status = stop_status.upper()
             graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                   self.config["tests_str"], self.config["vm_strs"],
-                                                   prefix=self.prefix)
-            DummyStateCheck.present_states = ["root", "install", "customize", "on_customize"]
-            DummyTestRunning.asserted_tests = [
-                {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-            ]
-            self._run_traversal(graph, self.config["param_dict"])
-            self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
-
-            # assert that tests were not repeated
-            self.assertEqual(len(self.runner.job.result.tests), 1)
-            # also assert the correct results were registered
-            self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status])
-            self.runner.job.result.tests.clear()
-
-        # expect failure and get failure -> should run only once
-        self.config["param_dict"]["retry_stop"] = "error"
-        for status in ["FAIL", "ERROR"]:
-            graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                   self.config["tests_str"], self.config["vm_strs"],
-                                                   prefix=self.prefix)
+                                                self.config["tests_str"], self.config["vm_strs"],
+                                                prefix=self.prefix)
             DummyStateCheck.present_states = ["root", "install", "customize", "on_customize"]
             DummyTestRunning.asserted_tests = [
                 {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
@@ -810,7 +792,7 @@ class CartesianGraphTest(Test):
             graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                    self.config["tests_str"], self.config["vm_strs"],
                                                    prefix=self.prefix)
-            with self.assertRaisesRegex(ValueError, r"^Value of retry_stop must be 'none', 'error' or 'success'$"):
+            with self.assertRaisesRegex(ValueError, r"^Value of retry_stop must be a valid test status"):
                 self._run_traversal(graph, self.config["param_dict"])
 
         # negative values
@@ -844,7 +826,7 @@ class CartesianGraphTest(Test):
         """Test that the return value of the last run is preserved."""
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_dict"]["retry_attempts"] = "2"
-        self.config["param_dict"]["retry_stop"] = "none"
+        self.config["param_dict"]["retry_stop"] = ""
 
         test_objects = self.loader.parse_objects(self.config["param_dict"], self.config["vm_strs"])
         net = test_objects[-1]
@@ -856,7 +838,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
         ]
-        to_run = self.runner.run_test_node(test_node, self.config["param_dict"])
+        to_run = self.runner.run_test_node(test_node)
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         # all runs succeed - status must be True
         self.assertTrue(status)
@@ -868,7 +850,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
         ]
-        to_run = self.runner.run_test_node(test_node, self.config["param_dict"])
+        to_run = self.runner.run_test_node(test_node)
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         # last run fails - status must be False
         self.assertFalse(status, "Runner did not preserve last run fail status")
@@ -880,7 +862,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
         ]
-        to_run = self.runner.run_test_node(test_node, self.config["param_dict"])
+        to_run = self.runner.run_test_node(test_node)
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         # fourth run fails - status must be True
         self.assertTrue(status, "Runner did not preserve last pass status after previous fail")

@@ -42,4 +42,17 @@ for cid in $containers; do
 done
 
 echo
+echo "Check replay and overall test reruns behave as expected"
+latest=$(basename $(realpath /mnt/local/results/latest))
+test_options="replay=$latest"
+coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots=$test_slots only=$test_sets $test_options
+test ! -d /mnt/local/results/latest/test-results
+latest=$(basename $(realpath /mnt/local/results/latest))
+test_sets="tutorial1"
+test_options="replay=$latest replay_status=pass"
+coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots=$test_slots only=$test_sets $test_options
+test -d /mnt/local/results/latest/test-results
+
+
+echo
 echo "Integration tests passed successfully"
