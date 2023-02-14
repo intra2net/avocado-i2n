@@ -1,10 +1,15 @@
 #!/bin/bash
 set -eu
 
-# must install locally
+# must prepare locally
 echo
-echo "Install locally the current plugin source"
-pip install -e .
+echo "Configure locally the current plugin source and prepare to run"
+# TODO: local installation does not play well with external pre-installations - provide custom container instead
+#pip install -e .
+readonly test_suite="${TEST_SUITE:-/root/avocado-i2n-libs/tp_folder}"
+readonly i2n_config="${I2N_CONFIG:-/etc/avocado/conf.d/i2n.conf}"
+rm ${HOME}/avocado_overwrite_* -fr
+sed -i "s#suite_path = .*#suite_path = ${test_suite}#" "${i2n_config}"
 
 # minimal effect runs
 echo
