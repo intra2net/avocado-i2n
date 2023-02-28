@@ -361,6 +361,21 @@ class CartesianGraphTest(Test):
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
 
+    def test_one_leaf_with_failed_setup(self):
+        """Test traversal path of one test with a failed reusable setup test node."""
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        DummyStateCheck.present_states = ["install"]
+        DummyTestRunning.asserted_tests = [
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "hostname": "^c1$", "_status": "FAIL"},
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRunning.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRunning.asserted_tests)
+
     def test_one_leaf_validation(self):
         """Test graph (and component) retrieval and validation methods."""
         self.config["tests_str"] += "only tutorial1\n"
