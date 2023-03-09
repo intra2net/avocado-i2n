@@ -45,7 +45,7 @@ BuildRequires: python3-devel, python3-setuptools
 BuildArch: noarch
 
 %if %{with tests}
-BuildRequires: python3-coverage, python3-aexpect, python3-avocado, python3-avocado-plugins-vt
+BuildRequires: python3-coverage, python3-avocado
 %endif
 
 %description
@@ -82,6 +82,9 @@ graph structure.
 %check
 # if later on we decide that unit tests are still more appropriate here just do
 #make check
+# TODO: some circular complexity of avocado's extension manager could affect our
+# ability to run isolation tests in certain environments (with some preinstalled
+# dependencies)
 PYTHONPATH=:. avocado run --nrunner-max-parallel-tasks=4 selftests/isolation/test_*
 %endif
 
