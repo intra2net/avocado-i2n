@@ -29,7 +29,6 @@ try:
     #from guibot.controller import QemuController
     BOT_AVAILABLE = True
 except ImportError:
-    log.warning("No virtual user backend found")
     BOT_AVAILABLE = False
 
 
