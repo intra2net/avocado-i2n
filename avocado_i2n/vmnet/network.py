@@ -1237,28 +1237,36 @@ class VMNetwork(object):
         count_limit = "" if src_vm.params.get("os_type", "linux") == "windows" else "-c 3"
         return src_vm.session.cmd_status_output("ping %s %s" % (address, count_limit))
 
-    def ping_validate(self, src_vm, dst_vm, dst_nic="lan_nic", address=None):
+    def ping_validate(self, src_vm, dst_vm, dst_nic="lan_nic", address=None, timeout=30):
         """
         Pings a vm from another vm to test basic ICMP connectivity and bails on nonzero status.
 
         Arguments are similar to the ones from :py:meth:`ping` with the exception of:
 
+        :param int timeout: number of seconds to retry the ping for as networking
+                            might not be immediately available
         :raises: :py:class:`exceptions.TestError` if the performed ping failed
 
         This method does not perform a refined exit status check, you can use the non-validated
         version and perform your own customization if you wish.
         """
-        status, output = self.ping(src_vm, dst_vm, dst_nic=dst_nic, address=address)
+        for _ in range(timeout):
+            status, output = self.ping(src_vm, dst_vm, dst_nic=dst_nic, address=address)
+            if status == 0:
+                break
+            time.sleep(1)
 
         if status != 0:
             raise exceptions.TestError("Ping of %s from %s unsuccessful" % (dst_vm.name, src_vm.name))
         else:
             logging.debug(output.split("\n")[-3])
 
-    def ping_all(self):
+    def ping_all(self, timeout=30):
         """
         Pings all nodes from each other in order to test complete basic ICMP connectivity.
 
+        :param int timeout: number of seconds to retry the ping for as networking
+                            might not be immediately available
         :raises: :py:class:`exceptions.TestError` if a network mutual ping failed
 
         The ping happens among all LAN members, throwing an exception if one of the pings fails.
@@ -1275,7 +1283,11 @@ class VMNetwork(object):
                                 direction_str = "%s (%s) from %s (%s)" % (node2.name, interface2.ip,
                                                                           node1.name, interface1.ip)
                                 logging.debug("Pinging %s", direction_str)
-                                status, output = self.ping(node1.platform, node2.platform, address=interface2.ip)
+                                for _ in range(timeout):
+                                    status, output = self.ping(node1.platform, node2.platform, address=interface2.ip)
+                                    if status == 0:
+                                        break
+                                    time.sleep(1)
                                 logging.debug("Pinging returned status %s and output:\n%s", status, output)
                                 failed = failed or status != 0
 
