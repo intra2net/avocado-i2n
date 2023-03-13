@@ -52,6 +52,8 @@ class RamfileBackend(SourcedStateBackend):
         state_dir = params["swarm_pool"]
         logging.debug(f"Showing external states for vm {params['vms']} locally in {state_dir}")
         vm_dir = os.path.join(state_dir, params["object_id"])
+        if not os.path.exists(vm_dir):
+            return []
         # TODO: there could be a race where we list a state that disappears in os.stat below
         snapshots = os.listdir(vm_dir)
 
