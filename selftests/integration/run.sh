@@ -7,6 +7,7 @@ echo "Configure locally the current plugin source and prepare to run"
 # TODO: local installation does not play well with external pre-installations - provide custom container instead
 #pip install -e .
 readonly test_suite="${TEST_SUITE:-/root/avocado-i2n-libs/tp_folder}"
+readonly test_results="${TEST_RESULTS:-/root/avocado/job-results}"
 readonly i2n_config="${I2N_CONFIG:-/etc/avocado/conf.d/i2n.conf}"
 rm ${HOME}/avocado_overwrite_* -fr
 sed -i "s#suite_path = .*#suite_path = ${test_suite}#" "${i2n_config}"
@@ -34,11 +35,11 @@ coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots
 # custom checks
 echo
 echo "Check graph verbosity after the complete test suite run"
-test -f /mnt/local/results/latest/cg_*.svg
-test -d /mnt/local/results/latest/graph_parse
-find /mnt/local/results/latest/graph_parse/cg_*.svg > /dev/null
-test -d /mnt/local/results/latest/graph_traverse
-find /mnt/local/results/latest/graph_traverse/cg_*.svg > /dev/null
+test -f "$test_results"/latest/cg_*.svg
+test -d "$test_results"/latest/graph_parse
+find "$test_results"/latest/graph_parse/cg_*.svg > /dev/null
+test -d "$test_results"/latest/graph_traverse
+find "$test_results"/latest/graph_traverse/cg_*.svg > /dev/null
 
 echo
 echo "Check if all containers have identical and synced states after the run"
@@ -53,17 +54,17 @@ ls -A1q /mnt/local/images/shared/vm3 | grep -q . || exit 1
 
 echo
 echo "Check replay and overall test reruns behave as expected"
-latest=$(basename $(realpath /mnt/local/results/latest))
+latest=$(basename $(realpath "$test_results"/latest))
 test_options="replay=$latest"
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots=$test_slots only=$test_sets $test_options
-test $(ls -A1q /mnt/local/results/latest/test-results | grep -v by-status | wc -l) == 2
-ls -A1q /mnt/local/results/latest/test-results | grep -q client_noop || exit 1
-ls -A1q /mnt/local/results/latest/test-results | grep -q explicit_noop || exit 1
-latest=$(basename $(realpath /mnt/local/results/latest))
+test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == 2
+ls -A1q "$test_results/latest/test-results" | grep -q client_noop || exit 1
+ls -A1q "$test_results/latest/test-results" | grep -q explicit_noop || exit 1
+latest=$(basename $(realpath "$test_results"/latest))
 test_sets="tutorial1"
 test_options="replay=$latest replay_status=pass"
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots=$test_slots only=$test_sets $test_options
-test -d /mnt/local/results/latest/test-results
+test -d "$test_results"/latest/test-results
 
 echo
 echo "Testing a mix of shared pool and serial run"
