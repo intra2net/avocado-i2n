@@ -94,7 +94,7 @@ class CartesianRunner(RunnerInterface):
             task = tasks_by_id.get(task_id)
             message_handler.process_message(message, task, job)
 
-    async def run_test(self, job, node):
+    async def run_test_task(self, job, node):
         """
         Run a test instance inside a subprocess.
 
@@ -104,8 +104,8 @@ class CartesianRunner(RunnerInterface):
         :type node: :py:class:`TestNode`
         """
         if not node.is_occupied():
-            default_slot = self.slots[0] if len(self.slots) > 0 else ""
-            node.set_environment(job, default_slot)
+            logging.warning("Environment not set, assuming serial unisolated test runs")
+            node.set_environment(job, "")
         # once the slot is set (here or earlier), the hostname reflects it
         hostname = node.params["hostname"]
         hostname = "localhost" if not hostname else hostname
@@ -138,7 +138,7 @@ class CartesianRunner(RunnerInterface):
 
         :param node: test node to run
         :type node: :py:class:`TestNode`
-        :returns: run status of :py:meth:`run_test`
+        :returns: run status of :py:meth:`run_test_task`
         :rtype: bool
         :raises: :py:class:`AssertionError` if the ran test node contains no objects
 
@@ -176,7 +176,7 @@ class CartesianRunner(RunnerInterface):
             uid = node.id_test.uid
             name = node.params["name"]
 
-            await self.run_test(self.job, node)
+            await self.run_test_task(self.job, node)
 
             for i in range(10):
                 try:
@@ -403,7 +403,7 @@ class CartesianRunner(RunnerInterface):
         return summary
 
     """custom nodes"""
-    async def run_terminal_node(self, graph, object_name, params):
+    async def run_terminal_node(self, graph, object_name, params, slot):
         """
         Run the set of tests necessary for creating a given test object.
 
@@ -445,7 +445,7 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_str=param.re_str("all..noop"),
                                         ovrwrt_dict=setup_dict)
         pre_node = TestNode("0t", install_config, test_node.objects[0])
-        pre_node.set_environment(self.job, test_node.params["hostname"])
+        pre_node.set_environment(self.job, slot)
         status = await self.run_test_node(pre_node)
         if not status:
             logging.error("Could not configure the installation for %s on %s", object_vm, object_image)
@@ -480,7 +480,7 @@ class CartesianRunner(RunnerInterface):
             elif test_node.is_shared_root():
                 logging.debug("Test run on %s started from the shared root", slot)
             elif test_node.is_object_root():
-                status = await self.run_terminal_node(graph, test_node.params["object_root"], params)
+                status = await self.run_terminal_node(graph, test_node.params["object_root"], params, slot)
                 if not status:
                     logging.error("Could not perform the installation from %s", test_node)
 

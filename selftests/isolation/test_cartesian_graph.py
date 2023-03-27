@@ -61,7 +61,7 @@ class DummyTestRun(object):
         })
 
     @staticmethod
-    async def mock_run_test(_self, _job, node):
+    async def mock_run_test_task(_self, _job, node):
         # define ID-s and other useful parameter filtering
         node.get_runnable()
         node.params["_uid"] = node.id_test.uid
@@ -120,7 +120,7 @@ class DummyStateControl(object):
 @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
 @mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
-@mock.patch.object(CartesianRunner, 'run_test', DummyTestRun.mock_run_test)
+@mock.patch.object(CartesianRunner, 'run_test_task', DummyTestRun.mock_run_test_task)
 class CartesianGraphTest(Test):
 
     def setUp(self):

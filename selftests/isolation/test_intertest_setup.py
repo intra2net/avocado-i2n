@@ -95,7 +95,7 @@ def new_job(config):
     yield job
 
 
-async def mock_run_test(_self, _job, node):
+async def mock_run_test_task(_self, _job, node):
     if not hasattr(_self, "result"):
         _self.job.result = mock.MagicMock()
         _self.job.result.tests = []
@@ -119,7 +119,7 @@ def get_check_states_params(_, __, node_params):
 @mock.patch('avocado_i2n.cartgraph.node.door.run_subcontrol', mock_check_states)
 @mock.patch('avocado_i2n.cartgraph.node.door.set_subcontrol_parameter_dict', get_check_states_params)
 @mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
-@mock.patch.object(CartesianRunner, 'run_test', mock_run_test)
+@mock.patch.object(CartesianRunner, 'run_test_task', mock_run_test_task)
 class IntertestSetupTest(Test):
 
     def setUp(self):
