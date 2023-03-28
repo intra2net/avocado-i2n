@@ -70,8 +70,7 @@ class TransferOps():
         session = cls._session_cache.get(host)
         if not session:
             session = remote.remote_login(params["nets_shell_client"],
-                                          host,
-                                          params["nets_shell_port"],
+                                          params['nets_shell_host'], params["nets_shell_port"],
                                           params["nets_username"], params["nets_password"],
                                           params["nets_shell_prompt"])
             cls._session_cache[host] = session
@@ -281,7 +280,7 @@ class TransferOps():
         if os.path.exists(cache_path):
             logging.info(f"Force download of an already available {cache_path}")
 
-        remote.copy_files_from(host,
+        remote.copy_files_from(params["nets_shell_host"],
                                params["nets_file_transfer_client"],
                                params["nets_username"], params["nets_password"],
                                params["nets_file_transfer_port"],
@@ -304,7 +303,7 @@ class TransferOps():
             return
         logging.info(f"Will possibly force upload to {pool_path}")
 
-        remote.copy_files_to(host,
+        remote.copy_files_to(params["nets_shell_host"],
                              params["nets_file_transfer_client"],
                              params["nets_username"], params["nets_password"],
                              params["nets_file_transfer_port"],
@@ -320,7 +319,7 @@ class TransferOps():
         """
         host, path = pool_path.split(":")
         session = remote.remote_login(params["nets_shell_client"],
-                                      host,
+                                      params["nets_shell_host"],
                                       params["nets_shell_port"],
                                       params["nets_username"], params["nets_password"],
                                       params["nets_shell_prompt"])

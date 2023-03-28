@@ -150,7 +150,7 @@ class CartesianGraphTest(Test):
         self.job.result.tests = []
         self.runner = CartesianRunner()
         self.runner.job = self.job
-        self.runner.slots = ["c1"]
+        self.runner.slots = ["1"]
         self.runner.status_server = self.job
 
     def _run_traversal(self, graph, params):
@@ -349,7 +349,7 @@ class CartesianGraphTest(Test):
 
     def test_one_leaf_with_setup(self):
         """Test traversal path of one test with a reusable setup."""
-        self.runner.slots = [f"c{i+1}" for i in range(4)]
+        self.runner.slots = [f"{i+1}" for i in range(4)]
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -357,9 +357,9 @@ class CartesianGraphTest(Test):
         DummyStateControl.asserted_states["check"]["install"] = True
         DummyTestRun.asserted_tests = [
             # cleanup is expected only if at least one of the states is reusable (here root+install)
-            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
@@ -388,7 +388,7 @@ class CartesianGraphTest(Test):
                                                prefix=self.prefix)
         DummyStateControl.asserted_states["check"]["install"] = True
         DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "hostname": "^c1$", "_status": "FAIL"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c1$", "_status": "FAIL"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
@@ -432,8 +432,8 @@ class CartesianGraphTest(Test):
         test_node.set_environment(self.job, "dead")
         DummyStateControl.asserted_states["check"]["install"] = True
         DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
         ]
         with self.assertRaisesRegex(RuntimeError, r"^Worker .+ spent [\d\.]+ seconds waiting for occupied node"):
             self._run_traversal(graph, self.config["param_dict"])
@@ -473,7 +473,7 @@ class CartesianGraphTest(Test):
 
     def test_two_objects_with_setup(self):
         """Test a two-object test run with reusable setup."""
-        self.runner.slots = [f"c{i+1}" for i in range(4)]
+        self.runner.slots = [f"{i+1}" for i in range(4)]
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -481,15 +481,15 @@ class CartesianGraphTest(Test):
         DummyStateControl.asserted_states["check"]["install"] = True
         DummyStateControl.asserted_states["check"]["customize"] = True
         DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "hostname": "^c1$"},
-            {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "hostname": "^c1$"},
+            {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
+            {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_diverging_paths_with_setup(self):
         """Test a multi-object test run with reusable setup of diverging workers."""
-        self.runner.slots = [f"c{i+1}" for i in range(4)]
+        self.runner.slots = [f"{i+1}" for i in range(4)]
         self.config["tests_str"] += "only tutorial1,tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -497,10 +497,10 @@ class CartesianGraphTest(Test):
         DummyStateControl.asserted_states["check"]["install"] = True
         DummyStateControl.asserted_states["check"]["customize"] = True
         DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
-            {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "hostname": "^c2$"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "hostname": "^c1$", "get_location_vm1": r"[\d\.]+\.1:"},
-            {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "hostname": "^c2$", "get_location_image1_vm1": r"[\d\.]+\.2:"},
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
+            {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "nets_host": "^c2$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "nets_host": "^c1$", "get_location_vm1": "c1:"},
+            {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "nets_host": "^c2$", "get_location_image1_vm1": "c2:"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
@@ -516,9 +516,9 @@ class CartesianGraphTest(Test):
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state], 0)
 
-    def test_diverging_paths_with_swarm_reused_setup(self):
+    def test_diverging_paths_with_swarm_setup(self):
         """Test a multi-object test run where the workers will run multiple tests reusing their own local setup."""
-        self.runner.slots = [f"c{i+1}" for i in range(4)]
+        self.runner.slots = [f"{i+1}" for i in range(4)]
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -533,18 +533,21 @@ class CartesianGraphTest(Test):
         DummyStateControl.asserted_states["get"]["guisetup.clicked"] = 0
         DummyStateControl.asserted_states["unset"] = {"guisetup.noop": 0}
         DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "hostname": "^c1$"},
-            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "hostname": "^c2$"},
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
+            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "nets_host": "^c2$"},
             # this tests reentry of traversed path by an extra worker c4 reusing setup from c1
-            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "hostname": "^c3$"},
+            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets_host": "^c3$"},
             # c4 would step back from already occupied on_customize (by c1) for the time being
-            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "hostname": "^c1$", "get_location_vm1": r"[\d\.]+\.1:"},
+            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets_host": "^c1$",
+             "get_location_vm1": "c1:/mnt/local/images/swarm"},
             # c2 would step back from already occupied linux_virtuser (by c3) and c3 proceeds instead
-            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "hostname": "^c3$", "get_location_image1_vm1": r"[\d\.]+\.3:", "get_location_image1_vm2": r"[\d\.]+\.2:"},
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets_host": "^c3$",
+             "get_location_image1_vm1": "c3:/mnt/local/images/swarm", "get_location_image1_vm2": "c2:/mnt/local/images/swarm"},
             # c4 now picks up available setup and tests from its own reentered branch
-            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "hostname": "^c4$", "get_location_image1_vm1": r"[\d\.]+\.3:", "get_location_image1_vm2": r"[\d\.]+\.2:"},
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets_host": "^c4$",
+             "get_location_image1_vm1": "c3:/mnt/local/images/swarm", "get_location_image1_vm2": "c2:/mnt/local/images/swarm"},
             # c1 would now pick its second local tutorial2.names
-            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "hostname": "^c1$", "get_location_vm1": r"[\d\.]+\.1:"},
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets_host": "^c1$", "get_location_vm1": "c1:/mnt/local/images/swarm"},
             # all others now step back from already occupied tutorial2.names (by c1)
         ]
         self._run_traversal(graph, self.config["param_dict"])
@@ -552,6 +555,48 @@ class CartesianGraphTest(Test):
         # expect three sync and four cleanup calls, one for each worker without self-sync
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"], 4)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"], 3)
+
+    def test_diverging_paths_with_remote_setup(self):
+        """Test a multi-object test run where the workers will run multiple tests reusing their own local setup."""
+        self.runner.slots = [f"{i+1}" for i in range(2)] + [f"host1/{i+1}" for i in range(2)] + [f"host2/22"]
+        self.config["tests_str"] = "only leaves\n"
+        self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        # this is not what we test but simply a means to remove some initial nodes for simpler testing
+        DummyStateControl.asserted_states["check"]["install"] = True
+        DummyStateControl.asserted_states["check"]["customize"] = True
+        DummyStateControl.asserted_states["check"]["guisetup.noop"] = False
+        DummyStateControl.asserted_states["check"]["guisetup.clicked"] = False
+        DummyStateControl.asserted_states["get"]["guisetup.noop"] = 0
+        DummyStateControl.asserted_states["get"]["guisetup.clicked"] = 0
+        DummyStateControl.asserted_states["unset"] = {"guisetup.noop": 0}
+        DummyTestRun.asserted_tests = [
+            # TODO: localhost is not acceptable when we mix hosts
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets_gateway": "^$", "nets_host": "^c1$"},
+            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "nets_gateway": "^$", "nets_host": "^c2$"},
+            # this tests remote container reuse of previous setup
+            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets_gateway": "^host1$", "nets_host": "^1$"},
+            # c1 reuses its own setup moving further down
+            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets_host": "^c1$",
+             "get_location_vm1": "c1:/mnt/local/images/swarm"},
+            # remote container reused setup from itself and from local c2
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets_host": "^1$",
+             "get_location_image1_vm1": "host1/1:/mnt/local/images/swarm", "get_location_image1_vm2": "c2:/mnt/local/images/swarm"},
+            # ultimate speed up comes from the second remote container from the first remote location
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets_host": "^2$",
+             "get_location_image1_vm1": "host1/1:/mnt/local/images/swarm", "get_location_image1_vm2": "c2:/mnt/local/images/swarm"},
+            # all of local c1's setup will be reused by a second remote location containers that would pick up tutorial2.names
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets_host": "^22$",
+             "get_location_vm1": "c1:/mnt/local/images/swarm"},
+            # all others now step back from already occupied nodes
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        # expect three sync and four cleanup calls, one for each worker without self-sync
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"], 5)
+        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"], 4)
 
     def test_permanent_object_and_simple_cloning(self):
         """Test a complete test run including complex setup."""
@@ -766,8 +811,10 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state_vms": "^on_customize$"},
         ]
 
+        async def create_server(): pass
         async def serve_forever(): pass
         server_instance = mock_status_server.return_value
+        server_instance.create_server = create_server
         server_instance.serve_forever = serve_forever
 
         self.runner.job.config = self.config

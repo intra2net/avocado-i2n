@@ -76,7 +76,9 @@ class TestNode(object):
         """Unique test ID to identify a test node."""
         # TODO: cannot reuse long prefix since container is set at runtime
         #return TestID(self.long_prefix, self.params["name"])
-        net_id = self.params["hostname"]
+        net_id = self.params.get("nets_gateway", "")
+        net_id += "." if net_id else ""
+        net_id += self.params.get("nets_host", "")
         net_id += self.params["vms"].replace(" ", "")
         full_prefix = self.prefix + "-" + net_id
         return TestID(full_prefix, self.params["name"])
@@ -172,15 +174,25 @@ class TestNode(object):
         This isolating environment could be a container, a virtual machine, or
         a less-isolated process and is managed by a specialized spawner.
         """
-        # NOTE: at present handle the lack of slots as an indicator of using
-        # non-isolated serial runs via the old process environment spawner
-        spawner_name = "lxc" if job.config["param_dict"].get("slots") else "process"
+        env_tuple = tuple(env_id.split("/"))
+        if len(env_tuple) == 1:
+            env_net = ""
+            env_name = "c" + env_tuple[0] if env_tuple[0] else ""
+            # NOTE: at present handle empty environment id (lack of slots) as an indicator
+            # of using non-isolated serial runs via the old process environment spawner
+            env_type = "lxc" if env_name else "process"
+        elif len(env_tuple) == 2:
+            env_net = env_tuple[0]
+            env_name = env_tuple[1]
+            env_type = "remote"
+        else:
+            raise ValueError(f"Environment ID {env_id} could not be parsed for {self}")
 
-        # TODO: move cid in constructor in the upstream PR
-        self.spawner = SpawnerDispatcher(job.config, job)[spawner_name].obj
-        self.spawner.cid = env_id
+        self.spawner = SpawnerDispatcher(job.config, job)[env_type].obj
 
-        self.params["hostname"] = env_id if env_id else self.params["hostname"]
+        self.params["nets_host"] = env_name
+        self.params["nets_gateway"] = env_net
+        self.params["nets_spawner"] = env_type
 
     @staticmethod
     def start_environment(env_id):
@@ -189,17 +201,25 @@ class TestNode(object):
 
         :returns: whether the environment is available after current or previous start
         :rtype: bool
-
-        ..todo:: As we can start containers this code will have to differentiate
-            between a remote host and a remote or local container later on with a
-            wake-on-lan implementation for the latter.
         """
-        import lxc
-        container = lxc.Container(env_id)
-        if not container.running:
-            logging.info(f"Starting bootable environment {env_id}")
-            return container.start()
-        return container.running
+        env_tuple = tuple(env_id.split("/"))
+        if len(env_tuple) == 1:
+            if env_tuple[0] == "":
+                logging.debug("Serial runs do not have any bootable environment")
+                return True
+            import lxc
+            cid = "c" + env_id
+            container = lxc.Container(cid)
+            if not container.running:
+                logging.info(f"Starting bootable environment {cid}")
+                return container.start()
+            return container.running
+        elif len(env_tuple) == 2:
+            # TODO: send wake-on-lan package to start remote host (assuming routable)
+            logging.warning("Assuming the remote host is running for now")
+            return True
+        else:
+            raise ValueError(f"Environment ID {env_id} could not be parsed")
 
     def is_occupied(self):
         return self.spawner is not None
@@ -459,30 +479,40 @@ class TestNode(object):
         """
         self._params_cache = self.config.get_params(show_dictionaries=verbose)
 
-    def get_session_ip(self, slot):
+    def get_session_ip_port(self):
         """
-        Get an IP to a slot for the given test node's IP prefix.
+        Get an IP address and a port to the current slot for the given test node.
 
-        :param str slot: slot to restrict the IP prefix to
-        :returns: IP in string parameter format for the given slot
-        :rtype: str
+        :returns: IP and port in string parameter format
+        :rtype: (str, str)
         """
-        node_host = slot
-        node_nets = self.params["nets_ip_prefix"]
-        return f"{node_nets}.{node_host[1:]}" if node_host else ""
+        node_host = self.params['nets_host']
+        node_gateway = self.params['nets_gateway']
+        # serial non-isolated run
+        if node_host == "":
+            return "localhost"
+        # local isolated run
+        if node_gateway == "":
+            node_ip = f"{self.params['nets_ip_prefix']}.{node_host[1:]}"
+            node_port = self.params["nets_shell_port"]
+        # remote isolated run
+        else:
+            node_ip = node_gateway
+            if not node_host.isdigit():
+                raise RuntimeError("Invalid remote host, only numbers (as forwarded ports) accepted")
+            node_port = f"22{node_host}"
+        return node_ip, node_port
 
-    def get_session_to_net(self, slot):
+    def get_session_to_net(self):
         """
-        Get a remote session to a slot for the given test node's IP prefix.
+        Get a remote session to the current slot for the given test node.
 
-        :param str slot: slot to connect to
-        :returns: remote session to the slot
+        :returns: remote session to the slot determined from current node environment
         :rtype: :type session: :py:class:`aexpect.ShellSession`
         """
         log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
         return remote.wait_for_login(self.params["nets_shell_client"],
-                                     self.get_session_ip(slot),
-                                     self.params["nets_shell_port"],
+                                     *self.get_session_ip_port(),
                                      self.params["nets_username"], self.params["nets_password"],
                                      self.params["nets_shell_prompt"])
 
@@ -521,7 +551,7 @@ class TestNode(object):
             node_params[f"soft_boot{object_suffix}"] = "no"
 
         if not is_leaf:
-            session = self.get_session_to_net(self.params["hostname"])
+            session = self.get_session_to_net()
             control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
             mod_control_path = door.set_subcontrol_parameter(control_path, "action", "check")
             mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)
@@ -544,7 +574,8 @@ class TestNode(object):
                 del node_params[key]
 
         # the sync cleanup will be performed if at least one selected object has a cleanable state
-        slot = self.params["hostname"]
+        slot, slothost = self.params["nets_host"], self.params["nets_gateway"]
+        slothost += "/" if slothost else ""
         should_clean = False
         for test_object in self.objects:
             object_params = test_object.object_typed_params(self.params)
@@ -601,7 +632,7 @@ class TestNode(object):
                                     f"update_pool": "yes"})
                 do = "get"
                 # TODO: this won't work with links
-                if sync_location.startswith(self.get_session_ip(slot)):
+                if sync_location.startswith(slothost + slot):
                     logging.info(f"No need to sync {self} from {slot} to itself")
                     should_clean = False
                 else:
@@ -615,7 +646,7 @@ class TestNode(object):
         if should_clean:
             action = "Cleaning up" if unset_policy[0] == "f" else "Syncing"
             logging.info(f"{action} {self} on {slot}")
-            session = self.get_session_to_net(slot)
+            session = self.get_session_to_net()
             control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
             mod_control_path = door.set_subcontrol_parameter(control_path, "action", do)
             mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)
