@@ -673,7 +673,7 @@ def collect(config, tag=""):
                                  # don't touch root states in any way
                                  "check_mode_images": "rr",
                                  # this manual tool is compatible only with pool
-                                 "use_pool": "yes"},
+                                 "pool_scope": "swarm cluster shared"},
                                 get)
 
 
@@ -691,7 +691,7 @@ def create(config, tag=""):
                                  # don't touch root states in any way
                                  "check_mode_images": "rr",
                                  # this manual tool is not compatible with pool
-                                 "use_pool": "no"},
+                                 "pool_scope": "own"},
                                 set)
 
 
@@ -709,7 +709,7 @@ def clean(config, tag=""):
                                  # make use of off switch if vm is running
                                  "check_mode_images": "rf",
                                  # this manual tool is not compatible with pool
-                                 "use_pool": "no"},
+                                 "pool_scope": "own"},
                                 unset)
 
 

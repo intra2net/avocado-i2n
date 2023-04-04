@@ -532,7 +532,6 @@ class TestNode(object):
         node_params = self.params.copy()
 
         slot, slothost = self.params["nets_host"], self.params["nets_gateway"]
-        slothost += "/" if slothost else ""
         is_leaf = True
         for test_object in self.objects:
             object_params = test_object.object_typed_params(self.params)
@@ -552,8 +551,7 @@ class TestNode(object):
             # ultimate consideration of whether the state is actually present
             object_suffix = f"_{test_object.key}_{test_object.long_suffix}"
             node_params[f"check_state{object_suffix}"] = object_state
-            node_params[f"check_location{object_suffix}"] = object_params.get("set_location",
-                                                                              object_params.get("image_pool", ""))
+            node_params[f"check_location{object_suffix}"] = object_params["set_location"]
             node_params[f"check_mode{object_suffix}"] = object_params.get("check_mode", "rf")
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that
@@ -575,7 +573,7 @@ class TestNode(object):
                     self.should_run = True
                 else:
                     raise RuntimeError("Could not complete state scan due to control file error")
-        logging.info(f"The test node {self} %s run from a scan on {slothost + slot}",
+        logging.info(f"The test node {self} %s run from a scan on {slothost + '/' + slot}",
                      "should" if self.should_run else "should not")
 
     def sync_states(self, params):
@@ -587,7 +585,6 @@ class TestNode(object):
 
         # the sync cleanup will be performed if at least one selected object has a cleanable state
         slot, slothost = self.params["nets_host"], self.params["nets_gateway"]
-        slothost += "/" if slothost else ""
         should_clean = False
         for test_object in self.objects:
             object_params = test_object.object_typed_params(self.params)
@@ -627,32 +624,36 @@ class TestNode(object):
                         node_params[f"remove_image_{image_name}_{vm_name}"] = "yes"
                         node_params["skip_image_processing"] = "no"
 
-            unset_suffixes = f"_{test_object.key}_{test_object.suffix}"
-            unset_suffixes += f"_{vm_name}" if test_object.key == "images" else ""
+            suffixes = f"_{test_object.key}_{test_object.suffix}"
+            suffixes += f"_{vm_name}" if test_object.key == "images" else ""
+            # spread the state setup for the given test object
+            location = object_params["set_location"]
             if unset_policy[0] == "f":
                 # reverse the state setup for the given test object
                 # NOTE: we are forcing the unset_mode to be the one defined for the test node because
                 # the unset manual step behaves differently now (all this extra complexity starts from
                 # the fact that it has different default value which is noninvasive
-                node_params.update({f"unset_state{unset_suffixes}": object_state,
-                                    f"unset_mode{unset_suffixes}": object_params.get("unset_mode", "ri"),
-                                    # TODO: force use only of local operations is still too indirect
-                                    f"use_pool": "no"})
+                node_params.update({f"unset_state{suffixes}": object_state,
+                                    f"unset_location{suffixes}": location,
+                                    f"unset_mode{suffixes}": object_params.get("unset_mode", "ri"),
+                                    f"pool_scope": "own"})
                 do = "unset"
+                logging.info(f"Need to clean up {self} on {slot}")
             else:
                 # spread the state setup for the given test object
-                sync_location = object_params.get("set_location", object_params.get("image_pool", ""))
-                node_params.update({f"get_state{unset_suffixes}": object_state,
-                                    f"get_location{unset_suffixes}": sync_location,
-                                    # TODO: force use only of transport is still too indirect
-                                    f"update_pool": "yes"})
-                do = "get"
-                # TODO: this won't work with links
-                if sync_location.startswith(slothost + slot):
-                    logging.info(f"No need to sync {self} from {slot} to itself")
-                    should_clean = False
+                node_params.update({f"get_state{suffixes}": object_state,
+                                    f"get_location{suffixes}": location})
+                node_params[f"pool_scope{suffixes}"] = object_params.get("pool_scope", "swarm cluster shared")
+                # NOTE: "own" may not be removed because we skip "own" scope here which is done for both
+                # speed and the fact that it is not equivalent to reflexive download (actually getting a state)
+                for sync_source in location.split():
+                    if sync_source.startswith(slothost + '/' + slot):
+                        logging.info(f"No need to sync {self} from {slot} to itself")
+                        should_clean = False
+                        break
                 else:
-                    logging.info(f"Need to sync {self} from {sync_location} to {slot}")
+                    logging.info(f"Need to sync {self} from {location.join(',')} to {slot}")
+                do = "get"
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that
             # all vm state backends can check for states without a vm boot (root)
@@ -669,7 +670,8 @@ class TestNode(object):
             try:
                 door.run_subcontrol(session, mod_control_path)
             except ShellCmdError as error:
-                logging.warning(f"Could not sync/clean {self} due to control file error: {error}")
+                logging.warning(f"{action} {self} on {slot} could not be completed "
+                                f"due to control file error: {error}")
         else:
             logging.info(f"No need to clean up or sync {self} on {slot}")
 

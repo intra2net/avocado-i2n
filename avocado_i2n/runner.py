@@ -441,6 +441,9 @@ class CartesianRunner(RunnerInterface):
 
         logging.info("Configuring creation/installation for %s on %s", object_vm, object_image)
         setup_dict = test_node.params.copy()
+        for key in list(setup_dict.keys()):
+            if "/" in key:
+                del setup_dict[key]
         setup_dict.update({} if params is None else params.copy())
         setup_dict.update({"type": "shared_configure_install", "check_mode": "rr",  # explicit root handling
                            # overwrite some params inherited from the modified install node
@@ -471,6 +474,15 @@ class CartesianRunner(RunnerInterface):
         # scanning can now be additionally triggered for each worker on internal nodes
         if not test_node.should_scan and not test_node.is_cleanup_ready(slot):
             test_node.should_scan = slot not in test_node.workers
+        if not test_node.params.get("set_location") and not test_node.is_shared_root():
+            # TODO: networks need further refactoring possibly as node environments
+            object_suffix = test_node.params["object_suffix"]
+            # discard parameters if we are not talking about any specific non-net object
+            object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
+            test_node.params["set_location"] = test_node.params.get("shared_pool", ".")
+            for node in test_node.cleanup_nodes:
+                if not node.params.get(f"get_location{object_suffix}"):
+                    node.params[f"get_location{object_suffix}"] = node.params.get("shared_pool", ".")
 
         if test_node.should_scan:
             test_node.scan_states()
@@ -489,8 +501,10 @@ class CartesianRunner(RunnerInterface):
             # the primary setup nodes need special treatment
             if params.get("dry_run", "no") == "yes":
                 logging.info("Running a dry %s", test_node.params["shortname"])
+                status = False
             elif test_node.is_shared_root():
                 logging.debug("Test run on %s started from the shared root", slot)
+                status = False
             elif test_node.is_object_root():
                 status = await self.run_terminal_node(graph, test_node.params["object_root"], params, slot)
                 if not status:
@@ -509,6 +523,10 @@ class CartesianRunner(RunnerInterface):
                 if object_state is not None and object_state != "":
                     test_object.current_state = object_state
 
+            # node is not shared and with owned setup that is not yet claimed
+            if status:
+                self._update_reusable_trail(test_node)
+
             test_node.should_run = False
         else:
             logging.debug("Skipping test %s on %s", test_node.params["shortname"], slot)
@@ -516,37 +534,6 @@ class CartesianRunner(RunnerInterface):
         # free the node for traversal by other workers
         test_node.workers.add(slot)
         test_node.spawner = None
-        # node is either shared and thus without owned setup or with setup that is already claimed
-        if test_node.is_shared_root() or len(test_node.workers) > 1:
-            return
-        setup_host = test_node.params["nets_host"]
-        setup_gateway = test_node.params["nets_gateway"]
-        setup_spawner = test_node.params["nets_spawner"]
-        setup_path = test_node.params.get("swarm_pool", test_node.params["vms_base_dir"])
-        # TODO: add support for local copy and lxc containers?
-        if setup_spawner == "process":
-            if setup_host != "":
-                raise RuntimeError("Serial process test runs cannot be isolated via hosts")
-            setup_source = setup_path
-            # separate symmetric and asymmetric sharing
-            if test_node.params.get_boolean("use_symlink"):
-                setup_source += ";"
-            setup_ip, setup_port = "", ""
-        else:
-            setup_ip, setup_port = test_node.get_session_ip_port()
-            setup_source = setup_gateway + "/" + setup_host + ":" + setup_path if setup_gateway else setup_host + ":" + setup_path
-        test_node.params["set_location"] = setup_source
-        test_node.params["nets_shell_host"] = setup_ip
-        test_node.params["nets_shell_port"] = setup_port
-        test_node.params["nets_file_transfer_port"] = setup_port
-        # TODO: networks need further refactoring possibly as node environments
-        object_suffix = test_node.params["object_suffix"]
-        suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
-        for node in test_node.cleanup_nodes:
-            node.params[f"get_location{suffix}"] = setup_source
-            node.params[f"nets_shell_host{suffix}"] = setup_ip
-            node.params[f"nets_shell_port{suffix}"] = setup_port
-            node.params[f"nets_file_transfer_port{suffix}"] = setup_port
 
     async def _reverse_test_node(self, graph, test_node, params, slot):
         """
@@ -570,6 +557,41 @@ class CartesianRunner(RunnerInterface):
         else:
             logging.debug("The test %s should not be cleaned up on %s", test_node.params["shortname"], slot)
         test_node.spawner = None
+
+    def _update_reusable_trail(self, test_node):
+        """Update the graph nodes with traversal information on new reusable trails."""
+        setup_host = test_node.params["nets_host"]
+        setup_gateway = test_node.params["nets_gateway"]
+        setup_spawner = test_node.params["nets_spawner"]
+        setup_path = test_node.params.get("swarm_pool", test_node.params["vms_base_dir"])
+        # TODO: add support for local copy and lxc containers?
+        if setup_spawner == "process":
+            if setup_host != "" or setup_gateway != "":
+                raise RuntimeError("Serial process test runs cannot be isolated via hosts")
+            # separate symmetric and asymmetric sharing
+            if test_node.params.get_boolean("use_symlink"):
+                setup_path += ";"
+            setup_ip, setup_port = "localhost", "22"
+        else:
+            setup_ip, setup_port = test_node.get_session_ip_port()
+        setup_source = setup_gateway + "/" + setup_host + ":" + setup_path
+
+        # TODO: networks need further refactoring possibly as node environments
+        object_suffix = test_node.params["object_suffix"]
+        # discard parameters if we are not talking about any specific non-net object
+        object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
+        source_suffix = "_" + setup_source
+        source_object_suffix = source_suffix + object_suffix
+
+        test_node.params["set_location"] += " " + setup_source
+        test_node.params[f"nets_shell_host{source_suffix}"] = setup_ip
+        test_node.params[f"nets_shell_port{source_suffix}"] = setup_port
+        test_node.params[f"nets_file_transfer_port{source_suffix}"] = setup_port
+        for node in test_node.cleanup_nodes:
+            node.params[f"get_location{object_suffix}"] += " " + setup_source
+            node.params[f"nets_shell_host{source_object_suffix}"] = setup_ip
+            node.params[f"nets_shell_port{source_object_suffix}"] = setup_port
+            node.params[f"nets_file_transfer_port{source_object_suffix}"] = setup_port
 
     def _graph_from_suite(self, test_suite):
         """
