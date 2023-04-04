@@ -103,14 +103,14 @@ class CartesianRunner(RunnerInterface):
         :param node: test node to run
         :type node: :py:class:`TestNode`
         """
-        if not node.is_occupied():
-            default_slot = self.slots[0] if len(self.slots) > 0 else ""
-            node.set_environment(job, default_slot)
-        # once the slot is set (here or earlier), the hostname reflects it
-        hostname = node.params["hostname"]
-        hostname = "localhost" if not hostname else hostname
-        logging.debug(f"Running {node.id} on {hostname}")
+        host = node.params["nets_host"] or "process"
+        gateway = node.params["nets_gateway"] or "localhost"
+        spawner = node.params["nets_spawner"]
+        logging.debug(f"Running {node.id} on {gateway}/{host} using {spawner} isolation")
 
+        if not node.is_occupied():
+            logging.warning("Environment not set, assuming serial unisolated test runs")
+            node.set_environment(job, "")
         if not self.status_repo:
             self.status_repo = StatusRepo(job.unique_id)
             self.status_server = StatusServer(job.config.get('nrunner.status_server_listen'),
@@ -124,6 +124,10 @@ class CartesianRunner(RunnerInterface):
                         category=TASK_DEFAULT_CATEGORY,
                         job_id=self.job.unique_id)
         task = RuntimeTask(raw_task)
+        if spawner == "lxc":
+            task.spawner_handle = host
+        elif spawner == "remote":
+            task.spawner_handle = node.get_session_to_net()
         self.tasks += [task]
 
         # TODO: use a single state machine for all test nodes when we are able
@@ -330,11 +334,11 @@ class CartesianRunner(RunnerInterface):
         self.status_repo = StatusRepo(job.unique_id)
         self.status_server = StatusServer(job.config.get('nrunner.status_server_listen'),
                                           self.status_repo)
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.status_server.create_server())
         asyncio.ensure_future(self.status_server.serve_forever())
         # TODO: this needs more customization
         asyncio.ensure_future(self._update_status(job))
-
-        loop = asyncio.get_event_loop()
 
         graph = self._graph_from_suite(test_suite)
         summary = set()
@@ -364,10 +368,8 @@ class CartesianRunner(RunnerInterface):
                         self.skip_tests += [test_details["name"]]
 
         self.tasks = []
-        self.slots = params.get("slots", "localhost").split(" ")
+        self.slots = params.get("slots", "").split(" ")
         for slot in self.slots:
-            if slot == "localhost":
-                continue
             if not TestNode.start_environment(slot):
                 raise RuntimeError(f"Failed to start environment {slot}")
 
@@ -407,7 +409,7 @@ class CartesianRunner(RunnerInterface):
         return summary
 
     """custom nodes"""
-    async def run_terminal_node(self, graph, object_name, params):
+    async def run_terminal_node(self, graph, object_name, params, slot):
         """
         Run the set of tests necessary for creating a given test object.
 
@@ -449,7 +451,7 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_str=param.re_str("all..noop"),
                                         ovrwrt_dict=setup_dict)
         pre_node = TestNode("0t", install_config, test_node.objects[0])
-        pre_node.set_environment(self.job, test_node.params["hostname"])
+        pre_node.set_environment(self.job, slot)
         status = await self.run_test_node(pre_node)
         if not status:
             logging.error("Could not configure the installation for %s on %s", object_vm, object_image)
@@ -490,7 +492,7 @@ class CartesianRunner(RunnerInterface):
             elif test_node.is_shared_root():
                 logging.debug("Test run on %s started from the shared root", slot)
             elif test_node.is_object_root():
-                status = await self.run_terminal_node(graph, test_node.params["object_root"], params)
+                status = await self.run_terminal_node(graph, test_node.params["object_root"], params, slot)
                 if not status:
                     logging.error("Could not perform the installation from %s", test_node)
 
@@ -517,16 +519,34 @@ class CartesianRunner(RunnerInterface):
         # node is either shared and thus without owned setup or with setup that is already claimed
         if test_node.is_shared_root() or len(test_node.workers) > 1:
             return
-        setup_host = test_node.params["hostname"]
-        setup_path = test_node.params["vms_base_dir"]
-        setup_source_ip = test_node.get_session_ip(setup_host) if setup_host else ""
-        setup_source = setup_source_ip + ":" if setup_source_ip else ""
-        test_node.params["set_location"] = setup_source + setup_path
+        setup_host = test_node.params["nets_host"]
+        setup_gateway = test_node.params["nets_gateway"]
+        setup_spawner = test_node.params["nets_spawner"]
+        setup_path = test_node.params.get("swarm_pool", test_node.params["vms_base_dir"])
+        # TODO: add support for local copy and lxc containers?
+        if setup_spawner == "process":
+            if setup_host != "":
+                raise RuntimeError("Serial process test runs cannot be isolated via hosts")
+            setup_source = setup_path
+            # separate symmetric and asymmetric sharing
+            if test_node.params.get_boolean("use_symlink"):
+                setup_source += ";"
+            setup_ip, setup_port = "", ""
+        else:
+            setup_ip, setup_port = test_node.get_session_ip_port()
+            setup_source = setup_gateway + "/" + setup_host + ":" + setup_path if setup_gateway else setup_host + ":" + setup_path
+        test_node.params["set_location"] = setup_source
+        test_node.params["nets_shell_host"] = setup_ip
+        test_node.params["nets_shell_port"] = setup_port
+        test_node.params["nets_file_transfer_port"] = setup_port
         # TODO: networks need further refactoring possibly as node environments
         object_suffix = test_node.params["object_suffix"]
         suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
         for node in test_node.cleanup_nodes:
-            node.params[f"get_location{suffix}"] = setup_source + setup_path
+            node.params[f"get_location{suffix}"] = setup_source
+            node.params[f"nets_shell_host{suffix}"] = setup_ip
+            node.params[f"nets_shell_port{suffix}"] = setup_port
+            node.params[f"nets_file_transfer_port{suffix}"] = setup_port
 
     async def _reverse_test_node(self, graph, test_node, params, slot):
         """

@@ -420,7 +420,7 @@ def install(config, tag=""):
         install_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
         install_node.params["object_root"] = image.id
         graph.nodes.append(install_node)
-        to_install = r.run_terminal_node(graph, image.id, config["param_dict"])
+        to_install = r.run_terminal_node(graph, image.id, config["param_dict"], "")
         asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_install, r.job.timeout or None))
 
     LOG_UI.info("Finished installation")

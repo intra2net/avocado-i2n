@@ -24,7 +24,7 @@ coverage run --append --source=avocado_i2n $(which avocado) manu setup=list
 # full integration run
 echo
 echo "Perform a full sample test suite run"
-test_slots="c101,c102,c103,c104,c105"
+test_slots="101,102,103,104,105"
 test_sets="leaves"
 test_options="cartgraph_verbose_level=0"
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots=$test_slots only=$test_sets $test_options
@@ -43,7 +43,7 @@ echo "Check if all containers have identical and synced states after the run"
 ims="mnt/local/images"
 containers="$(printf $test_slots | sed "s/,/ /g")"
 for cid in $containers; do
-    diff -r /$ims/c101/rootfs/$ims /$ims/$cid/rootfs/$ims -x el8-64* -x win10-64* -x vm3
+    diff -r /$ims/c101/rootfs/$ims /$ims/c$cid/rootfs/$ims -x el8-64* -x win10-64* -x vm3
 done
 
 echo
