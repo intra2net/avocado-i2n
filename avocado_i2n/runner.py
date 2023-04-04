@@ -94,7 +94,7 @@ class CartesianRunner(RunnerInterface):
             task = tasks_by_id.get(task_id)
             message_handler.process_message(message, task, self.job)
 
-    async def run_test(self, node):
+    async def run_test_task(self, node):
         """
         Run a test instance inside a subprocess.
 
@@ -164,7 +164,7 @@ class CartesianRunner(RunnerInterface):
 
         :param node: test node to run
         :type node: :py:class:`TestNode`
-        :returns: run status of :py:meth:`run_test`
+        :returns: run status of :py:meth:`run_test_task`
         :rtype: bool
         :raises: :py:class:`AssertionError` if the ran test node contains no objects
 
@@ -202,7 +202,7 @@ class CartesianRunner(RunnerInterface):
             uid = node.id_test.uid
             name = node.params["name"]
 
-            await self.run_test(node)
+            await self.run_test_task(node)
 
             for i in range(10):
                 try:

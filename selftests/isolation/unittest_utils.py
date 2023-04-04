@@ -50,7 +50,7 @@ class DummyTestRun(object):
         })
 
     @staticmethod
-    async def mock_run_test(self, node):
+    async def mock_run_test_task(self, node):
         if not hasattr(self.job, "result"):
             self.job.result = mock.MagicMock()
             self.job.result.tests = []

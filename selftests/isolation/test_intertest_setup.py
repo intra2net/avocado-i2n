@@ -35,7 +35,7 @@ def new_job(config):
 @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
 @mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
-@mock.patch.object(CartesianRunner, 'run_test', DummyTestRun.mock_run_test)
+@mock.patch.object(CartesianRunner, 'run_test_task', DummyTestRun.mock_run_test_task)
 class IntertestSetupTest(Test):
 
     def setUp(self):
