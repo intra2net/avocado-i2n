@@ -3,6 +3,7 @@
 import unittest
 import unittest.mock as mock
 import os
+import types
 import contextlib
 
 from avocado import Test
@@ -1874,7 +1875,8 @@ class StatesPoolTest(Test):
             elif do == "unset":
                 self.backend.unset(self.run_params, self.env)
                 detected_calls = self.backend.transport.unset.call_args_list
-            print(detected_calls)
+            else:
+                raise ValueError("Invalid state manipulation under testing")
             self.assertEqual(len(detected_calls), 2)
             source1_params = detected_calls[0].args[0]
             source2_params = detected_calls[1].args[0]
@@ -1965,6 +1967,71 @@ class StatesPoolTest(Test):
                         self.backend.unset(self.run_params, self.env)
                         expected_checks = [mock.call(f"{shared_pool}/vm1/image1/launch.qcow2", mock.ANY)]
                         self.assertListEqual(self.backend.ops.delete.call_args_list, expected_checks)
+                    else:
+                        raise ValueError("Invalid state manipulation under testing")
+
+    def test_remote_boundary_path(self):
+        """Test that the correct cache location is used via configuration."""
+        self._set_minimal_pool_params()
+
+        self._create_mock_transfer_backend()
+        self.deps = ["launch", ""]
+
+        for do in ["check", "get", "set", "unset"]:
+            for i, pool_source in enumerate(["/:/shared", "/:/shared;", "host/container:/else"]):
+                self.run_params[f"{do}_state"] = "launch"
+                self.run_params[f"{do}_location"] = pool_source
+                self.run_params["object_type"] = "nets/vms/images"
+
+                # create a spec-abinding mock class instead of resetting previous mock
+                self.backend.ops = mock.Mock(spec=pool.TransferOps)
+
+                # assign a bound class method to the mock object with the mock class as the class object
+                # MyMockClass.my_classmethod = types.MethodType(MyClass.my_classmethod.__func__, MyMockClass)
+                # SPECIAL NOTE: to assign a bound instance method to the mock object with the mock object as self:
+                # my_mock.my_method = MyClass.my_method.__get__(my_mock)
+
+                if do == "check":
+                    self.backend.ops.list_local.return_value = []
+                    self.backend.ops.list_link.return_value = []
+                    self.backend.ops.list_remote.return_value = []
+                    self.backend.ops.list = types.MethodType(pool.TransferOps.list.__func__, self.backend.ops)
+                    self.backend.check(self.run_params, self.env)
+                    if i == 0:
+                        self.backend.ops.list_local.assert_called_once()
+                    elif i == 1:
+                        self.backend.ops.list_link.assert_called_once()
+                    else:
+                        self.backend.ops.list_remote.assert_called_once()
+                elif do == "get":
+                    self.backend.ops.download = types.MethodType(pool.TransferOps.download.__func__, self.backend.ops)
+                    self.backend.get(self.run_params, self.env)
+                    if i == 0:
+                        self.backend.ops.download_local.assert_called_once()
+                    elif i == 1:
+                        self.backend.ops.download_link.assert_called_once()
+                    else:
+                        self.backend.ops.download_remote.assert_called_once()
+                elif do == "set":
+                    self.backend.ops.upload = types.MethodType(pool.TransferOps.upload.__func__, self.backend.ops)
+                    self.backend.set(self.run_params, self.env)
+                    if i == 0:
+                        self.backend.ops.upload_local.assert_called_once()
+                    elif i == 1:
+                        self.backend.ops.upload_link.assert_called_once()
+                    else:
+                        self.backend.ops.upload_remote.assert_called_once()
+                elif do == "unset":
+                    self.backend.ops.delete = types.MethodType(pool.TransferOps.delete.__func__, self.backend.ops)
+                    self.backend.unset(self.run_params, self.env)
+                    if i == 0:
+                        self.backend.ops.delete_local.assert_called_once()
+                    elif i == 1:
+                        self.backend.ops.delete_link.assert_called_once()
+                    else:
+                        self.backend.ops.delete_remote.assert_called_once()
+                else:
+                    raise ValueError("Invalid state manipulation under testing")
 
 
 class StatesSetupTest(Test):

@@ -75,8 +75,8 @@ class TransferOps():
             cls._session_cache[host] = session
         return session
 
-    @staticmethod
-    def list(pool_path, params):
+    @classmethod
+    def list(cls, pool_path, params):
         """
         List all states in a path from the pool.
 
@@ -84,15 +84,16 @@ class TransferOps():
         :param params: configuration parameters
         :type params: {str, str}
         """
-        if ":" in pool_path:
-            return TransferOps.list_remote(pool_path, params)
-        elif ";" in pool_path:
-            return TransferOps.list_link(pool_path.replace(";", ""), params)
+        hosts, path = pool_path.split(":")
+        if hosts != "/":
+            return cls.list_remote(pool_path, params)
+        elif ";" in path:
+            return cls.list_link(path.replace(";", ""), params)
         else:
-            return TransferOps.list_local(pool_path, params)
+            return cls.list_local(path, params)
 
-    @staticmethod
-    def compare(cache_path, pool_path, params):
+    @classmethod
+    def compare(cls, cache_path, pool_path, params):
         """
         Compare cache and pool external state version.
 
@@ -101,15 +102,16 @@ class TransferOps():
         :param params: configuration parameters
         :type params: {str, str}
         """
-        if ":" in pool_path:
-            return TransferOps.compare_remote(cache_path, pool_path, params)
-        elif ";" in pool_path:
-            return TransferOps.compare_link(cache_path, pool_path.replace(";", ""), params)
+        hosts, path = pool_path.split(":")
+        if hosts != "/":
+            return cls.compare_remote(cache_path, pool_path, params)
+        elif ";" in path:
+            return cls.compare_link(cache_path, path.replace(";", ""), params)
         else:
-            return TransferOps.compare_local(cache_path, pool_path, params)
+            return cls.compare_local(cache_path, path, params)
 
-    @staticmethod
-    def download(cache_path, pool_path, params):
+    @classmethod
+    def download(cls, cache_path, pool_path, params):
         """
         Download a path from the pool depending on the pool location.
 
@@ -118,15 +120,16 @@ class TransferOps():
         :param params: configuration parameters
         :type params: {str, str}
         """
-        if ":" in pool_path:
-            TransferOps.download_remote(cache_path, pool_path, params)
-        elif ";" in pool_path:
-            TransferOps.download_link(cache_path, pool_path.replace(";", ""), params)
+        hosts, path = pool_path.split(":")
+        if hosts != "/":
+            cls.download_remote(cache_path, pool_path, params)
+        elif ";" in path:
+            cls.download_link(cache_path, path.replace(";", ""), params)
         else:
-            TransferOps.download_local(cache_path, pool_path, params)
+            cls.download_local(cache_path, path, params)
 
-    @staticmethod
-    def upload(cache_path, pool_path, params):
+    @classmethod
+    def upload(cls, cache_path, pool_path, params):
         """
         Upload a path to the pool depending on the pool location.
 
@@ -135,15 +138,16 @@ class TransferOps():
         :param params: configuration parameters
         :type params: {str, str}
         """
-        if ":" in pool_path:
-            TransferOps.upload_remote(cache_path, pool_path, params)
-        elif ";" in pool_path:
-            TransferOps.upload_link(cache_path, pool_path.replace(";", ""), params)
+        hosts, path = pool_path.split(":")
+        if hosts != "/":
+            cls.upload_remote(cache_path, pool_path, params)
+        elif ";" in path:
+            cls.upload_link(cache_path, path.replace(";", ""), params)
         else:
-            TransferOps.upload_local(cache_path, pool_path, params)
+            cls.upload_local(cache_path, path, params)
 
-    @staticmethod
-    def delete(pool_path, params):
+    @classmethod
+    def delete(cls, pool_path, params):
         """
         Delete a path in the pool depending on the pool location.
 
@@ -151,12 +155,13 @@ class TransferOps():
         :param params: configuration parameters
         :type params: {str, str}
         """
-        if ":" in pool_path:
-            TransferOps.delete_remote(pool_path, params)
-        elif ";" in pool_path:
-            TransferOps.delete_link(pool_path.replace(";", ""), params)
+        hosts, path = pool_path.split(":")
+        if hosts != "/":
+            cls.delete_remote(pool_path, params)
+        elif ";" in path:
+            cls.delete_link(path.replace(";", ""), params)
         else:
-            TransferOps.delete_local(pool_path, params)
+            cls.delete_local(path, params)
 
     @staticmethod
     def list_local(pool_path, params):
