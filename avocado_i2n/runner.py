@@ -31,10 +31,10 @@ import os
 import time
 import json
 import logging as log
-logging = log.getLogger('avocado.test.' + __name__)
+logging = log.getLogger('avocado.job.' + __name__)
 import signal
 import asyncio
-log.getLogger('asyncio').parent = log.getLogger('avocado.test')
+log.getLogger('asyncio').parent = log.getLogger('avocado.job')
 
 from avocado.core.nrunner.task import TASK_DEFAULT_CATEGORY, Task
 from avocado.core.messages import MessageHandler

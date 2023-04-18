@@ -134,7 +134,7 @@ def params_from_cmd(config):
     config["prefix"] = ""
 
     # log into files for each major level the way it was done for autotest
-    config["run.store_logging_stream"] = [":10", ":20", ":30", ":40"]
+    config["job.run.store_logging_stream"] = ["avocado.core:DEBUG", ":10", ":20", ":30", ":40"]
     # dump parsed and traversed graph at each test loading and running step
     graph.set_graph_logging_level(level=config["tests_params"].get_numeric("cartgraph_verbose_level", 20))
 

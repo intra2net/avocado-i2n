@@ -50,7 +50,7 @@ import os
 import re
 import time
 import logging as log
-logging = log.getLogger('avocado.test.' + __name__)
+logging = log.getLogger('avocado.job.' + __name__)
 import collections
 
 from avocado.utils import process

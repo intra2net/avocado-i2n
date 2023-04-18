@@ -30,7 +30,7 @@ INTERFACE
 import os
 import time
 import logging as log
-logging = log.getLogger('avocado.test.' + __name__)
+logging = log.getLogger('avocado.job.' + __name__)
 import shutil
 import contextlib
 import fcntl

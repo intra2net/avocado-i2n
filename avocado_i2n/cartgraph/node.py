@@ -31,7 +31,7 @@ import os
 import re
 from functools import cmp_to_key
 import logging as log
-logging = log.getLogger('avocado.test.' + __name__)
+logging = log.getLogger('avocado.job.' + __name__)
 
 from aexpect.exceptions import ShellCmdError, ShellTimeoutError
 from aexpect import remote
@@ -543,7 +543,7 @@ class TestNode(object):
         :returns: remote session to the slot determined from current node environment
         :rtype: :type session: :py:class:`aexpect.ShellSession`
         """
-        log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
+        log.getLogger("aexpect").parent = log.getLogger("avocado.job")
         host, port = self.get_session_ip_port()
         address = host + ":" + port
         cache = type(self)._session_cache

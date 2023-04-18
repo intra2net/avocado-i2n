@@ -29,7 +29,7 @@ INTERFACE
 
 import os
 import logging as log
-logging = log.getLogger('avocado.test.' + __name__)
+logging = log.getLogger('avocado.job.' + __name__)
 
 from avocado.core import exceptions
 
