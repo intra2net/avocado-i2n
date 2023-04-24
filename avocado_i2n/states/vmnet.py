@@ -46,15 +46,6 @@ class VMNetBackend(StateBackend):
         return ["default"]
 
     @classmethod
-    def check(cls, params, object=None):
-        """
-        Check whether a given state exists.
-
-        All arguments match the base class.
-        """
-        return True
-
-    @classmethod
     def get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.

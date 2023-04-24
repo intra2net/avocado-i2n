@@ -59,20 +59,6 @@ class StateBackend():
         raise NotImplementedError("Cannot use abstract state backend")
 
     @classmethod
-    def check(cls, params, object=None):
-        """
-        Check whether a given state exists.
-
-        :param params: configuration parameters
-        :type params: {str, str}
-        :param object: object whose states are manipulated
-        :type object: :py:class:`virttest.qemu_vm.VM` or None
-        :returns: whether the state is exists
-        :rtype: bool
-        """
-        raise NotImplementedError("Cannot use abstract state backend")
-
-    @classmethod
     def get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.
@@ -213,7 +199,7 @@ def _state_check_chain(do, env,
     """
     state_params["check_state"] = state_params[f"{do}_state"]
     if state_params.get(f"{do}_location"):
-        state_params["check_location"] = state_params[f"{do}_location"]
+        state_params["show_location"] = state_params[f"{do}_location"]
     if do == "set":
         state_params["check_opts"] = "soft_boot=yes"
         state_params["soft_boot"] = "yes"
@@ -339,7 +325,7 @@ def check_states(run_params, env=None):
         if state in ROOTS:
             state_exists = root_exists
         else:
-            state_exists = state_backend.check(state_params, state_object)
+            state_exists = state in state_backend.show(state_params, state_object)
 
         if not state_exists:
             return False

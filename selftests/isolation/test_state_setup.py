@@ -39,9 +39,6 @@ class MockDriver(unittest.TestCase):
         self.exist_switch = True
         self.exist_lambda = None
 
-    def _only_lvm_root_exists(self, vg_name, lv_name):
-        return True if lv_name == "LogVol" else False
-
     def _file_exists(self, filepath):
         # avocado's test class does some unexpected monkey patching
         if filepath.endswith(".expected"):
@@ -58,14 +55,22 @@ class MockDriver(unittest.TestCase):
         self.exist_lambda = None
 
     @contextlib.contextmanager
-    def mock_show(self, state_names, state_type):
+    def mock_show(self, state_names, state_type, root_exists=True):
         mock_driver = mock.MagicMock()
+        self._reset_extra_mocks()
         backend = self.state_backends[state_type]
         if backend == "lvm":
+            mock_driver.lv_check.return_value = root_exists
             mock_driver.lv_list.return_value = state_names
             with mock.patch('avocado_i2n.states.lvm.lv_utils', mock_driver):
                 yield mock_driver
         elif backend in ["qcow2", "qcow2vt"]:
+            if backend == "qcow2":
+                self.mock_vms["vm1"].is_alive.return_value = False
+                self.exist_switch = root_exists
+            elif backend == "qcow2vt":
+                self.exist_switch = True
+                self.mock_vms["vm1"].is_alive.return_value = root_exists
             output = ""
             for state in state_names:
                 size = "0 B" if state_type == "image" else "1 GiB"
@@ -74,10 +79,13 @@ class MockDriver(unittest.TestCase):
             with mock.patch('avocado_i2n.states.qcow2.QemuImg', mock_driver):
                 yield mock_driver
         elif backend == "qcow2ext":
+            self.mock_vms["vm1"].is_alive.return_value = False
             mock_driver.listdir.return_value = [s + ".qcow2" for s in state_names]
+            mock_driver.stat.return_value.st_size = 0
             mock_driver.path.join = os.path.join
             mock_driver.path.dirname = os.path.dirname
-            mock_driver.stat.return_value.st_size = 0
+            mock_driver.path.exists = self.mock_file_exists
+            self.exist_switch = root_exists
             class QemuImgMock():
                 def __init__(self, params, root_dir, tag):
                     self.image_filename = os.path.join(root_dir, tag)
@@ -89,68 +97,8 @@ class MockDriver(unittest.TestCase):
             mock_driver.listdir.return_value = [s + ".state" for s in state_names]
             mock_driver.stat.return_value.st_size = 0
             mock_driver.path.join = os.path.join
-            mock_driver.path.exists.return_value = True
-            with mock.patch('avocado_i2n.states.ramfile.os', mock_driver):
-                yield mock_driver
-        else:
-            raise ValueError(f"Unsupported backend for testing {backend}")
-
-    @contextlib.contextmanager
-    def mock_check(self, state_name, state_type, exists=True, root_exists=True):
-        mock_driver = mock.MagicMock()
-        self._reset_extra_mocks()
-        backend = self.state_backends[state_type]
-        if backend == "lvm":
-            mock_driver.lv_check.return_value = exists and root_exists
-            mock_driver.lv_check.side_effect = self._only_lvm_root_exists if root_exists and not exists else None
-            with mock.patch('avocado_i2n.states.lvm.lv_utils', mock_driver):
-                yield mock_driver
-        elif backend in ["qcow2", "qcow2vt"]:
-            if backend == "qcow2":
-                self.mock_vms["vm1"].is_alive.return_value = False
-                self.exist_switch = root_exists
-            elif backend == "qcow2vt":
-                self.exist_switch = True
-                self.mock_vms["vm1"].is_alive.return_value = root_exists
-            size = "0 B" if state_type == "image" else "1 GiB"
-            state = state_name
-            output = f"0         {state}         {size} 0000-00-00 00:00:00   00:00:00.000\n"
-            output = "" if not exists else output
-            driver_instance = mock_driver.return_value
-            driver_instance.snapshot_list.return_value = output
-            with mock.patch('avocado_i2n.states.qcow2.QemuImg', mock_driver):
-                yield mock_driver
-        elif backend == "qcow2ext":
-            self.mock_vms["vm1"].is_alive.return_value = False
-            mock_driver.listdir.return_value = [state_name + ".qcow2"] if exists else []
-            mock_driver.path.join = os.path.join
-            mock_driver.path.dirname = os.path.dirname
-            mock_driver.path.isabs = os.path.isabs
             mock_driver.path.exists = self.mock_file_exists
-            mock_driver.stat.return_value.st_size = 0
-            self.exist_switch = exists
-            exist_lambda = lambda filename: filename.endswith("image.qcow2") or filename.endswith("/image1")
-            self.exist_lambda = exist_lambda if root_exists and not exists else None
-            # TODO: this is in fact way too much mocking since it requires mocking various
-            # other backends like shutil, QemuImg, etc. all of which are used - better convert
-            # all these isolated boundary tests into proper integration tests to reduce mocking
-            # the boundary of our dependencies and benefit from proper boundary change detection
-            class QemuImgMock():
-                def __init__(self, params, root_dir, tag):
-                    self.image_filename = os.path.join(root_dir, tag)
-            with mock.patch('avocado_i2n.states.qcow2.QemuImg', QemuImgMock):
-                with mock.patch('avocado_i2n.states.qcow2.os', mock_driver):
-                    yield mock_driver
-        elif backend == "ramfile":
-            ramfile.RamfileBackend.image_state_backend.show.return_value = [state_name] if exists else []
-            mock_driver.listdir.return_value = [state_name + ".state"] if exists else []
-            mock_driver.stat.return_value.st_size = 0
-            mock_driver.path.join = os.path.join
-            mock_driver.path.isabs.return_value = False
-            mock_driver.path.exists = self.mock_file_exists
-            self.exist_switch = exists
-            exist_lambda = lambda filename: filename.endswith("image.qcow2") or filename.endswith("/vm1")
-            self.exist_lambda = exist_lambda if root_exists and not exists else None
+            self.exist_switch = root_exists
             with mock.patch('avocado_i2n.states.ramfile.os', mock_driver):
                 yield mock_driver
         else:
@@ -169,59 +117,10 @@ class MockDriver(unittest.TestCase):
         else:
             raise ValueError(f"Unsupported backend for testing {backend}")
 
-    def assert_check(self, mock_driver, state_name, state_type, action_type):
-        # exists, root_exists s.t. 0 = 00, 1 = 01, 2 = 10, 3 = 11
-        exists, root_exists = [bool(int(b)) for b in f'{action_type:02b}']
-        backend = self.state_backends[state_type]
-        if backend == "lvm":
-            # assert root state is checked as a prerequisite
-            expected_checks = [mock.call("disk_vm1", "LogVol"),
-                               mock.call("disk_vm1", state_name)]
-            # assert actual state is checked when root is available
-            expected_checks = expected_checks[:1] if not root_exists else expected_checks
-            self.assertListEqual(mock_driver.lv_check.call_args_list, expected_checks)
-            if not root_exists:
-                self.mock_vms["vm1"].destroy.assert_not_called()
-        elif backend in ["qcow2", "qcow2vt"]:
-            # assert root state is checked as a prerequisite
-            self.mock_file_exists.assert_called_once_with("/images/vm1/image.qcow2")
-            self.mock_vms["vm1"].is_alive.assert_called()
-            # assert actual state is checked only when root is available
-            if root_exists:
-                mock_driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
-            else:
-                mock_driver.return_value.snapshot_list.assert_not_called()
-        elif backend == "qcow2ext":
-            # assert root state is checked as a prerequisite
-            expected_checks = [mock.call(f"/images/vm1/image.qcow2"),
-                               mock.call(f"/images/vm1/image1")]
-            if not root_exists:
-                expected_checks = expected_checks[:1]
-            self.assertListEqual(mock_driver.path.exists.call_args_list, expected_checks)
-            # assert actual state is checked when root is available
-            if root_exists:
-                # TODO: cannot assert state_name as we need more isolated testing here
-                mock_driver.listdir.assert_called_once_with(f"/images/vm1/image1")
-        elif backend == "ramfile":
-            # assert root state is checked as a prerequisite
-            expected_checks = [mock.call(f"/images/vm1"),
-                               mock.call(f"/images/vm1/image.qcow2")]
-            if not root_exists:
-                expected_checks = expected_checks[:1]
-            else:
-                self.mock_vms["vm1"].is_alive.assert_called()
-            self.assertListEqual(mock_driver.path.exists.call_args_list, expected_checks)
-            # assert actual state is checked when root is available
-            if root_exists:
-                # TODO: cannot assert state_name as we need more isolated testing here
-                mock_driver.listdir.assert_called_once_with(f"/images/vm1")
-        else:
-            raise ValueError(f"Unsupported backend for testing {backend}")
-
     def assert_get(self, mock_driver, state_name, state_type, action_type):
         backend = self.state_backends[state_type]
         if backend == "lvm":
-            mock_driver.lv_check.assert_called_with("disk_vm1", "launch")
+            mock_driver.lv_check.assert_called_with("disk_vm1", "LogVol")
             if action_type == 1:
                 mock_driver.lv_remove.assert_called_once_with('disk_vm1', 'current_state')
                 mock_driver.lv_take_snapshot.assert_called_once_with('disk_vm1', state_name, 'current_state')
@@ -259,11 +158,11 @@ class MockDriver(unittest.TestCase):
         backend = self.state_backends[state_type]
         if backend == "lvm":
             if action_type == 1:
-                mock_driver.lv_check.assert_any_call("disk_vm1", state_name)
+                mock_driver.lv_check.assert_called_with("disk_vm1", "LogVol")
                 mock_driver.lv_remove.assert_not_called()
                 mock_driver.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', state_name)
             elif action_type == 2:
-                mock_driver.lv_check.assert_called_with("disk_vm1", state_name)
+                mock_driver.lv_check.assert_called_with("disk_vm1", "LogVol")
                 mock_driver.lv_remove.assert_called_once_with('disk_vm1', state_name)
                 mock_driver.lv_take_snapshot.assert_called_once_with('disk_vm1', 'current_state', state_name)
             else:
@@ -304,7 +203,7 @@ class MockDriver(unittest.TestCase):
     def assert_unset(self, mock_driver, state_name, state_type, action_type):
         backend = self.state_backends[state_type]
         if backend == "lvm":
-            mock_driver.lv_check.assert_called_with("disk_vm1", state_name)
+            mock_driver.lv_check.assert_called_with("disk_vm1", "LogVol")
             if action_type == 1:
                 mock_driver.lv_remove.assert_called_once_with("disk_vm1", state_name)
                 mock_driver.lv_take_snapshot.assert_not_called()
@@ -480,39 +379,17 @@ class StatesBoundaryTest(Test):
         self.assertNotIn("root", states)
         self.assertNotIn("boot", states)
 
-    def _test_check_state(self, backend):
-        backend_type = self._prepare_driver_from_backend(backend)
-        self.run_params[f"check_state_{backend_type}s_vm1"] = "launch"
-
-        # assert behavior on root and state availability
-        with self.driver.mock_check("launch", backend_type, True, True) as driver:
-            exists = ss.check_states(self.run_params, self.env)
-            self.driver.assert_check(driver, "launch", backend_type, 3)
-        self.assertTrue(exists)
-
-        # assert behavior on root availability
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
-            exists = ss.check_states(self.run_params, self.env)
-            self.driver.assert_check(driver, "launch", backend_type, 1)
-        self.assertFalse(exists)
-
-        # assert behavior on no root availability
-        with self.driver.mock_check("launch", backend_type, False, False) as driver:
-            exists = ss.check_states(self.run_params, self.env)
-            self.driver.assert_check(driver, "launch", backend_type, 0)
-        self.assertFalse(exists)
-
     def _test_get_state(self, backend):
         backend_type = self._prepare_driver_from_backend(backend)
         self.run_params[f"get_state_{backend_type}s_vm1"] = "launch"
 
         # assert state is retrieved if available after it was checked
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        with self.driver.mock_show(["launch"], backend_type) as driver:
             ss.get_states(self.run_params, self.env)
             self.driver.assert_get(driver, "launch", backend_type, 1)
 
         # assert state is not retrieved if not available after it was checked
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        with self.driver.mock_show([], backend_type) as driver:
             ss.get_states(self.run_params, self.env)
             self.driver.assert_get(driver, "launch", backend_type, 0)
 
@@ -521,12 +398,12 @@ class StatesBoundaryTest(Test):
         self.run_params[f"set_state_{backend_type}s_vm1"] = "launch"
 
         # assert state is removed and saved if available after it was checked
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        with self.driver.mock_show(["launch"], backend_type) as driver:
             ss.set_states(self.run_params, self.env)
             self.driver.assert_set(driver, "launch", backend_type, 2)
 
         # assert state is saved if not available after it was checked
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        with self.driver.mock_show([], backend_type) as driver:
             ss.set_states(self.run_params, self.env)
             self.driver.assert_set(driver, "launch", backend_type, 1)
 
@@ -535,12 +412,12 @@ class StatesBoundaryTest(Test):
         self.run_params[f"unset_state_{backend_type}s_vm1"] = "launch"
 
         # assert state is removed if available after it was checked
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        with self.driver.mock_show(["launch"], backend_type) as driver:
             ss.unset_states(self.run_params, self.env)
             self.driver.assert_unset(driver, "launch", backend_type, 1)
 
         # assert state is not removed if not available after it was checked
-        with self.driver.mock_check("launch", backend_type, False) as driver:
+        with self.driver.mock_show([], backend_type) as driver:
             ss.unset_states(self.run_params, self.env)
             self.driver.assert_unset(driver, "launch", backend_type, 0)
 
@@ -584,19 +461,7 @@ class StatesBoundaryTest(Test):
             driver.listdir.assert_called_once_with("/some/swarm2/vm1")
         self.assertEqual(len(states), 1)
 
-    def test_check_image_lvm(self):
-        """Test that state checking with the LVM backend works correctly."""
-        self._test_check_state("lvm")
-
-    def test_check_image_qcow2(self):
-        """Test that state checking with the QCOW2 internal state backend works correctly."""
-        self._test_check_state("qcow2")
-
-    def test_check_image_qcow2ext(self):
-        """Test that state checking with the QCOW2 external state backend works correctly."""
-        self._test_check_state("qcow2ext")
-
-    def test_check_image_qcow2_boot(self):
+    def test_show_image_qcow2_boot(self):
         """
         Test that state checking with the QCOW2 backend considers running vms.
 
@@ -608,7 +473,7 @@ class StatesBoundaryTest(Test):
         self.run_params[f"check_state_{backend_type}s_vm1"] = "launch"
 
         # assert behavior on root and state availability
-        with self.driver.mock_check("launch", backend_type, True, True) as driver:
+        with self.driver.mock_show(["launch"], backend_type, True) as driver:
             self.mock_vms["vm1"].is_alive.return_value = True
             exists = ss.check_states(self.run_params, self.env)
             # TODO: define more action types to achieve backend independence here,
@@ -622,10 +487,6 @@ class StatesBoundaryTest(Test):
             driver.system_output.assert_not_called()
         self.assertFalse(exists)
 
-    def test_check_vm_qcow2(self):
-        """Test that state checking with the QCOW2VT backend works correctly."""
-        self._test_check_state("qcow2")
-
     def test_check_vm_qcow2_noimage(self):
         """
         Test that state checking with the QCOW2VT backend considers missing images.
@@ -637,7 +498,7 @@ class StatesBoundaryTest(Test):
         backend_type = self._prepare_driver_from_backend(backend)
         self.run_params[f"check_state_{backend_type}s_vm1"] = "launch"
 
-        with self.driver.mock_check("launch", backend_type, True, True) as driver:
+        with self.driver.mock_show(["launch"], backend_type, True) as driver:
             self.driver.exist_switch = False
             exists = ss.check_states(self.run_params, self.env)
             # TODO: define more action types to achieve backend independence here,
@@ -650,10 +511,6 @@ class StatesBoundaryTest(Test):
             # assert actual state is not checked and not available
             driver.system_output.assert_not_called()
         self.assertFalse(exists)
-
-    def test_check_vm_ramfile(self):
-        """Test that state checking with the ramfile backend works correctly."""
-        self._test_check_state("ramfile")
 
     def test_get_image_lvm(self):
         """Test that state getting with the LVM backend works with available root."""
@@ -721,7 +578,7 @@ class StatesBoundaryTest(Test):
         backend_type = self._prepare_driver_from_backend(backend)
         self.run_params["unset_state_images_vm1"] = "current_state"
 
-        with self.driver.mock_check("launch", backend_type, True) as driver:
+        with self.driver.mock_show(["current_state", "launch"], backend_type, True) as driver:
             with self.assertRaises(ValueError):
                 ss.unset_states(self.run_params, self.env)
             self.driver.assert_unset(driver, "current_state", backend_type, 0)
@@ -733,13 +590,13 @@ class StatesBoundaryTest(Test):
         self.run_params[f"check_state_{backend_type}s_vm1"] = "root"
 
         # assert root state is correctly detected
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
+        with self.driver.mock_show([], backend_type, True) as driver:
             exists = ss.check_states(self.run_params, self.env)
             driver.lv_check.assert_called_once_with("disk_vm1", "LogVol")
         self.assertTrue(exists)
 
         # assert root state is correctly not detected
-        with self.driver.mock_check("launch", backend_type, False, False) as driver:
+        with self.driver.mock_show([], backend_type, False) as driver:
             exists = ss.check_states(self.run_params, self.env)
             driver.lv_check.assert_called_once_with("disk_vm1", "LogVol")
         self.assertFalse(exists)
@@ -755,17 +612,17 @@ class StatesBoundaryTest(Test):
         self.run_params["image_name_image2_vm1"] = "vm1/image2"
 
         # assert root state is correctly detected
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
+        with self.driver.mock_show([], backend_type, True) as driver:
             exists = ss.check_states(self.run_params, self.env)
         self.assertTrue(exists)
 
         # assert root state is correctly not detected
-        with self.driver.mock_check("launch", backend_type, False, False) as driver:
+        with self.driver.mock_show([], backend_type, False) as driver:
             exists = ss.check_states(self.run_params, self.env)
         self.assertFalse(exists)
 
         # assert running vms result in not completely available root state
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
+        with self.driver.mock_show([], backend_type, True) as driver:
             self.mock_vms["vm1"].is_alive.return_value = True
             exists = ss.check_states(self.run_params, self.env)
         self.assertFalse(exists)
@@ -777,13 +634,13 @@ class StatesBoundaryTest(Test):
         self.run_params[f"check_state_{backend_type}s_vm1"] = "root"
 
         # assert root state is correctly detected
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
+        with self.driver.mock_show([], backend_type, True) as driver:
             exists = ss.check_states(self.run_params, self.env)
             self.mock_vms["vm1"].is_alive.assert_called_once_with()
         self.assertTrue(exists)
 
         # assert root state is correctly not detected
-        with self.driver.mock_check("launch", backend_type, False, False) as driver:
+        with self.driver.mock_show([], backend_type, False) as driver:
             exists = ss.check_states(self.run_params, self.env)
             self.mock_vms["vm1"].is_alive.assert_called_once_with()
         self.assertFalse(exists)
@@ -801,14 +658,14 @@ class StatesBoundaryTest(Test):
         # assert root state is correctly detected
         for image_format in ["qcow2", "raw", "something-else"]:
             self.run_params["image_format"] = image_format
-            with self.driver.mock_check("launch", backend_type, False, True) as driver:
+            with self.driver.mock_show([], backend_type, True) as driver:
                 file_suffix = f".{image_format}" if image_format != "raw" else ""
                 self.driver.exist_lambda = lambda filename: filename.endswith(file_suffix) or filename.endswith("vm1")
                 exists = ss.check_states(self.run_params, self.env)
             self.assertTrue(exists)
 
         # assert root state is correctly not detected
-        with self.driver.mock_check("launch", backend_type, False, False) as driver:
+        with self.driver.mock_show([], backend_type, False) as driver:
             exists = ss.check_states(self.run_params, self.env)
         self.assertFalse(exists)
 
@@ -826,7 +683,7 @@ class StatesBoundaryTest(Test):
             self.run_params[f"get_state_{backend_type}s_vm1"] = "root"
 
             # cannot verify that the operation is NOOP so simply run it for coverage
-            with self.driver.mock_check("launch", backend_type, False, True) as driver:
+            with self.driver.mock_show([], backend_type, True) as driver:
                 ss.get_states(self.run_params, self.env)
 
     @mock.patch('avocado_i2n.states.lvm.env_process', mock.Mock(return_value=0))
@@ -865,7 +722,7 @@ class StatesBoundaryTest(Test):
 
         # assert root state is detected and overwritten
         mock_process.reset_mock()
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
+        with self.driver.mock_show([], backend_type, True) as driver:
             ss.set_states(self.run_params, self.env)
             driver.lv_check.assert_called_with('disk_vm1', 'LogVol')
             driver.lv_create.assert_called_once_with('disk_vm1', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
@@ -874,7 +731,7 @@ class StatesBoundaryTest(Test):
 
         # assert root state is not detected and created
         mock_process.reset_mock()
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
+        with self.driver.mock_show([], backend_type, True) as driver:
             ss.set_states(self.run_params, self.env)
             driver.lv_check.assert_called_with('disk_vm1', 'LogVol')
             driver.lv_create.assert_called_once_with('disk_vm1', 'LogVol', '30G', pool_name='thin_pool', pool_size='30G')
@@ -890,7 +747,7 @@ class StatesBoundaryTest(Test):
 
         # assert root state is detected and overwritten
         mock_env_process.reset_mock()
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
+        with self.driver.mock_show([], backend_type, True) as driver:
             exists_times = [True, False]
             self.driver.exist_lambda = lambda filename: exists_times.pop(0)
             ss.set_states(self.run_params, self.env)
@@ -902,7 +759,7 @@ class StatesBoundaryTest(Test):
 
         # assert root state is not detected and created
         mock_env_process.reset_mock()
-        with self.driver.mock_check("launch", backend_type, False, False) as driver:
+        with self.driver.mock_show([], backend_type, False) as driver:
             ss.set_states(self.run_params, self.env)
             self.mock_vms["vm1"].is_alive.assert_called()
             # called twice because QCOW2's set_root can only set missing root part
@@ -912,7 +769,7 @@ class StatesBoundaryTest(Test):
 
         # assert running vms result in setting only remaining part of root state
         mock_env_process.reset_mock()
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
+        with self.driver.mock_show([], backend_type, True) as driver:
             self.mock_vms["vm1"].is_alive.return_value = True
             ss.set_states(self.run_params, self.env)
             # is vm is not alive root is not available and no need to check image existence
@@ -932,7 +789,7 @@ class StatesBoundaryTest(Test):
             # some of them are mocked for this test to have a proper coverage and definitions
 
             # assert root state is not detected and created
-            with self.driver.mock_check("launch", backend_type, False, False) as driver:
+            with self.driver.mock_show([], backend_type, False) as driver:
                 ss.set_states(self.run_params, self.env)
                 if backend == "qcow2vt":
                     self.mock_vms["vm1"].create.assert_called_once_with()
@@ -940,7 +797,7 @@ class StatesBoundaryTest(Test):
                     driver.makedirs.assert_called_once_with("/images/vm1", exist_ok=True)
 
             # assert root state is detected and but not overwritten in this case
-            with self.driver.mock_check("launch", backend_type, False, True) as driver:
+            with self.driver.mock_show([], backend_type, True) as driver:
                 ss.set_states(self.run_params, self.env)
                 self.mock_vms["vm1"].create.assert_not_called()
                 if backend == "ramfile":
@@ -960,7 +817,7 @@ class StatesBoundaryTest(Test):
 
         # assert root state is detected and removed
         mock_vg_cleanup.reset_mock()
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
+        with self.driver.mock_show([], backend_type, True) as driver:
             ss.unset_states(self.run_params, self.env)
             driver.vg_check.assert_called_once_with('disk_vm1')
         mock_vg_cleanup.assert_called_once_with('virtual_hdd_vm1', '/tmp/disk_vm1', 'disk_vm1', None, True)
@@ -968,7 +825,7 @@ class StatesBoundaryTest(Test):
         # test tolerance to cleanup errors
         mock_vg_cleanup.reset_mock()
         mock_vg_cleanup.side_effect = exceptions.TestError("cleanup failed")
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
+        with self.driver.mock_show([], backend_type, True) as driver:
             driver.vg_check.return_value = True
             ss.unset_states(self.run_params, self.env)
             driver.vg_check.assert_called_once_with('disk_vm1')
@@ -985,7 +842,7 @@ class StatesBoundaryTest(Test):
         # assert root state is detected and removed
         mock_os.reset_mock()
         mock_env_process.reset_mock()
-        with self.driver.mock_check("launch", backend_type, False, True) as driver:
+        with self.driver.mock_show([], backend_type, True) as driver:
             ss.unset_states(self.run_params, self.env)
         mock_env_process.postprocess_image.assert_called_once()
         mock_os.rmdir.assert_called_once()
@@ -1002,12 +859,12 @@ class StatesBoundaryTest(Test):
             self.run_params[f"unset_state_{backend_type}s_vm1"] = "root"
 
             # assert root state is detected and removed
-            with self.driver.mock_check("launch", backend_type, False, True) as driver:
+            with self.driver.mock_show([], backend_type, True) as driver:
                 ss.unset_states(self.run_params, self.env)
                 self.mock_vms["vm1"].destroy.assert_called_once_with(gracefully=False)
 
     def test_qcow2_dash(self):
-        """Test the special character suppot for the QCOW2 backends."""
+        """Test the special character support for the QCOW2 backends."""
         self.run_params["image_name"] = "vm1/image"
 
         for do in ["check", "get", "set", "unset"]:
@@ -1017,14 +874,16 @@ class StatesBoundaryTest(Test):
                 self.run_params[f"{do}_state_{state_type}"] = "launch-ready_123"
 
                 # check root state name format
-                with self.driver.mock_check("launch-ready_123", backend_type) as driver:
+                with self.driver.mock_show(["launch-ready_123"], backend_type) as driver:
                     ss.__dict__[f"{do}_states"](self.run_params, self.env)
                 del self.run_params[f"{do}_state_{state_type}"]
 
                 # check internal state name format
+                if do == "check":
+                    continue
                 self.run_params[f"{do}_state"] = "launch-ready_123"
                 run_params = self.run_params.object_params("vm1")
-                with self.driver.mock_check("launch-ready_123", backend_type) as driver:
+                with self.driver.mock_show(["launch-ready_123"], backend_type) as driver:
                     ss.BACKENDS["qcow2"]().__getattribute__(do)(run_params, self.env)
                     ss.BACKENDS["qcow2vt"]().__getattribute__(do)(run_params, self.env)
                 del self.run_params[f"{do}_state"]
@@ -1040,20 +899,20 @@ class StatesBoundaryTest(Test):
         backend_type = self._prepare_driver_from_backend(backend)
 
         mock_isfile.return_value = True
-        with self.driver.mock_check("launch", backend_type, False, False) as driver:
+        with self.driver.mock_show([], backend_type, False) as driver:
             qcow2.convert_image(self.run_params)
             driver.return_value.convert.assert_called()
             # TODO: this is now fully external assertion beyond our mocks
             # 'qemu-img convert -c -p -O qcow2 "./ext_image" "/images/vm1/image.qcow2"'
 
         mock_isfile.return_value = False
-        with self.driver.mock_check("launch", backend_type, False, False) as driver:
+        with self.driver.mock_show([], backend_type, False) as driver:
             with self.assertRaises(FileNotFoundError):
                 qcow2.convert_image(self.run_params)
             driver.return_value.assert_not_called()
 
         mock_isfile.return_value = True
-        with self.driver.mock_check("launch", backend_type, False, False) as driver:
+        with self.driver.mock_show([], backend_type, False) as driver:
             driver.CmdError = process.CmdError
             result = process.CmdResult("qemu-img convert", stderr=b'..."write" lock...', exit_status=0)
             driver.return_value.check.side_effect = process.CmdError(result=result)
@@ -1326,11 +1185,11 @@ class StatesPoolTest(Test):
     def test_show_all(self):
         """Test that state listing finds both cache and pool states."""
         self._set_minimal_pool_params()
-        self.run_params["check_location"] = f"/:/path/1 /:/path/2 /:{self.run_params['swarm_pool']} {self.run_params['shared_pool']}"
+        self.run_params["show_location"] = f"/:/path/1 /:/path/2 /:{self.run_params['swarm_pool']} {self.run_params['shared_pool']}"
         self._create_mock_sourced_backend(source_type="state")
 
         self.backend._show.return_value = ["a", "b", "c"]
-        self.backend.transport.show.side_effect = lambda params, _: ["c", "d"] if "1" in params["check_location"] else ["d", "e"]
+        self.backend.transport.show.side_effect = lambda params, _: ["c", "d"] if "1" in params["show_location"] else ["d", "e"]
         states = self.backend.show(self.run_params, self.env)
         self.backend._show.assert_called_once()
 
@@ -1339,10 +1198,10 @@ class StatesPoolTest(Test):
         path1_params = detected_calls[0].args[0]
         path2_params = detected_calls[1].args[0]
         shared_params = detected_calls[2].args[0]
-        self.assertEqual(path1_params[f"check_location"], "/:/path/1")
-        self.assertEqual(path2_params[f"check_location"], "/:/path/2")
+        self.assertEqual(path1_params[f"show_location"], "/:/path/1")
+        self.assertEqual(path2_params[f"show_location"], "/:/path/2")
         # no duplicate call to own scope and extra call to shared scope were made
-        self.assertTrue(shared_params["check_location"], self.run_params['shared_pool'])
+        self.assertTrue(shared_params["show_location"], self.run_params['shared_pool'])
 
         self.assertSetEqual(set(states), set(["a", "b", "c", "d"]))
 
@@ -1350,7 +1209,7 @@ class StatesPoolTest(Test):
         """Test that only cache states are considered if pool is disabled."""
         self._set_minimal_pool_params()
         self.run_params["pool_scope"] = "own"
-        self.run_params["check_location"] = "/:/path/1"
+        self.run_params["show_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
         self.backend._show.return_value = ["a", "b", "c"]
@@ -1364,7 +1223,7 @@ class StatesPoolTest(Test):
         """Test that only pool states are considered if pool is enforced."""
         self._set_minimal_pool_params()
         self.run_params["pool_scope"] = "shared"
-        self.run_params["check_location"] = "/:/path/1"
+        self.run_params["show_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
         self.backend._show.return_value = ["a", "b", "c"]
@@ -1374,86 +1233,32 @@ class StatesPoolTest(Test):
         self.backend.transport.show.assert_called_once()
         self.assertSetEqual(set(states), set(["c", "d", "e"]))
 
-    def test_check_pool_priority_valid_mirrors(self):
-        """Test that state checking considers pool state with priority."""
+    def test_show_cache_leftover(self):
+        """Test that cache states are shown if no pool sources."""
         self._set_minimal_pool_params()
         self.run_params["check_state"] = "launch"
-        self.run_params["check_location"] = "/:/path/1 /:/path/2"
+        self.run_params["show_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = False
-        self.backend.transport.check.return_value = True
-        exists = self.backend.check(self.run_params, self.env)
-        self.backend._check.assert_called_once()
-        self.backend.transport.check.assert_has_calls([mock.ANY, mock.ANY])
+        self.backend._show.return_value = ["launch", "launch2"]
+        self.backend.transport.show.return_value = ["launch", "launch2"]
+        exists = self.run_params["check_state"] in self.backend.show(self.run_params, self.env)
+        self.backend._show.assert_called_once()
+        self.backend.transport.show.assert_called_once()
         self.assertTrue(exists)
 
-    def test_check_pool_priority_invalid_mirrors(self):
-        """Test that state checking would error out with invalid mirrors."""
+    def test_show_pool_none(self):
+        """Test that no states are shown if both counterparts do not exist."""
         self._set_minimal_pool_params()
         self.run_params["check_state"] = "launch"
-        self.run_params["check_location"] = "/:/path/1 /:/path/2"
+        self.run_params["show_location"] = "/:/path/1 /:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = False
-        self.backend.transport.check.side_effect = lambda params, _: "1" in params["check_location"]
-        with self.assertRaises(RuntimeError):
-            self.backend.check(self.run_params, self.env)
-
-    def test_check_cache_leftover(self):
-        """Test that state checking considers cache state if no pool sources."""
-        self._set_minimal_pool_params()
-        self.run_params["check_state"] = "launch"
-        self.run_params["check_location"] = "/:/path/1"
-        self._create_mock_sourced_backend(source_type="state")
-
-        self.backend._check.return_value = True
-        self.backend.transport.check.return_value = False
-        exists = self.backend.check(self.run_params, self.env)
-        self.backend._check.assert_called_once()
-        self.backend.transport.check.assert_called_once()
-        self.assertTrue(exists)
-
-    def test_check_pool_none(self):
-        """Test that the state does not exist if both counterparts do not exist."""
-        self._set_minimal_pool_params()
-        self.run_params["check_state"] = "launch"
-        self.run_params["check_location"] = "/:/path/1 /:/path/1"
-        self._create_mock_sourced_backend(source_type="state")
-
-        self.backend._check.return_value = False
-        self.backend.transport.check.return_value = False
-        exists = self.backend.check(self.run_params, self.env)
-        self.backend._check.assert_called_once()
-        self.backend.transport.check.assert_called_once()
-        self.assertFalse(exists)
-
-    def test_check_no_pool(self):
-        """Test that state checking uses only local root with disabled pool."""
-        self._set_minimal_pool_params()
-        self.run_params["pool_scope"] = "own"
-        self.run_params["check_state"] = "launch"
-        self.run_params["check_location"] = "/:/path/1"
-        self._create_mock_sourced_backend(source_type="state")
-
-        self.backend._check.return_value = False
-        exists = self.backend.check(self.run_params, self.env)
-        self.backend._check.assert_called_once()
-        self.backend.transport.check.assert_not_called()
-        self.assertFalse(exists)
-
-    def test_check_only_pool(self):
-        """Test that updating the state pool without local root fails early."""
-        self._set_minimal_pool_params()
-        self.run_params["pool_scope"] = "shared"
-        self.run_params["check_state"] = "launch"
-        self.run_params["check_location"] = "/:/path/1"
-        self._create_mock_sourced_backend(source_type="state")
-
-        self.backend.transport.check.return_value = False
-        exists = self.backend.check(self.run_params, self.env)
-        self.backend._check.assert_not_called()
-        self.backend.transport.check.assert_called_once()
+        self.backend._show.return_value = []
+        self.backend.transport.show.return_value = []
+        exists = self.run_params["check_state"] in self.backend.show(self.run_params, self.env)
+        self.backend._show.assert_called_once()
+        self.backend.transport.show.assert_called_once()
         self.assertFalse(exists)
 
     def test_get_best_source_scope(self):
@@ -1485,8 +1290,8 @@ class StatesPoolTest(Test):
         self.run_params["get_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = True
-        self.backend.transport.check.return_value = True
+        self.backend._show.return_value = ["launch"]
+        self.backend.transport.show.return_value = ["launch"]
         self.backend.transport.compare_chain.return_value = True
 
         self.backend.get(self.run_params, self.env)
@@ -1501,8 +1306,8 @@ class StatesPoolTest(Test):
         self.run_params["get_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = False
-        self.backend.transport.check.return_value = True
+        self.backend._show.return_value = []
+        self.backend.transport.show.return_value = ["launch"]
 
         self.backend.get(self.run_params, self.env)
 
@@ -1517,8 +1322,8 @@ class StatesPoolTest(Test):
         self.run_params["get_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = True
-        self.backend.transport.check.return_value = True
+        self.backend._show.return_value = ["launch"]
+        self.backend.transport.show.return_value = ["launch"]
         self.backend.transport.compare_chain.return_value = False
 
         self.backend.get(self.run_params, self.env)
@@ -1547,8 +1352,8 @@ class StatesPoolTest(Test):
         self.run_params["get_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = False
-        self.backend.transport.check.return_value = True
+        self.backend._show.return_value = []
+        self.backend.transport.show.return_value = ["launch"]
 
         self.backend.get(self.run_params, self.env)
         self.backend._get.assert_not_called()
@@ -1572,7 +1377,7 @@ class StatesPoolTest(Test):
         self.run_params["set_location"] = f"/:/path/1 /:/path/2 /:{self.run_params['swarm_pool']} {self.run_params['shared_pool']}"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = True
+        self.backend._show.return_value = ["launch"]
         self.backend.set(self.run_params, self.env)
         self.backend._set.assert_called_once()
 
@@ -1594,7 +1399,7 @@ class StatesPoolTest(Test):
         self.run_params["set_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = True
+        self.backend._show.return_value = ["launch"]
         self.backend.set(self.run_params, self.env)
         self.backend._set.assert_called_once()
         self.backend.transport.set.assert_not_called()
@@ -1607,7 +1412,7 @@ class StatesPoolTest(Test):
         self.run_params["set_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = True
+        self.backend._show.return_value = ["launch"]
         self.backend.set(self.run_params, self.env)
         self.backend._set.assert_not_called()
         self.backend.transport.set.assert_called_once()
@@ -1616,11 +1421,11 @@ class StatesPoolTest(Test):
         """Test that updating the state pool without cache state fails early."""
         self._set_minimal_pool_params()
         self.run_params["pool_scope"] = "shared"
-        self.run_params["check_state"] = "launch"
-        self.run_params["check_location"] = "/:/path/1"
+        self.run_params["set_state"] = "launch"
+        self.run_params["set_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = False
+        self.backend._show.return_value = []
         with self.assertRaises(RuntimeError):
             self.backend.set(self.run_params, self.env)
         self.backend.transport.assert_not_called()
@@ -1632,7 +1437,7 @@ class StatesPoolTest(Test):
         self.run_params["unset_location"] = f"/:/path/1 /:/path/2 /:{self.run_params['swarm_pool']} {self.run_params['shared_pool']}"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = True
+        self.backend._show.return_value = ["launch"]
         self.backend.unset(self.run_params, self.env)
         self.backend._unset.assert_called_once()
 
@@ -1654,7 +1459,7 @@ class StatesPoolTest(Test):
         self.run_params["unset_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = True
+        self.backend._show.return_value = ["launch"]
         self.backend.unset(self.run_params, self.env)
         self.backend._unset.assert_called_once()
         self.backend.transport.unset.assert_not_called()
@@ -1667,7 +1472,7 @@ class StatesPoolTest(Test):
         self.run_params["unset_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        self.backend._check.return_value = True
+        self.backend._show.return_value = ["launch"]
         self.backend.unset(self.run_params, self.env)
         self.backend._unset.assert_not_called()
         self.backend.transport.unset.assert_called_once()
@@ -1689,14 +1494,14 @@ class StatesPoolTest(Test):
         """Test that a state and its complete backing chain will be listed."""
         self._set_minimal_pool_params()
         self.run_params["check_state"] = "launch"
-        self.run_params["check_location"] = "host/container:/dir/subdir"
+        self.run_params["show_location"] = "host/container:/dir/subdir"
         self.run_params["object_type"] = "nets/vms/images"
 
         self._create_mock_transfer_backend()
         self.deps = ["launch", "prelaunch", ""]
 
         self.backend.ops.list.return_value = ["launch.qcow2", "prelaunch.qcow2"]
-        exists = self.backend.check(self.run_params, self.env)
+        exists = self.run_params["check_state"] in self.backend.show(self.run_params, self.env)
         expected_checks = [mock.call("host/container:/dir/subdir/vm1/image1", mock.ANY)]
         self.assertListEqual(self.backend.ops.list.call_args_list, expected_checks)
         self.assertTrue(exists)
@@ -1705,14 +1510,14 @@ class StatesPoolTest(Test):
         """Test that a state and its complete backing chain will be listed."""
         self._set_minimal_pool_params()
         self.run_params["check_state"] = "launch"
-        self.run_params["check_location"] = "host/container:/dir/subdir"
+        self.run_params["show_location"] = "host/container:/dir/subdir"
         self.run_params["object_type"] = "nets/vms"
 
         self._create_mock_transfer_backend()
         self.deps = ["launch", "prelaunch", ""]
 
         self.backend.ops.list.return_value = ["launch.state", "prelaunch.state"]
-        exists = self.backend.check(self.run_params, self.env)
+        exists = self.run_params["check_state"] in self.backend.show(self.run_params, self.env)
         expected_checks = [mock.call("host/container:/dir/subdir/vm1", mock.ANY)]
         self.assertListEqual(self.backend.ops.list.call_args_list, expected_checks)
         self.assertTrue(exists)
@@ -1843,7 +1648,7 @@ class StatesPoolTest(Test):
         self.run_params["pool_scope"] += " swarm cluster"
         self._create_mock_sourced_backend(source_type="state")
 
-        for do in ["show", "check", "get", "set", "unset"]:
+        for do in ["show", "get", "set", "unset"]:
             self.run_params[f"{do}_state"] = "launch"
             self.run_params[f"{do}_location"] = "h1/c1:/path/1 h2/c2:/path/2"
             self.run_params["nets_shell_port_h1/c1:/path/1"] = "22001"
@@ -1853,18 +1658,11 @@ class StatesPoolTest(Test):
 
             self.backend.transport.reset_mock()
             if do == "show":
-                # TODO: show uses check parameters, potentially merge with check entirely
-                do = "check"
-                self.run_params[f"{do}_state"] = "launch"
-                self.run_params[f"{do}_location"] = "h1/c1:/path/1 h2/c2:/path/2"
                 self.backend.show(self.run_params, self.env)
                 detected_calls = self.backend.transport.show.call_args_list
-            elif do == "check":
-                self.backend.check(self.run_params, self.env)
-                detected_calls = self.backend.transport.check.call_args_list
             elif do == "get":
-                self.backend._check.return_value = False
-                self.backend.transport.check.return_value = True
+                self.backend._show.return_value = []
+                self.backend.transport.show.return_value = ["launch"]
                 self.backend.get(self.run_params, self.env)
                 self.run_params["nets_gateway"] = "h2"
                 self.backend.get(self.run_params, self.env)
@@ -1893,7 +1691,7 @@ class StatesPoolTest(Test):
         self.run_params["pool_scope"] += " swarm"
         self._create_mock_sourced_backend(source_type="state")
 
-        for do in ["show", "check", "get", "set", "unset"]:
+        for do in ["show", "get", "set", "unset"]:
             self.run_params[f"{do}_state"] = "launch"
             self.run_params[f"{do}_location"] = "h1/c1:/path/1 h2/c2:/path/2"
             self.run_params["nets_gateway"] = "h2"
@@ -1901,18 +1699,11 @@ class StatesPoolTest(Test):
 
             self.backend.transport.reset_mock()
             if do == "show":
-                # TODO: show uses check parameters, potentially merge with check entirely
-                do = "check"
-                self.run_params[f"{do}_state"] = "launch"
-                self.run_params[f"{do}_location"] = "h1/c1:/path/1 h2/c2:/path/2"
                 self.backend.show(self.run_params, self.env)
                 detected_calls = self.backend.transport.show.call_args_list
-            elif do == "check":
-                self.backend.check(self.run_params, self.env)
-                detected_calls = self.backend.transport.check.call_args_list
             elif do == "get":
-                self.backend._check.return_value = False
-                self.backend.transport.check.return_value = True
+                self.backend._show.return_value = []
+                self.backend.transport.show.return_value = ["launch"]
                 self.backend.get(self.run_params, self.env)
                 detected_calls = self.backend.transport.get.call_args_list
             elif do == "set":
@@ -1977,13 +1768,13 @@ class StatesPoolTest(Test):
         self._create_mock_transfer_backend()
         self.deps = ["launch", ""]
 
-        for do in ["check", "get", "set", "unset"]:
+        for do in ["show", "get", "set", "unset"]:
             for i, pool_source in enumerate(["/:/shared", "/:/shared;", "host/container:/else"]):
                 self.run_params[f"{do}_state"] = "launch"
                 self.run_params[f"{do}_location"] = pool_source
                 self.run_params["object_type"] = "nets/vms/images"
 
-                # create a spec-abinding mock class instead of resetting previous mock
+                # create a spec-binding mock class instead of resetting previous mock
                 self.backend.ops = mock.Mock(spec=pool.TransferOps)
 
                 # assign a bound class method to the mock object with the mock class as the class object
@@ -1991,12 +1782,12 @@ class StatesPoolTest(Test):
                 # SPECIAL NOTE: to assign a bound instance method to the mock object with the mock object as self:
                 # my_mock.my_method = MyClass.my_method.__get__(my_mock)
 
-                if do == "check":
+                if do == "show":
                     self.backend.ops.list_local.return_value = []
                     self.backend.ops.list_link.return_value = []
                     self.backend.ops.list_remote.return_value = []
                     self.backend.ops.list = types.MethodType(pool.TransferOps.list.__func__, self.backend.ops)
-                    self.backend.check(self.run_params, self.env)
+                    self.backend.show(self.run_params, self.env)
                     if i == 0:
                         self.backend.ops.list_local.assert_called_once()
                     elif i == 1:
@@ -2085,7 +1876,7 @@ class StatesSetupTest(Test):
 
         # assert root state is not detected then created to check the actual state
         self.backend.check_root.return_value = True
-        self.backend.check.return_value = False
+        self.backend.show.return_value = []
         exists = ss.check_states(self.run_params, self.env)
         # assert root state is checked as a prerequisite
         self.backend.check_root.assert_called_once()
@@ -2093,7 +1884,7 @@ class StatesSetupTest(Test):
         self.backend.get_root.assert_called_once()
 
         # assert actual state is still checked and not available
-        self.backend.check.assert_called_once()
+        self.backend.show.assert_called_once()
         self.assertFalse(exists)
 
     def test_check_forced_root(self):
@@ -2104,7 +1895,7 @@ class StatesSetupTest(Test):
 
         # assert root state is not detected then created to check the actual state
         self.backend.check_root.return_value = False
-        self.backend.check.return_value = False
+        self.backend.show.return_value = []
         exists = ss.check_states(self.run_params, self.env)
         # assert root state is checked as a prerequisite
         self.backend.check_root.assert_called_once()
@@ -2112,32 +1903,32 @@ class StatesSetupTest(Test):
         self.backend.set_root.assert_called_once()
 
         # assert actual state is still checked and not available
-        self.backend.check.assert_called_once()
+        self.backend.show.assert_called_once()
         self.assertFalse(exists)
 
     @mock.patch("avocado_i2n.states.setup.check_states")
-    def test_get(self, mock_check):
+    def test_get(self, mock_show):
         """Test that state getting works with default policies."""
         self._set_up_generic_params("get", "state", "objects", "object1")
 
         # assert state retrieval is performed if state is available
-        mock_check.reset()
-        mock_check.return_value = True
+        mock_show.reset()
+        mock_show.return_value = True
         self.backend.reset_mock()
         ss.get_states(self.run_params, self.env)
-        mock_check.assert_called_once()
-        call_params = [call.args[0] for call in mock_check.call_args_list]
+        mock_show.assert_called_once()
+        call_params = [call.args[0] for call in mock_show.call_args_list]
         self.assertEqual(len(call_params), 1)
         self.assertEqual(call_params[0]["check_state"], "state")
-        self.assertEqual(call_params[0]["check_location"], "/loc")
+        self.assertEqual(call_params[0]["show_location"], "/loc")
         self.assertEqual(call_params[0]["objects"], "object1")
         self.assertEqual(call_params[0]["object_name"], "object1")
         self.assertEqual(call_params[0]["object_type"], "objects")
         self.backend.get.assert_called_once()
 
         # assert state retrieval is aborted if state is not available
-        mock_check.reset()
-        mock_check.return_value = False
+        mock_show.reset()
+        mock_show.return_value = False
         self.backend.reset_mock()
         with self.assertRaises(exceptions.TestAbortError):
             ss.get_states(self.run_params, self.env)
@@ -2217,20 +2008,20 @@ class StatesSetupTest(Test):
             self.backend.get.assert_not_called()
 
     @mock.patch("avocado_i2n.states.setup.check_states")
-    def test_set(self, mock_check):
+    def test_set(self, mock_show):
         """Test that state setting works with default policies."""
         self._set_up_generic_params("set", "state", "objects", "object1")
 
         # assert state saving is forced if state is available
-        mock_check.reset()
-        mock_check.return_value = True
+        mock_show.reset()
+        mock_show.return_value = True
         self.backend.reset_mock()
         ss.set_states(self.run_params, self.env)
-        mock_check.assert_called_once()
-        call_params = [call.args[0] for call in mock_check.call_args_list]
+        mock_show.assert_called_once()
+        call_params = [call.args[0] for call in mock_show.call_args_list]
         self.assertEqual(len(call_params), 1)
         self.assertEqual(call_params[0]["check_state"], "state")
-        self.assertEqual(call_params[0]["check_location"], "/loc")
+        self.assertEqual(call_params[0]["show_location"], "/loc")
         self.assertEqual(call_params[0]["objects"], "object1")
         self.assertEqual(call_params[0]["object_name"], "object1")
         self.assertEqual(call_params[0]["object_type"], "objects")
@@ -2238,16 +2029,16 @@ class StatesSetupTest(Test):
         self.backend.set.assert_called_once()
 
         # assert state saving is forced if state is not available
-        mock_check.reset()
-        mock_check.return_value = False
+        mock_show.reset()
+        mock_show.return_value = False
         self.backend.reset_mock()
         ss.set_states(self.run_params, self.env)
         self.backend.unset.assert_not_called()
         self.backend.set.assert_called_once()
 
         # assert state saving cannot be forced if state root is not available
-        mock_check.reset()
-        mock_check.return_value = False
+        mock_show.reset()
+        mock_show.return_value = False
         self.backend.reset_mock()
         self.backend.check_root.return_value = False
         with self.assertRaises(exceptions.TestError):
@@ -2339,28 +2130,28 @@ class StatesSetupTest(Test):
             self.backend.set.assert_not_called()
 
     @mock.patch("avocado_i2n.states.setup.check_states")
-    def test_unset(self, mock_check):
+    def test_unset(self, mock_show):
         """Test that state unsetting works with default policies."""
         self._set_up_generic_params("unset", "state", "objects", "object1")
 
         # assert state removal is forced if state is available
-        mock_check.reset()
-        mock_check.return_value = True
+        mock_show.reset()
+        mock_show.return_value = True
         self.backend.reset_mock()
         ss.unset_states(self.run_params, self.env)
-        mock_check.assert_called_once()
-        call_params = [call.args[0] for call in mock_check.call_args_list]
+        mock_show.assert_called_once()
+        call_params = [call.args[0] for call in mock_show.call_args_list]
         self.assertEqual(len(call_params), 1)
         self.assertEqual(call_params[0]["check_state"], "state")
-        self.assertEqual(call_params[0]["check_location"], "/loc")
+        self.assertEqual(call_params[0]["show_location"], "/loc")
         self.assertEqual(call_params[0]["objects"], "object1")
         self.assertEqual(call_params[0]["object_name"], "object1")
         self.assertEqual(call_params[0]["object_type"], "objects")
         self.backend.unset.assert_called_once()
 
         # assert state removal is ignored if state is not available
-        mock_check.reset()
-        mock_check.return_value = False
+        mock_show.reset()
+        mock_show.return_value = False
         self.backend.reset_mock()
         ss.unset_states(self.run_params, self.env)
         self.backend.unset.assert_not_called()
@@ -2491,9 +2282,9 @@ class StatesSetupTest(Test):
         self._create_mock_vms()
 
         self.backend.reset_mock()
-        self.backend.check.return_value = True
+        self.backend.show.return_value = ["launch", "launch2", "launcher"]
         exists = ss.check_states(self.run_params, self.env)
-        call_params = [call.args[0] for call in self.backend.check.call_args_list]
+        call_params = [call.args[0] for call in self.backend.show.call_args_list]
         self.assertEqual(len(call_params), 3)
         self.assertEqual(call_params[0]["vms"], "vm1")
         self.assertEqual(call_params[0]["images"], "image1")
@@ -2514,9 +2305,9 @@ class StatesSetupTest(Test):
 
         # break on first false state check
         self.backend.reset_mock()
-        self.backend.check.side_effect = lambda params, _: params.get("images") == "image2"
+        self.backend.show.side_effect = lambda params, _: params.get("images")
         exists = ss.check_states(self.run_params, self.env)
-        call_params = [call.args[0] for call in self.backend.check.call_args_list]
+        call_params = [call.args[0] for call in self.backend.show.call_args_list]
         self.assertEqual(len(call_params), 1)
         self.assertEqual(call_params[0]["vms"], "vm1")
         self.assertEqual(call_params[0]["images"], "image1")
@@ -2538,7 +2329,7 @@ class StatesSetupTest(Test):
         self._create_mock_vms()
 
         self.backend.reset_mock()
-        self.backend.check.return_value = True
+        self.backend.show.return_value = ["launch1", "launch2", "launch21", "launch3"]
         ss.get_states(self.run_params, self.env)
         call_params = [call.args[0] for call in self.backend.get.call_args_list]
         self.assertEqual(len(call_params), 3)
@@ -2559,7 +2350,7 @@ class StatesSetupTest(Test):
 
         # break on first false state check with incompatible policy
         self.backend.reset_mock()
-        self.backend.check.side_effect = lambda params, _: params["vms"] == "vm1"
+        self.backend.show.side_effect = lambda params, _: ["launch1", "launch21"]
         with self.assertRaises(exceptions.TestAbortError):
             ss.get_states(self.run_params, self.env)
         call_params = [call.args[0] for call in self.backend.get.call_args_list]
@@ -2586,7 +2377,7 @@ class StatesSetupTest(Test):
         self._create_mock_vms()
 
         self.backend.reset_mock()
-        self.backend.check.return_value = True
+        self.backend.show.return_value = ["launch2", "launch22", "launch3", "launch4"]
         ss.set_states(self.run_params, self.env)
         call_params = [call.args[0] for call in self.backend.set.call_args_list]
         self.assertEqual(len(call_params), 4)
@@ -2611,7 +2402,7 @@ class StatesSetupTest(Test):
 
         # break on first false state check with incompatible policy
         self.backend.reset_mock()
-        self.backend.check.side_effect = lambda params, _: params["vms"] == "vm2"
+        self.backend.show.return_value = ["launch2", "launch22"]
         with self.assertRaises(exceptions.TestAbortError):
             ss.set_states(self.run_params, self.env)
         call_params = [call.args[0] for call in self.backend.set.call_args_list]
@@ -2641,7 +2432,7 @@ class StatesSetupTest(Test):
         self._create_mock_vms()
 
         self.backend.reset_mock()
-        self.backend.check.return_value = True
+        self.backend.show.return_value = ["launch1", "launch2", "launch4"]
         ss.unset_states(self.run_params, self.env)
         call_params = [call.args[0] for call in self.backend.unset.call_args_list]
         self.assertEqual(len(call_params), 3)
@@ -2661,7 +2452,7 @@ class StatesSetupTest(Test):
         self.assertEqual(call_params[2]["unset_state"], "launch4")
 
         self.backend.reset_mock()
-        self.backend.check.return_value = False
+        self.backend.show.return_value = []
         with self.assertRaises(exceptions.TestAbortError):
             ss.unset_states(self.run_params, self.env)
         call_params = [call.args[0] for call in self.backend.unset.call_args_list]

@@ -86,11 +86,12 @@ class DummyStateControl(object):
             vm_params = params.object_params(vm)
             for image in params.objects("images"):
                 image_params = vm_params.object_params(image)
-                do_source = image_params.get(f"{do}_location_images", "")
+                do_loc = "show" if do == "check" else do
+                do_source = image_params.get(f"{do_loc}_location_images", "")
                 do_state = image_params.get(f"{do}_state_images")
                 if not do_state:
                     do_state = image_params.get(f"{do}_state_vms")
-                    do_source = image_params.get(f"{do}_location_vms", "")
+                    do_source = image_params.get(f"{do_loc}_location_vms", "")
                     if not do_state:
                         continue
 

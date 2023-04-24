@@ -78,23 +78,6 @@ class LVMBackend(StateBackend):
         return lv_utils.lv_list(params["vg_name"])
 
     @classmethod
-    def check(cls, params, object=None):
-        """
-        Check whether a given state exists.
-
-        All arguments match the base class.
-        """
-        vm_name = params["vms"]
-        params["lv_snapshot_name"] = params["check_state"]
-        logging.debug("Checking %s for state '%s'", vm_name, params["check_state"])
-        if lv_utils.lv_check(params["vg_name"], params["lv_snapshot_name"]):
-            logging.info("Off snapshot '%s' of %s exists", params["check_state"], vm_name)
-            return True
-        else:
-            logging.info("Off snapshot '%s' of %s doesn't exist", params["check_state"], vm_name)
-            return False
-
-    @classmethod
     def get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.

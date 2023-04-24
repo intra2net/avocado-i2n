@@ -69,32 +69,9 @@ class QCOW2Backend(RootSourcedStateBackend):
         state_tuples = re.findall(pattern, on_snapshots_dump)
         states = []
         for state_tuple in state_tuples:
-            logging.info("Detected %s state '%s' of size %s", cls.state_type(), state_tuple[0], state_tuple[1])
+            logging.debug("Detected %s state '%s' of size %s", cls.state_type(), state_tuple[0], state_tuple[1])
             states.append(state_tuple[0])
         return states
-
-    @classmethod
-    def check(cls, params, object=None):
-        """
-        Check whether a given state exists.
-
-        All arguments match the base class.
-        """
-        object_name = params["vms"] if cls._require_running_object else params["vms"] + "/" + params["images"]
-        logging.debug("Checking %s for %s state '%s'", object_name,
-                      cls.state_type(), params["check_state"])
-        states = cls.show(params, object)
-        for state in states:
-            if state == params["check_state"]:
-                logging.info("The %s snapshot '%s' of %s exists",
-                             cls.state_type(), params["check_state"],
-                             object_name)
-                return True
-        # at this point we didn't find the on state in the listed ones
-        logging.info("The %s snapshot '%s' of %s doesn't exist",
-                     cls.state_type(), params["check_state"],
-                     object_name)
-        return False
 
     @classmethod
     def get(cls, params, object=None):
@@ -241,8 +218,8 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, vm_name)
         qemu_img = QemuImg(params, vm_dir, image_name)
-        logging.debug("Showing %s external states for image %s locally in %s",
-                      cls.state_type(), image_name, state_dir)
+        logging.debug("Showing external states for image %s locally in %s",
+                      image_name, state_dir)
         image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image_name)
         if not os.path.exists(image_dir):
             return []
@@ -253,20 +230,10 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
                 continue
             size = os.stat(os.path.join(image_dir, snapshot)).st_size
             state = snapshot[:-6]
-            logging.info(f"Detected {cls.state_type()} state '{state}' of size "
-                         f"{round(size / 1024**3, 3)} GB ({size})")
+            logging.debug(f"Detected {cls.state_type()} state '{state}' of size "
+                          f"{round(size / 1024**3, 3)} GB ({size})")
             states.append(state)
         return states
-
-    @classmethod
-    def _check(cls, params, object=None):
-        """
-        Check whether a given state exists.
-
-        All arguments match the base class.
-        """
-        # use QCOW2Backend's check but with current class
-        return super(SourcedStateBackend, cls).check(params, object)
 
     @classmethod
     def _get(cls, params, object=None):
@@ -374,7 +341,7 @@ class QCOW2VTBackend(QCOW2Backend):
 
         All arguments match the base class.
         """
-        logging.debug(f"Showing external states for vm {params['vms']}")
+        logging.debug(f"Showing {cls.state_type()} internal states for vm {params['vms']}")
         states = set()
         for image_name in params.objects("images"):
             image_params = params.object_params(image_name)

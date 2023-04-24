@@ -573,7 +573,7 @@ class TestNode(object):
             # ultimate consideration of whether the state is actually present
             object_suffix = f"_{test_object.key}_{test_object.long_suffix}"
             node_params[f"check_state{object_suffix}"] = object_state
-            node_params[f"check_location{object_suffix}"] = object_params["set_location"]
+            node_params[f"show_location{object_suffix}"] = object_params["set_location"]
             node_params[f"check_mode{object_suffix}"] = object_params.get("check_mode", "rf")
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that

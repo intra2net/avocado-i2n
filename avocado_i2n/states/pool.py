@@ -616,36 +616,14 @@ class QCOW2ImageTransfer(StateBackend):
             state_tag += f"/{image_name}"
             format = ".qcow2"
 
-        pool_dir = params["check_location"]
+        pool_dir = params["show_location"]
         path = os.path.join(pool_dir, state_tag)
-        logging.debug(f"Checking for shared {state_tag} states "
-                      f"in the shared pool {pool_dir}")
+        logging.debug(f"Showing shared {state_tag} states "
+                      f"in the pool location {pool_dir}")
 
         states = cls.ops.list(path, params)
         states = [p.replace(format, "") for p in states]
         return states
-
-    @classmethod
-    def check(cls, params, object=None):
-        """
-        Check whether a given state exists.
-
-        All arguments match the base class.
-        """
-        vm_name = params["vms"]
-        state_tag = f"{vm_name}"
-        if params["object_type"] in ["images", "nets/vms/images"]:
-            image_name = params["images"]
-            state_tag += f"/{image_name}"
-        logging.debug(f"Checking for {state_tag} state '{params['check_state']}'")
-        states = cls.show(params, object)
-        for state in states:
-            if state == params["check_state"]:
-                logging.info(f"The {state_tag} state '{params['check_state']}' exists")
-                return True
-        # at this point we didn't find the state in the listed ones
-        logging.info(f"The {state_tag} state '{params['check_state']}' doesn't exist")
-        return False
 
     @classmethod
     def get(cls, params, object=None):
@@ -857,7 +835,7 @@ class SourcedStateBackend(StateBackend):
 
         All arguments match the base class.
         """
-        sources = cls.get_sources("check", params)
+        sources = cls.get_sources("show", params)
         scopes = params.get_list("pool_scope")
         if "own" in scopes:
             cache_states = cls._show(params, object)
@@ -868,7 +846,7 @@ class SourcedStateBackend(StateBackend):
         for source in sources:
             logging.debug(f"Next show source to consider is {source}")
             source_params = params.object_params(source)
-            source_params["check_location"] = source
+            source_params["show_location"] = source
 
             # filtering stage where we may disallow certain data transport
             source_scope = cls.get_source_scope(source, params)
@@ -880,39 +858,6 @@ class SourcedStateBackend(StateBackend):
             pool_states = set(mirror_states) if not pool_states else pool_states.intersection(mirror_states)
 
         return list(set(cache_states).union(pool_states))
-
-    @classmethod
-    def check(cls, params, object=None):
-        """
-        Check whether a given state exists.
-
-        All arguments match the base class.
-        """
-        sources = cls.get_sources("check", params)
-        scopes = params.get_list("pool_scope")
-        if "own" in scopes:
-            local_state_exists = cls._check(params, object)
-        else:
-            local_state_exists = False
-
-        pool_state_exists = []
-        for source in sources:
-            logging.debug(f"Next check source to consider is {source}")
-            source_params = params.object_params(source)
-            source_params["check_location"] = source
-
-            # filtering stage where we may disallow certain data transport
-            source_scope = cls.get_source_scope(source, params)
-            if source_scope not in scopes:
-                continue
-            logging.debug(f"Choosing {source} as the check source to use")
-
-            pool_state_exists += [cls.transport.check(source_params, object)]
-        if True in pool_state_exists and False in pool_state_exists:
-            raise RuntimeError("Invalid mirrors detected, some states are only found at some")
-        pool_state_exists = pool_state_exists[0] if pool_state_exists else False
-
-        return local_state_exists or pool_state_exists
 
     @classmethod
     def get(cls, params, object=None):
@@ -936,9 +881,9 @@ class SourcedStateBackend(StateBackend):
                 continue
             logging.debug(f"Choosing {source} as the get source to use")
 
-            source_params["check_location"] = source
-            local_state_exists = cls._check(params, object)
-            pool_state_exists = cls.transport.check(source_params, object)
+            source_params["show_location"] = source
+            local_state_exists = params["get_state"] in cls._show(params, object)
+            pool_state_exists = params["get_state"] in cls.transport.show(source_params, object)
 
             if pool_state_exists:
                 if local_state_exists:
@@ -965,7 +910,7 @@ class SourcedStateBackend(StateBackend):
         if "own" in scopes:
             cls._set(params, object)
         else:
-            local_state_exists = cls._check(params, object)
+            local_state_exists = params["set_state"] in cls._show(params, object)
             if not local_state_exists:
                 raise RuntimeError("Updating state pool requires local states")
 
