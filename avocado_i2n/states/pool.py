@@ -433,7 +433,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params["image_pool"]
+        shared_pool = params["shared_pool"]
         image_base_name = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.debug(f"Checking for shared {vm_name}/{image_name} existence"
@@ -458,7 +458,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params["image_pool"]
+        shared_pool = params["shared_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Downloading shared {vm_name}/{image_name} "
@@ -476,7 +476,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params["image_pool"]
+        shared_pool = params["shared_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Uploading shared {vm_name}/{image_name} "
@@ -494,7 +494,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params["image_pool"]
+        shared_pool = params["shared_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Removing shared {vm_name}/{image_name} "
@@ -731,12 +731,8 @@ class RootSourcedStateBackend(StateBackend):
         All arguments match the base class.
         """
         local_root_exists = cls._check_root(params, object)
-        # TODO: convert to new switches
-        if not params.get_boolean("use_pool", True):
+        if params["pool_scope"] == "own":
             return local_root_exists
-        # TODO: convert to new switches
-        elif params.get_boolean("update_pool", False) and not local_root_exists:
-            raise RuntimeError("Updating state pool requires local root states")
         pool_root_exists = cls.transport.check_root(params, object)
         # TODO: boot state has to be deprecated and it cannot be handled remotely
         return local_root_exists or (pool_root_exists and params["object_type"] not in ["vms", "nets/vms"])
@@ -748,11 +744,10 @@ class RootSourcedStateBackend(StateBackend):
 
         All arguments match the base class.
         """
-        # TODO: convert to new switches
-        if params.get_boolean("update_pool", False):
+        if "own" not in params["pool_scope"]:
             cls.transport.get_root(params, object)
             return
-        if not params.get_boolean("use_pool", True):
+        elif params["pool_scope"] == "own":
             cls._get_root(params, object)
             return
 
@@ -767,7 +762,7 @@ class RootSourcedStateBackend(StateBackend):
                     image_params = params.object_params(image_name)
                     image_filename = image_params["image_name"]
                     cache_path = os.path.join(image_params["vms_base_dir"], vm_name, image_filename + ".qcow2")
-                    pool_path = os.path.join(image_params.get("get_location", image_params.get("image_pool", "")), vm_name, image_filename + ".qcow2")
+                    pool_path = os.path.join(image_params.get("shared_pool", ""), vm_name, image_filename + ".qcow2")
                     if not cls.transport.ops.compare(cache_path, pool_path, image_params):
                         logging.warning(f"The image {image_name} is different between cache {cache_path} and pool {pool_path}")
                         cache_valid = False
@@ -785,13 +780,17 @@ class RootSourcedStateBackend(StateBackend):
 
         All arguments match the base class.
         """
-        # TODO: convert to new switches
         # local and pool root setting are mutually exclusive as we usually want
         # to set the pool root from an existing local root with some states on it
-        if not params.get_boolean("update_pool", False):
+        if params["pool_scope"] == "own":
             cls._set_root(params, object)
-        else:
+        elif params["pool_scope"] == "shared":
+            local_root_exists = cls._check_root(params, object)
+            if not local_root_exists:
+                raise RuntimeError("Updating state pool requires local root states")
             cls.transport.set_root(params, object)
+        else:
+            raise RuntimeError(f"Invalid pool scope {params['pool_scope']}")
 
     @classmethod
     def unset_root(cls, params, object=None):
@@ -800,13 +799,14 @@ class RootSourcedStateBackend(StateBackend):
 
         All arguments match the base class and in addition:
         """
-        # TODO: convert to new switches
         # local and pool root setting are mutually exclusive as we usually want
         # to set the pool root from an existing local root with some states on it
-        if not params.get_boolean("update_pool", False):
+        if params["pool_scope"] == "own":
             cls._unset_root(params, object)
-        else:
+        elif params["pool_scope"] == "shared":
             cls.transport.unset_root(params, object)
+        else:
+            raise RuntimeError(f"Invalid pool scope {params['pool_scope']}")
 
 
 class SourcedStateBackend(StateBackend):

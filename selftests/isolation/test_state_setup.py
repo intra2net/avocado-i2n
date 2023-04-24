@@ -379,7 +379,6 @@ class StatesBoundaryTest(Test):
         self.run_params["check_mode"] = "rr"
         self.run_params["nets_gateway"] = ""
         self.run_params["nets_host"] = ""
-        self.run_params["use_pool"] = "no"
         self.run_params["pool_scope"] = "own"
 
         self.env = mock.MagicMock(name='env')
@@ -1072,7 +1071,7 @@ class StatesPoolTest(Test):
         self.run_params["nets"] = "net1"
         self.run_params["vms"] = "vm1"
         self.run_params["images"] = "image1"
-        self.run_params["use_pool"] = "yes"
+        self.run_params["pool_scope"] = "own shared"
 
         # TODO: actual stateful object treatment is not fully defined yet
         self.mock_vms = {}
@@ -1095,7 +1094,6 @@ class StatesPoolTest(Test):
 
         self.run_params["nets_gateway"] = ""
         self.run_params["nets_host"] = ""
-        self.run_params["pool_scope"] = "own shared"
 
     def _create_mock_sourced_backend(self, source_type="root"):
         if source_type == "root":
@@ -1198,7 +1196,7 @@ class StatesPoolTest(Test):
 
     def test_check_root_use(self):
         """Test that root checking uses only local root with disabled pool."""
-        self.run_params["use_pool"] = "no"
+        self.run_params["pool_scope"] = "own"
         self._create_mock_sourced_backend()
 
         self.backend._check_root.return_value = False
@@ -1206,16 +1204,6 @@ class StatesPoolTest(Test):
         self.backend._check_root.assert_called_once()
         self.backend.transport.check_root.assert_not_called()
         self.assertFalse(exists)
-
-    def test_check_root_update(self):
-        """Test that updating the state pool without local root fails early."""
-        self.run_params["update_pool"] = "yes"
-        self._create_mock_sourced_backend()
-
-        self.backend._check_root.return_value = False
-        with self.assertRaises(RuntimeError):
-            self.backend.check_root(self.run_params, self.env)
-        self.backend.transport.assert_not_called()
 
     def test_get_root(self):
         """Test that root getting with the pool backend works."""
@@ -1261,7 +1249,7 @@ class StatesPoolTest(Test):
 
     def test_get_root_use(self):
         """Test that root getting uses only local root with disabled pool."""
-        self.run_params["use_pool"] = "no"
+        self.run_params["pool_scope"] = "own"
         self._create_mock_sourced_backend()
 
         self.backend.get_root(self.run_params, self.env)
@@ -1270,7 +1258,7 @@ class StatesPoolTest(Test):
 
     def test_get_root_update(self):
         """Test that root getting can be forced to pool only via the update switch."""
-        self.run_params["update_pool"] = "yes"
+        self.run_params["pool_scope"] = "shared"
         self._create_mock_sourced_backend()
 
         self.backend.get_root(self.run_params, self.env)
@@ -1282,7 +1270,7 @@ class StatesPoolTest(Test):
         self._create_mock_sourced_backend()
 
         # not updating the state pool means setting the local root
-        self.run_params["update_pool"] = "no"
+        self.run_params["pool_scope"] = "own"
         self.backend._check_root.return_value = True
         self.backend._set_root.reset_mock()
         self.backend.transport.set_root.reset_mock()
@@ -1291,7 +1279,7 @@ class StatesPoolTest(Test):
         self.backend.transport.set_root.assert_not_called()
 
         # updating the state pool means not setting the local root
-        self.run_params["update_pool"] = "yes"
+        self.run_params["pool_scope"] = "shared"
         self.backend._check_root.return_value = True
         self.backend._set_root.reset_mock()
         self.backend.transport.set_root.reset_mock()
@@ -1299,12 +1287,22 @@ class StatesPoolTest(Test):
         self.backend._set_root.assert_not_called()
         self.backend.transport.set_root.assert_called_once()
 
+    def test_set_root_update(self):
+        """Test that updating the state pool without local root fails early."""
+        self.run_params["pool_scope"] = "shared"
+        self._create_mock_sourced_backend()
+
+        self.backend._check_root.return_value = False
+        with self.assertRaises(RuntimeError):
+            self.backend.set_root(self.run_params, self.env)
+        self.backend.transport.assert_not_called()
+
     def test_unset_root(self):
         """Test that root unsetting with the pool backend works."""
         self._create_mock_sourced_backend()
 
         # not updating the state pool means unsetting the local root
-        self.run_params["update_pool"] = "no"
+        self.run_params["pool_scope"] = "own"
         self.backend._check_root.return_value = True
         self.backend._unset_root.reset_mock()
         self.backend.transport.unset_root.reset_mock()
@@ -1313,7 +1311,7 @@ class StatesPoolTest(Test):
         self.backend.transport.unset_root.assert_not_called()
 
         # updating the state pool means not unsetting the local root
-        self.run_params["update_pool"] = "yes"
+        self.run_params["pool_scope"] = "shared"
         self.backend._check_root.return_value = True
         self.backend._unset_root.reset_mock()
         self.backend.transport.unset_root.reset_mock()
