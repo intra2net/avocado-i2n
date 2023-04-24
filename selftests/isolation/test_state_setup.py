@@ -409,6 +409,7 @@ class StatesBoundaryTest(Test):
         self.run_params["states_images"] = "qcow2ext"
         self.run_params["image_format"] = "qcow2"
         self.run_params["qemu_img_binary"] = "qemu-img"
+        self.run_params["swarm_pool"] = "/images"
 
     def _set_vm_qcow2_params(self):
         self.run_params["states_vms"] = "qcow2vt"
@@ -417,6 +418,7 @@ class StatesBoundaryTest(Test):
 
     def _set_vm_ramfile_params(self):
         self.run_params["states_vms"] = "ramfile"
+        self.run_params["swarm_pool"] = "/images"
 
     def _get_mock_vm(self, vm_name):
         return self.mock_vms[vm_name]
@@ -555,12 +557,12 @@ class StatesBoundaryTest(Test):
 
     def test_show_image_qcow2ext_swarm(self):
         """Test that state listing with the QCOW2 external state prioritizes swarm pool."""
-        self.run_params["swarm_pool"] = "/swarm"
         backend = "qcow2ext"
         backend_type = self._prepare_driver_from_backend(backend)
+        self.run_params["swarm_pool"] = "/some/swarm2"
         with self.driver.mock_show(["launch"], backend_type) as driver:
             states = ss.show_states(self.run_params, self.env)
-            driver.listdir.assert_called_once_with("/swarm/vm1/image1")
+            driver.listdir.assert_called_once_with("/some/swarm2/vm1/image1")
         self.assertEqual(len(states), 1)
 
     def test_show_vm_qcow2(self):
@@ -573,12 +575,12 @@ class StatesBoundaryTest(Test):
 
     def test_show_vm_ramfile_swarm(self):
         """Test that state listing with the ramfile external state prioritizes swarm pool."""
-        self.run_params["swarm_pool"] = "/swarm"
         backend = "ramfile"
         backend_type = self._prepare_driver_from_backend(backend)
+        self.run_params["swarm_pool"] = "/some/swarm2"
         with self.driver.mock_show(["launch"], backend_type) as driver:
             states = ss.show_states(self.run_params, self.env)
-            driver.listdir.assert_called_once_with("/swarm/vm1")
+            driver.listdir.assert_called_once_with("/some/swarm2/vm1")
         self.assertEqual(len(states), 1)
 
     def test_check_image_lvm(self):
@@ -1087,7 +1089,7 @@ class StatesPoolTest(Test):
         self.maxDiff = None
 
     def _set_minimal_pool_params(self):
-        self.run_params["vms_base_dir"] = "/images"
+        self.run_params["swarm_pool"] = "/images"
         self.run_params["shared_pool"] = "/:/data/pool"
         self.run_params["image_format"] = "qcow2"
         self.run_params["qemu_img_binary"] = "qemu-img"
@@ -1208,6 +1210,7 @@ class StatesPoolTest(Test):
     def test_get_root(self):
         """Test that root getting with the pool backend works."""
         self._set_minimal_pool_params()
+        self.run_params["vms_base_dir"] = "/images"
         self.run_params["image_name"] = "image1"
         self._create_mock_sourced_backend()
 
@@ -1457,7 +1460,7 @@ class StatesPoolTest(Test):
         self._set_minimal_pool_params()
         self.run_params["get_state"] = "launch"
         self.run_params["get_location"] = "alpha/c1:/path/1 beta/c1:/path2 beta/c2:/path/2 beta/c2:/own/images gamma/:/path/3/4"
-        self.run_params["vms_base_dir"] = "/own/images"
+        self.run_params["swarm_pool"] = "/own/images"
         self.run_params["nets_gateway"] = "beta"
         self.run_params["nets_host"] = "c2"
         self._create_mock_sourced_backend(source_type="state")
@@ -1671,6 +1674,7 @@ class StatesPoolTest(Test):
     def test_list_bundle(self):
         """Test that a state bundle (e.g. image with internal states) will be listed."""
         self._set_minimal_pool_params()
+        self.run_params["vms_base_dir"] = "/images"
         self.run_params["image_name"] = "image1"
 
         self._create_mock_transfer_backend()
@@ -1749,6 +1753,7 @@ class StatesPoolTest(Test):
     def test_download_bundle(self):
         """Test that a state bundle (e.g. image with internal states) will be downloaded."""
         self._set_minimal_pool_params()
+        self.run_params["vms_base_dir"] = "/images"
         self.run_params["image_name"] = "image1"
 
         self._create_mock_transfer_backend()
@@ -1778,6 +1783,7 @@ class StatesPoolTest(Test):
     def test_upload_bundle(self):
         """Test that a state bundle (e.g. image with internal states) will be uploaded."""
         self._set_minimal_pool_params()
+        self.run_params["vms_base_dir"] = "/images"
         self.run_params["image_name"] = "image1"
 
         self._create_mock_transfer_backend()
@@ -1807,6 +1813,7 @@ class StatesPoolTest(Test):
     def test_delete_bundle(self):
         """Test that a state bundle (e.g. image with internal states) will be deleted."""
         self._set_minimal_pool_params()
+        self.run_params["vms_base_dir"] = "/images"
         self.run_params["image_name"] = "image1"
 
         self._create_mock_transfer_backend()
@@ -1926,14 +1933,14 @@ class StatesPoolTest(Test):
         self.deps = ["launch", "prelaunch", ""]
 
         for do in ["get", "set", "unset"]:
-            for swarm_pool in ["/swarm", ""]:
+            for swarm_pool in ["/swarm", "/some/swarm2"]:
                 for shared_pool in ["/:/shared", "host/container:/else"]:
                     self.run_params[f"{do}_state"] = "launch"
                     self.run_params[f"{do}_location"] = shared_pool
                     self.run_params["object_type"] = "nets/vms/images"
                     # TODO: have to integrate this implicit overwriting into the location params
                     self.run_params["swarm_pool"] = swarm_pool
-                    location = "/images" if swarm_pool == "" else swarm_pool
+                    location = swarm_pool
 
                     self.backend.ops.reset_mock()
                     if do == "get":

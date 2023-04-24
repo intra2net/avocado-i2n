@@ -330,6 +330,10 @@ class TransferOps():
         Compare cache and pool external state version.
 
         All arguments are identical to the main entry method.
+
+        ..todo:: True symlink support is available only for simple backing chains -
+            we cannot have the same get_location for an entire chain here since some
+            backing files are links and not the originals.
         """
         if os.path.islink(cache_path):
             return os.path.realpath(cache_path) == pool_path
@@ -503,15 +507,6 @@ class QCOW2ImageTransfer(StateBackend):
         cls.ops.delete(dst_image_name, params)
 
     @classmethod
-    def get_state_dir(cls, params):
-        """
-        Get the directory used for storing states according to internal criteria.
-
-        All of the arguments match the signature of the other methods here.
-        """
-        return params["swarm_pool"] if params.get("swarm_pool") else params["vms_base_dir"]
-
-    @classmethod
     def get_dependency(cls, state, params):
         """
         Return a backing state that the current state depends on.
@@ -521,7 +516,7 @@ class QCOW2ImageTransfer(StateBackend):
         The rest of the arguments match the signature of the other methods here.
         """
         vm_name, image_name = params["vms"], params["images"]
-        vm_dir = os.path.join(cls.get_state_dir(params), vm_name)
+        vm_dir = os.path.join(params["swarm_pool"], vm_name)
         params["image_chain"] = f"snapshot {image_name}"
         params["image_name_snapshot"] = os.path.join(image_name, state)
         params["image_format_snapshot"] = "qcow2"
@@ -654,7 +649,7 @@ class QCOW2ImageTransfer(StateBackend):
 
         All arguments match the base class.
         """
-        cache_dir = cls.get_state_dir(params)
+        cache_dir = params["swarm_pool"]
         pool_dir = params["get_location"]
 
         vm_name = params["vms"]
@@ -677,7 +672,7 @@ class QCOW2ImageTransfer(StateBackend):
 
         All arguments match the base class.
         """
-        cache_dir = cls.get_state_dir(params)
+        cache_dir = params["swarm_pool"]
         pool_dir = params["set_location"]
 
         vm_name = params["vms"]
@@ -815,18 +810,6 @@ class SourcedStateBackend(StateBackend):
     transport = QCOW2ImageTransfer
 
     @classmethod
-    def get_state_dir(cls, params):
-        """
-        Get the directory used for storing states according to internal criteria.
-
-        ..todo:: Enough of overwriting of default behaviors, handle swarm case separately via the pool backend.
-
-        :param params: parameters for the current state manipulation
-        :type params: {str, str}
-        """
-        return params["swarm_pool"] if params.get("swarm_pool") else params["vms_base_dir"]
-
-    @classmethod
     def get_sources(cls, do, params):
         """
         Get the currently permitted pool and state reuse scope.
@@ -835,7 +818,7 @@ class SourcedStateBackend(StateBackend):
         :param params: parameters for the current state manipulation
         :type params: {str, str}
         """
-        own_id = params["nets_gateway"] + "/" + params["nets_host"] + ":" + cls.get_state_dir(params)
+        own_id = params["nets_gateway"] + "/" + params["nets_host"] + ":" + params["swarm_pool"]
         own_tuple = own_id.split("/")
         own_max = len(own_tuple)
         own_proximity = lambda x: sum([int(own_tuple[i]==xi)*10**(own_max-i) for i,xi in enumerate(x.split("/")[:own_max])])
@@ -850,7 +833,7 @@ class SourcedStateBackend(StateBackend):
         :param params: parameters for the current state manipulation
         :type params: {str, str}
         """
-        own_id = params["nets_gateway"] + "/" + params["nets_host"] + ":" + cls.get_state_dir(params)
+        own_id = params["nets_gateway"] + "/" + params["nets_host"] + ":" + params["swarm_pool"]
         own_tuple = own_id.split("/")
         source_tuple = source.split("/")
         if own_tuple[0] != source_tuple[0]:
@@ -954,7 +937,7 @@ class SourcedStateBackend(StateBackend):
 
             if pool_state_exists:
                 if local_state_exists:
-                    cache_valid = cls.transport.compare_chain(params["get_state"], cls.get_state_dir(params),
+                    cache_valid = cls.transport.compare_chain(params["get_state"], params["swarm_pool"],
                                                               source_params["get_location"], source_params)
                 else:
                     cache_valid = False
