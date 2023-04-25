@@ -226,12 +226,12 @@ class CartesianGraphTest(Test):
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
         default_object_param = graph.get_node_by(param_val="tutorial1").params["images"]
-        default_node_param = graph.get_node_by(param_val="tutorial1").params["kill_vm"]
+        default_node_param = graph.get_node_by(param_val="tutorial1").params["shared_pool"]
         custom_object_param = default_object_param + "00"
-        custom_node_param = "no" if default_node_param == "yes" else "yes"
+        custom_node_param = "remote:/some/location"
 
         self.config["param_dict"]["images_vm1"] = custom_object_param
-        self.config["param_dict"]["kill_vm"] = custom_node_param
+        self.config["param_dict"]["shared_pool"] = custom_node_param
         self.config["param_dict"]["new_key"] = "123"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -250,9 +250,9 @@ class CartesianGraphTest(Test):
                          "A new parameter=%s of %s must be 123" % (test_object_params["new_key"], test_object.suffix))
 
         test_node = graph.get_node_by(param_val="tutorial1")
-        self.assertNotEqual(test_node.params["kill_vm"], default_node_param,
+        self.assertNotEqual(test_node.params["shared_pool"], default_node_param,
                             "The default %s of %s wasn't overwritten" % (default_node_param, test_node.prefix))
-        self.assertEqual(test_node.params["kill_vm"], custom_node_param,
+        self.assertEqual(test_node.params["shared_pool"], custom_node_param,
                          "The new %s of %s must be %s" % (default_node_param, test_node.prefix, custom_node_param))
         self.assertNotEqual(test_node.params["images_vm1"], default_object_param,
                             "The default %s of %s wasn't overwritten" % (default_object_param, test_node.prefix))
