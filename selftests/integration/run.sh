@@ -10,6 +10,8 @@ readonly test_suite="${TEST_SUITE:-/root/avocado-i2n-libs/tp_folder}"
 readonly i2n_config="${I2N_CONFIG:-/etc/avocado/conf.d/i2n.conf}"
 rm ${HOME}/avocado_overwrite_* -fr
 sed -i "s#suite_path = .*#suite_path = ${test_suite}#" "${i2n_config}"
+rm -fr /mnt/local/images/swarm/*
+rm -fr /mnt/local/images/shared/vm1/* /mnt/local/images/shared/vm2/*
 
 # minimal effect runs
 echo
@@ -45,13 +47,18 @@ containers="$(printf $test_slots | sed "s/,/ /g")"
 for cid in $containers; do
     diff -r /$ims/c101/rootfs/$ims /$ims/c$cid/rootfs/$ims -x el8-64* -x win10-64* -x vm3
 done
+ls -A1q /mnt/local/images/shared/vm1 | grep -q . && exit 1
+ls -A1q /mnt/local/images/shared/vm2 | grep -q . && exit 1
+ls -A1q /mnt/local/images/shared/vm3 | grep -q . || exit 1
 
 echo
 echo "Check replay and overall test reruns behave as expected"
 latest=$(basename $(realpath /mnt/local/results/latest))
 test_options="replay=$latest"
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots=$test_slots only=$test_sets $test_options
-test ! -d /mnt/local/results/latest/test-results
+test $(ls -A1q /mnt/local/results/latest/test-results | grep -v by-status | wc -l) == 2
+ls -A1q /mnt/local/results/latest/test-results | grep -q client_noop || exit 1
+ls -A1q /mnt/local/results/latest/test-results | grep -q explicit_noop || exit 1
 latest=$(basename $(realpath /mnt/local/results/latest))
 test_sets="tutorial1"
 test_options="replay=$latest replay_status=pass"

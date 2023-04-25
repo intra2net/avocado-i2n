@@ -44,22 +44,28 @@ def close_sessions(fn):
         for session in pool.TransferOps._session_cache.values():
             session.close()
     return wrapper
-def on_state(fn):
+def on_state(fn, do):
     def wrapper(test, params, env):
+        # all states are synced only via get
+        if do in ["set", "unset"]:
+            params["pool_scope"] = "own"
         params["skip_types"] = "nets/vms/images nets"
         fn(params, env)
         del params["skip_types"]
     return wrapper
-def off_state(fn):
+def off_state(fn, do):
     def wrapper(test, params, env):
+        # all states are synced only via get
+        if do in ["set", "unset"]:
+            params["pool_scope"] = "own"
         params["skip_types"] = "nets/vms"
         fn(params, env)
         del params["skip_types"]
     return wrapper
-env_process.preprocess_vm_off_hook = off_state(ss.get_states)
-env_process.preprocess_vm_on_hook = on_state(ss.get_states)
-env_process.postprocess_vm_on_hook = on_state(ss.set_states)
-env_process.postprocess_vm_off_hook = close_sessions(off_state(ss.set_states))
+env_process.preprocess_vm_off_hook = off_state(ss.get_states, "get")
+env_process.preprocess_vm_on_hook = on_state(ss.get_states, "get")
+env_process.postprocess_vm_on_hook = on_state(ss.set_states, "set")
+env_process.postprocess_vm_off_hook = close_sessions(off_state(ss.set_states, "set"))
 logging.info(f"Adding default state backends")
 ss.BACKENDS = {"qcow2": qcow2.QCOW2Backend, "qcow2ext": qcow2.QCOW2ExtBackend,
                "lvm": lvm.LVMBackend,
