@@ -65,6 +65,15 @@ test_options="replay=$latest replay_status=pass"
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots=$test_slots only=$test_sets $test_options
 test -d /mnt/local/results/latest/test-results
 
+echo
+echo "Testing a mix of shared pool and serial run"
+ls -A1q /mnt/local/images/shared/vm1 | grep -q . && exit 1
+mv /mnt/local/images/swarm/vm1/* /mnt/local/images/shared/vm1
+test_options=""
+coverage run --append --source=avocado_i2n $(which avocado) manu setup=run only=$test_sets $test_options
+test -d "$test_results"/latest/test-results
+ls -A1q "$test_results/latest/test-results" | grep -q install && exit 1
+ls -A1q "$test_results/latest/test-results" | grep -q tutorial1 || exit 1
 
 echo
 echo "Integration tests passed successfully"

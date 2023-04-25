@@ -471,6 +471,44 @@ class TestNode(object):
         visitors.add(worker)
         self.visited_cleanup_nodes[test_node] = visitors
 
+    def add_location(self, location):
+        """
+        Add a setup reuse location information to the current node and its children.
+
+        :param str location: a special format string containing all information on the
+                             location where the format must be "gateway/host:path"
+        """
+        # TODO: networks need further refactoring possibly as node environments
+        object_suffix = self.params["object_suffix"]
+        # discard parameters if we are not talking about any specific non-net object
+        object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
+        source_suffix = "_" + location
+        source_object_suffix = source_suffix + object_suffix
+
+        location_tuple = location.split(":")
+        gateway, host = ("", "") if len(location_tuple) <= 1 else location_tuple[0].split("/")
+        ip, port = type(self.objects[0]).get_session_ip_port(host, gateway,
+                                                             self.params['nets_ip_prefix'],
+                                                             self.params["nets_shell_port"])
+
+        if self.params.get("set_location"):
+            self.params["set_location"] += " " + location
+        else:
+            self.params["set_location"] = location
+        self.params[f"nets_shell_host{source_suffix}"] = ip
+        self.params[f"nets_shell_port{source_suffix}"] = port
+        self.params[f"nets_file_transfer_port{source_suffix}"] = port
+
+        for node in self.cleanup_nodes:
+            if node.params.get(f"get_location{object_suffix}"):
+                node.params[f"get_location{object_suffix}"] += " " + location
+            else:
+                node.params[f"get_location{object_suffix}"] = location
+
+            node.params[f"nets_shell_host{source_object_suffix}"] = ip
+            node.params[f"nets_shell_port{source_object_suffix}"] = port
+            node.params[f"nets_file_transfer_port{source_object_suffix}"] = port
+
     def regenerate_params(self, verbose=False):
         """
         Regenerate all parameters from the current reparsable config.
@@ -486,26 +524,10 @@ class TestNode(object):
         :returns: IP and port in string parameter format
         :rtype: (str, str)
         """
-        node_host = self.params['nets_host']
-        node_gateway = self.params['nets_gateway']
-        # serial non-isolated run
-        if node_host == "":
-            node_ip = "localhost"
-            node_port = self.params["nets_shell_port"]
-        # local isolated run
-        if node_gateway == "":
-            if node_host != "":
-                node_ip = f"{self.params['nets_ip_prefix']}.{node_host[1:]}"
-            else:
-                node_ip = "localhost"
-            node_port = self.params["nets_shell_port"]
-        # remote isolated run
-        else:
-            node_ip = node_gateway
-            if not node_host.isdigit():
-                raise RuntimeError("Invalid remote host, only numbers (as forwarded ports) accepted")
-            node_port = f"22{node_host}"
-        return node_ip, node_port
+        return type(self.objects[0]).get_session_ip_port(self.params['nets_host'],
+                                                         self.params['nets_gateway'],
+                                                         self.params['nets_ip_prefix'],
+                                                         self.params["nets_shell_port"])
 
     def get_session_to_net(self):
         """

@@ -475,14 +475,9 @@ class CartesianRunner(RunnerInterface):
         if not test_node.should_scan and not test_node.is_cleanup_ready(slot):
             test_node.should_scan = slot not in test_node.workers
         if not test_node.params.get("set_location") and not test_node.is_shared_root():
-            # TODO: networks need further refactoring possibly as node environments
-            object_suffix = test_node.params["object_suffix"]
-            # discard parameters if we are not talking about any specific non-net object
-            object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
-            test_node.params["set_location"] = test_node.params.get("shared_pool", ".")
-            for node in test_node.cleanup_nodes:
-                if not node.params.get(f"get_location{object_suffix}"):
-                    node.params[f"get_location{object_suffix}"] = node.params.get("shared_pool", ".")
+            shared_locations = test_node.params.get_list("shared_pool", ["/:."])
+            for location in shared_locations:
+                test_node.add_location(location)
 
         if test_node.should_scan:
             test_node.scan_states()
@@ -571,27 +566,9 @@ class CartesianRunner(RunnerInterface):
             # separate symmetric and asymmetric sharing
             if test_node.params.get_boolean("use_symlink"):
                 setup_path += ";"
-            setup_ip, setup_port = "localhost", "22"
-        else:
-            setup_ip, setup_port = test_node.get_session_ip_port()
+
         setup_source = setup_gateway + "/" + setup_host + ":" + setup_path
-
-        # TODO: networks need further refactoring possibly as node environments
-        object_suffix = test_node.params["object_suffix"]
-        # discard parameters if we are not talking about any specific non-net object
-        object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
-        source_suffix = "_" + setup_source
-        source_object_suffix = source_suffix + object_suffix
-
-        test_node.params["set_location"] += " " + setup_source
-        test_node.params[f"nets_shell_host{source_suffix}"] = setup_ip
-        test_node.params[f"nets_shell_port{source_suffix}"] = setup_port
-        test_node.params[f"nets_file_transfer_port{source_suffix}"] = setup_port
-        for node in test_node.cleanup_nodes:
-            node.params[f"get_location{object_suffix}"] += " " + setup_source
-            node.params[f"nets_shell_host{source_object_suffix}"] = setup_ip
-            node.params[f"nets_shell_port{source_object_suffix}"] = setup_port
-            node.params[f"nets_file_transfer_port{source_object_suffix}"] = setup_port
+        test_node.add_location(setup_source)
 
     def _graph_from_suite(self, test_suite):
         """
