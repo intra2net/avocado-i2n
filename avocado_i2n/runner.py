@@ -486,7 +486,8 @@ class CartesianRunner(RunnerInterface):
             # TODO: in addition to syncing this also needs generalized run decision instead of the old flags
             is_cleaned_up = test_node.params.get("unset_mode_images", test_node.params["unset_mode"])[0] == "f"
             is_cleaned_up |= test_node.params.get("unset_mode_vms", test_node.params["unset_mode"])[0] == "f"
-            test_node.should_run &= not (is_cleaned_up and len(test_node.workers) > 0)
+            is_cleaned_up &= test_node.is_finished()
+            test_node.should_run &= not is_cleaned_up
 
         replay_skip = test_node.params["name"] in self.skip_tests
         if replay_skip:

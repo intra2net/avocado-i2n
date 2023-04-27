@@ -276,7 +276,14 @@ class TestNode(object):
         of the setup as finished in the end of the traversal while
         we would prefer to do so in an eager manner.
         """
-        return len(self.workers) > 0 and not self.should_run
+        if "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
+            hosts = set(worker for worker in self.workers)
+            return self.params["nets_host"] in hosts
+        elif "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
+            gateways = set(worker.split("/")[0] for worker in self.workers)
+            return self.params["nets_gateway"] in gateways
+        else:
+            return len(self.workers) > 0
 
     def is_terminal_node_for(self):
         """
