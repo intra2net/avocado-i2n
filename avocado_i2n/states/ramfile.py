@@ -50,7 +50,7 @@ class RamfileBackend(SourcedStateBackend):
         All arguments match the base class.
         """
         logging.debug(f"Showing external states for vm {params['vms']}")
-        state_dir = cls.get_state_dir(params)
+        state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, params["vms"])
         snapshots = os.listdir(vm_dir)
 
@@ -115,7 +115,7 @@ class RamfileBackend(SourcedStateBackend):
             image_params["images"] = image_name
             cls.image_state_backend.get(image_params, vm)
 
-        state_dir = cls.get_state_dir(params)
+        state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, params["vms"])
         state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         vm.restore_from_file(state_file)
@@ -132,7 +132,7 @@ class RamfileBackend(SourcedStateBackend):
         logging.info("Setting vm state '%s' of %s", params["set_state"], vm_name)
         vm.pause()
 
-        state_dir = cls.get_state_dir(params)
+        state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, params["vms"])
         state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         vm.save_to_file(state_file)
@@ -167,7 +167,7 @@ class RamfileBackend(SourcedStateBackend):
             image_params["images"] = image_name
             cls.image_state_backend.unset(image_params, vm)
 
-        state_dir = cls.get_state_dir(params)
+        state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, params["vms"])
         state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         os.unlink(state_file)
@@ -183,7 +183,7 @@ class RamfileBackend(SourcedStateBackend):
         vm_name = params["vms"]
         logging.debug("Checking whether %s's root state is fully available", vm_name)
 
-        state_dir = cls.get_state_dir(params)
+        state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, params["vms"])
         if not os.path.exists(vm_dir):
             logging.info("The base directory for the virtual machine %s is missing", vm_name)
@@ -233,7 +233,7 @@ class RamfileBackend(SourcedStateBackend):
                  chains of dependencies.
         """
         vm_name = params["vms"]
-        state_dir = cls.get_state_dir(params)
+        state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, vm_name)
         os.makedirs(vm_dir, exist_ok=True)
 

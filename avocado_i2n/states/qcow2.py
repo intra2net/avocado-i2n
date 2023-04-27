@@ -238,7 +238,7 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
-        state_dir = cls.get_state_dir(params)
+        state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, vm_name)
         qemu_img = QemuImg(params, vm_dir, image_name)
         logging.debug("Showing %s external states for image %s locally in %s",
@@ -276,7 +276,7 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
-        state_dir = cls.get_state_dir(params)
+        state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, vm_name)
         image_dir = os.path.join(vm_dir, image_name)
         state = params["get_state"]
@@ -296,7 +296,7 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
-        state_dir = cls.get_state_dir(params)
+        state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, vm_name)
         image_dir = os.path.join(vm_dir, image_name)
         state = params["set_state"]
@@ -314,7 +314,7 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
-        state_dir = cls.get_state_dir(params)
+        state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, vm_name)
         image_dir = os.path.join(vm_dir, image_name)
         state = params["unset_state"]

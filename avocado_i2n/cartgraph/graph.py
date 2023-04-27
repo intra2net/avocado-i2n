@@ -195,7 +195,7 @@ class TestGraph(object):
 
         def get_display_id(node):
             node_id = node.long_prefix
-            node_id += f"[{node.spawner.cid}]" if node.is_occupied() else ""
+            node_id += f"[{node.params['nets_host']}/{node.params['nets_host']}]" if node.is_occupied() else ""
             return node_id
 
         graph = Digraph('cartesian_graph', format='svg')

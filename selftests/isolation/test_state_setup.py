@@ -3,6 +3,7 @@
 import unittest
 import unittest.mock as mock
 import os
+import types
 import contextlib
 
 from avocado import Test
@@ -377,7 +378,9 @@ class StatesBoundaryTest(Test):
         self.run_params["states_images"] = "mock"
         self.run_params["states_vms"] = "mock"
         self.run_params["check_mode"] = "rr"
-        self.run_params["use_pool"] = "no"
+        self.run_params["nets_gateway"] = ""
+        self.run_params["nets_host"] = ""
+        self.run_params["pool_scope"] = "own"
 
         self.env = mock.MagicMock(name='env')
         self.env.get_vm = mock.MagicMock(side_effect=self._get_mock_vm)
@@ -407,6 +410,7 @@ class StatesBoundaryTest(Test):
         self.run_params["states_images"] = "qcow2ext"
         self.run_params["image_format"] = "qcow2"
         self.run_params["qemu_img_binary"] = "qemu-img"
+        self.run_params["swarm_pool"] = "/images"
 
     def _set_vm_qcow2_params(self):
         self.run_params["states_vms"] = "qcow2vt"
@@ -415,6 +419,7 @@ class StatesBoundaryTest(Test):
 
     def _set_vm_ramfile_params(self):
         self.run_params["states_vms"] = "ramfile"
+        self.run_params["swarm_pool"] = "/images"
 
     def _get_mock_vm(self, vm_name):
         return self.mock_vms[vm_name]
@@ -553,13 +558,12 @@ class StatesBoundaryTest(Test):
 
     def test_show_image_qcow2ext_swarm(self):
         """Test that state listing with the QCOW2 external state prioritizes swarm pool."""
-        self.run_params["swarm_pool"] = "/swarm"
         backend = "qcow2ext"
         backend_type = self._prepare_driver_from_backend(backend)
+        self.run_params["swarm_pool"] = "/some/swarm2"
         with self.driver.mock_show(["launch"], backend_type) as driver:
-            print(self.run_params)
             states = ss.show_states(self.run_params, self.env)
-            driver.listdir.assert_called_once_with("/swarm/vm1/image1")
+            driver.listdir.assert_called_once_with("/some/swarm2/vm1/image1")
         self.assertEqual(len(states), 1)
 
     def test_show_vm_qcow2(self):
@@ -572,12 +576,12 @@ class StatesBoundaryTest(Test):
 
     def test_show_vm_ramfile_swarm(self):
         """Test that state listing with the ramfile external state prioritizes swarm pool."""
-        self.run_params["swarm_pool"] = "/swarm"
         backend = "ramfile"
         backend_type = self._prepare_driver_from_backend(backend)
+        self.run_params["swarm_pool"] = "/some/swarm2"
         with self.driver.mock_show(["launch"], backend_type) as driver:
             states = ss.show_states(self.run_params, self.env)
-            driver.listdir.assert_called_once_with("/swarm/vm1")
+            driver.listdir.assert_called_once_with("/some/swarm2/vm1")
         self.assertEqual(len(states), 1)
 
     def test_check_image_lvm(self):
@@ -1070,7 +1074,7 @@ class StatesPoolTest(Test):
         self.run_params["nets"] = "net1"
         self.run_params["vms"] = "vm1"
         self.run_params["images"] = "image1"
-        self.run_params["use_pool"] = "yes"
+        self.run_params["pool_scope"] = "own shared"
 
         # TODO: actual stateful object treatment is not fully defined yet
         self.mock_vms = {}
@@ -1086,10 +1090,13 @@ class StatesPoolTest(Test):
         self.maxDiff = None
 
     def _set_minimal_pool_params(self):
-        self.run_params["vms_base_dir"] = "/images"
-        self.run_params["image_pool"] = "/data/pool"
+        self.run_params["swarm_pool"] = "/images"
+        self.run_params["shared_pool"] = "/:/data/pool"
         self.run_params["image_format"] = "qcow2"
         self.run_params["qemu_img_binary"] = "qemu-img"
+
+        self.run_params["nets_gateway"] = ""
+        self.run_params["nets_host"] = ""
 
     def _create_mock_sourced_backend(self, source_type="root"):
         if source_type == "root":
@@ -1192,7 +1199,7 @@ class StatesPoolTest(Test):
 
     def test_check_root_use(self):
         """Test that root checking uses only local root with disabled pool."""
-        self.run_params["use_pool"] = "no"
+        self.run_params["pool_scope"] = "own"
         self._create_mock_sourced_backend()
 
         self.backend._check_root.return_value = False
@@ -1201,18 +1208,10 @@ class StatesPoolTest(Test):
         self.backend.transport.check_root.assert_not_called()
         self.assertFalse(exists)
 
-    def test_check_root_update(self):
-        """Test that updating the state pool without local root fails early."""
-        self.run_params["update_pool"] = "yes"
-        self._create_mock_sourced_backend()
-
-        self.backend._check_root.return_value = False
-        with self.assertRaises(RuntimeError):
-            self.backend.check_root(self.run_params, self.env)
-        self.backend.transport.assert_not_called()
-
     def test_get_root(self):
         """Test that root getting with the pool backend works."""
+        self._set_minimal_pool_params()
+        self.run_params["vms_base_dir"] = "/images"
         self.run_params["image_name"] = "image1"
         self._create_mock_sourced_backend()
 
@@ -1221,11 +1220,13 @@ class StatesPoolTest(Test):
         self.backend.transport.reset_mock()
         self.backend._check_root.return_value = True
         self.backend.transport.check_root.return_value = True
-        self.backend.transport.compare_chain.return_value = True
+        self.backend.transport.ops.compare.return_value = True
         self.backend.get_root(self.run_params, self.env)
         self.backend._get_root.assert_called_once()
         self.backend.transport.get_root.assert_not_called()
-        self.backend.transport.compare_chain.assert_called_once_with("image1", mock.ANY)
+        self.backend.transport.ops.compare.assert_called_once_with('/images/vm1/image1.qcow2',
+                                                                   '/:/data/pool/vm1/image1.qcow2',
+                                                                   mock.ANY)
 
         # use pool root if enabled and no local root
         self.backend._get_root.reset_mock()
@@ -1235,22 +1236,24 @@ class StatesPoolTest(Test):
         self.backend.get_root(self.run_params, self.env)
         self.backend._get_root.assert_called_once()
         self.backend.transport.get_root.assert_called_once()
-        self.backend.transport.compare_chain.assert_not_called()
+        self.backend.transport.ops.compare.assert_not_called()
 
         # use pool root if local root is not valid
         self.backend._get_root.reset_mock()
         self.backend.transport.reset_mock()
         self.backend._check_root.return_value = True
         self.backend.transport.check_root.return_value = True
-        self.backend.transport.compare_chain.return_value = False
+        self.backend.transport.ops.compare.return_value = False
         self.backend.get_root(self.run_params, self.env)
         self.backend._get_root.assert_called_once()
         self.backend.transport.get_root.assert_called_once()
-        self.backend.transport.compare_chain.assert_called_once_with("image1", mock.ANY)
+        self.backend.transport.ops.compare.assert_called_once_with('/images/vm1/image1.qcow2',
+                                                                   '/:/data/pool/vm1/image1.qcow2',
+                                                                   mock.ANY)
 
     def test_get_root_use(self):
         """Test that root getting uses only local root with disabled pool."""
-        self.run_params["use_pool"] = "no"
+        self.run_params["pool_scope"] = "own"
         self._create_mock_sourced_backend()
 
         self.backend.get_root(self.run_params, self.env)
@@ -1259,7 +1262,7 @@ class StatesPoolTest(Test):
 
     def test_get_root_update(self):
         """Test that root getting can be forced to pool only via the update switch."""
-        self.run_params["update_pool"] = "yes"
+        self.run_params["pool_scope"] = "shared"
         self._create_mock_sourced_backend()
 
         self.backend.get_root(self.run_params, self.env)
@@ -1271,7 +1274,7 @@ class StatesPoolTest(Test):
         self._create_mock_sourced_backend()
 
         # not updating the state pool means setting the local root
-        self.run_params["update_pool"] = "no"
+        self.run_params["pool_scope"] = "own"
         self.backend._check_root.return_value = True
         self.backend._set_root.reset_mock()
         self.backend.transport.set_root.reset_mock()
@@ -1280,7 +1283,7 @@ class StatesPoolTest(Test):
         self.backend.transport.set_root.assert_not_called()
 
         # updating the state pool means not setting the local root
-        self.run_params["update_pool"] = "yes"
+        self.run_params["pool_scope"] = "shared"
         self.backend._check_root.return_value = True
         self.backend._set_root.reset_mock()
         self.backend.transport.set_root.reset_mock()
@@ -1288,12 +1291,22 @@ class StatesPoolTest(Test):
         self.backend._set_root.assert_not_called()
         self.backend.transport.set_root.assert_called_once()
 
+    def test_set_root_update(self):
+        """Test that updating the state pool without local root fails early."""
+        self.run_params["pool_scope"] = "shared"
+        self._create_mock_sourced_backend()
+
+        self.backend._check_root.return_value = False
+        with self.assertRaises(RuntimeError):
+            self.backend.set_root(self.run_params, self.env)
+        self.backend.transport.assert_not_called()
+
     def test_unset_root(self):
         """Test that root unsetting with the pool backend works."""
         self._create_mock_sourced_backend()
 
         # not updating the state pool means unsetting the local root
-        self.run_params["update_pool"] = "no"
+        self.run_params["pool_scope"] = "own"
         self.backend._check_root.return_value = True
         self.backend._unset_root.reset_mock()
         self.backend.transport.unset_root.reset_mock()
@@ -1302,7 +1315,7 @@ class StatesPoolTest(Test):
         self.backend.transport.unset_root.assert_not_called()
 
         # updating the state pool means not unsetting the local root
-        self.run_params["update_pool"] = "yes"
+        self.run_params["pool_scope"] = "shared"
         self.backend._check_root.return_value = True
         self.backend._unset_root.reset_mock()
         self.backend.transport.unset_root.reset_mock()
@@ -1310,24 +1323,36 @@ class StatesPoolTest(Test):
         self.backend._unset_root.assert_not_called()
         self.backend.transport.unset_root.assert_called_once()
 
-    def test_show(self):
-        """Test that state listing with the pool backend works correctly."""
+    def test_show_all(self):
+        """Test that state listing finds both cache and pool states."""
+        self._set_minimal_pool_params()
+        self.run_params["check_location"] = f"/:/path/1 /:/path/2 /:{self.run_params['swarm_pool']} {self.run_params['shared_pool']}"
         self._create_mock_sourced_backend(source_type="state")
 
-        # find both cache and pool states
-        self.backend._show.reset_mock()
-        self.backend.transport.show.reset_mock()
         self.backend._show.return_value = ["a", "b", "c"]
-        self.backend.transport.show.return_value = ["c", "d", "e"]
+        self.backend.transport.show.side_effect = lambda params, _: ["c", "d"] if "1" in params["check_location"] else ["d", "e"]
         states = self.backend.show(self.run_params, self.env)
         self.backend._show.assert_called_once()
-        self.backend.transport.show.assert_called_once()
-        self.assertSetEqual(set(states), set(["a", "b", "c", "d", "e"]))
 
-        # consider only cache states if pool disabled
-        self.run_params["use_pool"] = "no"
-        self.backend._show.reset_mock()
-        self.backend.transport.show.reset_mock()
+        detected_calls = self.backend.transport.show.call_args_list
+        self.assertEqual(len(detected_calls), 3)
+        path1_params = detected_calls[0].args[0]
+        path2_params = detected_calls[1].args[0]
+        shared_params = detected_calls[2].args[0]
+        self.assertEqual(path1_params[f"check_location"], "/:/path/1")
+        self.assertEqual(path2_params[f"check_location"], "/:/path/2")
+        # no duplicate call to own scope and extra call to shared scope were made
+        self.assertTrue(shared_params["check_location"], self.run_params['shared_pool'])
+
+        self.assertSetEqual(set(states), set(["a", "b", "c", "d"]))
+
+    def test_show_no_pool(self):
+        """Test that only cache states are considered if pool is disabled."""
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] = "own"
+        self.run_params["check_location"] = "/:/path/1"
+        self._create_mock_sourced_backend(source_type="state")
+
         self.backend._show.return_value = ["a", "b", "c"]
         self.backend.transport.show.return_value = ["c", "d", "e"]
         states = self.backend.show(self.run_params, self.env)
@@ -1335,23 +1360,53 @@ class StatesPoolTest(Test):
         self.backend.transport.show.assert_not_called()
         self.assertSetEqual(set(states), set(["a", "b", "c"]))
 
-    def test_check(self):
-        """Test that state checking with the pool backend works correctly."""
+    def test_show_only_pool(self):
+        """Test that only pool states are considered if pool is enforced."""
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] = "shared"
+        self.run_params["check_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        # consider pool state with priority
-        self.backend._check.reset_mock()
-        self.backend.transport.reset_mock()
+        self.backend._show.return_value = ["a", "b", "c"]
+        self.backend.transport.show.return_value = ["c", "d", "e"]
+        states = self.backend.show(self.run_params, self.env)
+        self.backend._show.assert_not_called()
+        self.backend.transport.show.assert_called_once()
+        self.assertSetEqual(set(states), set(["c", "d", "e"]))
+
+    def test_check_pool_priority_valid_mirrors(self):
+        """Test that state checking considers pool state with priority."""
+        self._set_minimal_pool_params()
+        self.run_params["check_state"] = "launch"
+        self.run_params["check_location"] = "/:/path/1 /:/path/2"
+        self._create_mock_sourced_backend(source_type="state")
+
         self.backend._check.return_value = False
         self.backend.transport.check.return_value = True
         exists = self.backend.check(self.run_params, self.env)
         self.backend._check.assert_called_once()
-        self.backend.transport.check.assert_called_once()
+        self.backend.transport.check.assert_has_calls([mock.ANY, mock.ANY])
         self.assertTrue(exists)
 
-        # consider local state as well
-        self.backend._check.reset_mock()
-        self.backend.transport.reset_mock()
+    def test_check_pool_priority_invalid_mirrors(self):
+        """Test that state checking would error out with invalid mirrors."""
+        self._set_minimal_pool_params()
+        self.run_params["check_state"] = "launch"
+        self.run_params["check_location"] = "/:/path/1 /:/path/2"
+        self._create_mock_sourced_backend(source_type="state")
+
+        self.backend._check.return_value = False
+        self.backend.transport.check.side_effect = lambda params, _: "1" in params["check_location"]
+        with self.assertRaises(RuntimeError):
+            self.backend.check(self.run_params, self.env)
+
+    def test_check_cache_leftover(self):
+        """Test that state checking considers cache state if no pool sources."""
+        self._set_minimal_pool_params()
+        self.run_params["check_state"] = "launch"
+        self.run_params["check_location"] = "/:/path/1"
+        self._create_mock_sourced_backend(source_type="state")
+
         self.backend._check.return_value = True
         self.backend.transport.check.return_value = False
         exists = self.backend.check(self.run_params, self.env)
@@ -1359,9 +1414,13 @@ class StatesPoolTest(Test):
         self.backend.transport.check.assert_called_once()
         self.assertTrue(exists)
 
-        # the state does not exist if both counterparts do not exist
-        self.backend._check.reset_mock()
-        self.backend.transport.reset_mock()
+    def test_check_pool_none(self):
+        """Test that the state does not exist if both counterparts do not exist."""
+        self._set_minimal_pool_params()
+        self.run_params["check_state"] = "launch"
+        self.run_params["check_location"] = "/:/path/1 /:/path/1"
+        self._create_mock_sourced_backend(source_type="state")
+
         self.backend._check.return_value = False
         self.backend.transport.check.return_value = False
         exists = self.backend.check(self.run_params, self.env)
@@ -1369,10 +1428,12 @@ class StatesPoolTest(Test):
         self.backend.transport.check.assert_called_once()
         self.assertFalse(exists)
 
-    def test_check_use(self):
+    def test_check_no_pool(self):
         """Test that state checking uses only local root with disabled pool."""
-        self.run_params["use_pool"] = "no"
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] = "own"
         self.run_params["check_state"] = "launch"
+        self.run_params["check_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
         self.backend._check.return_value = False
@@ -1381,113 +1442,232 @@ class StatesPoolTest(Test):
         self.backend.transport.check.assert_not_called()
         self.assertFalse(exists)
 
-    def test_check_update(self):
+    def test_check_only_pool(self):
         """Test that updating the state pool without local root fails early."""
-        self.run_params["update_pool"] = "yes"
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] = "shared"
+        self.run_params["check_state"] = "launch"
+        self.run_params["check_location"] = "/:/path/1"
+        self._create_mock_sourced_backend(source_type="state")
+
+        self.backend.transport.check.return_value = False
+        exists = self.backend.check(self.run_params, self.env)
+        self.backend._check.assert_not_called()
+        self.backend.transport.check.assert_called_once()
+        self.assertFalse(exists)
+
+    def test_get_best_source_scope(self):
+        """Test that state getting chooses the best available mirror if provided with multiple choices."""
+        self._set_minimal_pool_params()
+        self.run_params["get_state"] = "launch"
+        self.run_params["get_location"] = "alpha/c1:/path/1 beta/c1:/path2 beta/c2:/path/2 beta/c2:/own/images gamma/:/path/3/4"
+        self.run_params["swarm_pool"] = "/own/images"
+        self.run_params["nets_gateway"] = "beta"
+        self.run_params["nets_host"] = "c2"
         self._create_mock_sourced_backend(source_type="state")
 
         self.backend._check.return_value = False
-        with self.assertRaises(RuntimeError):
-            self.backend.check(self.run_params, self.env)
-        self.backend.transport.assert_not_called()
+        self.backend.transport.check.return_value = True
 
-    def test_get(self):
-        """Test that state getting with the pool backend works correctly."""
+        sources = self.backend.get_sources("get", self.run_params)
+        self.assertListEqual(sources, ["beta/c2:/own/images", "beta/c2:/path/2", "beta/c1:/path2",
+                                       "alpha/c1:/path/1", "gamma/:/path/3/4"])
+        self.assertEqual(self.backend.get_source_scope(sources[0], self.run_params), "own")
+        self.assertEqual(self.backend.get_source_scope(sources[1], self.run_params), "shared")
+        self.assertEqual(self.backend.get_source_scope(sources[2], self.run_params), "swarm")
+        self.assertEqual(self.backend.get_source_scope(sources[3], self.run_params), "cluster")
+        self.assertEqual(self.backend.get_source_scope(sources[4], self.run_params), "cluster")
+
+    def test_get_valid_cache(self):
+        """Test that state getting considers cache state with priority if hash matches with one transport location."""
+        self._set_minimal_pool_params()
         self.run_params["get_state"] = "launch"
+        self.run_params["get_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        # consider local state with priority if valid
-        self.backend._get.reset_mock()
-        self.backend.transport.reset_mock()
         self.backend._check.return_value = True
         self.backend.transport.check.return_value = True
         self.backend.transport.compare_chain.return_value = True
+
         self.backend.get(self.run_params, self.env)
         self.backend._get.assert_called_once()
         self.backend.transport.get.assert_not_called()
-        self.backend.transport.compare_chain.assert_called_once_with("launch", mock.ANY)
+        self.backend.transport.compare_chain.assert_called_once_with("launch", "/images", "/:/path/1", mock.ANY)
 
-        # use pool state if enabled and no local root
-        self.backend._get.reset_mock()
-        self.backend.transport.reset_mock()
+    def test_get_no_cache(self):
+        """Test that state getting uses pool state if enabled and no local root."""
+        self._set_minimal_pool_params()
+        self.run_params["get_state"] = "launch"
+        self.run_params["get_location"] = "/:/path/1"
+        self._create_mock_sourced_backend(source_type="state")
+
         self.backend._check.return_value = False
         self.backend.transport.check.return_value = True
+
         self.backend.get(self.run_params, self.env)
+
         self.backend._get.assert_called_once()
         self.backend.transport.get.assert_called_once()
         self.backend.transport.compare_chain.assert_not_called()
 
-        # use pool state if local state is not valid
-        self.backend._get.reset_mock()
-        self.backend.transport.reset_mock()
+    def test_get_invalid_cache(self):
+        """Test that state getting uses pool state if local state is not valid."""
+        self._set_minimal_pool_params()
+        self.run_params["get_state"] = "launch"
+        self.run_params["get_location"] = "/:/path/1"
+        self._create_mock_sourced_backend(source_type="state")
+
         self.backend._check.return_value = True
         self.backend.transport.check.return_value = True
         self.backend.transport.compare_chain.return_value = False
+
         self.backend.get(self.run_params, self.env)
+
         self.backend._get.assert_called_once()
         self.backend.transport.get.assert_called_once()
-        self.backend.transport.compare_chain.assert_called_once_with("launch", mock.ANY)
+        self.backend.transport.compare_chain.assert_called_once_with("launch", "/images", "/:/path/1", mock.ANY)
 
-    def test_get_use(self):
+    def test_get_no_pool(self):
         """Test that state getting uses only local root with disabled pool."""
-        self.run_params["use_pool"] = "no"
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] = "own"
         self.run_params["get_state"] = "launch"
+        self.run_params["get_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
         self.backend.get(self.run_params, self.env)
         self.backend._get.assert_called_once()
         self.backend.transport.get.assert_not_called()
 
-    def test_get_update(self):
+    def test_get_only_pool(self):
         """Test that state getting can be forced to pool only via the update switch."""
-        self.run_params["update_pool"] = "yes"
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] = "shared"
         self.run_params["get_state"] = "launch"
+        self.run_params["get_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
+
+        self.backend._check.return_value = False
+        self.backend.transport.check.return_value = True
 
         self.backend.get(self.run_params, self.env)
         self.backend._get.assert_not_called()
         self.backend.transport.get.assert_called_once()
 
-    def test_set(self):
-        """Test that state setting with the pool backend works correctly."""
+    def test_get_own(self):
+        """Test that state getting uses only local root with disabled pool."""
+        self._set_minimal_pool_params()
+        self.run_params["get_state"] = "launch"
+        self.run_params["get_location"] = f"/:/path/1 /:{self.run_params['swarm_pool']}"
         self._create_mock_sourced_backend(source_type="state")
 
-        # not updating the state pool means setting the local root
-        self.run_params["update_pool"] = "no"
+        self.backend.get(self.run_params, self.env)
+        self.backend._get.assert_called_once()
+        self.backend.transport.get.assert_not_called()
+
+    def test_set_all(self):
+        """Test that state setting works with both cache and multiple transports."""
+        self._set_minimal_pool_params()
+        self.run_params["set_state"] = "launch"
+        self.run_params["set_location"] = f"/:/path/1 /:/path/2 /:{self.run_params['swarm_pool']} {self.run_params['shared_pool']}"
+        self._create_mock_sourced_backend(source_type="state")
+
         self.backend._check.return_value = True
-        self.backend._set.reset_mock()
-        self.backend.transport.set.reset_mock()
+        self.backend.set(self.run_params, self.env)
+        self.backend._set.assert_called_once()
+
+        detected_calls = self.backend.transport.set.call_args_list
+        self.assertEqual(len(detected_calls), 3)
+        path1_params = detected_calls[0].args[0]
+        path2_params = detected_calls[1].args[0]
+        shared_params = detected_calls[2].args[0]
+        self.assertEqual(path1_params[f"set_location"], "/:/path/1")
+        self.assertEqual(path2_params[f"set_location"], "/:/path/2")
+        # no duplicate call to own scope and extra call to shared scope were made
+        self.assertTrue(shared_params["set_location"], self.run_params['shared_pool'])
+
+    def test_set_no_pool(self):
+        """Test that not updating the state pool sets just the cache state."""
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] = "own"
+        self.run_params["set_state"] = "launch"
+        self.run_params["set_location"] = "/:/path/1"
+        self._create_mock_sourced_backend(source_type="state")
+
+        self.backend._check.return_value = True
         self.backend.set(self.run_params, self.env)
         self.backend._set.assert_called_once()
         self.backend.transport.set.assert_not_called()
 
-        # updating the state pool means not setting the local root
-        self.run_params["update_pool"] = "yes"
+    def test_set_only_pool(self):
+        """Test that updating the state pool does not set the cache state."""
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] = "shared"
+        self.run_params["set_state"] = "launch"
+        self.run_params["set_location"] = "/:/path/1"
+        self._create_mock_sourced_backend(source_type="state")
+
         self.backend._check.return_value = True
-        self.backend._set.reset_mock()
-        self.backend.transport.set.reset_mock()
         self.backend.set(self.run_params, self.env)
         self.backend._set.assert_not_called()
         self.backend.transport.set.assert_called_once()
 
-    def test_unset(self):
-        """Test that state unsetting with the pool backend works correctly."""
+    def test_set_only_pool_no_cache(self):
+        """Test that updating the state pool without cache state fails early."""
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] = "shared"
+        self.run_params["check_state"] = "launch"
+        self.run_params["check_location"] = "/:/path/1"
         self._create_mock_sourced_backend(source_type="state")
 
-        # not updating the state pool means unsetting the local state
-        self.run_params["update_pool"] = "no"
+        self.backend._check.return_value = False
+        with self.assertRaises(RuntimeError):
+            self.backend.set(self.run_params, self.env)
+        self.backend.transport.assert_not_called()
+
+    def test_unset_all(self):
+        """Test that state unsetting works with both cache and multiple transports."""
+        self._set_minimal_pool_params()
+        self.run_params["unset_state"] = "launch"
+        self.run_params["unset_location"] = f"/:/path/1 /:/path/2 /:{self.run_params['swarm_pool']} {self.run_params['shared_pool']}"
+        self._create_mock_sourced_backend(source_type="state")
+
         self.backend._check.return_value = True
-        self.backend._unset.reset_mock()
-        self.backend.transport.unset.reset_mock()
+        self.backend.unset(self.run_params, self.env)
+        self.backend._unset.assert_called_once()
+
+        detected_calls = self.backend.transport.unset.call_args_list
+        self.assertEqual(len(detected_calls), 3)
+        path1_params = detected_calls[0].args[0]
+        path2_params = detected_calls[1].args[0]
+        shared_params = detected_calls[2].args[0]
+        self.assertEqual(path1_params[f"unset_location"], "/:/path/1")
+        self.assertEqual(path2_params[f"unset_location"], "/:/path/2")
+        # no duplicate call to own scope and extra call to shared scope were made
+        self.assertTrue(shared_params["unset_location"], self.run_params['shared_pool'])
+
+    def test_unset_only_pool(self):
+        """Test that not updating the state pool unsets just the cache state."""
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] = "own"
+        self.run_params["unset_state"] = "launch"
+        self.run_params["unset_location"] = "/:/path/1"
+        self._create_mock_sourced_backend(source_type="state")
+
+        self.backend._check.return_value = True
         self.backend.unset(self.run_params, self.env)
         self.backend._unset.assert_called_once()
         self.backend.transport.unset.assert_not_called()
 
-        # updating the state pool means not unsetting the local state
-        self.run_params["update_pool"] = "yes"
+    def test_unset_no_pool(self):
+        """Test that updating the state pool does not unset the cache state."""
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] = "shared"
+        self.run_params["unset_state"] = "launch"
+        self.run_params["unset_location"] = "/:/path/1"
+        self._create_mock_sourced_backend(source_type="state")
+
         self.backend._check.return_value = True
-        self.backend._unset.reset_mock()
-        self.backend.transport.unset.reset_mock()
         self.backend.unset(self.run_params, self.env)
         self.backend._unset.assert_not_called()
         self.backend.transport.unset.assert_called_once()
@@ -1495,19 +1675,21 @@ class StatesPoolTest(Test):
     def test_list_bundle(self):
         """Test that a state bundle (e.g. image with internal states) will be listed."""
         self._set_minimal_pool_params()
+        self.run_params["vms_base_dir"] = "/images"
         self.run_params["image_name"] = "image1"
 
         self._create_mock_transfer_backend()
 
         self.backend.ops.list.return_value = ["image1.qcow2"]
         exists = self.backend.check_root(self.run_params, self.env)
-        self.backend.ops.list.assert_called_with("/data/pool/vm1", mock.ANY)
+        self.backend.ops.list.assert_called_with("/:/data/pool/vm1", mock.ANY)
         self.assertTrue(exists)
 
     def test_list_chain_image(self):
         """Test that a state and its complete backing chain will be listed."""
         self._set_minimal_pool_params()
         self.run_params["check_state"] = "launch"
+        self.run_params["check_location"] = "host/container:/dir/subdir"
         self.run_params["object_type"] = "nets/vms/images"
 
         self._create_mock_transfer_backend()
@@ -1515,7 +1697,7 @@ class StatesPoolTest(Test):
 
         self.backend.ops.list.return_value = ["launch.qcow2", "prelaunch.qcow2"]
         exists = self.backend.check(self.run_params, self.env)
-        expected_checks = [mock.call("/data/pool/vm1/image1", mock.ANY)]
+        expected_checks = [mock.call("host/container:/dir/subdir/vm1/image1", mock.ANY)]
         self.assertListEqual(self.backend.ops.list.call_args_list, expected_checks)
         self.assertTrue(exists)
 
@@ -1523,6 +1705,7 @@ class StatesPoolTest(Test):
         """Test that a state and its complete backing chain will be listed."""
         self._set_minimal_pool_params()
         self.run_params["check_state"] = "launch"
+        self.run_params["check_location"] = "host/container:/dir/subdir"
         self.run_params["object_type"] = "nets/vms"
 
         self._create_mock_transfer_backend()
@@ -1530,7 +1713,7 @@ class StatesPoolTest(Test):
 
         self.backend.ops.list.return_value = ["launch.state", "prelaunch.state"]
         exists = self.backend.check(self.run_params, self.env)
-        expected_checks = [mock.call("/data/pool/vm1", mock.ANY)]
+        expected_checks = [mock.call("host/container:/dir/subdir/vm1", mock.ANY)]
         self.assertListEqual(self.backend.ops.list.call_args_list, expected_checks)
         self.assertTrue(exists)
 
@@ -1542,15 +1725,18 @@ class StatesPoolTest(Test):
 
         self._create_mock_transfer_backend()
         self.deps = ["launch", "prelaunch", ""]
+        location = "host/container:/dir/subdir"
 
         # the states chains are identical
         self.backend.ops.reset_mock()
         self.backend.ops.compare.return_value = True
-        valid = self.backend.compare_chain("launch", self.run_params)
+        valid = self.backend.compare_chain("launch", "/images", location, self.run_params)
         expected_checks = [mock.call("/images/vm1/image1/launch.qcow2",
-                                     "/data/pool/vm1/image1/launch.qcow2", mock.ANY),
+                                     os.path.join(location, "vm1/image1/launch.qcow2"),
+                                     mock.ANY),
                            mock.call("/images/vm1/image1/prelaunch.qcow2",
-                                     "/data/pool/vm1/image1/prelaunch.qcow2", mock.ANY)]
+                                     os.path.join(location, "vm1/image1/prelaunch.qcow2"),
+                                     mock.ANY)]
         self.assertListEqual(self.backend.ops.compare.call_args_list, expected_checks)
         self.assertTrue(valid)
 
@@ -1558,29 +1744,31 @@ class StatesPoolTest(Test):
         self.deps = ["launch", "invalid", "prelaunch", ""]
         self.backend.ops.reset_mock()
         self.backend.ops.compare.side_effect = lambda x, _, __: True if "invalid" in x else False
-        valid = self.backend.compare_chain("launch", self.run_params)
+        valid = self.backend.compare_chain("launch", "/images", location, self.run_params)
         expected_checks = [mock.call("/images/vm1/image1/launch.qcow2",
-                                     "/data/pool/vm1/image1/launch.qcow2", mock.ANY)]
+                                     os.path.join(location, "vm1/image1/launch.qcow2"),
+                                     mock.ANY)]
         self.assertListEqual(self.backend.ops.compare.call_args_list, expected_checks)
         self.assertFalse(valid)
 
     def test_download_bundle(self):
         """Test that a state bundle (e.g. image with internal states) will be downloaded."""
         self._set_minimal_pool_params()
+        self.run_params["vms_base_dir"] = "/images"
         self.run_params["image_name"] = "image1"
 
         self._create_mock_transfer_backend()
 
         self.backend.get_root(self.run_params, self.env)
         self.backend.ops.download.assert_called_with("/images/vm1/image1.qcow2",
-                                                     "/data/pool/vm1/image1.qcow2",
+                                                     "/:/data/pool/vm1/image1.qcow2",
                                                      mock.ANY)
 
     def test_download_chain(self):
         """Test that a state and its complete backing chain will be downloaded."""
         self._set_minimal_pool_params()
         self.run_params["get_state"] = "launch"
-        self.run_params["get_location"] = self.run_params["image_pool"]
+        self.run_params["get_location"] = "host/container:/dir/subdir"
         self.run_params["object_type"] = "nets/vms/images"
 
         self._create_mock_transfer_backend()
@@ -1588,28 +1776,29 @@ class StatesPoolTest(Test):
 
         self.backend.get(self.run_params, self.env)
         expected_checks = [mock.call("/images/vm1/image1/launch.qcow2",
-                                     "/data/pool/vm1/image1/launch.qcow2", mock.ANY),
+                                     "host/container:/dir/subdir/vm1/image1/launch.qcow2", mock.ANY),
                            mock.call("/images/vm1/image1/prelaunch.qcow2",
-                                     "/data/pool/vm1/image1/prelaunch.qcow2", mock.ANY)]
+                                     "host/container:/dir/subdir/vm1/image1/prelaunch.qcow2", mock.ANY)]
         self.assertListEqual(self.backend.ops.download.call_args_list, expected_checks)
 
     def test_upload_bundle(self):
         """Test that a state bundle (e.g. image with internal states) will be uploaded."""
         self._set_minimal_pool_params()
+        self.run_params["vms_base_dir"] = "/images"
         self.run_params["image_name"] = "image1"
 
         self._create_mock_transfer_backend()
 
         self.backend.set_root(self.run_params, self.env)
         self.backend.ops.upload.assert_called_with("/images/vm1/image1.qcow2",
-                                                   "/data/pool/vm1/image1.qcow2",
+                                                   "/:/data/pool/vm1/image1.qcow2",
                                                    mock.ANY)
 
     def test_upload_chain(self):
         """Test that a state and its complete backing chain will be uploaded."""
         self._set_minimal_pool_params()
         self.run_params["set_state"] = "launch"
-        self.run_params["set_location"] = self.run_params["image_pool"]
+        self.run_params["set_location"] = "host/container:/dir/subdir"
         self.run_params["object_type"] = "nets/vms/images"
 
         self._create_mock_transfer_backend()
@@ -1617,50 +1806,143 @@ class StatesPoolTest(Test):
 
         self.backend.set(self.run_params, self.env)
         expected_checks = [mock.call("/images/vm1/image1/launch.qcow2",
-                                     "/data/pool/vm1/image1/launch.qcow2", mock.ANY),
+                                     "host/container:/dir/subdir/vm1/image1/launch.qcow2", mock.ANY),
                            mock.call("/images/vm1/image1/prelaunch.qcow2",
-                                     "/data/pool/vm1/image1/prelaunch.qcow2", mock.ANY)]
+                                     "host/container:/dir/subdir/vm1/image1/prelaunch.qcow2", mock.ANY)]
         self.assertListEqual(self.backend.ops.upload.call_args_list, expected_checks)
 
     def test_delete_bundle(self):
         """Test that a state bundle (e.g. image with internal states) will be deleted."""
         self._set_minimal_pool_params()
+        self.run_params["vms_base_dir"] = "/images"
         self.run_params["image_name"] = "image1"
 
         self._create_mock_transfer_backend()
 
         self.backend.unset_root(self.run_params, self.env)
-        self.backend.ops.delete.assert_called_with("/data/pool/vm1/image1.qcow2",
+        self.backend.ops.delete.assert_called_with("/:/data/pool/vm1/image1.qcow2",
                                                    mock.ANY)
 
     def test_delete_chain(self):
         """Test that a state but not its complete backing chain will be deleted."""
         self._set_minimal_pool_params()
         self.run_params["unset_state"] = "launch"
+        self.run_params["unset_location"] = "host/container:/dir/subdir"
         self.run_params["object_type"] = "nets/vms/images"
 
         self._create_mock_transfer_backend()
         self.deps = ["launch", "prelaunch", ""]
 
         self.backend.unset(self.run_params, self.env)
-        expected_checks = [mock.call("/data/pool/vm1/image1/launch.qcow2", mock.ANY)]
+        expected_checks = [mock.call("host/container:/dir/subdir/vm1/image1/launch.qcow2", mock.ANY)]
         self.assertListEqual(self.backend.ops.delete.call_args_list, expected_checks)
 
+    def test_location_parameter_propagation(self):
+        """Test that each transport call of pool enabled backend uses source specific parameters."""
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] += " swarm cluster"
+        self._create_mock_sourced_backend(source_type="state")
+
+        for do in ["show", "check", "get", "set", "unset"]:
+            self.run_params[f"{do}_state"] = "launch"
+            self.run_params[f"{do}_location"] = "h1/c1:/path/1 h2/c2:/path/2"
+            self.run_params["nets_shell_port_h1/c1:/path/1"] = "22001"
+            self.run_params["nets_shell_port_h2/c2:/path/2"] = "22002"
+            self.run_params["nets_gateway"] = "h1"
+            self.run_params["nets_host"] = "c1"
+
+            self.backend.transport.reset_mock()
+            if do == "show":
+                # TODO: show uses check parameters, potentially merge with check entirely
+                do = "check"
+                self.run_params[f"{do}_state"] = "launch"
+                self.run_params[f"{do}_location"] = "h1/c1:/path/1 h2/c2:/path/2"
+                self.backend.show(self.run_params, self.env)
+                detected_calls = self.backend.transport.show.call_args_list
+            elif do == "check":
+                self.backend.check(self.run_params, self.env)
+                detected_calls = self.backend.transport.check.call_args_list
+            elif do == "get":
+                self.backend._check.return_value = False
+                self.backend.transport.check.return_value = True
+                self.backend.get(self.run_params, self.env)
+                self.run_params["nets_gateway"] = "h2"
+                self.backend.get(self.run_params, self.env)
+                detected_calls = self.backend.transport.get.call_args_list
+            elif do == "set":
+                self.backend.set(self.run_params, self.env)
+                detected_calls = self.backend.transport.set.call_args_list
+            elif do == "unset":
+                self.backend.unset(self.run_params, self.env)
+                detected_calls = self.backend.transport.unset.call_args_list
+            else:
+                raise ValueError("Invalid state manipulation under testing")
+            self.assertEqual(len(detected_calls), 2)
+            source1_params = detected_calls[0].args[0]
+            source2_params = detected_calls[1].args[0]
+            self.assertEqual(source1_params[f"{do}_location"], "h1/c1:/path/1")
+            self.assertEqual(source2_params[f"{do}_location"], "h2/c2:/path/2")
+            self.assertIn("nets_shell_port", source1_params)
+            self.assertTrue(source1_params["nets_shell_port"], "22001")
+            self.assertIn("nets_shell_port", source2_params)
+            self.assertTrue(source2_params["nets_shell_port"], "22002")
+
+    def test_location_scope_blocking(self):
+        """Test that requested transport location scopes are fully blocked."""
+        self._set_minimal_pool_params()
+        self.run_params["pool_scope"] += " swarm"
+        self._create_mock_sourced_backend(source_type="state")
+
+        for do in ["show", "check", "get", "set", "unset"]:
+            self.run_params[f"{do}_state"] = "launch"
+            self.run_params[f"{do}_location"] = "h1/c1:/path/1 h2/c2:/path/2"
+            self.run_params["nets_gateway"] = "h2"
+            self.run_params["nets_host"] = "c2"
+
+            self.backend.transport.reset_mock()
+            if do == "show":
+                # TODO: show uses check parameters, potentially merge with check entirely
+                do = "check"
+                self.run_params[f"{do}_state"] = "launch"
+                self.run_params[f"{do}_location"] = "h1/c1:/path/1 h2/c2:/path/2"
+                self.backend.show(self.run_params, self.env)
+                detected_calls = self.backend.transport.show.call_args_list
+            elif do == "check":
+                self.backend.check(self.run_params, self.env)
+                detected_calls = self.backend.transport.check.call_args_list
+            elif do == "get":
+                self.backend._check.return_value = False
+                self.backend.transport.check.return_value = True
+                self.backend.get(self.run_params, self.env)
+                detected_calls = self.backend.transport.get.call_args_list
+            elif do == "set":
+                self.backend.set(self.run_params, self.env)
+                detected_calls = self.backend.transport.set.call_args_list
+            elif do == "unset":
+                self.backend.unset(self.run_params, self.env)
+                detected_calls = self.backend.transport.unset.call_args_list
+            else:
+                raise ValueError("Invalid state manipulation under testing")
+            self.assertEqual(len(detected_calls), 1)
+            source_params = detected_calls[0].args[0]
+            self.assertEqual(source_params[f"{do}_location"], "h2/c2:/path/2")
+
     def test_local_pool_override(self):
-        """Test that given state types are skipped via a devoted parameter."""
+        """Test that the correct cache location is used via configuration."""
         self._set_minimal_pool_params()
 
         self._create_mock_transfer_backend()
         self.deps = ["launch", "prelaunch", ""]
 
         for do in ["get", "set", "unset"]:
-            for swarm_pool in ["/swarm", ""]:
-                for shared_pool in ["/shared", "/else"]:
+            for swarm_pool in ["/swarm", "/some/swarm2"]:
+                for shared_pool in ["/:/shared", "host/container:/else"]:
                     self.run_params[f"{do}_state"] = "launch"
+                    self.run_params[f"{do}_location"] = shared_pool
                     self.run_params["object_type"] = "nets/vms/images"
-                    self.run_params["image_pool"] = shared_pool
+                    # TODO: have to integrate this implicit overwriting into the location params
                     self.run_params["swarm_pool"] = swarm_pool
-                    location = "/images" if swarm_pool == "" else swarm_pool
+                    location = swarm_pool
 
                     self.backend.ops.reset_mock()
                     if do == "get":
@@ -1685,6 +1967,71 @@ class StatesPoolTest(Test):
                         self.backend.unset(self.run_params, self.env)
                         expected_checks = [mock.call(f"{shared_pool}/vm1/image1/launch.qcow2", mock.ANY)]
                         self.assertListEqual(self.backend.ops.delete.call_args_list, expected_checks)
+                    else:
+                        raise ValueError("Invalid state manipulation under testing")
+
+    def test_remote_boundary_path(self):
+        """Test that the correct cache location is used via configuration."""
+        self._set_minimal_pool_params()
+
+        self._create_mock_transfer_backend()
+        self.deps = ["launch", ""]
+
+        for do in ["check", "get", "set", "unset"]:
+            for i, pool_source in enumerate(["/:/shared", "/:/shared;", "host/container:/else"]):
+                self.run_params[f"{do}_state"] = "launch"
+                self.run_params[f"{do}_location"] = pool_source
+                self.run_params["object_type"] = "nets/vms/images"
+
+                # create a spec-abinding mock class instead of resetting previous mock
+                self.backend.ops = mock.Mock(spec=pool.TransferOps)
+
+                # assign a bound class method to the mock object with the mock class as the class object
+                # MyMockClass.my_classmethod = types.MethodType(MyClass.my_classmethod.__func__, MyMockClass)
+                # SPECIAL NOTE: to assign a bound instance method to the mock object with the mock object as self:
+                # my_mock.my_method = MyClass.my_method.__get__(my_mock)
+
+                if do == "check":
+                    self.backend.ops.list_local.return_value = []
+                    self.backend.ops.list_link.return_value = []
+                    self.backend.ops.list_remote.return_value = []
+                    self.backend.ops.list = types.MethodType(pool.TransferOps.list.__func__, self.backend.ops)
+                    self.backend.check(self.run_params, self.env)
+                    if i == 0:
+                        self.backend.ops.list_local.assert_called_once()
+                    elif i == 1:
+                        self.backend.ops.list_link.assert_called_once()
+                    else:
+                        self.backend.ops.list_remote.assert_called_once()
+                elif do == "get":
+                    self.backend.ops.download = types.MethodType(pool.TransferOps.download.__func__, self.backend.ops)
+                    self.backend.get(self.run_params, self.env)
+                    if i == 0:
+                        self.backend.ops.download_local.assert_called_once()
+                    elif i == 1:
+                        self.backend.ops.download_link.assert_called_once()
+                    else:
+                        self.backend.ops.download_remote.assert_called_once()
+                elif do == "set":
+                    self.backend.ops.upload = types.MethodType(pool.TransferOps.upload.__func__, self.backend.ops)
+                    self.backend.set(self.run_params, self.env)
+                    if i == 0:
+                        self.backend.ops.upload_local.assert_called_once()
+                    elif i == 1:
+                        self.backend.ops.upload_link.assert_called_once()
+                    else:
+                        self.backend.ops.upload_remote.assert_called_once()
+                elif do == "unset":
+                    self.backend.ops.delete = types.MethodType(pool.TransferOps.delete.__func__, self.backend.ops)
+                    self.backend.unset(self.run_params, self.env)
+                    if i == 0:
+                        self.backend.ops.delete_local.assert_called_once()
+                    elif i == 1:
+                        self.backend.ops.delete_link.assert_called_once()
+                    else:
+                        self.backend.ops.delete_remote.assert_called_once()
+                else:
+                    raise ValueError("Invalid state manipulation under testing")
 
 
 class StatesSetupTest(Test):

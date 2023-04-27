@@ -45,8 +45,7 @@ from virttest.qemu_storage import QemuImg
 from .setup import StateBackend
 
 
-#: skip waiting on locks if we only read from the pool for all processes, i.e.
-#: use update_pool=no for all parallel operations or else
+#: skip waiting on locks if we only read from the pool for all processes
 #: WARNING: use it only if you know what you are doing
 SKIP_LOCKS = False
 
@@ -54,8 +53,30 @@ SKIP_LOCKS = False
 class TransferOps():
     """A small namespace for pool transfer operations of multiple types."""
 
-    @staticmethod
-    def list(pool_path, params):
+    _session_cache = {}
+
+    @classmethod
+    def get_session(cls, host, params):
+        """
+        Get a possibly reused session to the remote location.
+
+        :param str host: remote host name for the remote location
+        :param params: configuration parameters
+        :type params: {str, str}
+        :returns: a new session or previously cached session
+        :rtype: :py:class:`aexpect.ShellSession`
+        """
+        session = cls._session_cache.get(host)
+        if not session:
+            session = remote.remote_login(params["nets_shell_client"],
+                                          params['nets_shell_host'], params["nets_shell_port"],
+                                          params["nets_username"], params["nets_password"],
+                                          params["nets_shell_prompt"])
+            cls._session_cache[host] = session
+        return session
+
+    @classmethod
+    def list(cls, pool_path, params):
         """
         List all states in a path from the pool.
 
@@ -63,15 +84,16 @@ class TransferOps():
         :param params: configuration parameters
         :type params: {str, str}
         """
-        if ":" in pool_path:
-            return TransferOps.list_remote(pool_path, params)
-        elif ";" in pool_path:
-            return TransferOps.list_link(pool_path.replace(";", ""), params)
+        hosts, path = pool_path.split(":")
+        if hosts != "/":
+            return cls.list_remote(pool_path, params)
+        elif ";" in path:
+            return cls.list_link(path.replace(";", ""), params)
         else:
-            return TransferOps.list_local(pool_path, params)
+            return cls.list_local(path, params)
 
-    @staticmethod
-    def compare(cache_path, pool_path, params):
+    @classmethod
+    def compare(cls, cache_path, pool_path, params):
         """
         Compare cache and pool external state version.
 
@@ -80,15 +102,16 @@ class TransferOps():
         :param params: configuration parameters
         :type params: {str, str}
         """
-        if ":" in pool_path:
-            return TransferOps.compare_remote(cache_path, pool_path, params)
-        elif ";" in pool_path:
-            return TransferOps.compare_link(cache_path, pool_path.replace(";", ""), params)
+        hosts, path = pool_path.split(":")
+        if hosts != "/":
+            return cls.compare_remote(cache_path, pool_path, params)
+        elif ";" in path:
+            return cls.compare_link(cache_path, path.replace(";", ""), params)
         else:
-            return TransferOps.compare_local(cache_path, pool_path, params)
+            return cls.compare_local(cache_path, path, params)
 
-    @staticmethod
-    def download(cache_path, pool_path, params):
+    @classmethod
+    def download(cls, cache_path, pool_path, params):
         """
         Download a path from the pool depending on the pool location.
 
@@ -97,15 +120,16 @@ class TransferOps():
         :param params: configuration parameters
         :type params: {str, str}
         """
-        if ":" in pool_path:
-            TransferOps.download_remote(cache_path, pool_path, params)
-        elif ";" in pool_path:
-            TransferOps.download_link(cache_path, pool_path.replace(";", ""), params)
+        hosts, path = pool_path.split(":")
+        if hosts != "/":
+            cls.download_remote(cache_path, pool_path, params)
+        elif ";" in path:
+            cls.download_link(cache_path, path.replace(";", ""), params)
         else:
-            TransferOps.download_local(cache_path, pool_path, params)
+            cls.download_local(cache_path, path, params)
 
-    @staticmethod
-    def upload(cache_path, pool_path, params):
+    @classmethod
+    def upload(cls, cache_path, pool_path, params):
         """
         Upload a path to the pool depending on the pool location.
 
@@ -114,15 +138,16 @@ class TransferOps():
         :param params: configuration parameters
         :type params: {str, str}
         """
-        if ":" in pool_path:
-            TransferOps.upload_remote(cache_path, pool_path, params)
-        elif ";" in pool_path:
-            TransferOps.upload_link(cache_path, pool_path.replace(";", ""), params)
+        hosts, path = pool_path.split(":")
+        if hosts != "/":
+            cls.upload_remote(cache_path, pool_path, params)
+        elif ";" in path:
+            cls.upload_link(cache_path, path.replace(";", ""), params)
         else:
-            TransferOps.upload_local(cache_path, pool_path, params)
+            cls.upload_local(cache_path, path, params)
 
-    @staticmethod
-    def delete(pool_path, params):
+    @classmethod
+    def delete(cls, pool_path, params):
         """
         Delete a path in the pool depending on the pool location.
 
@@ -130,12 +155,13 @@ class TransferOps():
         :param params: configuration parameters
         :type params: {str, str}
         """
-        if ":" in pool_path:
-            TransferOps.delete_remote(pool_path, params)
-        elif ";" in pool_path:
-            TransferOps.delete_link(pool_path.replace(";", ""), params)
+        hosts, path = pool_path.split(":")
+        if hosts != "/":
+            cls.delete_remote(pool_path, params)
+        elif ";" in path:
+            cls.delete_link(path.replace(";", ""), params)
         else:
-            TransferOps.delete_local(pool_path, params)
+            cls.delete_local(path, params)
 
     @staticmethod
     def list_local(pool_path, params):
@@ -216,11 +242,7 @@ class TransferOps():
         All arguments are identical to the main entry method.
         """
         host, path = pool_path.split(":")
-        session = remote.remote_login(params["nets_shell_client"],
-                                      host,
-                                      params["nets_shell_port"],
-                                      params["nets_username"], params["nets_password"],
-                                      params["nets_shell_prompt"])
+        session = TransferOps.get_session(host, params)
         status, output = session.cmd_status_output(f"ls {path}")
         if status != 0:
             logging.debug(f"Path {path} not found: {output}")
@@ -240,11 +262,7 @@ class TransferOps():
             local_hash = ""
         host, path = pool_path.split(":")
 
-        session = remote.remote_login(params["nets_shell_client"],
-                                      host,
-                                      params["nets_shell_port"],
-                                      params["nets_username"], params["nets_password"],
-                                      params["nets_shell_prompt"])
+        session = TransferOps.get_session(host, params)
         remote_hash = ops.hash_file(session, path, "1M", "md5")
 
         return local_hash == remote_hash
@@ -266,7 +284,7 @@ class TransferOps():
         if os.path.exists(cache_path):
             logging.info(f"Force download of an already available {cache_path}")
 
-        remote.copy_files_from(host,
+        remote.copy_files_from(params["nets_shell_host"],
                                params["nets_file_transfer_client"],
                                params["nets_username"], params["nets_password"],
                                params["nets_file_transfer_port"],
@@ -289,7 +307,7 @@ class TransferOps():
             return
         logging.info(f"Will possibly force upload to {pool_path}")
 
-        remote.copy_files_to(host,
+        remote.copy_files_to(params["nets_shell_host"],
                              params["nets_file_transfer_client"],
                              params["nets_username"], params["nets_password"],
                              params["nets_file_transfer_port"],
@@ -305,7 +323,7 @@ class TransferOps():
         """
         host, path = pool_path.split(":")
         session = remote.remote_login(params["nets_shell_client"],
-                                      host,
+                                      params["nets_shell_host"],
                                       params["nets_shell_port"],
                                       params["nets_username"], params["nets_password"],
                                       params["nets_shell_prompt"])
@@ -317,6 +335,10 @@ class TransferOps():
         Compare cache and pool external state version.
 
         All arguments are identical to the main entry method.
+
+        ..todo:: True symlink support is available only for simple backing chains -
+            we cannot have the same get_location for an entire chain here since some
+            backing files are links and not the originals.
         """
         if os.path.islink(cache_path):
             return os.path.realpath(cache_path) == pool_path
@@ -420,7 +442,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params["image_pool"]
+        shared_pool = params["shared_pool"]
         image_base_name = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.debug(f"Checking for shared {vm_name}/{image_name} existence"
@@ -445,7 +467,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params["image_pool"]
+        shared_pool = params["shared_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Downloading shared {vm_name}/{image_name} "
@@ -463,7 +485,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params["image_pool"]
+        shared_pool = params["shared_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Uploading shared {vm_name}/{image_name} "
@@ -481,22 +503,13 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params["image_pool"]
+        shared_pool = params["shared_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Removing shared {vm_name}/{image_name} "
                      f"from the shared pool {shared_pool}")
         dst_image_name = os.path.join(shared_pool, image_base_names)
         cls.ops.delete(dst_image_name, params)
-
-    @classmethod
-    def get_state_dir(cls, params):
-        """
-        Get the directory used for storing states according to internal criteria.
-
-        All of the arguments match the signature of the other methods here.
-        """
-        return params["swarm_pool"] if params.get("swarm_pool") else params["vms_base_dir"]
 
     @classmethod
     def get_dependency(cls, state, params):
@@ -508,7 +521,7 @@ class QCOW2ImageTransfer(StateBackend):
         The rest of the arguments match the signature of the other methods here.
         """
         vm_name, image_name = params["vms"], params["images"]
-        vm_dir = os.path.join(cls.get_state_dir(params), vm_name)
+        vm_dir = os.path.join(params["swarm_pool"], vm_name)
         params["image_chain"] = f"snapshot {image_name}"
         params["image_name_snapshot"] = os.path.join(image_name, state)
         params["image_format_snapshot"] = "qcow2"
@@ -521,38 +534,38 @@ class QCOW2ImageTransfer(StateBackend):
         return os.path.basename(image_file.replace(".qcow2", ""))
 
     @classmethod
-    def compare_chain(cls, state, params):
+    def compare_chain(cls, state, cache_dir, pool_dir, params):
         """
         Compare checksums for all dependencies states backing a given state.
 
         :param str state: state name
+        :param str cache_dir: root cache directory to compare from/to
+        :param str pool_dir: root pool directory to compare from/to
         :param params: configuration parameters
         :type params: {str, str}
         """
-        cache_dir = cls.get_state_dir(params)
-        pool_dir = params.get("get_location", params.get("image_pool", ""))
         vm_name = params["vms"]
 
+        logging.debug(f"Comparing backing chain for {state}")
         next_state = state
         while next_state != "":
             for image_name in params.objects("images"):
                 image_params = params.object_params(image_name)
-                if next_state == image_params["image_name"]:
-                    cache_path = os.path.join(cache_dir, vm_name, next_state + ".qcow2")
-                    pool_path = os.path.join(pool_dir, vm_name, next_state + ".qcow2")
-                else:
-                    cache_path = os.path.join(cache_dir, vm_name, image_name, next_state + ".qcow2")
-                    pool_path = os.path.join(pool_dir, vm_name, image_name, next_state + ".qcow2")
+                cache_path = os.path.join(cache_dir, vm_name, image_name, next_state + ".qcow2")
+                pool_path = os.path.join(pool_dir, vm_name, image_name, next_state + ".qcow2")
                 if not cls.ops.compare(cache_path, pool_path, image_params):
+                    logging.warning(f"The image {image_name} has different {next_state} between cache {cache_path} and pool {pool_path}")
                     return False
             if next_state == state and params["object_type"] in ["vms", "nets/vms"]:
                 cache_path = os.path.join(cache_dir, vm_name, next_state + ".state")
                 pool_path = os.path.join(pool_dir, vm_name, next_state + ".state")
                 if not cls.ops.compare(cache_path, pool_path, params):
+                    logging.warning(f"The vm {vm_name} has different {next_state} between cache {cache_path} and pool {pool_path}")
                     return False
             # comparison of state chain is not yet complete if the state has backing dependencies
-            next_state = cls.get_dependency(next_state, params) if next_state != image_params["image_name"] else ""
+            next_state = cls.get_dependency(next_state, params)
 
+        logging.debug(f"The backing chain for {state} is identical between cache {cache_dir} and pool {pool_dir}")
         return True
 
     @classmethod
@@ -570,6 +583,7 @@ class QCOW2ImageTransfer(StateBackend):
         transfer_operation = cls.ops.download if down else cls.ops.upload
         vm_name = params["vms"]
 
+        logging.debug(f"Transferring backing chain for {state}")
         next_state = state
         while next_state != "":
             for image_name in params.objects("images"):
@@ -584,6 +598,8 @@ class QCOW2ImageTransfer(StateBackend):
                 transfer_operation(cache_path, pool_path, params)
             # transfer of state chain is not yet complete if the state has backing dependencies
             next_state = cls.get_dependency(next_state, params)
+
+        logging.debug(f"The backing chain for {state} is fully transferred to cache {cache_dir} from pool {pool_dir}")
 
     @classmethod
     def show(cls, params, object=None):
@@ -600,7 +616,7 @@ class QCOW2ImageTransfer(StateBackend):
             state_tag += f"/{image_name}"
             format = ".qcow2"
 
-        pool_dir = params.get("check_location", params.get("image_pool", ""))
+        pool_dir = params["check_location"]
         path = os.path.join(pool_dir, state_tag)
         logging.debug(f"Checking for shared {state_tag} states "
                       f"in the shared pool {pool_dir}")
@@ -638,8 +654,8 @@ class QCOW2ImageTransfer(StateBackend):
 
         All arguments match the base class.
         """
-        cache_dir = cls.get_state_dir(params)
-        pool_dir = params.get("get_location", params.get("image_pool", ""))
+        cache_dir = params["swarm_pool"]
+        pool_dir = params["get_location"]
 
         vm_name = params["vms"]
         state_tag = f"{vm_name}"
@@ -652,12 +668,7 @@ class QCOW2ImageTransfer(StateBackend):
         logging.info(f"Downloading shared {state_tag} state {state} "
                      f"from the shared pool {pool_dir} to {cache_dir}")
 
-        try:
-            cls.transfer_chain(state, cache_dir, pool_dir, params, down=True)
-        except Exception as error:
-            remove_path = os.path.join(cache_dir, state_tag, state + "." + format)
-            os.unlink(remove_path)
-            raise error
+        cls.transfer_chain(state, cache_dir, pool_dir, params, down=True)
 
     @classmethod
     def set(cls, params, object=None):
@@ -666,8 +677,8 @@ class QCOW2ImageTransfer(StateBackend):
 
         All arguments match the base class.
         """
-        cache_dir = cls.get_state_dir(params)
-        pool_dir = params.get("set_location", params.get("image_pool", ""))
+        cache_dir = params["swarm_pool"]
+        pool_dir = params["set_location"]
 
         vm_name = params["vms"]
         state_tag = f"{vm_name}"
@@ -678,12 +689,7 @@ class QCOW2ImageTransfer(StateBackend):
         logging.info(f"Uploading shared {state_tag} state {state} "
                      f"to the shared pool {pool_dir} from {cache_dir}")
 
-        try:
-            cls.transfer_chain(state, cache_dir, pool_dir, params, down=False)
-        except Exception as error:
-            remove_path = os.path.join(pool_dir, state_tag, state + "." + format)
-            cls.ops.delete(remove_path, params)
-            raise error
+        cls.transfer_chain(state, cache_dir, pool_dir, params, down=False)
 
     @classmethod
     def unset(cls, params, object=None):
@@ -692,7 +698,7 @@ class QCOW2ImageTransfer(StateBackend):
 
         All arguments match the base class and in addition:
         """
-        pool_dir = params.get("unset_location", params.get("image_pool", ""))
+        pool_dir = params["unset_location"]
 
         vm_name = params["vms"]
         state_tag = f"{vm_name}"
@@ -725,10 +731,8 @@ class RootSourcedStateBackend(StateBackend):
         All arguments match the base class.
         """
         local_root_exists = cls._check_root(params, object)
-        if not params.get_boolean("use_pool", True):
+        if params["pool_scope"] == "own":
             return local_root_exists
-        elif params.get_boolean("update_pool", False) and not local_root_exists:
-            raise RuntimeError("Updating state pool requires local root states")
         pool_root_exists = cls.transport.check_root(params, object)
         # TODO: boot state has to be deprecated and it cannot be handled remotely
         return local_root_exists or (pool_root_exists and params["object_type"] not in ["vms", "nets/vms"])
@@ -740,10 +744,10 @@ class RootSourcedStateBackend(StateBackend):
 
         All arguments match the base class.
         """
-        if params.get_boolean("update_pool", False):
+        if "own" not in params["pool_scope"]:
             cls.transport.get_root(params, object)
             return
-        if not params.get_boolean("use_pool", True):
+        elif params["pool_scope"] == "own":
             cls._get_root(params, object)
             return
 
@@ -752,7 +756,17 @@ class RootSourcedStateBackend(StateBackend):
 
         if pool_root_exists:
             if local_root_exists:
-                cache_valid = cls.transport.compare_chain(params["image_name"], params)
+                cache_valid = True
+                vm_name = params["vms"]
+                for image_name in params.objects("images"):
+                    image_params = params.object_params(image_name)
+                    image_filename = image_params["image_name"]
+                    cache_path = os.path.join(image_params["vms_base_dir"], vm_name, image_filename + ".qcow2")
+                    pool_path = os.path.join(image_params.get("shared_pool", ""), vm_name, image_filename + ".qcow2")
+                    if not cls.transport.ops.compare(cache_path, pool_path, image_params):
+                        logging.warning(f"The image {image_name} is different between cache {cache_path} and pool {pool_path}")
+                        cache_valid = False
+                        break
             else:
                 cache_valid = False
             if not cache_valid:
@@ -768,10 +782,15 @@ class RootSourcedStateBackend(StateBackend):
         """
         # local and pool root setting are mutually exclusive as we usually want
         # to set the pool root from an existing local root with some states on it
-        if not params.get_boolean("update_pool", False):
+        if params["pool_scope"] == "own":
             cls._set_root(params, object)
-        else:
+        elif params["pool_scope"] == "shared":
+            local_root_exists = cls._check_root(params, object)
+            if not local_root_exists:
+                raise RuntimeError("Updating state pool requires local root states")
             cls.transport.set_root(params, object)
+        else:
+            raise RuntimeError(f"Invalid pool scope {params['pool_scope']}")
 
     @classmethod
     def unset_root(cls, params, object=None):
@@ -782,10 +801,12 @@ class RootSourcedStateBackend(StateBackend):
         """
         # local and pool root setting are mutually exclusive as we usually want
         # to set the pool root from an existing local root with some states on it
-        if not params.get_boolean("update_pool", False):
+        if params["pool_scope"] == "own":
             cls._unset_root(params, object)
-        else:
+        elif params["pool_scope"] == "shared":
             cls.transport.unset_root(params, object)
+        else:
+            raise RuntimeError(f"Invalid pool scope {params['pool_scope']}")
 
 
 class SourcedStateBackend(StateBackend):
@@ -794,14 +815,40 @@ class SourcedStateBackend(StateBackend):
     transport = QCOW2ImageTransfer
 
     @classmethod
-    def get_state_dir(cls, params):
+    def get_sources(cls, do, params):
         """
-        Get the directory used for storing states according to internal criteria.
+        Get the currently permitted pool and state reuse scope.
 
+        :param str do: state operation to consider the location for
         :param params: parameters for the current state manipulation
         :type params: {str, str}
         """
-        return params["swarm_pool"] if params.get("swarm_pool") else params["vms_base_dir"]
+        own_id = params["nets_gateway"] + "/" + params["nets_host"] + ":" + params["swarm_pool"]
+        own_tuple = own_id.split("/")
+        own_max = len(own_tuple)
+        own_proximity = lambda x: sum([int(own_tuple[i]==xi)*10**(own_max-i) for i,xi in enumerate(x.split("/")[:own_max])])
+        return sorted(params.objects(f"{do}_location"), key=own_proximity, reverse=True)
+
+    @classmethod
+    def get_source_scope(cls, source, params):
+        """
+        Get the currently permitted pool and state reuse scope.
+
+        :param str source: source identifier inclusive of all scopes
+        :param params: parameters for the current state manipulation
+        :type params: {str, str}
+        """
+        own_id = params["nets_gateway"] + "/" + params["nets_host"] + ":" + params["swarm_pool"]
+        own_tuple = own_id.split("/")
+        source_tuple = source.split("/")
+        if own_tuple[0] != source_tuple[0]:
+            return "cluster"
+        elif own_tuple[1] != source_tuple[1]:
+            return "swarm"
+        elif own_tuple == source_tuple:
+            return "own"
+        else:
+            return "shared"
 
     @classmethod
     def show(cls, params, object=None):
@@ -810,12 +857,29 @@ class SourcedStateBackend(StateBackend):
 
         All arguments match the base class.
         """
-        cache_states = cls._show(params, object)
-        if not params.get_boolean("use_pool", True):
-            return cache_states
+        sources = cls.get_sources("check", params)
+        scopes = params.get_list("pool_scope")
+        if "own" in scopes:
+            cache_states = cls._show(params, object)
+        else:
+            cache_states = []
 
-        pool_states = cls.transport.show(params, object)
-        return list(set(cache_states).union(set(pool_states)))
+        pool_states = set()
+        for source in sources:
+            logging.debug(f"Next show source to consider is {source}")
+            source_params = params.object_params(source)
+            source_params["check_location"] = source
+
+            # filtering stage where we may disallow certain data transport
+            source_scope = cls.get_source_scope(source, params)
+            if source_scope == "own" or source_scope not in scopes:
+                continue
+            logging.debug(f"Choosing {source} as the show source to use")
+
+            mirror_states = cls.transport.show(source_params, object)
+            pool_states = set(mirror_states) if not pool_states else pool_states.intersection(mirror_states)
+
+        return list(set(cache_states).union(pool_states))
 
     @classmethod
     def check(cls, params, object=None):
@@ -824,67 +888,126 @@ class SourcedStateBackend(StateBackend):
 
         All arguments match the base class.
         """
-        local_state_exists = cls._check(params, object)
-        if params.get_boolean("update_pool", False) and not local_state_exists:
-            raise RuntimeError("Updating state pool requires local states")
-        elif not params.get_boolean("use_pool", True):
-            return local_state_exists
-        pool_state_exists = cls.transport.check(params, object)
+        sources = cls.get_sources("check", params)
+        scopes = params.get_list("pool_scope")
+        if "own" in scopes:
+            local_state_exists = cls._check(params, object)
+        else:
+            local_state_exists = False
+
+        pool_state_exists = []
+        for source in sources:
+            logging.debug(f"Next check source to consider is {source}")
+            source_params = params.object_params(source)
+            source_params["check_location"] = source
+
+            # filtering stage where we may disallow certain data transport
+            source_scope = cls.get_source_scope(source, params)
+            if source_scope not in scopes:
+                continue
+            logging.debug(f"Choosing {source} as the check source to use")
+
+            pool_state_exists += [cls.transport.check(source_params, object)]
+        if True in pool_state_exists and False in pool_state_exists:
+            raise RuntimeError("Invalid mirrors detected, some states are only found at some")
+        pool_state_exists = pool_state_exists[0] if pool_state_exists else False
+
         return local_state_exists or pool_state_exists
 
     @classmethod
     def get(cls, params, object=None):
         """
-        Get a root state or essentially due to pre-existence do nothing.
+        Get a state from the best possible mirror in a certain restricted scope.
 
         All arguments match the base class.
         """
-        if params.get_boolean("update_pool", False):
-            cls.transport.get(params, object)
-            return
-        if not params.get_boolean("use_pool", True):
+        sources = cls.get_sources("get", params)
+        scopes = params.get_list("pool_scope")
+
+        # get from best available source (assuming from best to worst until filters permit it, then breaking)
+        for source in sources:
+            logging.debug(f"Next get source to consider is {source}")
+            source_params = params.object_params(source)
+            source_params["get_location"] = source
+
+            # filtering stage where we may disallow certain data transport
+            source_scope = cls.get_source_scope(source, params)
+            if source_scope == "own" or source_scope not in scopes:
+                continue
+            logging.debug(f"Choosing {source} as the get source to use")
+
+            source_params["check_location"] = source
+            local_state_exists = cls._check(params, object)
+            pool_state_exists = cls.transport.check(source_params, object)
+
+            if pool_state_exists:
+                if local_state_exists:
+                    cache_valid = cls.transport.compare_chain(params["get_state"], params["swarm_pool"],
+                                                              source_params["get_location"], source_params)
+                else:
+                    cache_valid = False
+                if not cache_valid:
+                    cls.transport.get(source_params, object)
+            break
+
+        if "own" in scopes:
             cls._get(params, object)
-            return
-
-        local_state_exists = cls._check(params, object)
-        pool_state_exists = cls.transport.check(params, object)
-
-        if pool_state_exists:
-            if local_state_exists:
-                cache_valid = cls.transport.compare_chain(params["get_state"], params)
-            else:
-                cache_valid = False
-            if not cache_valid:
-                cls.transport.get(params, object)
-        cls._get(params, object)
 
     @classmethod
     def set(cls, params, object=None):
         """
-        Set a root state to provide object existence.
+        Set a state to all mirrors in a certain restricted scope.
 
         All arguments match the base class.
         """
-        # local and pool root setting are mutually exclusive as we usually want
-        # to set the pool root from an existing local root with some states on it
-        if not params.get_boolean("update_pool", False):
+        sources = cls.get_sources("set", params)
+        scopes = params.get_list("pool_scope")
+        if "own" in scopes:
             cls._set(params, object)
         else:
-            cls.transport.set(params, object)
+            local_state_exists = cls._check(params, object)
+            if not local_state_exists:
+                raise RuntimeError("Updating state pool requires local states")
+
+        # set from best available source (assuming from best to worst until filters permit it, then breaking)
+        for source in sources:
+            logging.debug(f"Next set source to consider is {source}")
+            source_params = params.object_params(source)
+            source_params["set_location"] = source
+
+            # filtering stage where we may disallow certain data transport
+            source_scope = cls.get_source_scope(source, params)
+            if source_scope == "own" or source_scope not in scopes:
+                continue
+            logging.debug(f"Choosing {source} as the set source to use")
+
+            cls.transport.set(source_params, object)
 
     @classmethod
     def unset(cls, params, object=None):
         """
-        Unset a root state to prevent object existence.
+        Unset a state to all mirrors in a certain restricted scope.
 
         All arguments match the base class and in addition:
         """
-        # local and pool root setting are mutually exclusive as we usually want
-        # to set the pool root from an existing local root with some states on it
-        if not params.get_boolean("update_pool", False):
+        sources = cls.get_sources("unset", params)
+        scopes = params.get_list("pool_scope")
+        if "own" in scopes:
             cls._unset(params, object)
-        else:
-            cls.transport.unset(params, object)
+
+        # unset from best available source (assuming from best to worst until filters permit it, then breaking)
+        for source in sources:
+            logging.debug(f"Next unset source to consider is {source}")
+            source_params = params.object_params(source)
+            source_params["unset_location"] = source
+
+            # filtering stage where we may disallow certain data transport
+            source_scope = cls.get_source_scope(source, params)
+            if source_scope == "own" or source_scope not in scopes:
+                continue
+            logging.debug(f"Choosing {source} as the unset source to use")
+
+            cls.transport.unset(source_params, object)
 
 
 @contextlib.contextmanager

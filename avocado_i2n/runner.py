@@ -103,14 +103,14 @@ class CartesianRunner(RunnerInterface):
         :param node: test node to run
         :type node: :py:class:`TestNode`
         """
-        if not node.is_occupied():
-            default_slot = self.slots[0] if len(self.slots) > 0 else ""
-            node.set_environment(job, default_slot)
-        # once the slot is set (here or earlier), the hostname reflects it
-        hostname = node.params["hostname"]
-        hostname = "localhost" if not hostname else hostname
-        logging.debug(f"Running {node.id} on {hostname}")
+        host = node.params["nets_host"] or "process"
+        gateway = node.params["nets_gateway"] or "localhost"
+        spawner = node.params["nets_spawner"]
+        logging.debug(f"Running {node.id} on {gateway}/{host} using {spawner} isolation")
 
+        if not node.is_occupied():
+            logging.warning("Environment not set, assuming serial unisolated test runs")
+            node.set_environment(job, "")
         if not self.status_repo:
             self.status_repo = StatusRepo(job.unique_id)
             self.status_server = StatusServer(job.config.get('nrunner.status_server_listen'),
@@ -124,6 +124,10 @@ class CartesianRunner(RunnerInterface):
                         category=TASK_DEFAULT_CATEGORY,
                         job_id=self.job.unique_id)
         task = RuntimeTask(raw_task)
+        if spawner == "lxc":
+            task.spawner_handle = host
+        elif spawner == "remote":
+            task.spawner_handle = node.get_session_to_net()
         self.tasks += [task]
 
         # TODO: use a single state machine for all test nodes when we are able
@@ -330,11 +334,11 @@ class CartesianRunner(RunnerInterface):
         self.status_repo = StatusRepo(job.unique_id)
         self.status_server = StatusServer(job.config.get('nrunner.status_server_listen'),
                                           self.status_repo)
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.status_server.create_server())
         asyncio.ensure_future(self.status_server.serve_forever())
         # TODO: this needs more customization
         asyncio.ensure_future(self._update_status(job))
-
-        loop = asyncio.get_event_loop()
 
         graph = self._graph_from_suite(test_suite)
         summary = set()
@@ -364,10 +368,8 @@ class CartesianRunner(RunnerInterface):
                         self.skip_tests += [test_details["name"]]
 
         self.tasks = []
-        self.slots = params.get("slots", "localhost").split(" ")
+        self.slots = params.get("slots", "").split(" ")
         for slot in self.slots:
-            if slot == "localhost":
-                continue
             if not TestNode.start_environment(slot):
                 raise RuntimeError(f"Failed to start environment {slot}")
 
@@ -383,6 +385,10 @@ class CartesianRunner(RunnerInterface):
                 summary.add('FAIL')
         except KeyboardInterrupt:
             summary.add('INTERRUPTED')
+
+        from .states import pool
+        for session in pool.TransferOps._session_cache.values():
+            session.close()
 
         # TODO: The avocado implementation needs a workaround here:
         # Wait until all messages may have been processed by the
@@ -403,7 +409,7 @@ class CartesianRunner(RunnerInterface):
         return summary
 
     """custom nodes"""
-    async def run_terminal_node(self, graph, object_name, params):
+    async def run_terminal_node(self, graph, object_name, params, slot):
         """
         Run the set of tests necessary for creating a given test object.
 
@@ -435,6 +441,9 @@ class CartesianRunner(RunnerInterface):
 
         logging.info("Configuring creation/installation for %s on %s", object_vm, object_image)
         setup_dict = test_node.params.copy()
+        for key in list(setup_dict.keys()):
+            if "/" in key:
+                del setup_dict[key]
         setup_dict.update({} if params is None else params.copy())
         setup_dict.update({"type": "shared_configure_install", "check_mode": "rr",  # explicit root handling
                            # overwrite some params inherited from the modified install node
@@ -445,7 +454,7 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_str=param.re_str("all..noop"),
                                         ovrwrt_dict=setup_dict)
         pre_node = TestNode("0t", install_config, test_node.objects[0])
-        pre_node.set_environment(self.job, test_node.params["hostname"])
+        pre_node.set_environment(self.job, slot)
         status = await self.run_test_node(pre_node)
         if not status:
             logging.error("Could not configure the installation for %s on %s", object_vm, object_image)
@@ -465,6 +474,10 @@ class CartesianRunner(RunnerInterface):
         # scanning can now be additionally triggered for each worker on internal nodes
         if not test_node.should_scan and not test_node.is_cleanup_ready(slot):
             test_node.should_scan = slot not in test_node.workers
+        if not test_node.params.get("set_location") and not test_node.is_shared_root():
+            shared_locations = test_node.params.get_list("shared_pool", ["/:."])
+            for location in shared_locations:
+                test_node.add_location(location)
 
         if test_node.should_scan:
             test_node.scan_states()
@@ -483,10 +496,12 @@ class CartesianRunner(RunnerInterface):
             # the primary setup nodes need special treatment
             if params.get("dry_run", "no") == "yes":
                 logging.info("Running a dry %s", test_node.params["shortname"])
+                status = False
             elif test_node.is_shared_root():
                 logging.debug("Test run on %s started from the shared root", slot)
+                status = False
             elif test_node.is_object_root():
-                status = await self.run_terminal_node(graph, test_node.params["object_root"], params)
+                status = await self.run_terminal_node(graph, test_node.params["object_root"], params, slot)
                 if not status:
                     logging.error("Could not perform the installation from %s", test_node)
 
@@ -503,6 +518,10 @@ class CartesianRunner(RunnerInterface):
                 if object_state is not None and object_state != "":
                     test_object.current_state = object_state
 
+            # node is not shared and with owned setup that is not yet claimed
+            if status:
+                self._update_reusable_trail(test_node)
+
             test_node.should_run = False
         else:
             logging.debug("Skipping test %s on %s", test_node.params["shortname"], slot)
@@ -510,19 +529,6 @@ class CartesianRunner(RunnerInterface):
         # free the node for traversal by other workers
         test_node.workers.add(slot)
         test_node.spawner = None
-        # node is either shared and thus without owned setup or with setup that is already claimed
-        if test_node.is_shared_root() or len(test_node.workers) > 1:
-            return
-        setup_host = test_node.params["hostname"]
-        setup_path = test_node.params["vms_base_dir"]
-        setup_source_ip = test_node.get_session_ip(setup_host) if setup_host else ""
-        setup_source = setup_source_ip + ":" if setup_source_ip else ""
-        test_node.params["set_location"] = setup_source + setup_path
-        # TODO: networks need further refactoring possibly as node environments
-        object_suffix = test_node.params["object_suffix"]
-        suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
-        for node in test_node.cleanup_nodes:
-            node.params[f"get_location{suffix}"] = setup_source + setup_path
 
     async def _reverse_test_node(self, graph, test_node, params, slot):
         """
@@ -546,6 +552,23 @@ class CartesianRunner(RunnerInterface):
         else:
             logging.debug("The test %s should not be cleaned up on %s", test_node.params["shortname"], slot)
         test_node.spawner = None
+
+    def _update_reusable_trail(self, test_node):
+        """Update the graph nodes with traversal information on new reusable trails."""
+        setup_host = test_node.params["nets_host"]
+        setup_gateway = test_node.params["nets_gateway"]
+        setup_spawner = test_node.params["nets_spawner"]
+        setup_path = test_node.params.get("swarm_pool", test_node.params["vms_base_dir"])
+        # TODO: add support for local copy and lxc containers?
+        if setup_spawner == "process":
+            if setup_host != "" or setup_gateway != "":
+                raise RuntimeError("Serial process test runs cannot be isolated via hosts")
+            # separate symmetric and asymmetric sharing
+            if test_node.params.get_boolean("use_symlink"):
+                setup_path += ";"
+
+        setup_source = setup_gateway + "/" + setup_host + ":" + setup_path
+        test_node.add_location(setup_source)
 
     def _graph_from_suite(self, test_suite):
         """
