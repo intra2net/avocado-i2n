@@ -139,7 +139,8 @@ class RamfileBackend(SourcedStateBackend):
         """
         vm, vm_name = object, params["vms"]
         logging.info("Removing vm state '%s' of %s", params["unset_state"], vm_name)
-        vm.pause()
+        if vm is not None:
+            vm.destroy(gracefully=False)
 
         for image_name in params.objects("images"):
             image_params = params.object_params(image_name)
@@ -151,7 +152,6 @@ class RamfileBackend(SourcedStateBackend):
         vm_dir = os.path.join(state_dir, params["vms"])
         state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         os.unlink(state_file)
-        vm.resume(timeout=3)
 
     @classmethod
     def check_root(cls, params, object=None):
