@@ -17,6 +17,7 @@ jobs:
     strategy:
       matrix:
         python-version: [3.8, 3.9, 3.10.9, 3.11]
+        avocado-version: ["103.0"]
       fail-fast: false
 
     steps:
@@ -33,8 +34,6 @@ jobs:
           cache-dependency-path: 'requirements_pip.txt'
       - name: Display Python version
         run: python -c "import sys; print(sys.version)"
-      - name: Install dependencies
-        run: pip install -r requirements_pip.txt
       - name: Display own version
         run: |
           VERSION=$(cat VERSION)
@@ -46,18 +45,20 @@ jobs:
           cd aexpect-libs
           pip install -e .
           cd ..
-      #- name: Installing most up-to-date Avocado dependency in develop mode
-      #  run: |
-      #    git clone --depth 1 --branch $VERSION https://github.com/avocado-framework/avocado.git avocado-libs
-      #    cd avocado-libs
-      #    pip install -e .
-      #    cd ..
-      #- name: Installing most up-to-date Avocado VT dependency in develop mode
-      #  run: |
-      #    git clone --depth 1 --branch $VERSION https://github.com/avocado-framework/avocado-vt.git avocado-vt-libs
-      #    cd avocado-vt-libs
-      #    pip install -e .
-      #    cd ..
+      - name: Installing most up-to-date Avocado dependency in develop mode
+        run: |
+          git clone --depth 1 https://github.com/avocado-framework/avocado.git avocado-libs --branch ${{ matrix.avocado-version }}
+          cd avocado-libs
+          pip install -e .
+          cd ..
+      - name: Installing most up-to-date Avocado VT dependency in develop mode
+        run: |
+          git clone --depth 1 https://github.com/avocado-framework/avocado-vt.git avocado-vt-libs --branch ${{ matrix.avocado-version }}
+          cd avocado-vt-libs
+          pip install -e .
+          cd ..
+      - name: Install dependencies
+        run: pip install -r requirements_pip.txt
       - run: sleep 3
       - name: Create some fake binaries to make vt-bootstrap happy
         run: |
@@ -71,7 +72,7 @@ jobs:
       - name: Isolation tests using parallel avocado runner
         # if later on we decide that unit tests are still more appropriate here just do
         #run: make check
-        run: PYTHONPATH=:. avocado run --nrunner-max-parallel-tasks=4 selftests/isolation/test_*
+        run: PYTHONPATH=:. avocado run --max-parallel-tasks=4 selftests/isolation/test_*
         # TODO: coverage report with avocado runs ends in 0% or ~0%, perhaps due to avocado or its async testing
         #run: PYTHONPATH=:. coverage run --append --source=avocado_i2n $(which avocado) run --nrunner-max-parallel-tasks=4 selftests/isolation/test_*
       #- name: Collect all coverage
@@ -84,4 +85,5 @@ jobs:
         run: |
           rm -rf avocado-vt-libs
           rm -rf avocado-libs
+          rm -rf aexpect-libs
       - run: echo "🥑 This job's status is ${{ job.status }}."
