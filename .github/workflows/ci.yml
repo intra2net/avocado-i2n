@@ -44,13 +44,13 @@ jobs:
           cd ..
       - name: Installing most up-to-date Avocado dependency in develop mode
         run: |
-          git clone --depth 1 https://github.com/avocado-framework/avocado.git avocado-libs --branch ${{ matrix.avocado-version }}
+          git clone --depth 1 https://github.com/avocado-framework/avocado.git avocado-libs
           cd avocado-libs
           pip install -e .
           cd ..
       - name: Installing most up-to-date Avocado VT dependency in develop mode
         run: |
-          git clone --depth 1 https://github.com/avocado-framework/avocado-vt.git avocado-vt-libs --branch ${{ matrix.avocado-version }}
+          git clone --depth 1 https://github.com/avocado-framework/avocado-vt.git avocado-vt-libs
           cd avocado-vt-libs
           pip install -e .
           cd ..
