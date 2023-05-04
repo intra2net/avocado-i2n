@@ -123,6 +123,8 @@ class CartesianRunner(RunnerInterface):
                         [job.config.get('run.status_server_uri')],
                         category=TASK_DEFAULT_CATEGORY,
                         job_id=self.job.unique_id)
+        raw_task.runnable.output_dir = os.path.join(job.test_results_path,
+                                                    raw_task.identifier.str_filesystem)
         task = RuntimeTask(raw_task)
         if spawner == "lxc":
             task.spawner_handle = host

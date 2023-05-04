@@ -151,7 +151,7 @@ class TestNode(object):
         self.params['short_id'] = self.long_prefix
         self.params['id'] = self.id_test.str_uid + "_" + self.id_test.name
 
-        uri = self.params["shortname"]
+        uri = self.params.get('name')
         vt_params = self.params.copy()
 
         # Flatten the vt_params, discarding the attributes that are not
