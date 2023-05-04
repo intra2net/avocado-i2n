@@ -5,8 +5,6 @@ simplejson==3.8.0
 netaddr>=0.7.18
 netifaces>=0.10.5
 
-# TODO: fix for avocado not controlling their setuptools dependency version
-setuptools==81.0
 aexpect==1.8.0
 avocado-framework
 avocado-framework-plugin-vt
