@@ -103,14 +103,14 @@ class CartesianRunner(RunnerInterface):
         :param node: test node to run
         :type node: :py:class:`TestNode`
         """
-        if not node.is_occupied():
-            default_slot = self.slots[0] if len(self.slots) > 0 else ""
-            node.set_environment(job, default_slot)
-        # once the slot is set (here or earlier), the hostname reflects it
-        hostname = node.params["hostname"]
-        hostname = "localhost" if not hostname else hostname
-        logging.debug(f"Running {node.id} on {hostname}")
+        host = node.params["nets_host"] or "process"
+        gateway = node.params["nets_gateway"] or "localhost"
+        spawner = node.params["nets_spawner"]
+        logging.debug(f"Running {node.id} on {gateway}/{host} using {spawner} isolation")
 
+        if not node.is_occupied():
+            logging.warning("Environment not set, assuming serial unisolated test runs")
+            node.set_environment(job, "")
         if not self.status_repo:
             self.status_repo = StatusRepo(job.unique_id)
             self.status_server = StatusServer(job.config.get('nrunner.status_server_listen'),
@@ -124,6 +124,10 @@ class CartesianRunner(RunnerInterface):
                         category=TASK_DEFAULT_CATEGORY,
                         job_id=self.job.unique_id)
         task = RuntimeTask(raw_task)
+        if spawner == "lxc":
+            task.spawner_handle = host
+        elif spawner == "remote":
+            task.spawner_handle = node.get_session_to_net()
         self.tasks += [task]
 
         # TODO: use a single state machine for all test nodes when we are able
@@ -330,11 +334,11 @@ class CartesianRunner(RunnerInterface):
         self.status_repo = StatusRepo(job.unique_id)
         self.status_server = StatusServer(job.config.get('nrunner.status_server_listen'),
                                           self.status_repo)
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(self.status_server.create_server())
         asyncio.ensure_future(self.status_server.serve_forever())
         # TODO: this needs more customization
         asyncio.ensure_future(self._update_status(job))
-
-        loop = asyncio.get_event_loop()
 
         graph = self._graph_from_suite(test_suite)
         summary = set()
@@ -364,10 +368,8 @@ class CartesianRunner(RunnerInterface):
                         self.skip_tests += [test_details["name"]]
 
         self.tasks = []
-        self.slots = params.get("slots", "localhost").split(" ")
+        self.slots = params.get("slots", "").split(" ")
         for slot in self.slots:
-            if slot == "localhost":
-                continue
             if not TestNode.start_environment(slot):
                 raise RuntimeError(f"Failed to start environment {slot}")
 
@@ -383,6 +385,10 @@ class CartesianRunner(RunnerInterface):
                 summary.add('FAIL')
         except KeyboardInterrupt:
             summary.add('INTERRUPTED')
+
+        from .states import pool
+        for session in pool.TransferOps._session_cache.values():
+            session.close()
 
         # TODO: The avocado implementation needs a workaround here:
         # Wait until all messages may have been processed by the
@@ -403,7 +409,7 @@ class CartesianRunner(RunnerInterface):
         return summary
 
     """custom nodes"""
-    async def run_terminal_node(self, graph, object_name, params):
+    async def run_terminal_node(self, graph, object_name, params, slot):
         """
         Run the set of tests necessary for creating a given test object.
 
@@ -435,6 +441,9 @@ class CartesianRunner(RunnerInterface):
 
         logging.info("Configuring creation/installation for %s on %s", object_vm, object_image)
         setup_dict = test_node.params.copy()
+        for key in list(setup_dict.keys()):
+            if "/" in key:
+                del setup_dict[key]
         setup_dict.update({} if params is None else params.copy())
         setup_dict.update({"type": "shared_configure_install", "check_mode": "rr",  # explicit root handling
                            # overwrite some params inherited from the modified install node
@@ -445,7 +454,7 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_str=param.re_str("all..noop"),
                                         ovrwrt_dict=setup_dict)
         pre_node = TestNode("0t", install_config, test_node.objects[0])
-        pre_node.set_environment(self.job, test_node.params["hostname"])
+        pre_node.set_environment(self.job, slot)
         status = await self.run_test_node(pre_node)
         if not status:
             logging.error("Could not configure the installation for %s on %s", object_vm, object_image)
@@ -465,15 +474,20 @@ class CartesianRunner(RunnerInterface):
         # scanning can now be additionally triggered for each worker on internal nodes
         if not test_node.should_scan and not test_node.is_cleanup_ready(slot):
             test_node.should_scan = slot not in test_node.workers
+        if not test_node.params.get("set_location") and not test_node.is_shared_root():
+            shared_locations = test_node.params.get_list("shared_pool", ["/:."])
+            for location in shared_locations:
+                test_node.add_location(location)
 
         if test_node.should_scan:
             test_node.scan_states()
             test_node.should_scan = False
 
-            # TODO: this is best handled as unset_mode=r meaning "sync" and f meaning do-not-sync-but-remove
+            # TODO: in addition to syncing this also needs generalized run decision instead of the old flags
             is_cleaned_up = test_node.params.get("unset_mode_images", test_node.params["unset_mode"])[0] == "f"
             is_cleaned_up |= test_node.params.get("unset_mode_vms", test_node.params["unset_mode"])[0] == "f"
-            test_node.should_run &= not (is_cleaned_up and len(test_node.workers) > 0)
+            is_cleaned_up &= test_node.is_finished()
+            test_node.should_run &= not is_cleaned_up
 
         replay_skip = test_node.params["name"] in self.skip_tests
         if replay_skip:
@@ -483,10 +497,12 @@ class CartesianRunner(RunnerInterface):
             # the primary setup nodes need special treatment
             if params.get("dry_run", "no") == "yes":
                 logging.info("Running a dry %s", test_node.params["shortname"])
+                status = False
             elif test_node.is_shared_root():
                 logging.debug("Test run on %s started from the shared root", slot)
+                status = False
             elif test_node.is_object_root():
-                status = await self.run_terminal_node(graph, test_node.params["object_root"], params)
+                status = await self.run_terminal_node(graph, test_node.params["object_root"], params, slot)
                 if not status:
                     logging.error("Could not perform the installation from %s", test_node)
 
@@ -503,6 +519,10 @@ class CartesianRunner(RunnerInterface):
                 if object_state is not None and object_state != "":
                     test_object.current_state = object_state
 
+            # node is not shared and with owned setup that is not yet claimed
+            if status:
+                self._update_reusable_trail(test_node)
+
             test_node.should_run = False
         else:
             logging.debug("Skipping test %s on %s", test_node.params["shortname"], slot)
@@ -510,20 +530,16 @@ class CartesianRunner(RunnerInterface):
         # free the node for traversal by other workers
         test_node.workers.add(slot)
         test_node.spawner = None
-        if test_node.is_shared_root():
-            return
-        setup_host = test_node.params["hostname"]
-        setup_path = test_node.params["vms_base_dir"]
-        setup_nets = test_node.params["nets_ip_prefix"]
-        setup_source_ip = f"{setup_nets}.{setup_host[1:]}" if setup_host else ""
-        setup_source = setup_source_ip + ":" if setup_source_ip else ""
-        test_node.params["image_pool"] = setup_source + setup_path
 
     async def _reverse_test_node(self, graph, test_node, params, slot):
         """
         Clean up any states that could be created by this node (will be skipped
         by default but the states can be removed with "unset_mode=f.").
         """
+        if not test_node.is_occupied():
+            test_node.set_environment(self.job, slot)
+        else:
+            return
         if test_node.should_clean:
 
             if params.get("dry_run", "no") == "yes":
@@ -532,68 +548,28 @@ class CartesianRunner(RunnerInterface):
                 logging.debug("Test run on %s ended at the shared root", slot)
 
             elif test_node.produces_setup():
-                setup_dict = {} if params is None else params.copy()
-                setup_dict["vm_action"] = "unset"
-                setup_dict["vms"] = test_node.params["vms"]
-                # the cleanup will be performed if at least one selected object has a cleanable state
-                has_selected_object_setup = False
-                for test_object in test_node.objects:
-                    object_params = test_object.object_typed_params(test_node.params)
-                    object_state = object_params.get("set_state")
-                    if not object_state:
-                        continue
-
-                    # avoid running any test unless the user really requires cleanup and such is needed
-                    if object_params.get("unset_mode", "ri")[0] != "f":
-                        continue
-                    # avoid running any test for unselected vms
-                    if test_object.key == "nets":
-                        logging.warning("Net state cleanup is not supported")
-                        continue
-                    vm_name = test_object.suffix if test_object.key == "vms" else test_object.composites[0].suffix
-                    if vm_name in params.get("vms", param.all_objects("vms")):
-                        has_selected_object_setup = True
-                    else:
-                        continue
-
-                    # TODO: cannot remove ad-hoc root states, is this even needed?
-                    if test_object.key == "vms":
-                        vm_params = object_params
-                        setup_dict["images_" + vm_name] = vm_params["images"]
-                        for image_name in vm_params.objects("images"):
-                            image_params = vm_params.object_params(image_name)
-                            setup_dict[f"image_name_{image_name}_{vm_name}"] = image_params["image_name"]
-                            setup_dict[f"image_format_{image_name}_{vm_name}"] = image_params["image_format"]
-                            if image_params.get_boolean("create_image", False):
-                                setup_dict[f"remove_image_{image_name}_{vm_name}"] = "yes"
-                                setup_dict["skip_image_processing"] = "no"
-
-                    # reverse the state setup for the given test object
-                    unset_suffixes = f"_{test_object.key}_{test_object.suffix}"
-                    unset_suffixes += f"_{vm_name}" if test_object.key == "images" else ""
-                    # NOTE: we are forcing the unset_mode to be the one defined for the test node because
-                    # the unset manual step behaves differently now (all this extra complexity starts from
-                    # the fact that it has different default value which is noninvasive
-                    setup_dict.update({f"unset_state{unset_suffixes}": object_state,
-                                       f"unset_mode{unset_suffixes}": object_params.get("unset_mode", "ri")})
-
-                if has_selected_object_setup:
-                    logging.info("Cleaning up %s on %s", test_node, slot)
-                    setup_str = param.re_str("all..internal..manage.unchanged")
-                    net = test_node.objects[0]
-                    forward_config = net.config.get_copy()
-                    forward_config.parse_next_batch(base_file="sets.cfg",
-                                                    ovrwrt_file=param.tests_ovrwrt_file(),
-                                                    ovrwrt_str=setup_str,
-                                                    ovrwrt_dict=setup_dict)
-                    reverse_node = TestNode(test_node.prefix + "c", forward_config, net)
-                    reverse_node.set_environment(self.job, slot)
-                    await self.run_test_node(reverse_node)
-                else:
-                    logging.info("No need to clean up %s on %s", test_node, slot)
+                test_node.sync_states(params)
 
         else:
             logging.debug("The test %s should not be cleaned up on %s", test_node.params["shortname"], slot)
+        test_node.spawner = None
+
+    def _update_reusable_trail(self, test_node):
+        """Update the graph nodes with traversal information on new reusable trails."""
+        setup_host = test_node.params["nets_host"]
+        setup_gateway = test_node.params["nets_gateway"]
+        setup_spawner = test_node.params["nets_spawner"]
+        setup_path = test_node.params.get("swarm_pool", test_node.params["vms_base_dir"])
+        # TODO: add support for local copy and lxc containers?
+        if setup_spawner == "process":
+            if setup_host != "" or setup_gateway != "":
+                raise RuntimeError("Serial process test runs cannot be isolated via hosts")
+            # separate symmetric and asymmetric sharing
+            if test_node.params.get_boolean("use_symlink"):
+                setup_path += ";"
+
+        setup_source = setup_gateway + "/" + setup_host + ":" + setup_path
+        test_node.add_location(setup_source)
 
     def _graph_from_suite(self, test_suite):
         """

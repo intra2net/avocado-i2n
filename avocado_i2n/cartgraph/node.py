@@ -76,11 +76,15 @@ class TestNode(object):
         """Unique test ID to identify a test node."""
         # TODO: cannot reuse long prefix since container is set at runtime
         #return TestID(self.long_prefix, self.params["name"])
-        net_id = self.params["hostname"]
+        net_id = self.params.get("nets_gateway", "")
+        net_id += "." if net_id else ""
+        net_id += self.params.get("nets_host", "")
         net_id += self.params["vms"].replace(" ", "")
         full_prefix = self.prefix + "-" + net_id
         return TestID(full_prefix, self.params["name"])
     id_test = property(fget=id_test)
+
+    _session_cache = {}
 
     def __init__(self, prefix, config, object):
         """
@@ -170,15 +174,25 @@ class TestNode(object):
         This isolating environment could be a container, a virtual machine, or
         a less-isolated process and is managed by a specialized spawner.
         """
-        # NOTE: at present handle the lack of slots as an indicator of using
-        # non-isolated serial runs via the old process environment spawner
-        spawner_name = "lxc" if job.config["param_dict"].get("slots") else "process"
+        env_tuple = tuple(env_id.split("/"))
+        if len(env_tuple) == 1:
+            env_net = ""
+            env_name = "c" + env_tuple[0] if env_tuple[0] else ""
+            # NOTE: at present handle empty environment id (lack of slots) as an indicator
+            # of using non-isolated serial runs via the old process environment spawner
+            env_type = "lxc" if env_name else "process"
+        elif len(env_tuple) == 2:
+            env_net = env_tuple[0]
+            env_name = env_tuple[1]
+            env_type = "remote"
+        else:
+            raise ValueError(f"Environment ID {env_id} could not be parsed for {self}")
 
-        # TODO: move cid in constructor in the upstream PR
-        self.spawner = SpawnerDispatcher(job.config, job)[spawner_name].obj
-        self.spawner.cid = env_id
+        self.spawner = SpawnerDispatcher(job.config, job)[env_type].obj
 
-        self.params["hostname"] = env_id if env_id else self.params["hostname"]
+        self.params["nets_host"] = env_name
+        self.params["nets_gateway"] = env_net
+        self.params["nets_spawner"] = env_type
 
     @staticmethod
     def start_environment(env_id):
@@ -187,17 +201,25 @@ class TestNode(object):
 
         :returns: whether the environment is available after current or previous start
         :rtype: bool
-
-        ..todo:: As we can start containers this code will have to differentiate
-            between a remote host and a remote or local container later on with a
-            wake-on-lan implementation for the latter.
         """
-        import lxc
-        container = lxc.Container(env_id)
-        if not container.running:
-            logging.info(f"Starting bootable environment {env_id}")
-            return container.start()
-        return container.running
+        env_tuple = tuple(env_id.split("/"))
+        if len(env_tuple) == 1:
+            if env_tuple[0] == "":
+                logging.debug("Serial runs do not have any bootable environment")
+                return True
+            import lxc
+            cid = "c" + env_id
+            container = lxc.Container(cid)
+            if not container.running:
+                logging.info(f"Starting bootable environment {cid}")
+                return container.start()
+            return container.running
+        elif len(env_tuple) == 2:
+            # TODO: send wake-on-lan package to start remote host (assuming routable)
+            logging.warning("Assuming the remote host is running for now")
+            return True
+        else:
+            raise ValueError(f"Environment ID {env_id} could not be parsed")
 
     def is_occupied(self):
         return self.spawner is not None
@@ -254,7 +276,14 @@ class TestNode(object):
         of the setup as finished in the end of the traversal while
         we would prefer to do so in an eager manner.
         """
-        return len(self.workers) > 0 and not self.should_run
+        if "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
+            hosts = set(worker for worker in self.workers)
+            return self.params["nets_host"] in hosts
+        elif "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
+            gateways = set(worker.split("/")[0] for worker in self.workers)
+            return self.params["nets_gateway"] in gateways
+        else:
+            return len(self.workers) > 0
 
     def is_terminal_node_for(self):
         """
@@ -449,6 +478,44 @@ class TestNode(object):
         visitors.add(worker)
         self.visited_cleanup_nodes[test_node] = visitors
 
+    def add_location(self, location):
+        """
+        Add a setup reuse location information to the current node and its children.
+
+        :param str location: a special format string containing all information on the
+                             location where the format must be "gateway/host:path"
+        """
+        # TODO: networks need further refactoring possibly as node environments
+        object_suffix = self.params["object_suffix"]
+        # discard parameters if we are not talking about any specific non-net object
+        object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
+        source_suffix = "_" + location
+        source_object_suffix = source_suffix + object_suffix
+
+        location_tuple = location.split(":")
+        gateway, host = ("", "") if len(location_tuple) <= 1 else location_tuple[0].split("/")
+        ip, port = type(self.objects[0]).get_session_ip_port(host, gateway,
+                                                             self.params['nets_ip_prefix'],
+                                                             self.params["nets_shell_port"])
+
+        if self.params.get("set_location"):
+            self.params["set_location"] += " " + location
+        else:
+            self.params["set_location"] = location
+        self.params[f"nets_shell_host{source_suffix}"] = ip
+        self.params[f"nets_shell_port{source_suffix}"] = port
+        self.params[f"nets_file_transfer_port{source_suffix}"] = port
+
+        for node in self.cleanup_nodes:
+            if node.params.get(f"get_location{object_suffix}"):
+                node.params[f"get_location{object_suffix}"] += " " + location
+            else:
+                node.params[f"get_location{object_suffix}"] = location
+
+            node.params[f"nets_shell_host{source_object_suffix}"] = ip
+            node.params[f"nets_shell_port{source_object_suffix}"] = port
+            node.params[f"nets_file_transfer_port{source_object_suffix}"] = port
+
     def regenerate_params(self, verbose=False):
         """
         Regenerate all parameters from the current reparsable config.
@@ -457,11 +524,43 @@ class TestNode(object):
         """
         self._params_cache = self.config.get_params(show_dictionaries=verbose)
 
+    def get_session_ip_port(self):
+        """
+        Get an IP address and a port to the current slot for the given test node.
+
+        :returns: IP and port in string parameter format
+        :rtype: (str, str)
+        """
+        return type(self.objects[0]).get_session_ip_port(self.params['nets_host'],
+                                                         self.params['nets_gateway'],
+                                                         self.params['nets_ip_prefix'],
+                                                         self.params["nets_shell_port"])
+
+    def get_session_to_net(self):
+        """
+        Get a remote session to the current slot for the given test node.
+
+        :returns: remote session to the slot determined from current node environment
+        :rtype: :type session: :py:class:`aexpect.ShellSession`
+        """
+        log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
+        host, port = self.get_session_ip_port()
+        cache = type(self)._session_cache
+        session = cache.get(host + ":" + port)
+        if not session:
+            session = remote.wait_for_login(self.params["nets_shell_client"],
+                                            host, port,
+                                            self.params["nets_username"], self.params["nets_password"],
+                                            self.params["nets_shell_prompt"])
+            cache[host + ":" + port] = session
+        return session
+
     def scan_states(self):
         """Scan for present object states to reuse the test from previous runs."""
         self.should_run = True
         node_params = self.params.copy()
 
+        slot, slothost = self.params["nets_host"], self.params["nets_gateway"]
         is_leaf = True
         for test_object in self.objects:
             object_params = test_object.object_typed_params(self.params)
@@ -479,28 +578,22 @@ class TestNode(object):
                 break
 
             # ultimate consideration of whether the state is actually present
-            node_params[f"check_state_{test_object.key}_{test_object.long_suffix}"] = object_state
-            node_params[f"check_mode_{test_object.key}_{test_object.long_suffix}"] = object_params.get("check_mode", "rf")
+            object_suffix = f"_{test_object.key}_{test_object.long_suffix}"
+            node_params[f"check_state{object_suffix}"] = object_state
+            node_params[f"show_location{object_suffix}"] = object_params["set_location"]
+            node_params[f"check_mode{object_suffix}"] = object_params.get("check_mode", "rf")
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that
             # all vm state backends can check for states without a vm boot (root)
             if test_object.key == "vms":
-                node_params[f"use_env_{test_object.key}_{test_object.long_suffix}"] = "no"
-            node_params[f"soft_boot_{test_object.key}_{test_object.long_suffix}"] = "no"
+                node_params[f"use_env{object_suffix}"] = "no"
+            node_params[f"soft_boot{object_suffix}"] = "no"
 
         if not is_leaf:
-            log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
-            node_host = self.params["hostname"]
-            node_nets = self.params["nets_ip_prefix"]
-            node_source_ip = f"{node_nets}.{node_host[1:]}" if node_host != "localhost" else node_host
-            session = remote.wait_for_login(self.params["nets_shell_client"],
-                                            node_source_ip,
-                                            self.params["nets_shell_port"],
-                                            self.params["nets_username"], self.params["nets_password"],
-                                            self.params["nets_shell_prompt"])
-
+            session = self.get_session_to_net()
             control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
-            mod_control_path = door.set_subcontrol_parameter_dict(control_path, "params", node_params)
+            mod_control_path = door.set_subcontrol_parameter(control_path, "action", "check")
+            mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)
             try:
                 door.run_subcontrol(session, mod_control_path)
                 self.should_run = False
@@ -509,7 +602,107 @@ class TestNode(object):
                     self.should_run = True
                 else:
                     raise RuntimeError("Could not complete state scan due to control file error")
-        logging.info("The test node %s %s run", self, "should" if self.should_run else "should not")
+        logging.info(f"The test node {self} %s run from a scan on {slothost + '/' + slot}",
+                     "should" if self.should_run else "should not")
+
+    def sync_states(self, params):
+        """Sync or drop present object states to clean or later skip tests from previous runs."""
+        node_params = self.params.copy()
+        for key in list(node_params.keys()):
+            if key.startswith("get_state") or key.startswith("unset_state"):
+                del node_params[key]
+
+        # the sync cleanup will be performed if at least one selected object has a cleanable state
+        slot, slothost = self.params["nets_host"], self.params["nets_gateway"]
+        should_clean = False
+        for test_object in self.objects:
+            object_params = test_object.object_typed_params(self.params)
+            object_state = object_params.get("set_state")
+            if not object_state:
+                continue
+
+            # avoid running any test unless the user really requires cleanup or setup is reusable
+            unset_policy = object_params.get("unset_mode", "ri")
+            if unset_policy[0] not in ["f", "r"]:
+                continue
+            # avoid running any test for unselected vms
+            if test_object.key == "nets":
+                logging.warning("Net state cleanup is not supported")
+                continue
+            # the object state has to be defined to reach this stage
+            if object_state == "install" and test_object.is_permanent():
+                self.should_clean = False
+                break
+            vm_name = test_object.suffix if test_object.key == "vms" else test_object.composites[0].suffix
+            # TODO: is this needed?
+            from .. import params_parser as param
+            if vm_name in params.get("vms", param.all_objects("vms")):
+                should_clean = True
+            else:
+                continue
+
+            # TODO: cannot remove ad-hoc root states, is this even needed?
+            if test_object.key == "vms":
+                vm_params = object_params
+                node_params["images_" + vm_name] = vm_params["images"]
+                for image_name in vm_params.objects("images"):
+                    image_params = vm_params.object_params(image_name)
+                    node_params[f"image_name_{image_name}_{vm_name}"] = image_params["image_name"]
+                    node_params[f"image_format_{image_name}_{vm_name}"] = image_params["image_format"]
+                    if image_params.get_boolean("create_image", False):
+                        node_params[f"remove_image_{image_name}_{vm_name}"] = "yes"
+                        node_params["skip_image_processing"] = "no"
+
+            suffixes = f"_{test_object.key}_{test_object.suffix}"
+            suffixes += f"_{vm_name}" if test_object.key == "images" else ""
+            # spread the state setup for the given test object
+            location = object_params["set_location"]
+            if unset_policy[0] == "f":
+                # reverse the state setup for the given test object
+                # NOTE: we are forcing the unset_mode to be the one defined for the test node because
+                # the unset manual step behaves differently now (all this extra complexity starts from
+                # the fact that it has different default value which is noninvasive
+                node_params.update({f"unset_state{suffixes}": object_state,
+                                    f"unset_location{suffixes}": location,
+                                    f"unset_mode{suffixes}": object_params.get("unset_mode", "ri"),
+                                    f"pool_scope": "own"})
+                do = "unset"
+                logging.info(f"Need to clean up {self} on {slot}")
+            else:
+                # spread the state setup for the given test object
+                node_params.update({f"get_state{suffixes}": object_state,
+                                    f"get_location{suffixes}": location})
+                node_params[f"pool_scope{suffixes}"] = object_params.get("pool_scope", "swarm cluster shared")
+                # NOTE: "own" may not be removed because we skip "own" scope here which is done for both
+                # speed and the fact that it is not equivalent to reflexive download (actually getting a state)
+                for sync_source in location.split():
+                    if sync_source.startswith(slothost + '/' + slot):
+                        logging.info(f"No need to sync {self} from {slot} to itself")
+                        should_clean = False
+                        break
+                else:
+                    logging.info(f"Need to sync {self} from {location.join(',')} to {slot}")
+                do = "get"
+            # TODO: unfortunately we need env object with pre-processed vms in order
+            # to provide ad-hoc root vm states so we use the current advantage that
+            # all vm state backends can check for states without a vm boot (root)
+            if test_object.key == "vms":
+                node_params[f"use_env_{test_object.key}_{test_object.suffix}"] = "no"
+
+        if should_clean:
+            action = "Cleaning up" if unset_policy[0] == "f" else "Syncing"
+            logging.info(f"{action} {self} on {slot}")
+            session = self.get_session_to_net()
+            control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
+            mod_control_path = door.set_subcontrol_parameter(control_path, "action", do)
+            mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)
+            try:
+                door.run_subcontrol(session, mod_control_path)
+            except ShellCmdError as error:
+                logging.warning(f"{action} {self} on {slot} could not be completed "
+                                f"due to control file error: {error}")
+        else:
+            logging.info(f"No need to clean up or sync {self} on {slot}")
 
     def validate(self):
         """Validate the test node for sane attribute-parameter correspondence."""

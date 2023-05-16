@@ -43,15 +43,6 @@ class LXCBackend(StateBackend):
         raise NotImplementedError("Implement LXC states based on demand.")
 
     @classmethod
-    def check(cls, params, object=None):
-        """
-        Check whether a given state exists.
-
-        All arguments match the base class.
-        """
-        raise NotImplementedError("Implement LXC states based on demand.")
-
-    @classmethod
     def get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.

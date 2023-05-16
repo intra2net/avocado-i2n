@@ -1,5 +1,6 @@
 NAME = "Pre-state hook"
 PARAMS = {}
+ACTION = "check"
 DOC = """
 Control for a pre-test-run environment localized state check.
 """
@@ -28,7 +29,18 @@ ss.BACKENDS = {"qcow2": qcow2.QCOW2Backend, "qcow2ext": qcow2.QCOW2ExtBackend,
                "vmnet": vmnet.VMNetBackend}
 ramfile.RamfileBackend.image_state_backend = qcow2.QCOW2ExtBackend
 
-assert ss.check_states(Params(PARAMS), env=None)
+try:
+    if ACTION == "check":
+        assert ss.check_states(Params(PARAMS), env=None)
+    elif ACTION == "get":
+        ss.get_states(Params(PARAMS), env=None)
+    elif ACTION == "set":
+        ss.set_states(Params(PARAMS), env=None)
+    elif ACTION == "unset":
+        ss.unset_states(Params(PARAMS), env=None)
+finally:
+    for session in pool.TransferOps._session_cache.values():
+        session.close()
 
 
 logging.info("%s control file finished.", NAME)

@@ -59,20 +59,6 @@ class StateBackend():
         raise NotImplementedError("Cannot use abstract state backend")
 
     @classmethod
-    def check(cls, params, object=None):
-        """
-        Check whether a given state exists.
-
-        :param params: configuration parameters
-        :type params: {str, str}
-        :param object: object whose states are manipulated
-        :type object: :py:class:`virttest.qemu_vm.VM` or None
-        :returns: whether the state is exists
-        :rtype: bool
-        """
-        raise NotImplementedError("Cannot use abstract state backend")
-
-    @classmethod
     def get(cls, params, object=None):
         """
         Retrieve a state disregarding the current changes.
@@ -212,6 +198,8 @@ def _state_check_chain(do, env,
     :type state_params: {str, str}
     """
     state_params["check_state"] = state_params[f"{do}_state"]
+    if state_params.get(f"{do}_location"):
+        state_params["show_location"] = state_params[f"{do}_location"]
     if do == "set":
         state_params["check_opts"] = "soft_boot=yes"
         state_params["soft_boot"] = "yes"
@@ -311,9 +299,11 @@ def check_states(run_params, env=None):
 
         # always check the corresponding root state as a prerequisite
         root_exists = state_backend.check_root(state_params, state_object)
+        root_params = state_params.copy()
         if not root_exists:
             if action_if_root_doesnt_exist == "f":
-                state_backend.set_root(state_params, state_object)
+                root_params["pool_scope"] = "own"
+                state_backend.set_root(root_params, state_object)
                 root_exists = True
             elif action_if_root_doesnt_exist == "r":
                 return False
@@ -321,18 +311,21 @@ def check_states(run_params, env=None):
                 raise exceptions.TestError(f"Invalid policy {action_if_root_doesnt_exist}: The root "
                                            "nonexistence action can be either of 'reuse' or 'force'.")
         elif action_if_root_exists == "f":
+            root_params["pool_scope"] = "own"
             # TODO: implement unset root for all parametric object types
             if params_obj_type == "nets/vms":
-                vm.destroy(gracefully=state_params.get_dict("check_opts").get("soft_boot", "yes")=="yes")
+                vm.destroy(gracefully=root_params.get_dict("check_opts").get("soft_boot", "yes")=="yes")
             else:
-                state_backend.unset_root(state_params, state_object)
-            state_backend.set_root(state_params, state_object)
+                state_backend.unset_root(root_params, state_object)
+            state_backend.set_root(root_params, state_object)
             root_exists = True
+        else:
+            state_backend.get_root(root_params, state_object)
 
         if state in ROOTS:
             state_exists = root_exists
         else:
-            state_exists = state_backend.check(state_params, state_object)
+            state_exists = state in state_backend.show(state_params, state_object)
 
         if not state_exists:
             return False
