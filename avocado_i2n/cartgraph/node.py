@@ -33,7 +33,7 @@ from functools import cmp_to_key
 import logging as log
 logging = log.getLogger('avocado.test.' + __name__)
 
-from aexpect.exceptions import ShellCmdError
+from aexpect.exceptions import ShellCmdError, ShellTimeoutError
 from aexpect import remote
 from aexpect import remote_door as door
 from avocado.core.test_id import TestID
@@ -545,14 +545,23 @@ class TestNode(object):
         """
         log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
         host, port = self.get_session_ip_port()
+        address = host + ":" + port
         cache = type(self)._session_cache
-        session = cache.get(host + ":" + port)
+        session = cache.get(address)
+        if session:
+            # check for corrupted sessions
+            try:
+                logging.debug("Remote session health check: " + session.cmd_output("date"))
+            except ShellTimeoutError as error:
+                logging.warning(f"Bad remote session health for {address}!")
+                session = None
         if not session:
             session = remote.wait_for_login(self.params["nets_shell_client"],
                                             host, port,
                                             self.params["nets_username"], self.params["nets_password"],
                                             self.params["nets_shell_prompt"])
-            cache[host + ":" + port] = session
+            cache[address] = session
+
         return session
 
     def scan_states(self):
