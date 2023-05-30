@@ -386,8 +386,8 @@ class CartesianRunner(RunnerInterface):
         except KeyboardInterrupt:
             summary.add('INTERRUPTED')
 
-        from .states import pool
-        for session in pool.TransferOps._session_cache.values():
+        # clean up any test node session cache
+        for session in TestNode._session_cache.values():
             session.close()
 
         # TODO: The avocado implementation needs a workaround here:
