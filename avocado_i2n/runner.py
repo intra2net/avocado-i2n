@@ -331,7 +331,16 @@ class CartesianRunner(RunnerInterface):
         :returns: a set with types of test failures
         :rtype: :py:class:`set`
         """
+        summary = set()
+
+        if not test_suite.enabled:
+            job.interrupted_reason = f"Suite {test_suite.name} is disabled."
+            return summary
+
+        job.result.tests_total = len(test_suite.tests)
+
         self.job = job
+        self.tasks = []
 
         self.status_repo = StatusRepo(job.unique_id)
         self.status_server = StatusServer(job.config.get('run.status_server_listen'),
@@ -343,7 +352,6 @@ class CartesianRunner(RunnerInterface):
         asyncio.ensure_future(self._update_status(job))
 
         graph = self._graph_from_suite(test_suite)
-        summary = set()
         params = self.job.config["param_dict"]
 
         # TODO: we could really benefit from using an appropriate params object here
@@ -369,15 +377,14 @@ class CartesianRunner(RunnerInterface):
                     if test_details["status"].lower() not in replay_status and test_details["name"] not in self.skip_tests:
                         self.skip_tests += [test_details["name"]]
 
-        self.tasks = []
         self.slots = params.get("slots", "").split(" ")
         for slot in self.slots:
             if not TestNode.start_environment(slot):
                 raise RuntimeError(f"Failed to start environment {slot}")
 
-        try:
-            graph.visualize(self.job.logdir)
+        graph.visualize(self.job.logdir)
 
+        try:
             to_traverse = [self.run_traversal(graph, params, s) for s in self.slots]
             loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
                                                      self.job.timeout or None))
@@ -385,7 +392,9 @@ class CartesianRunner(RunnerInterface):
             if not self.all_tests_ok:
                 # the summary is a set so only a single failed test is enough
                 summary.add('FAIL')
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.TimeoutError) as error:
+            logging.info(str(error))
+            job.interrupted_reason = str(error)
             summary.add('INTERRUPTED')
 
         # clean up any test node session cache
@@ -402,12 +411,24 @@ class CartesianRunner(RunnerInterface):
         time.sleep(0.05)
 
         self.job.result.end_tests()
-        self.job.funcatexit.run()
         # the status server does not provide a way to verify it is fully initialized
         # so zero test runs need to access an internal attribute before closing
         if self.status_server._server_task:
             self.status_server.close()
-        signal.signal(signal.SIGTSTP, signal.SIG_IGN)
+
+        # Update the overall summary with found test statuses, which will
+        # determine the Avocado command line exit status
+        test_ids = [
+            runtime_task.task.identifier
+            for runtime_task in self.tasks
+            if runtime_task.task.category == "test"
+        ]
+        summary.update(
+            [
+                status.upper()
+                for status in self.status_repo.get_result_set_for_tasks(test_ids)
+            ]
+        )
         return summary
 
     """custom nodes"""
