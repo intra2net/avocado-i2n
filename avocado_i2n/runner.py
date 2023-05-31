@@ -42,7 +42,7 @@ from avocado.core.plugin_interfaces import SuiteRunner as RunnerInterface
 from avocado.core.status.repo import StatusRepo
 from avocado.core.status.server import StatusServer
 from avocado.core.teststatus import STATUSES_MAPPING
-from avocado.core.task.runtime import RuntimeTask
+from avocado.core.task.runtime import RuntimeTask, PreRuntimeTask, PostRuntimeTask
 from avocado.core.task.statemachine import TaskStateMachine, Worker
 
 from . import params_parser as param
@@ -119,22 +119,43 @@ class CartesianRunner(RunnerInterface):
             # TODO: this needs more customization
             asyncio.ensure_future(self._update_status(job))
 
+        status_server_uri = job.config.get('run.status_server_uri')
         raw_task = Task(node.get_runnable(), node.id_test,
-                        [job.config.get('run.status_server_uri')],
+                        [status_server_uri],
                         category=TASK_DEFAULT_CATEGORY,
                         job_id=self.job.unique_id)
         raw_task.runnable.output_dir = os.path.join(job.test_results_path,
                                                     raw_task.identifier.str_filesystem)
         task = RuntimeTask(raw_task)
-        if spawner == "lxc":
-            task.spawner_handle = host
-        elif spawner == "remote":
-            task.spawner_handle = node.get_session_to_net()
-        self.tasks += [task]
+        pre_tasks = PreRuntimeTask.get_tasks_from_test_task(
+            task,
+            1,
+            self.job.test_results_path,
+            None,
+            status_server_uri,
+            self.job.unique_id,
+            self.test_suite.config,
+        )
+        post_tasks = PostRuntimeTask.get_tasks_from_test_task(
+            task,
+            1,
+            self.job.test_results_path,
+            None,
+            status_server_uri,
+            self.job.unique_id,
+            self.test_suite.config,
+        )
+        tasks = [*pre_tasks, task, *post_tasks]
+        for task in tasks:
+            if spawner == "lxc":
+                task.spawner_handle = host
+            elif spawner == "remote":
+                task.spawner_handle = node.get_session_to_net()
+        self.tasks += tasks
 
         # TODO: use a single state machine for all test nodes when we are able
         # to at least add requested tasks to it safely (using its locks)
-        await Worker(state_machine=TaskStateMachine([task], self.status_repo),
+        await Worker(state_machine=TaskStateMachine(tasks, self.status_repo),
                      spawner=node.spawner, max_running=1,
                      task_timeout=job.config.get('task.timeout.running')).run()
 
@@ -340,6 +361,7 @@ class CartesianRunner(RunnerInterface):
         job.result.tests_total = len(test_suite.tests)
 
         self.job = job
+        self.test_suite = test_suite
         self.tasks = []
 
         self.status_repo = StatusRepo(job.unique_id)
