@@ -3779,7 +3779,7 @@ class CartesianGraphTest(Test):
         # expect four sync and no other cleanup calls, one for each worker
         for action in ["get"]:
             for state in ["install", "customize"]:
-                # called once by worker for for each of two vms (no self-sync as setup is from previous run or shared pool)
+                # called once by worker for each of two vms
                 # NOTE: any such use cases assume the previous setup is fully synced across all workers, if this is not the case
                 # it must be due to interrupted run in which case the setup is not guaranteed to be reusable on the first place
                 self.assertLessEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 2*4)

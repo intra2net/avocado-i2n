@@ -926,7 +926,7 @@ class SourcedStateBackend(StateBackend):
             if not local_state_exists:
                 raise RuntimeError("Updating state pool requires local states")
 
-        # set from best available source (assuming from best to worst until filters permit it, then breaking)
+        # set on all available source (from best to worst until filters permit it)
         for source in sources:
             logging.debug(f"Next set source to consider is {source}")
             source_net, source_path = source.split(":")
@@ -953,7 +953,7 @@ class SourcedStateBackend(StateBackend):
         if "own" in scopes:
             cls._unset(params, object)
 
-        # unset from best available source (assuming from best to worst until filters permit it, then breaking)
+        # unset on all available source (from best to worst until filters permit it)
         for source in sources:
             logging.debug(f"Next unset source to consider is {source}")
             source_net, source_path = source.split(":")
