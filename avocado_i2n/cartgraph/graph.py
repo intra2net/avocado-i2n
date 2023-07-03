@@ -144,8 +144,8 @@ class TestGraph(object):
         setup_list = re.findall("(\w+-\w+) (\d) (\d)", str_list)
         for i in range(len(setup_list)):
             assert self.nodes[i].long_prefix == setup_list[i][0], "Corrupted setup list file"
-            self.nodes[i].should_run = bool(int(setup_list[i][1]))
-            self.nodes[i].should_clean = bool(int(setup_list[i][2]))
+            self.nodes[i].should_run = lambda x: bool(int(setup_list[i][1]))
+            self.nodes[i].should_clean = lambda x: bool(int(setup_list[i][2]))
 
     def save_setup_list(self, dump_dir, filename="setup_list"):
         """
@@ -156,8 +156,8 @@ class TestGraph(object):
         """
         str_list = ""
         for test in self.nodes:
-            should_run = 1 if test.should_run else 0
-            should_clean = 1 if test.should_clean else 0
+            should_run = 1 if test.should_run() else 0
+            should_clean = 1 if test.should_clean() else 0
             str_list += "%s %i %i\n" % (test.long_prefix, should_run, should_clean)
         with open(os.path.join(dump_dir, filename), "w") as f:
             f.write(str_list)
@@ -174,7 +174,8 @@ class TestGraph(object):
         """
         total, finished = len(self.nodes), 0
         for tnode in self.nodes:
-            if tnode.is_finished():
+            # we count with additional eagerness for at least one worker
+            if tnode.is_eagerly_finished():
                 finished += 1
         logging.info("Finished %i\%i tests, %0.2f%% complete", finished, total, 100.0*finished/total)
 
@@ -213,7 +214,8 @@ class TestGraph(object):
         graph.render(f"{dump_dir}/cg_{id(self)}_{tag}")
 
     """run/clean switching functionality"""
-    def flag_children(self, node_name=None, object_name=None, flag_type="run", flag=True,
+    def flag_children(self, node_name=None, object_name=None,
+                      flag_type="run", flag=lambda self, slot: slot not in self.workers,
                       skip_roots=False):
         """
         Set the run/clean flag for all children of a parent node of a given name
@@ -224,27 +226,28 @@ class TestGraph(object):
         :param object_name: test object whose state is set or shared root if None
         :type object_name: str or None
         :param str flag_type: 'run' or 'clean' categorization of the children
-        :param bool flag: whether the run/clean action should be executed or not
+        :param function flag: whether and when the run/clean action should be executed
         :param bool skip_roots: whether the roots should not be flagged as well
         :raises: :py:class:`AssertionError` if obtained # of root tests is != 1
         """
-        activity = ("" if flag else "not ") + ("running" if flag_type == "run" else "cleanup")
-        logging.debug("Selecting test nodes for %s", activity)
-        if object_name is not None:
-            if node_name:
-                root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)"+node_name+"(?:\.|$)")
+        activity = "running" if flag_type == "run" else "cleanup"
+        logging.debug(f"Flagging test nodes for {activity}")
+        if object_name is None and node_name is None:
+            root_tests = self.get_nodes_by(param_key="shared_root", param_val="yes")
+        elif node_name is None:
+            root_tests = self.get_nodes_by(param_key="object_root", param_val="(?:\.|^)"+object_name+"(?:-|$)")
+            node_name = "object root"
+        else:
+            root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)"+node_name+"(?:\.|$)")
+            if object_name:
                 # TODO: we only support vm objects at the moment
                 root_tests = self.get_nodes_by(param_key="vms",
-                                               param_val="(?:^|\s)%s(?:$|\s)" % object_name,
+                                               param_val="(?:^|\s)"+object_name+"(?:$|\s)",
                                                subset=root_tests)
-            else:
-                root_tests = self.get_nodes_by(param_key="object_root", param_val="(?:\.|^)"+object_name+"(?:\.|$)")
-        else:
-            root_tests = self.get_nodes_by(param_key="shared_root", param_val="yes")
         if len(root_tests) < 1:
-            raise AssertionError("Could not retrieve node %s and flag all its children tests" % node_name)
+            raise AssertionError(f"Could not retrieve node with name {node_name} and flag all its children tests")
         elif len(root_tests) > 1:
-            raise AssertionError("Could not identify node %s and flag all its children tests" % node_name)
+            raise AssertionError(f"Could not identify node with name {node_name} and flag all its children tests")
         else:
             test_node = root_tests[0]
 
@@ -253,17 +256,18 @@ class TestGraph(object):
         else:
             flagged = []
             flagged.extend(test_node.cleanup_nodes)
-        for test_node in flagged:
-            logging.debug("The test %s is set for %s.", test_node.params["shortname"], activity)
-            flagged.extend(test_node.cleanup_nodes)
-            test_node.should_scan = False
+        while len(flagged) > 0:
+            test_node = flagged.pop()
+            logging.debug(f"The test {test_node} is assigned custom {activity} policy")
             if flag_type == "run":
-                test_node.should_run = flag
+                test_node.should_run = flag.__get__(test_node)
             else:
-                test_node.should_clean = flag
+                test_node.should_clean = flag.__get__(test_node)
+            flagged.extend(test_node.cleanup_nodes)
 
-    def flag_parent_intersection(self, graph, flag_type="run", flag=True,
-                                 skip_object_roots=False, skip_shared_root=False):
+    def flag_intersection(self, graph,
+                          flag_type="run", flag=lambda self, slot: slot not in self.workers,
+                          skip_object_roots=False, skip_shared_root=False):
         """
         Intersect the test nodes with the test nodes from another graph and
         set a run/clean flag for each one in the intersection.
@@ -271,27 +275,31 @@ class TestGraph(object):
         :param graph: Cartesian graph to intersect the current graph with
         :type graph: :py:class:`TestGraph`
         :param str flag_type: 'run' or 'clean' categorization of the children
-        :param bool flag: whether the run/clean action should be executed or not
+        :param function flag: whether and when the run/clean action should be executed
         :param bool skip_object_roots: whether the object roots should not be flagged as well
         :param bool skip_shared_root: whether the shared root should not be flagged as well
         """
-        activity = ("" if flag else "not ") + ("running" if flag_type == "run" else "cleanup")
-        logging.debug("Selecting test nodes for %s", activity)
+        activity = "running" if flag_type == "run" else "cleanup"
+        logging.debug(f"Flagging test nodes for {activity}")
         for test_node in self.nodes:
             name = ".".join(test_node.params["name"].split(".")[1:])
-            if len(graph.get_nodes_by(param_key="name", param_val=name+"$")) == 1:
-                if test_node.is_shared_root() and skip_shared_root:
-                    logging.info("Skip flag for shared root")
-                    continue
-                if test_node.is_object_root() and skip_object_roots:
-                    logging.info("Skip flag for object root")
-                    continue
-                logging.debug("The test %s is set to %s.", test_node.params["shortname"], activity)
-                test_node.should_scan = False
-                if flag_type == "run":
-                    test_node.should_run = flag
-                else:
-                    test_node.should_clean = flag
+            matching_nodes = graph.get_nodes_by(param_key="name", param_val=name+"$")
+            if len(matching_nodes) == 0:
+                logging.debug(f"Skip flag for non-overlaping {test_node}")
+                continue
+            elif len(matching_nodes) > 1:
+                raise ValueError(f"Cannot map {test_node} into a unique test node from {graph}")
+            if test_node.is_shared_root() and skip_shared_root:
+                logging.info("Skip flag for shared root")
+                continue
+            if test_node.is_object_root() and skip_object_roots:
+                logging.info("Skip flag for object root")
+                continue
+            logging.debug(f"The test {test_node} is assigned custom {activity} policy")
+            if flag_type == "run":
+                test_node.should_run = flag.__get__(test_node)
+            else:
+                test_node.should_clean = flag.__get__(test_node)
 
     """get queries"""
     def get_objects_by(self, param_key="name", param_val="", subset=None):

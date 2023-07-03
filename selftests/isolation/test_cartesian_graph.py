@@ -332,6 +332,82 @@ class CartesianNodeTest(Test):
         self.assertEqual(test_node.params["images_vm2"], default_object_param,
                          "The second %s of %s should be preserved" % (default_object_param, test_node.prefix))
 
+    @mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
+    def test_set_environment(self):
+        """Test environment setting and validation."""
+        self.config["param_dict"]["slots"] = "1 remote.com/2 "
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+
+        # should run a leaf test node visited for the first time
+        test_node = graph.get_node_by(param_val="tutorial1")
+        mock_job = mock.MagicMock()
+        mock_job.config = self.config
+        test_node.set_environment(mock_job, "1")
+        self.assertEqual(test_node.all_workers, {"": {"": "process", "c1": "lxc"}, "remote.com": {"2": "remote"}})
+        test_node.set_environment(mock_job, "remote.com/2")
+        test_node.set_environment(mock_job, "")
+        with self.assertRaises(RuntimeError):
+            test_node.set_environment(mock_job, "3")
+
+    @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
+    @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
+    def test_default_run_decision(self):
+        """Test expectations on the default decision policy of whether to run or skip a test node."""
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+
+        # should run a leaf test node visited for the first time
+        test_node = graph.get_node_by(param_val="tutorial1")
+        self.assertTrue(test_node.default_run_decision("1"))
+
+        # should run an internal test node without available setup
+        DummyStateControl.asserted_states["check"] = {"install": {self.shared_pool: False}}
+        test_node = graph.get_node_by(param_val="install")
+        test_node.add_location(self.shared_pool)
+        test_node.params["nets_host"], test_node.params["nets_gateway"] = "1", ""
+        self.assertTrue(test_node.default_run_decision("1"))
+        # should not run an internal test node with available setup
+        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
+        self.assertFalse(test_node.default_run_decision("1"))
+
+        # should not run already visited internal test node by the same worker
+        test_node.workers.add("1")
+        self.assertFalse(test_node.default_run_decision("1"))
+        # should not run already visited leaf test node by the same worker
+        test_node = graph.get_node_by(param_val="tutorial1")
+        test_node.workers.add("1")
+        self.assertFalse(test_node.default_run_decision("1"))
+        # should not run a leaf test node if run by other worker
+        self.assertFalse(test_node.default_run_decision("2"))
+
+    @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
+    def test_default_clean_decision(self):
+        """Test expectations on the default decision policy of whether to clean or not a test node."""
+        self.config["tests_str"] = "only leaves\n"
+        self.config["tests_str"] += "only tutorial_get\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+
+        # should clean a test node that is not reversible
+        test_node = graph.get_node_by(param_val="explicit_clicked")
+        self.assertTrue(test_node.default_clean_decision("1"))
+
+        # should not clean a reversible test node that is not globally cleanup ready
+        test_node = graph.get_node_by(param_val="explicit_noop")
+        test_node.all_workers = {"": {"1": "lxc", "2": "lxc"}}
+        self.assertFalse(test_node.default_clean_decision("1"))
+        test_node.workers.add("1")
+        self.assertFalse(test_node.default_clean_decision("1"))
+        # should clean a reversible test node that is globally cleanup ready
+        test_node.workers.add("2")
+        self.assertTrue(test_node.default_clean_decision("1"))
+
 
 @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
@@ -353,7 +429,8 @@ class CartesianGraphTest(Test):
                                                     "linux_virtuser": {shared_pool: 0}, "windows_virtuser": {shared_pool: 0}}
 
         self.config = {}
-        self.config["param_dict"] = {"test_timeout": 100, "shared_pool": shared_pool}
+        # TODO: migrate run slots to official workers composition as graph attributes
+        self.config["param_dict"] = {"test_timeout": 100, "shared_pool": shared_pool, "slots": "1"}
         self.config["tests_str"] = "only normal\n"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
 
@@ -365,8 +442,10 @@ class CartesianGraphTest(Test):
         self.job.timeout = 6000
         self.job.result = mock.MagicMock()
         self.job.result.tests = []
+        self.job.config = self.config
         self.runner = CartesianRunner()
         self.runner.job = self.job
+        # TODO: migrate run slots to official workers composition as graph attributes
         self.runner.slots = ["1"]
         self.runner.status_server = self.job
 
@@ -431,6 +510,7 @@ class CartesianGraphTest(Test):
     def test_one_leaf_serial(self):
         """Test traversal path of one test without any reusable setup and with a serial unisolated run."""
         self.runner.slots = [""]
+        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -448,6 +528,7 @@ class CartesianGraphTest(Test):
     def test_one_leaf_with_setup(self):
         """Test traversal path of one test with a reusable setup."""
         self.runner.slots = [f"{i+1}" for i in range(4)]
+        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -521,6 +602,8 @@ class CartesianGraphTest(Test):
 
     def test_one_leaf_with_occupation_timeout(self):
         """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
+        self.runner.slots += ["dead"]
+        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
         self.config["param_dict"]["test_timeout"] = 1
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -552,6 +635,7 @@ class CartesianGraphTest(Test):
     def test_two_objects_without_setup(self):
         """Test a two-object test run without a reusable setup."""
         self.runner.slots = [f"{i+1}" for i in range(4)]
+        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -582,6 +666,7 @@ class CartesianGraphTest(Test):
     def test_two_objects_with_setup(self):
         """Test a two-object test run with reusable setup."""
         self.runner.slots = [f"{i+1}" for i in range(4)]
+        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -603,6 +688,7 @@ class CartesianGraphTest(Test):
     def test_diverging_paths_with_external_setup(self):
         """Test a multi-object test run with reusable setup of diverging workers and shared pool or previous runs."""
         self.runner.slots = [f"{i+1}" for i in range(4)]
+        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
         self.config["tests_str"] += "only tutorial1,tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -638,6 +724,7 @@ class CartesianGraphTest(Test):
     def test_diverging_paths_with_swarm_setup(self):
         """Test a multi-object test run where the workers will run multiple tests reusing their own local swarm setup."""
         self.runner.slots = [f"{i+1}" for i in range(4)]
+        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -672,13 +759,14 @@ class CartesianGraphTest(Test):
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        # expect three sync and four cleanup calls, one for each worker without self-sync
-        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 4)
+        # expect three sync (one for each worker without self-sync) and one cleanup call
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
 
     def test_diverging_paths_with_remote_setup(self):
         """Test a multi-object test run where the workers will run multiple tests reusing also remote swarm setup."""
         self.runner.slots = [f"{i+1}" for i in range(2)] + [f"host1/{i+1}" for i in range(2)] + [f"host2/22"]
+        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -725,8 +813,8 @@ class CartesianGraphTest(Test):
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        # expect three sync and four cleanup calls, one for each worker without self-sync
-        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 5)
+        # expect three sync (one for each worker without self-sync) and one cleanup call
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 4)
 
     def test_permanent_object_and_simple_cloning(self):
@@ -743,10 +831,11 @@ class CartesianGraphTest(Test):
                                                            "getsetup.guisetup.clicked": {self.shared_pool: False}})
         # test syncing also for permanent vms
         DummyStateControl.asserted_states["get"]["ready"] = {self.shared_pool: 0}
-        DummyStateControl.asserted_states["get"].update({"guisetup.noop": 0, "guisetup.clicked": 0,
-                                                         "getsetup.noop": 0, "getsetup.clicked": 0,
-                                                         "getsetup.guisetup.noop": 0,
-                                                         "getsetup.guisetup.clicked": 0})
+        # TODO: currently not used due to excluded self-sync but one that is not the correct implementation
+        DummyStateControl.asserted_states["get"].update({"guisetup.noop": {self.shared_pool: 0}, "guisetup.clicked": {self.shared_pool: 0},
+                                                         "getsetup.noop": {self.shared_pool: 0}, "getsetup.clicked": {self.shared_pool: 0},
+                                                         "getsetup.guisetup.noop": {self.shared_pool: 0},
+                                                         "getsetup.guisetup.clicked": {self.shared_pool: 0}})
         DummyStateControl.asserted_states["unset"] = {"guisetup.noop": {self.shared_pool: 0},
                                                       "getsetup.noop": {self.shared_pool: 0},
                                                       "ready": {self.shared_pool: 0}}
@@ -798,6 +887,7 @@ class CartesianGraphTest(Test):
         DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
                                                            "getsetup.guisetup.noop": {self.shared_pool: False},
                                                            "getsetup.guisetup.clicked": {self.shared_pool: False}})
+        # TODO: currently not used due to excluded self-sync but one that is not the correct implementation
         DummyStateControl.asserted_states["get"].update({"guisetup.noop": {self.shared_pool: 0}, "guisetup.clicked": {self.shared_pool: 0},
                                                          "getsetup.guisetup.noop": {self.shared_pool: 0},
                                                          "getsetup.guisetup.clicked": {self.shared_pool: 0}})
@@ -877,31 +967,26 @@ class CartesianGraphTest(Test):
         with self.assertRaisesRegex(AssertionError, r"^Cannot run test nodes not using any test objects"):
             self._run_traversal(graph, self.config["param_dict"])
 
-    @skip("The run, scan, and other flags are no longer compatible with manual setting")
-    def test_trees_difference_zero(self):
-        """Test for proper node difference of two Cartesian graphs."""
+    def test_flag_intersection_all(self):
+        """Test for correct node flagging of a Cartesian graph with itself."""
         self.config["tests_str"] = "only nonleaves\n"
         self.config["tests_str"] += "only connect\n"
         self.config["param_dict"]["vms"] = "vm1"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        graph.flag_parent_intersection(graph, flag_type="run", flag=False)
-        graph.flag_parent_intersection(graph, flag_type="scan", flag=False)
+        graph.flag_intersection(graph, flag_type="run", flag=lambda self, slot: False)
         DummyTestRun.asserted_tests = [
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
-    @skip("The run, scan, and other flags are no longer compatible with manual setting")
-    def test_trees_difference(self):
-        """Test for correct node difference of two Cartesian graphs."""
+    def test_flag_intersection(self):
+        """Test for correct node intersection of two Cartesian graphs."""
         self.config["tests_str"] = "only nonleaves\n"
-        tests_str1 = self.config["tests_str"]
-        tests_str1 += "only connect\n"
-        tests_str2 = self.config["tests_str"]
-        tests_str2 += "only customize\n"
-        self.config["param_dict"]["vms"] = "vm2"
+        tests_str1 = self.config["tests_str"] + "only connect\n"
+        tests_str2 = self.config["tests_str"] + "only customize\n"
+        self.config["param_dict"]["vms"] = "vm1"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                tests_str1, self.config["vm_strs"],
                                                prefix=self.prefix)
@@ -909,9 +994,50 @@ class CartesianGraphTest(Test):
                                                      tests_str2, self.config["vm_strs"],
                                                      prefix=self.prefix)
 
-        graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
+        #graph.flag_intersection(graph, flag_type="run", flag=lambda self, slot: slot not in self.workers)
+        graph.flag_intersection(reuse_graph, flag_type="run", flag=lambda self, slot: False)
         DummyTestRun.asserted_tests = [
-            {"shortname": "^nonleaves.internal.automated.connect.vm2", "vms": "^vm2$"},
+            {"shortname": "^nonleaves.internal.automated.connect.vm1", "vms": "^vm1$"},
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+
+    def test_flag_children_all(self):
+        """Test for correct node children flagging of a complete Cartesian graph."""
+        self.config["tests_str"] = "only nonleaves\n"
+        self.config["tests_str"] += "only connect\n"
+        self.config["param_dict"]["vms"] = "vm1"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+
+        graph.flag_children(flag_type="run", flag=lambda self, slot: False)
+        DummyTestRun.asserted_tests = [
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+
+        graph.flag_children(flag_type="run", flag=lambda self, slot: True)
+        graph.flag_children(object_name="image1_vm1", flag_type="run", flag=lambda self, slot: False)
+        DummyTestRun.asserted_tests = [
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+
+    def test_flag_children(self):
+        """Test for correct node children flagging for a given node."""
+        self.config["tests_str"] = "only nonleaves\n"
+        self.config["tests_str"] += "only connect\n"
+        self.config["param_dict"]["vms"] = "vm1"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+
+        graph.flag_children(flag_type="run", flag=lambda self, slot: False)
+        graph.flag_children(node_name="customize", flag_type="run", flag=lambda self, slot: slot not in self.workers)
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^nonleaves.internal.automated.connect.vm1", "vms": "^vm1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)

@@ -295,14 +295,10 @@ class CartesianRunner(RunnerInterface):
                 await asyncio.sleep(occupied_timeout)
                 continue
 
-            logging.debug("Worker %s at test node %s which is %sready with setup, %sready with cleanup,"
-                          " should %srun, should %sbe cleaned, and should %sbe scanned",
+            logging.debug("Worker %s at test node %s which is %sready with setup and %sready with cleanup",
                           slot, next.params["shortname"],
                           "not " if not next.is_setup_ready(slot) else "",
-                          "not " if not next.is_cleanup_ready(slot) else "",
-                          "not " if not next.should_run else "",
-                          "not " if not next.should_clean else "",
-                          "not " if not next.should_scan else "")
+                          "not " if not next.is_cleanup_ready(slot) else "")
             logging.debug("Current traverse path/stack for %s:\n%s", slot,
                           "\n".join([n.params["shortname"] for n in traverse_path]))
             # if previous in path is the child of the next, then the path is reversed
@@ -516,28 +512,16 @@ class CartesianRunner(RunnerInterface):
             test_node.set_environment(self.job, slot)
         else:
             return
-        # scanning can now be additionally triggered for each worker on internal nodes
-        if not test_node.should_scan and not test_node.is_cleanup_ready(slot):
-            test_node.should_scan = slot not in test_node.workers
+
         if not test_node.params.get("set_location") and not test_node.is_shared_root():
             shared_locations = test_node.params.get_list("shared_pool", ["/:."])
             for location in shared_locations:
                 test_node.add_location(location)
 
-        if test_node.should_scan:
-            test_node.scan_states()
-            test_node.should_scan = False
-
-            # TODO: in addition to syncing this also needs generalized run decision instead of the old flags
-            is_cleaned_up = test_node.params.get("unset_mode_images", test_node.params["unset_mode"])[0] == "f"
-            is_cleaned_up |= test_node.params.get("unset_mode_vms", test_node.params["unset_mode"])[0] == "f"
-            is_cleaned_up &= test_node.is_finished()
-            test_node.should_run &= not is_cleaned_up
-
         replay_skip = test_node.params["name"] in self.skip_tests
         if replay_skip:
             logging.debug(f"Test {test_node.params['shortname']} will be skipped via previous job")
-        if test_node.should_run and (not replay_skip or test_node.produces_setup()):
+        if test_node.should_run(slot) and (not replay_skip or test_node.produces_setup()):
 
             # the primary setup nodes need special treatment
             if params.get("dry_run", "no") == "yes":
@@ -567,8 +551,6 @@ class CartesianRunner(RunnerInterface):
             # node is not shared and with owned setup that is not yet claimed
             if status:
                 self._update_reusable_trail(test_node)
-
-            test_node.should_run = False
         else:
             logging.debug("Skipping test %s on %s", test_node.params["shortname"], slot)
 
@@ -585,7 +567,7 @@ class CartesianRunner(RunnerInterface):
             test_node.set_environment(self.job, slot)
         else:
             return
-        if test_node.should_clean:
+        if test_node.should_clean(slot):
 
             if params.get("dry_run", "no") == "yes":
                 logging.info("Cleaning a dry %s", test_node.params["shortname"])

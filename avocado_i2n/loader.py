@@ -428,8 +428,7 @@ class CartesianLoader(Resolver):
         for root_for_object in object_roots:
             root_for_object.setup_nodes = [root_for_all]
             root_for_all.cleanup_nodes.append(root_for_object)
-        root_for_all.should_scan = False
-        root_for_all.should_run = False
+        root_for_all.should_run = lambda x: False
 
         return graph
 
