@@ -396,9 +396,10 @@ class CartesianRunner(RunnerInterface):
                         self.skip_tests += [test_details["name"]]
 
         self.slots = params.get("slots", "").split(" ")
-        for slot in self.slots:
-            if not TestNode.start_environment(slot):
-                raise RuntimeError(f"Failed to start environment {slot}")
+        graph.new_workers(self.slots)
+        for worker in graph.workers:
+            if not worker.set_up():
+                raise RuntimeError(f"Failed to start environment {worker.id}")
 
         graph.visualize(self.job.logdir)
 

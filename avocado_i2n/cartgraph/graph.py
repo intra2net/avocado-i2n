@@ -17,7 +17,8 @@
 
 SUMMARY
 ------------------------------------------------------
-Utility for the main test suite data structure.
+Main test suite data structure containing tests as nodes in graph
+and their dependencies or edges as stateful objects.
 
 Copyright: Intra2net AG
 
@@ -90,8 +91,9 @@ class TestGraph(object):
 
     def __init__(self):
         """Construct the test graph."""
-        self.nodes = []
         self.objects = []
+        self.nodes = []
+        self.workers = []
 
     def __repr__(self):
         dump = "[cartgraph] objects='%s' nodes='%s'" % (len(self.objects), len(self.nodes))
@@ -130,6 +132,21 @@ class TestGraph(object):
             if test_node.long_prefix in test_node_prefixes:
                 continue
             self.nodes.append(test_node)
+
+    def new_workers(self, workers: list[str] or str) -> None:
+        """
+        Add new nodes excluding (old) repeating ones as ID.
+
+        :param workers: IDs for test workers
+        """
+        if not isinstance(workers, list):
+            workers = [workers]
+        for test_worker in workers:
+            # TODO: need to produce workers from initial parsing itself
+            if isinstance(test_worker, str):
+                from .worker import TestWorker
+                test_worker = TestWorker(test_worker)
+            self.workers.append(test_worker)
 
     """dumping functionality"""
     def load_setup_list(self, dump_dir, filename="setup_list"):

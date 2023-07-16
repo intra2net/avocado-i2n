@@ -214,33 +214,6 @@ class TestNode(object):
         # TODO: drop params from runner and use unified job config for slots and all other run operations
         self.spawner = SpawnerDispatcher(job.config, job)[self.params["nets_spawner"]].obj
 
-    @staticmethod
-    def start_environment(env_id):
-        """
-        Start the environment for executing a test node.
-
-        :returns: whether the environment is available after current or previous start
-        :rtype: bool
-        """
-        env_tuple = tuple(env_id.split("/"))
-        if len(env_tuple) == 1:
-            if env_tuple[0] == "":
-                logging.debug("Serial runs do not have any bootable environment")
-                return True
-            import lxc
-            cid = "c" + env_id
-            container = lxc.Container(cid)
-            if not container.running:
-                logging.info(f"Starting bootable environment {cid}")
-                return container.start()
-            return container.running
-        elif len(env_tuple) == 2:
-            # TODO: send wake-on-lan package to start remote host (assuming routable)
-            logging.warning("Assuming the remote host is running for now")
-            return True
-        else:
-            raise ValueError(f"Environment ID {env_id} could not be parsed")
-
     def is_occupied(self):
         return self.spawner is not None
 

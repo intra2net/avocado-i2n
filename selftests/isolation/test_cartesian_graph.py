@@ -15,6 +15,35 @@ from avocado_i2n.loader import CartesianLoader
 from avocado_i2n.runner import CartesianRunner
 
 
+class CartesianWorkerTest(Test):
+
+    def setUp(self):
+        self.config = {}
+        self.shared_pool = shared_pool = "/:/mnt/local/images/shared"
+        self.config["param_dict"] = {"test_timeout": 100, "shared_pool": shared_pool}
+        self.config["tests_str"] = "only normal\n"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
+
+        self.prefix = ""
+
+        self.loader = CartesianLoader(config=self.config, extra_params={})
+        self.runner = CartesianRunner()
+
+    def test_sanity_in_graph(self):
+        """Test generic usage and composition."""
+        self.config["param_dict"] = {"slots": "1"}
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        graph.new_workers("c1")
+        self.assertEqual(len(graph.workers), 1)
+
+        test_worker = graph.workers[0]
+        self.assertEqual("c1", test_worker.id)
+        self.assertIn("[worker]", str(test_worker))
+
+
 class CartesianObjectTest(Test):
 
     def setUp(self):
@@ -1265,7 +1294,7 @@ class CartesianGraphTest(Test):
 
     @mock.patch('avocado_i2n.runner.StatusRepo')
     @mock.patch('avocado_i2n.runner.StatusServer')
-    @mock.patch('avocado_i2n.runner.TestNode.start_environment')
+    @mock.patch('avocado_i2n.cartgraph.worker.TestWorker.set_up')
     @mock.patch('avocado_i2n.cartgraph.graph.TestGraph.visualize')
     def test_loader_runner_entries(self, _mock_visualize, _mock_start_environment,
                                    mock_status_server, _mock_status_repo):
