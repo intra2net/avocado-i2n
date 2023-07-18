@@ -127,6 +127,7 @@ class CartesianRunner(RunnerInterface):
         raw_task.runnable.output_dir = os.path.join(job.test_results_path,
                                                     raw_task.identifier.str_filesystem)
         task = RuntimeTask(raw_task)
+        config = self.test_suite.config if hasattr(self, "test_suite") else job.config
         pre_tasks = PreRuntimeTask.get_tasks_from_test_task(
             task,
             1,
@@ -134,7 +135,7 @@ class CartesianRunner(RunnerInterface):
             None,
             status_server_uri,
             self.job.unique_id,
-            self.test_suite.config,
+            config,
         )
         post_tasks = PostRuntimeTask.get_tasks_from_test_task(
             task,
@@ -143,7 +144,7 @@ class CartesianRunner(RunnerInterface):
             None,
             status_server_uri,
             self.job.unique_id,
-            self.test_suite.config,
+            config,
         )
         tasks = [*pre_tasks, task, *post_tasks]
         for task in tasks:

@@ -106,8 +106,20 @@ ls -A1q "$test_results/latest/test-results" | grep -q install && exit 1
 ls -A1q "$test_results/latest/test-results" | grep -q tutorial1 || exit 1
 
 echo
-echo "Test coverage for manual tools"
-coverage run --append --source=avocado_i2n $(which avocado) manu setup=control slots=$test_slots control_file=manual.control
+echo "Test coverage for manual tools of all main types"
+coverage run --append --source=avocado_i2n $(which avocado) manu setup=control slots=$test_slots vms=vm1,vm2 control_file=manual.control
+container_array=($containers)
+test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == ${#container_array[@]}
+test $(ls -A1q "$test_results/latest/test-results" | grep manage.run | wc -l) == ${#container_array[@]}
+coverage run --append --source=avocado_i2n $(which avocado) manu setup=get slots=$test_slots vms=vm1,vm2 get_state_images=customize
+test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == 10
+test $(ls -A1q "$test_results/latest/test-results" | grep manage.unchanged.vm1 | wc -l) == 5
+test $(ls -A1q "$test_results/latest/test-results" | grep manage.unchanged.vm2 | wc -l) == 5
+coverage run --append --source=avocado_i2n $(which avocado) manu setup=update slots=$test_slots vms=vm1,vm2 \
+    from_state=customize to_state_vm1=connect remove_set=tutorial3
+test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == 3
+test $(ls -A1q "$test_results/latest/test-results" | grep customize | wc -l) == 2
+test $(ls -A1q "$test_results/latest/test-results" | grep connect.vm1 | wc -l) == 1
 
 echo
 echo "Integration tests passed successfully"
