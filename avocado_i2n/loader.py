@@ -562,7 +562,7 @@ class CartesianLoader(Resolver):
         object_params = test_object.object_typed_params(test_node.params)
         # objects can appear within a test without any prior dependencies
         setup_restr = object_params["get"]
-        setup_obj_resr = test_object.id.split("-")[1]
+        setup_obj_resr = test_object.id.split("-", maxsplit=1)[1]
         logging.debug("Cartesian setup of %s for %s uses restriction %s",
                       test_object.long_suffix, test_node.params["shortname"], setup_restr)
 
