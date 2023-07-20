@@ -384,6 +384,27 @@ class CartesianGraphTest(Test):
         self._run_traversal(graph, self.config["param_dict"])
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
+    def test_shared_root_from_object_trees(self):
+        """Test correct expectation of separately adding a shared root to a graph of disconnected object trees."""
+        self.config["tests_str"] += "only tutorial3\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                self.config["tests_str"], self.config["vm_strs"],
+                                                prefix=self.prefix,
+                                                with_shared_root=False)
+        self.loader.parse_shared_root_from_object_trees(graph, self.config["param_dict"])
+        # assert one shared root exists and it connects all object roots
+        shared_root_node = None
+        for node in graph.nodes:
+            if node.is_shared_root():
+                if shared_root_node is not None:
+                    raise AssertionError("More than one shared root nodes found in graph")
+                shared_root_node = node
+        if not shared_root_node:
+            raise AssertionError("No shared root nodes found in graph")
+        for node in graph.nodes:
+            if node.is_object_root():
+                self.assertEqual(node.setup_nodes, [shared_root_node])
+
     def test_one_leaf(self):
         """Test traversal path of one test without any reusable setup."""
         self.config["tests_str"] += "only tutorial1\n"

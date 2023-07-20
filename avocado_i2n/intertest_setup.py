@@ -220,11 +220,30 @@ def update(config, tag=""):
     LOG_UI.info("Update state cache for %s (%s)",
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
-    for vm_name in selected_vms:
+    graph = TestGraph()
+    initial_objects = l.parse_objects(config["param_dict"], config["vm_strs"])
+    for i, vm_name in enumerate(selected_vms):
         vm_params = config["vms_params"].object_params(vm_name)
         from_state = vm_params.get("from_state", "install")
         to_state = vm_params.get("to_state", "customize")
         logging.info("Updating state '%s' of %s", to_state, vm_name)
+
+        # pick the test objects corresponding to the current vm
+        for test_object in initial_objects:
+            if test_object.key != "vms":
+                continue
+            vm = test_object
+            if vm.suffix != vm_name:
+                continue
+            if len(vm.components) > 1:
+                logging.warning(f"Multiple images used by {vm.suffix}, installing on first one")
+            break
+        else:
+            raise ValueError(f"Cannot find test object for {vm_name} to update")
+        # install only on first image as RAID and other configurations are customizations
+        image = vm.components[0]
+        # parse individual net only for the current vm
+        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
 
         logging.info(f"Parsing a standard initial graph for '{to_state}'")
         setup_dict = config["param_dict"].copy()
@@ -242,47 +261,36 @@ def update(config, tag=""):
         else:
             setup_str = "all.." + setup_str
         setup_str = param.re_str(setup_str)
-        graph = l.parse_object_trees(setup_dict,
-                                     setup_str,
-                                     config["available_vms"],
-                                     prefix=tag, verbose=False)
-        graph.flag_children(flag_type="run", flag=lambda self, slot: False)
-        graph.flag_children(flag_type="clean", flag=lambda self, slot: False, skip_parents=True)
+        vm_graph = l.parse_object_trees(setup_dict,
+                                        setup_str,
+                                        config["available_vms"],
+                                        prefix=f"{tag}m{i+1}", verbose=False, with_shared_root=False)
+        # flagging children will require connected graphs while flagging intersection can also handle disconnected ones
+        vm_graph.flag_intersection(vm_graph, flag_type="run", flag=lambda self, slot: False)
+        vm_graph.flag_intersection(vm_graph, flag_type="clean", flag=lambda self, slot: False)
 
         logging.info(f"Flagging for removing all old states depending on the updated '{to_state}'")
         flag_state = None if to_state == "install" else to_state
-        graph.flag_children(flag_state, vm_name, flag_type="clean", flag=lambda self, slot: True, skip_parents=True)
+        vm_graph.flag_children(flag_state, vm_name, flag_type="clean", flag=lambda self, slot: True, skip_parents=True)
 
         logging.info(f"Flagging for updating all states between and including '{from_state}' and '{to_state}'")
         if to_state == "install":
             update_graph = TestGraph()
-            update_graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
-            for test_object in graph.objects:
-                if test_object.key != "vms":
-                    continue
-                vm = test_object
-                if vm.suffix != vm_name:
-                    continue
-                if len(vm.components) > 1:
-                    logging.warning(f"Multiple images used by {vm.suffix}, installing on first one")
-                # install only on first image as RAID and other configurations are customizations
-                image = vm.components[0]
-                # parse individual net only for the current vm
-                net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
-                # figure out the install node to compare against
-                setup_str = param.re_str("all..internal..customize")
-                start_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
-                setup_str = param.re_str("all..original.." + start_node.params["get_images"])
-                install_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
-                install_node.params["object_root"] = image.id
-                update_graph.nodes.append(install_node)
+            update_graph.objects = vm_graph.objects
+            # figure out the install node to compare against
+            setup_str = param.re_str("all..internal..customize")
+            start_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
+            setup_str = param.re_str("all..original.." + start_node.params["get_images"])
+            install_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
+            install_node.params["object_root"] = image.id
+            update_graph.nodes.append(install_node)
         else:
             update_graph = l.parse_object_trees(setup_dict,
                                                 param.re_str("all.." + to_state),
                                                 {vm_name: config["vm_strs"][vm_name]},
                                                 prefix=tag)
-        graph.flag_intersection(update_graph, flag_type="run", flag=lambda self, slot: slot not in self.workers,
-                                skip_shared_root=True)
+        vm_graph.flag_intersection(update_graph, flag_type="run", flag=lambda self, slot: len(self.workers) == 0,
+                                   skip_shared_root=True)
 
         if from_state != "install":
             logging.info(f"Flagging for preserving all states before the updated '{from_state}'")
@@ -290,14 +298,17 @@ def update(config, tag=""):
                                                param.re_str("all.." + from_state),
                                                {vm_name: config["vm_strs"][vm_name]},
                                                prefix=tag, verbose=False)
-            graph.flag_intersection(reuse_graph, flag_type="run", flag=lambda self, slot: False)
-            graph.flag_children(from_state, flag_type="run", flag=lambda self, slot: slot not in self.workers,
-                                skip_children=True)
+            vm_graph.flag_intersection(reuse_graph, flag_type="run", flag=lambda self, slot: False)
+            vm_graph.flag_children(from_state, flag_type="run", flag=lambda self, slot: len(self.workers) == 0,
+                                   skip_children=True)
 
-        to_traverse = [r.run_traversal(graph, setup_dict, s) for s in r.slots]
-        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                                     r.job.timeout or None))
+        graph.objects += vm_graph.objects
+        graph.nodes += vm_graph.nodes
 
+    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
+    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
+                                                                 r.job.timeout or None))
     LOG_UI.info("Finished updating cache")
 
 

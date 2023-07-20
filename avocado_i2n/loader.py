@@ -343,12 +343,13 @@ class CartesianLoader(Resolver):
         return test_nodes, test_objects
 
     def parse_object_trees(self, param_dict=None, nodes_str="", object_strs=None,
-                           prefix="", verbose=False):
+                           prefix="", verbose=False, with_shared_root=True):
         """
         Parse all user defined tests (leaves) and their dependencies (internal nodes)
         connecting them according to the required/provided setup states of each test
         object (vm) and the required/provided objects per test node (test).
 
+        :param bool with_shared_root: whether to connect all object trees via shared root node
         :returns: parsed graph of test nodes and test objects
         :rtype: :py:class:`TestGraph`
 
@@ -410,27 +411,41 @@ class CartesianLoader(Resolver):
                     graph.visualize(parse_dir, str(step))
             test_node.validate()
 
-        # finally build the shared root node from used test objects (roots)
+        if with_shared_root:
+            self.parse_shared_root_from_object_trees(graph, param_dict)
+        return graph
+
+    def parse_shared_root_from_object_trees(self, test_graph, param_dict=None):
+        """
+        Parse the shared root node from used test objects (roots) into a connected graph.
+
+        :param bool verbose: whether to connect all object trees via shared root node
+        :returns: parsed graph of test nodes and test objects
+        :rtype: :py:class:`TestGraph`
+
+        The rest of the parameters are identical to the methods before.
+        """
         object_roots = []
-        for test_node in graph.nodes:
+        for test_node in test_graph.nodes:
             if len(test_node.setup_nodes) == 0:
                 if not test_node.is_object_root():
                     logging.warning(f"{test_node} is not an object root but will be treated as such")
                 object_roots.append(test_node)
         setup_dict = {} if param_dict is None else param_dict.copy()
         setup_dict.update({"shared_root" : "yes",
-                           "vms": " ".join(sorted(list(set(o.suffix for o in graph.objects if o.key == "vms"))))})
+                           "vms": " ".join(sorted(list(set(o.suffix for o in test_graph.objects if o.key == "vms"))))})
         setup_str = param.re_str("all..internal..noop")
         root_for_all = self.parse_node_from_object(NetObject("net0", param.Reparsable()),
                                                    setup_dict, setup_str, prefix="0s")
         logging.debug(f"Parsed shared root {root_for_all.params['shortname']}")
-        graph.nodes.append(root_for_all)
+        test_graph.nodes.append(root_for_all)
         for root_for_object in object_roots:
             root_for_object.setup_nodes = [root_for_all]
             root_for_all.cleanup_nodes.append(root_for_object)
         root_for_all.should_run = lambda x: False
 
-        return graph
+        return root_for_all
+
 
     def resolve(self, reference):
         """

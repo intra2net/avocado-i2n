@@ -256,6 +256,7 @@ class CartesianRunner(RunnerInterface):
         Of course all possible children are restricted by the user-defined "only" and
         the number of internal test nodes is minimized for achieving this goal.
         """
+        logging.debug(f"Worker {slot} starting complete graph traversal with parameters {params}")
         shared_roots = graph.get_nodes_by("shared_root", "yes")
         assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
         root = shared_roots[0]

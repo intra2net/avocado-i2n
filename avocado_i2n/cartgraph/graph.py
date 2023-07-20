@@ -218,8 +218,7 @@ class TestGraph(object):
                       flag_type="run", flag=lambda self, slot: slot not in self.workers,
                       skip_parents=False, skip_children=False):
         """
-        Set the run/clean flag for all children of a parent node of a given name
-        or the entire graph.
+        Set the run/clean flag for all children of a parent node of a given name.
 
         :param node_name: name of the parent node or root if None
         :type node_name: str or None
@@ -230,6 +229,8 @@ class TestGraph(object):
         :param bool skip_parents: whether the parents should not be flagged (just children)
         :param bool skip_children: whether the children should not be flagged (just roots)
         :raises: :py:class:`AssertionError` if obtained # of root tests is != 1
+
+        ..note:: Works only with connected graphs and will skip any disconnected nodes.
         """
         activity = "running" if flag_type == "run" else "cleanup"
         logging.debug(f"Flagging test nodes for {activity}")
@@ -270,8 +271,7 @@ class TestGraph(object):
                           flag_type="run", flag=lambda self, slot: slot not in self.workers,
                           skip_object_roots=False, skip_shared_root=False):
         """
-        Intersect the test nodes with the test nodes from another graph and
-        set a run/clean flag for each one in the intersection.
+        Set the run/clean flag for all test nodes intersecting with the test nodes from another graph.
 
         :param graph: Cartesian graph to intersect the current graph with
         :type graph: :py:class:`TestGraph`
@@ -279,6 +279,8 @@ class TestGraph(object):
         :param function flag: whether and when the run/clean action should be executed
         :param bool skip_object_roots: whether the object roots should not be flagged as well
         :param bool skip_shared_root: whether the shared root should not be flagged as well
+
+        ..note:: Works also with disconnected graphs and will not skip any disconnected nodes.
         """
         activity = "running" if flag_type == "run" else "cleanup"
         logging.debug(f"Flagging test nodes for {activity}")
