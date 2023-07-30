@@ -77,7 +77,7 @@ class CartesianRunner(RunnerInterface):
         self.skip_tests = []
 
     """running functionality"""
-    async def _update_status(self, job):
+    async def _update_status(self):
         message_handler = MessageHandler()
         while True:
             try:
@@ -92,14 +92,12 @@ class CartesianRunner(RunnerInterface):
             tasks_by_id = {str(runtime_task.task.identifier): runtime_task.task
                            for runtime_task in self.tasks}
             task = tasks_by_id.get(task_id)
-            message_handler.process_message(message, task, job)
+            message_handler.process_message(message, task, self.job)
 
-    async def run_test(self, job, node):
+    async def run_test(self, node):
         """
         Run a test instance inside a subprocess.
 
-        :param job: job that includes the test suite
-        :type job: :py:class:`avocado.core.job.Job`
         :param node: test node to run
         :type node: :py:class:`TestNode`
         """
@@ -110,24 +108,24 @@ class CartesianRunner(RunnerInterface):
 
         if not node.is_occupied():
             logging.warning("Environment not set, assuming serial unisolated test runs")
-            node.set_environment(job, "")
+            node.set_environment(self.job, "")
         if not self.status_repo:
-            self.status_repo = StatusRepo(job.unique_id)
-            self.status_server = StatusServer(job.config.get('run.status_server_listen'),
+            self.status_repo = StatusRepo(self.job.unique_id)
+            self.status_server = StatusServer(self.job.config.get('run.status_server_listen'),
                                               self.status_repo)
             asyncio.ensure_future(self.status_server.serve_forever())
             # TODO: this needs more customization
-            asyncio.ensure_future(self._update_status(job))
+            asyncio.ensure_future(self._update_status())
 
-        status_server_uri = job.config.get('run.status_server_uri')
+        status_server_uri = self.job.config.get('run.status_server_uri')
         raw_task = Task(node.get_runnable(), node.id_test,
                         [status_server_uri],
                         category=TASK_DEFAULT_CATEGORY,
                         job_id=self.job.unique_id)
-        raw_task.runnable.output_dir = os.path.join(job.test_results_path,
+        raw_task.runnable.output_dir = os.path.join(self.job.test_results_path,
                                                     raw_task.identifier.str_filesystem)
         task = RuntimeTask(raw_task)
-        config = self.test_suite.config if hasattr(self, "test_suite") else job.config
+        config = self.test_suite.config if hasattr(self, "test_suite") else self.job.config
         pre_tasks = PreRuntimeTask.get_tasks_from_test_task(
             task,
             1,
@@ -158,7 +156,7 @@ class CartesianRunner(RunnerInterface):
         # to at least add requested tasks to it safely (using its locks)
         await Worker(state_machine=TaskStateMachine(tasks, self.status_repo),
                      spawner=node.spawner, max_running=1,
-                     task_timeout=job.config.get('task.timeout.running')).run()
+                     task_timeout=self.job.config.get('task.timeout.running')).run()
 
     async def run_test_node(self, node):
         """
@@ -204,7 +202,7 @@ class CartesianRunner(RunnerInterface):
             uid = node.id_test.uid
             name = node.params["name"]
 
-            await self.run_test(self.job, node)
+            await self.run_test(node)
 
             for i in range(10):
                 try:
@@ -362,14 +360,14 @@ class CartesianRunner(RunnerInterface):
         self.test_suite = test_suite
         self.tasks = []
 
-        self.status_repo = StatusRepo(job.unique_id)
-        self.status_server = StatusServer(job.config.get('run.status_server_listen'),
+        self.status_repo = StatusRepo(self.job.unique_id)
+        self.status_server = StatusServer(self.job.config.get('run.status_server_listen'),
                                           self.status_repo)
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.status_server.create_server())
         asyncio.ensure_future(self.status_server.serve_forever())
         # TODO: this needs more customization
-        asyncio.ensure_future(self._update_status(job))
+        asyncio.ensure_future(self._update_status())
 
         graph = self._graph_from_suite(test_suite)
         params = self.job.config["param_dict"]
@@ -414,7 +412,7 @@ class CartesianRunner(RunnerInterface):
                 summary.add('FAIL')
         except (KeyboardInterrupt, asyncio.TimeoutError) as error:
             logging.info(str(error))
-            job.interrupted_reason = str(error)
+            self.job.interrupted_reason = str(error)
             summary.add('INTERRUPTED')
 
         # clean up any test node session cache

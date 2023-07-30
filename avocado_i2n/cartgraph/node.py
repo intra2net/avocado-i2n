@@ -211,6 +211,7 @@ class TestNode(object):
         self.params["nets_host"] = env_name
         self.params["nets_spawner"] = env_type
 
+        # TODO: drop params from runner and use unified job config for slots and all other run operations
         self.spawner = SpawnerDispatcher(job.config, job)[self.params["nets_spawner"]].obj
 
     @staticmethod
