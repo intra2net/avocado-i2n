@@ -369,45 +369,6 @@ def list(config, tag=""):
 
 
 ############################################################
-# VM creation manual user steps
-############################################################
-
-
-@with_cartesian_graph
-def deploy(config, tag=""):
-    """
-    Deploy customized data and utilities to the guest vms.
-
-    :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
-
-    We can deploy to one or to more of the vms, either temporarily or to a
-    specific vm or image state specified via `to_state` parameter.
-    """
-    _parse_all_objects_with_custom_states(config, tag,
-                                          {"redeploy_only": config["vms_params"].get("redeploy_only", "yes")},
-                                          "data deployment", "all..internal..customize")
-
-
-@with_cartesian_graph
-def internal(config, tag=""):
-    """
-    Run an internal test node, thus performing a particular automated
-    setup on the desired vms.
-
-    :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
-
-    We can prepare to one or to more of the vms, either temporarily or for a
-    specific vm or image state specified via `to_state` parameter.
-    """
-    _parse_all_objects_with_custom_states(config, tag, {}, "internal setup",
-                                          "all..internal.." + config["param_dict"]["node"])
-
-
-############################################################
 # VM management manual user steps
 ############################################################
 
@@ -747,49 +708,6 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
     to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
     asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
                                                                  r.job.timeout or None))
-    LOG_UI.info("Finished %s", operation)
-
-
-def _parse_all_objects_with_custom_states(config, tag, param_dict, operation, restriction):
-    """
-    Wrapper for deploying/internally-preparing a state/snapshot.
-
-    :param param_dict: additional parameters to overwrite the previous dictionary with
-    :type param_dict: {str, str}
-    :param str operation: operation description to use when logging
-    :param str restriction: node restriction for the respective operation
-
-    The rest of the arguments match the public functions.
-
-    ..todo:: Currently these tools do not support image-specific image states.
-    """
-    l, r = config["graph"].l, config["graph"].r
-    selected_vms = sorted(config["vm_strs"].keys())
-    LOG_UI.info("Performing %s on %s (%s)", operation,
-                ", ".join(selected_vms), os.path.basename(r.job.logdir))
-    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
-        if test_object.key != "vms":
-            continue
-        vm = test_object
-        # parse individual net only for the current vm
-        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
-
-        if config["param_dict"].get("to_state"):
-            raise ValueError("Only state of specified (image or vm) types are supported for %s"
-                             % operation)
-        vm_state = vm.params.get("to_state_vms", "")
-        image_state = vm.params.get("to_state_images", "")
-
-        setup_dict = param_dict.copy()
-        setup_dict.update({f"get_state_vms": vm_state or "root",
-                           f"set_state_vms": vm_state,
-                           f"get_state_images": image_state or "root",
-                           f"set_state_images": image_state})
-        setup_str = param.re_str(restriction)
-        test_node = l.parse_node_from_object(net, setup_dict, setup_str, prefix=tag)
-        to_run = r.run_test_node(test_node)
-        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
-
     LOG_UI.info("Finished %s", operation)
 
 
