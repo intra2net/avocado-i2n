@@ -312,36 +312,44 @@ class IntertestSetupTest(Test):
 
     def test_boot(self):
         """Test the general usage of the manual boot tool."""
+        self.config["param_dict"]["slots"] = "1 2"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.stateless.manage.start", "start_vm": "^yes$", "vms": "^vm1 vm2$"},
+            {"shortname": "^internal.stateless.manage.start", "start_vm": "^yes$", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
+            {"shortname": "^internal.stateless.manage.start", "start_vm": "^yes$", "vms": "^vm1 vm2$", "nets_host": "^c2$"},
         ]
         intertest_setup.boot(self.config, tag="0")
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_download(self):
         """Test the general usage of the manual download tool."""
+        self.config["param_dict"]["slots"] = "1 2"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.stateless.manage.download", "vms": "^vm1 vm2$"},
+            {"shortname": "^internal.stateless.manage.download", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
+            {"shortname": "^internal.stateless.manage.download", "vms": "^vm1 vm2$", "nets_host": "^c2$"},
         ]
         intertest_setup.download(self.config, tag="0")
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_upload(self):
         """Test the general usage of the manual upload tool."""
+        self.config["param_dict"]["slots"] = "1 2"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.stateless.manage.upload", "vms": "^vm1 vm2$"},
+            {"shortname": "^internal.stateless.manage.upload", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
+            {"shortname": "^internal.stateless.manage.upload", "vms": "^vm1 vm2$", "nets_host": "^c2$"},
         ]
         intertest_setup.upload(self.config, tag="0")
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_shutdown(self):
         """Test the general usage of the manual shutdown tool."""
+        self.config["param_dict"]["slots"] = "1 2"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.stateless.manage.stop", "vms": "^vm1 vm2$"},
+            {"shortname": "^internal.stateless.manage.stop", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
+            {"shortname": "^internal.stateless.manage.stop", "vms": "^vm1 vm2$", "nets_host": "^c2$"},
         ]
         intertest_setup.shutdown(self.config, tag="0")
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
