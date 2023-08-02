@@ -356,24 +356,35 @@ class IntertestSetupTest(Test):
 
     def test_manual_state_manipulation(self):
         """Test the general usage of all state manipulation tools."""
+        self.config["param_dict"]["slots"] = "1 2"
         self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
         for state_action in ["check", "pop", "push", "get", "set", "unset"]:
+            DummyStateControl.asserted_states["get"] = {"root": {self.shared_pool: 0}}
             DummyTestRun.asserted_tests = [
-                {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$",
+                {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c1$",
                  "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
-                {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$",
+                {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c2$",
+                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
+                {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c2$",
+                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
+                {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c1$",
                  "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
             ]
             setup_func = getattr(intertest_setup, state_action)
             setup_func(self.config)
+            self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
         for state_action in ["collect", "create", "clean"]:
             operation = "set" if state_action == "create" else "unset"
             operation = "get" if state_action == "collect" else operation
             DummyTestRun.asserted_tests = [
-                {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$",
+                {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c1$",
                  "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
-                {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$",
+                {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c2$",
+                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
+                {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c2$",
+                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
+                {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c1$",
                  "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
             ]
             for test_dict in DummyTestRun.asserted_tests:
@@ -382,6 +393,7 @@ class IntertestSetupTest(Test):
                 test_dict[operation+"_mode_images"] = "^ii$" if operation == "get" else test_dict[operation+"_mode_images"]
             setup_func = getattr(intertest_setup, state_action)
             setup_func(self.config, "5m")
+            self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_develop_tool(self):
         """Test the general usage of the sample custom development tool."""
@@ -397,7 +409,8 @@ class IntertestSetupTest(Test):
     def test_permanent_vm_tool(self):
         """Test the general usage of the sample custom permanent vm creation tool."""
         self.config["vm_strs"] = {"vm3": "only Ubuntu\n"}
-
+        DummyStateControl.asserted_states["check"] = {"ready": {self.shared_pool: 0}}
+        DummyStateControl.asserted_states["unset"] = {"on_customize": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm3", "vms": "^vm3$", "type": "^shared_configure_install$"},
             {"shortname": "^original.unattended_install.*vm3", "vms": "^vm3$", "cdrom_cd1": ".*ubuntu-14.04.*\.iso$", "set_state_images": "^install$"},

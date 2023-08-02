@@ -724,7 +724,9 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
     LOG_UI.info("Starting %s for %s with job %s and params:\n%s", operation,
                 ", ".join(selected_vms), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form().rstrip("\n"))
-    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
+    graph = TestGraph()
+    graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
+    for test_object in graph.objects:
         if test_object.key != "vms":
             continue
         vm = test_object
@@ -735,9 +737,16 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
         setup_dict.update(param_dict)
         setup_str = param.re_str("all..internal..manage.unchanged")
         test_node = l.parse_node_from_object(net, setup_dict, setup_str, prefix=tag)
-        to_run = r.run_test_node(test_node)
-        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
+        # TODO: traversal relies explicitly on object_suffix which only indicates
+        # where a parent node was parsed from, i.e. which test object of the child node
+        test_node.params["object_suffix"] = test_object.long_suffix
+        graph.nodes += [test_node]
 
+    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    graph.flag_children(flag_type="run", flag=lambda self, slot: slot not in self.workers)
+    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
+    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
+                                                                 r.job.timeout or None))
     LOG_UI.info("Finished %s", operation)
 
 
