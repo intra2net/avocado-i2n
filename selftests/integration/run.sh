@@ -38,7 +38,7 @@ fi
 sed -i "s#suite_path = .*#suite_path = ${test_suite}#" "${i2n_config}"
 rm ${HOME}/avocado_overwrite_* -fr
 rm -fr /mnt/local/images/swarm/*
-rm -fr /mnt/local/images/shared/vm1/* /mnt/local/images/shared/vm2/*
+rm -fr /mnt/local/images/shared/vm1-* /mnt/local/images/shared/vm2-*
 
 # minimal other dependencies for the integration run
 dnf install -y python3-coverage python3-lxc
@@ -77,9 +77,10 @@ containers="$(printf $test_slots | sed "s/,/ /g")"
 for cid in $containers; do
     diff -r /$ims/c101/rootfs/$ims /$ims/c$cid/rootfs/$ims -x el8-64* -x win10-64* -x vm3
 done
-ls -A1q /mnt/local/images/shared/vm1 | grep -q . && exit 1
-ls -A1q /mnt/local/images/shared/vm2 | grep -q . && exit 1
-ls -A1q /mnt/local/images/shared/vm3 | grep -q . || exit 1
+# verify that either vm1/vm2 shared pool doesn't exit or is empty for the validity of our tests
+ls -A1q /mnt/local/images/shared/vm1-* 2>/dev/null | grep -q . && exit 1
+ls -A1q /mnt/local/images/shared/vm2-* 2>/dev/null | grep -q . && exit 1
+ls -A1q /mnt/local/images/shared/vm3-* | grep -q . || exit 1
 
 echo
 echo "Check replay and overall test reruns behave as expected"
@@ -97,8 +98,8 @@ test -d "$test_results"/latest/test-results
 
 echo
 echo "Testing a mix of shared pool and serial run"
-ls -A1q /mnt/local/images/shared/vm1 | grep -q . && exit 1
-mv /mnt/local/images/swarm/vm1/* /mnt/local/images/shared/vm1
+ls -A1q /mnt/local/images/shared/vm1-* 2>/dev/null | grep -q . && exit 1
+mv /mnt/local/images/swarm/vm1-* /mnt/local/images/shared/
 test_options=""
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=run only=$test_sets $test_options
 test -d "$test_results"/latest/test-results

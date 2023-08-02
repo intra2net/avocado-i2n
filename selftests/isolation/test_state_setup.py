@@ -111,9 +111,9 @@ class MockDriver(unittest.TestCase):
         elif backend in ["qcow2", "qcow2vt"]:
             mock_driver.return_value.snapshot_list.assert_called_once_with(force_share=True)
         elif backend == "qcow2ext":
-            mock_driver.listdir.assert_called_once_with("/images/vm1/image1")
+            mock_driver.listdir.assert_called_once_with("/images/vm1-abc.def/image1")
         elif backend == "ramfile":
-            mock_driver.listdir.assert_called_once_with("/images/vm1")
+            mock_driver.listdir.assert_called_once_with("/images/vm1-abc.def")
         else:
             raise ValueError(f"Unsupported backend for testing {backend}")
 
@@ -146,9 +146,9 @@ class MockDriver(unittest.TestCase):
             raise NotImplementedError("Not isolated backend - test via integration")
         elif backend == "ramfile":
             # TODO: cannot assert state_name as we need more isolated testing here
-            mock_driver.listdir.assert_called_with(f"/images/vm1")
+            mock_driver.listdir.assert_called_with(f"/images/vm1-abc.def")
             if action_type == 1:
-                self.mock_vms["vm1"].restore_from_file.assert_called_once_with(f"/images/vm1/{state_name}.state")
+                self.mock_vms["vm1"].restore_from_file.assert_called_once_with(f"/images/vm1-abc.def/{state_name}.state")
             else:
                 self.mock_vms["vm1"].restore_from_file.assert_not_called()
         else:
@@ -193,8 +193,8 @@ class MockDriver(unittest.TestCase):
         elif backend == "ramfile":
             if action_type in [1, 2]:
                 # TODO: cannot assert state_name as we need more isolated testing here
-                mock_driver.listdir.assert_called_once_with(f"/images/vm1")
-                self.mock_vms["vm1"].save_to_file.assert_called_once_with(f"/images/vm1/{state_name}.state")
+                mock_driver.listdir.assert_called_once_with(f"/images/vm1-abc.def")
+                self.mock_vms["vm1"].save_to_file.assert_called_once_with(f"/images/vm1-abc.def/{state_name}.state")
             else:
                 self.mock_vms["vm1"].save_to_file.assert_not_called()
         else:
@@ -225,16 +225,16 @@ class MockDriver(unittest.TestCase):
                 self.mock_vms["vm1"].monitor.send_args_cmd.assert_not_called()
         elif backend == "qcow2ext":
             # TODO: cannot assert state_name as we need more isolated testing here
-            mock_driver.listdir.assert_called_once_with(f"/images/vm1/image1")
+            mock_driver.listdir.assert_called_once_with(f"/images/vm1-abc.def/image1")
             if action_type == 1:
-                mock_driver.unlink.assert_called_once_with(f"/images/vm1/image1/{state_name}.qcow2")
+                mock_driver.unlink.assert_called_once_with(f"/images/vm1-abc.def/image1/{state_name}.qcow2")
             else:
                 mock_driver.unlink.assert_not_called()
         elif backend == "ramfile":
             # TODO: cannot assert state_name as we need more isolated testing here
-            mock_driver.listdir.assert_called_once_with(f"/images/vm1")
+            mock_driver.listdir.assert_called_once_with(f"/images/vm1-abc.def")
             if action_type == 1:
-                mock_driver.unlink.assert_called_once_with(f"/images/vm1/{state_name}.state")
+                mock_driver.unlink.assert_called_once_with(f"/images/vm1-abc.def/{state_name}.state")
             else:
                 mock_driver.unlink.assert_not_called()
         else:
@@ -310,6 +310,7 @@ class StatesBoundaryTest(Test):
         self.run_params["image_format"] = "qcow2"
         self.run_params["qemu_img_binary"] = "qemu-img"
         self.run_params["swarm_pool"] = "/images"
+        self.run_params["object_id"] = "vm1-abc.def"
 
     def _set_vm_qcow2_params(self):
         self.run_params["states_vms"] = "qcow2vt"
@@ -319,6 +320,7 @@ class StatesBoundaryTest(Test):
     def _set_vm_ramfile_params(self):
         self.run_params["states_vms"] = "ramfile"
         self.run_params["swarm_pool"] = "/images"
+        self.run_params["object_id"] = "vm1-abc.def"
 
     def _get_mock_vm(self, vm_name):
         return self.mock_vms[vm_name]
@@ -440,7 +442,7 @@ class StatesBoundaryTest(Test):
         self.run_params["swarm_pool"] = "/some/swarm2"
         with self.driver.mock_show(["launch"], backend_type) as driver:
             states = ss.show_states(self.run_params, self.env)
-            driver.listdir.assert_called_once_with("/some/swarm2/vm1/image1")
+            driver.listdir.assert_called_once_with("/some/swarm2/vm1-abc.def/image1")
         self.assertEqual(len(states), 1)
 
     def test_show_vm_qcow2(self):
@@ -458,7 +460,7 @@ class StatesBoundaryTest(Test):
         self.run_params["swarm_pool"] = "/some/swarm2"
         with self.driver.mock_show(["launch"], backend_type) as driver:
             states = ss.show_states(self.run_params, self.env)
-            driver.listdir.assert_called_once_with("/some/swarm2/vm1")
+            driver.listdir.assert_called_once_with("/some/swarm2/vm1-abc.def")
         self.assertEqual(len(states), 1)
 
     def test_show_image_qcow2_boot(self):
@@ -660,7 +662,7 @@ class StatesBoundaryTest(Test):
             self.run_params["image_format"] = image_format
             with self.driver.mock_show([], backend_type, True) as driver:
                 file_suffix = f".{image_format}" if image_format != "raw" else ""
-                self.driver.exist_lambda = lambda filename: filename.endswith(file_suffix) or filename.endswith("vm1")
+                self.driver.exist_lambda = lambda filename: filename.endswith(file_suffix) or filename.endswith("vm1-abc.def")
                 exists = ss.check_states(self.run_params, self.env)
             self.assertTrue(exists)
 
@@ -794,14 +796,14 @@ class StatesBoundaryTest(Test):
                 if backend == "qcow2vt":
                     self.mock_vms["vm1"].create.assert_called_once_with()
                 elif backend == "ramfile":
-                    driver.makedirs.assert_called_once_with("/images/vm1", exist_ok=True)
+                    driver.makedirs.assert_called_once_with("/images/vm1-abc.def", exist_ok=True)
 
             # assert root state is detected and but not overwritten in this case
             with self.driver.mock_show([], backend_type, True) as driver:
                 ss.set_states(self.run_params, self.env)
                 self.mock_vms["vm1"].create.assert_not_called()
                 if backend == "ramfile":
-                    driver.makedirs.assert_called_once_with("/images/vm1", exist_ok=True)
+                    driver.makedirs.assert_called_once_with("/images/vm1-abc.def", exist_ok=True)
 
     @mock.patch('avocado_i2n.states.lvm.vg_cleanup')
     def test_unset_root_image_lvm(self, mock_vg_cleanup):
@@ -951,6 +953,7 @@ class StatesPoolTest(Test):
     def _set_minimal_pool_params(self):
         self.run_params["swarm_pool"] = "/images"
         self.run_params["shared_pool"] = "/:/data/pool"
+        self.run_params["object_id"] = "vm1-abc.def"
         self.run_params["image_format"] = "qcow2"
         self.run_params["qemu_img_binary"] = "qemu-img"
 
@@ -1502,7 +1505,7 @@ class StatesPoolTest(Test):
 
         self.backend.ops.list.return_value = ["launch.qcow2", "prelaunch.qcow2"]
         exists = self.run_params["check_state"] in self.backend.show(self.run_params, self.env)
-        expected_checks = [mock.call("host/container:/dir/subdir/vm1/image1", mock.ANY)]
+        expected_checks = [mock.call("host/container:/dir/subdir/vm1-abc.def/image1", mock.ANY)]
         self.assertListEqual(self.backend.ops.list.call_args_list, expected_checks)
         self.assertTrue(exists)
 
@@ -1518,7 +1521,7 @@ class StatesPoolTest(Test):
 
         self.backend.ops.list.return_value = ["launch.state", "prelaunch.state"]
         exists = self.run_params["check_state"] in self.backend.show(self.run_params, self.env)
-        expected_checks = [mock.call("host/container:/dir/subdir/vm1", mock.ANY)]
+        expected_checks = [mock.call("host/container:/dir/subdir/vm1-abc.def", mock.ANY)]
         self.assertListEqual(self.backend.ops.list.call_args_list, expected_checks)
         self.assertTrue(exists)
 
@@ -1536,11 +1539,11 @@ class StatesPoolTest(Test):
         self.backend.ops.reset_mock()
         self.backend.ops.compare.return_value = True
         valid = self.backend.compare_chain("launch", "/images", location, self.run_params)
-        expected_checks = [mock.call("/images/vm1/image1/launch.qcow2",
-                                     os.path.join(location, "vm1/image1/launch.qcow2"),
+        expected_checks = [mock.call("/images/vm1-abc.def/image1/launch.qcow2",
+                                     os.path.join(location, "vm1-abc.def/image1/launch.qcow2"),
                                      mock.ANY),
-                           mock.call("/images/vm1/image1/prelaunch.qcow2",
-                                     os.path.join(location, "vm1/image1/prelaunch.qcow2"),
+                           mock.call("/images/vm1-abc.def/image1/prelaunch.qcow2",
+                                     os.path.join(location, "vm1-abc.def/image1/prelaunch.qcow2"),
                                      mock.ANY)]
         self.assertListEqual(self.backend.ops.compare.call_args_list, expected_checks)
         self.assertTrue(valid)
@@ -1550,8 +1553,8 @@ class StatesPoolTest(Test):
         self.backend.ops.reset_mock()
         self.backend.ops.compare.side_effect = lambda x, _, __: True if "invalid" in x else False
         valid = self.backend.compare_chain("launch", "/images", location, self.run_params)
-        expected_checks = [mock.call("/images/vm1/image1/launch.qcow2",
-                                     os.path.join(location, "vm1/image1/launch.qcow2"),
+        expected_checks = [mock.call("/images/vm1-abc.def/image1/launch.qcow2",
+                                     os.path.join(location, "vm1-abc.def/image1/launch.qcow2"),
                                      mock.ANY)]
         self.assertListEqual(self.backend.ops.compare.call_args_list, expected_checks)
         self.assertFalse(valid)
@@ -1580,10 +1583,10 @@ class StatesPoolTest(Test):
         self.deps = ["launch", "prelaunch", ""]
 
         self.backend.get(self.run_params, self.env)
-        expected_checks = [mock.call("/images/vm1/image1/launch.qcow2",
-                                     "host/container:/dir/subdir/vm1/image1/launch.qcow2", mock.ANY),
-                           mock.call("/images/vm1/image1/prelaunch.qcow2",
-                                     "host/container:/dir/subdir/vm1/image1/prelaunch.qcow2", mock.ANY)]
+        expected_checks = [mock.call("/images/vm1-abc.def/image1/launch.qcow2",
+                                     "host/container:/dir/subdir/vm1-abc.def/image1/launch.qcow2", mock.ANY),
+                           mock.call("/images/vm1-abc.def/image1/prelaunch.qcow2",
+                                     "host/container:/dir/subdir/vm1-abc.def/image1/prelaunch.qcow2", mock.ANY)]
         self.assertListEqual(self.backend.ops.download.call_args_list, expected_checks)
 
     def test_upload_bundle(self):
@@ -1610,10 +1613,10 @@ class StatesPoolTest(Test):
         self.deps = ["launch", "prelaunch", ""]
 
         self.backend.set(self.run_params, self.env)
-        expected_checks = [mock.call("/images/vm1/image1/launch.qcow2",
-                                     "host/container:/dir/subdir/vm1/image1/launch.qcow2", mock.ANY),
-                           mock.call("/images/vm1/image1/prelaunch.qcow2",
-                                     "host/container:/dir/subdir/vm1/image1/prelaunch.qcow2", mock.ANY)]
+        expected_checks = [mock.call("/images/vm1-abc.def/image1/launch.qcow2",
+                                     "host/container:/dir/subdir/vm1-abc.def/image1/launch.qcow2", mock.ANY),
+                           mock.call("/images/vm1-abc.def/image1/prelaunch.qcow2",
+                                     "host/container:/dir/subdir/vm1-abc.def/image1/prelaunch.qcow2", mock.ANY)]
         self.assertListEqual(self.backend.ops.upload.call_args_list, expected_checks)
 
     def test_delete_bundle(self):
@@ -1639,7 +1642,7 @@ class StatesPoolTest(Test):
         self.deps = ["launch", "prelaunch", ""]
 
         self.backend.unset(self.run_params, self.env)
-        expected_checks = [mock.call("host/container:/dir/subdir/vm1/image1/launch.qcow2", mock.ANY)]
+        expected_checks = [mock.call("host/container:/dir/subdir/vm1-abc.def/image1/launch.qcow2", mock.ANY)]
         self.assertListEqual(self.backend.ops.delete.call_args_list, expected_checks)
 
     def test_location_parameter_propagation(self):
@@ -1738,25 +1741,25 @@ class StatesPoolTest(Test):
                     self.backend.ops.reset_mock()
                     if do == "get":
                         self.backend.get(self.run_params, self.env)
-                        expected_checks = [mock.call(f"{location}/vm1/image1/launch.qcow2",
-                                                     f"{shared_pool}/vm1/image1/launch.qcow2",
+                        expected_checks = [mock.call(f"{location}/vm1-abc.def/image1/launch.qcow2",
+                                                     f"{shared_pool}/vm1-abc.def/image1/launch.qcow2",
                                                      mock.ANY),
-                                           mock.call(f"{location}/vm1/image1/prelaunch.qcow2",
-                                                     f"{shared_pool}/vm1/image1/prelaunch.qcow2",
+                                           mock.call(f"{location}/vm1-abc.def/image1/prelaunch.qcow2",
+                                                     f"{shared_pool}/vm1-abc.def/image1/prelaunch.qcow2",
                                                      mock.ANY)]
                         self.assertListEqual(self.backend.ops.download.call_args_list, expected_checks)
                     elif do == "set":
                         self.backend.set(self.run_params, self.env)
-                        expected_checks = [mock.call(f"{location}/vm1/image1/launch.qcow2",
-                                                     f"{shared_pool}/vm1/image1/launch.qcow2",
+                        expected_checks = [mock.call(f"{location}/vm1-abc.def/image1/launch.qcow2",
+                                                     f"{shared_pool}/vm1-abc.def/image1/launch.qcow2",
                                                      mock.ANY),
-                                           mock.call(f"{location}/vm1/image1/prelaunch.qcow2",
-                                                     f"{shared_pool}/vm1/image1/prelaunch.qcow2",
+                                           mock.call(f"{location}/vm1-abc.def/image1/prelaunch.qcow2",
+                                                     f"{shared_pool}/vm1-abc.def/image1/prelaunch.qcow2",
                                                      mock.ANY)]
                         self.assertListEqual(self.backend.ops.upload.call_args_list, expected_checks)
                     elif do == "unset":
                         self.backend.unset(self.run_params, self.env)
-                        expected_checks = [mock.call(f"{shared_pool}/vm1/image1/launch.qcow2", mock.ANY)]
+                        expected_checks = [mock.call(f"{shared_pool}/vm1-abc.def/image1/launch.qcow2", mock.ANY)]
                         self.assertListEqual(self.backend.ops.delete.call_args_list, expected_checks)
                     else:
                         raise ValueError("Invalid state manipulation under testing")

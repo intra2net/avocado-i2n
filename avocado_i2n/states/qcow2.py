@@ -215,11 +215,12 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
+        vm_id = params["object_id"]
         state_dir = params["swarm_pool"]
-        vm_dir = os.path.join(state_dir, vm_name)
+        vm_dir = os.path.join(state_dir, vm_id)
         qemu_img = QemuImg(params, vm_dir, image_name)
-        logging.debug("Showing external states for image %s locally in %s",
-                      image_name, state_dir)
+        logging.debug("Showing external states for %s image %s locally in %s",
+                      vm_name, image_name, state_dir)
         image_dir = os.path.join(os.path.dirname(qemu_img.image_filename), image_name)
         if not os.path.exists(image_dir):
             return []
@@ -243,8 +244,9 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
+        vm_id = params["object_id"]
         state_dir = params["swarm_pool"]
-        vm_dir = os.path.join(state_dir, vm_name)
+        vm_dir = os.path.join(state_dir, vm_id)
         image_dir = os.path.join(vm_dir, image_name)
         state = params["get_state"]
         params["image_chain"] = f"snapshot {image_name}"
@@ -263,8 +265,9 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
+        vm_id = params["object_id"]
         state_dir = params["swarm_pool"]
-        vm_dir = os.path.join(state_dir, vm_name)
+        vm_dir = os.path.join(state_dir, vm_id)
         image_dir = os.path.join(vm_dir, image_name)
         state = params["set_state"]
         qemu_img = QemuImg(params, os.path.join(params["vms_base_dir"], vm_name), image_name)
@@ -281,8 +284,9 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         All arguments match the base class.
         """
         vm_name, image_name = params["vms"], params["images"]
+        vm_id = params["object_id"]
         state_dir = params["swarm_pool"]
-        vm_dir = os.path.join(state_dir, vm_name)
+        vm_dir = os.path.join(state_dir, vm_id)
         image_dir = os.path.join(vm_dir, image_name)
         state = params["unset_state"]
         # TODO: the qemu img could become useful if we implement the below todo

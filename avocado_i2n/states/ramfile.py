@@ -51,7 +51,7 @@ class RamfileBackend(SourcedStateBackend):
         """
         state_dir = params["swarm_pool"]
         logging.debug(f"Showing external states for vm {params['vms']} locally in {state_dir}")
-        vm_dir = os.path.join(state_dir, params["vms"])
+        vm_dir = os.path.join(state_dir, params["object_id"])
         snapshots = os.listdir(vm_dir)
 
         images_states = set()
@@ -96,7 +96,7 @@ class RamfileBackend(SourcedStateBackend):
             cls.image_state_backend.get(image_params, vm)
 
         state_dir = params["swarm_pool"]
-        vm_dir = os.path.join(state_dir, params["vms"])
+        vm_dir = os.path.join(state_dir, params["object_id"])
         state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         vm.restore_from_file(state_file)
         vm.resume(timeout=3)
@@ -113,7 +113,7 @@ class RamfileBackend(SourcedStateBackend):
         vm.pause()
 
         state_dir = params["swarm_pool"]
-        vm_dir = os.path.join(state_dir, params["vms"])
+        vm_dir = os.path.join(state_dir, params["object_id"])
         state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         vm.save_to_file(state_file)
         vm.destroy(gracefully=False)
@@ -149,7 +149,7 @@ class RamfileBackend(SourcedStateBackend):
             cls.image_state_backend.unset(image_params, vm)
 
         state_dir = params["swarm_pool"]
-        vm_dir = os.path.join(state_dir, params["vms"])
+        vm_dir = os.path.join(state_dir, params["object_id"])
         state_file = os.path.join(vm_dir, params["check_state"] + ".state")
         os.unlink(state_file)
 
@@ -164,7 +164,7 @@ class RamfileBackend(SourcedStateBackend):
         logging.debug("Checking whether %s's root state is fully available", vm_name)
 
         state_dir = params["swarm_pool"]
-        vm_dir = os.path.join(state_dir, params["vms"])
+        vm_dir = os.path.join(state_dir, params["object_id"])
         if not os.path.exists(vm_dir):
             logging.info("The base directory for the virtual machine %s is missing", vm_name)
             return False
@@ -214,7 +214,7 @@ class RamfileBackend(SourcedStateBackend):
         """
         vm_name = params["vms"]
         state_dir = params["swarm_pool"]
-        vm_dir = os.path.join(state_dir, vm_name)
+        vm_dir = os.path.join(state_dir, params["object_id"])
         os.makedirs(vm_dir, exist_ok=True)
 
         if not params.get_boolean("use_env", True):

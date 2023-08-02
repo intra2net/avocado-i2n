@@ -28,22 +28,120 @@ class CartesianObjectTest(Test):
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
 
+    def test_parse_object_variants_vm1(self):
+        """Test for correctly parsed vm objects from a vm string restriction."""
+        self.config["param_dict"] = {"object_suffix": "vm1", "object_type": "vms"}
+        self.config["vm_strs"] = {"vm1": ""}
+        test_objects = self.loader.parse_object_variants(self.config["param_dict"],
+                                                         self.config["vm_strs"])
+        self.assertEqual(len(test_objects), 2)
+        self.assertRegex(test_objects[1].params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*")
+        self.assertEqual(test_objects[1].params["vms"], "vm1")
+        self.assertEqual(test_objects[1].params["main_vm"], "vm1")
+        self.assertEqual(test_objects[1].params["os_variant"], "el8")
+        self.assertRegex(test_objects[0].params["name"], r"vm1\.qemu_kvm_fedora.*Fedora.*")
+        self.assertEqual(test_objects[0].params["vms"], "vm1")
+        self.assertEqual(test_objects[0].params["main_vm"], "vm1")
+        self.assertEqual(test_objects[0].params["os_variant"], "f18")
+
+    def test_parse_object_variants_net1(self):
+        """Test for a correctly parsed net object from joined vm string restrictions."""
+        test_objects = self.loader.parse_object_variants(self.config["param_dict"],
+                                                         self.config["vm_strs"])
+        self.assertEqual(len(test_objects), 1)
+        test_object = test_objects[0]
+        self.assertRegex(test_object.params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*")
+        self.assertEqual(test_object.params["vms_vm1"], "vm1")
+        self.assertEqual(test_object.params["vms_vm2"], "vm2")
+        self.assertEqual(test_object.params["vms_vm3"], "vm3")
+        self.assertEqual(test_object.params["main_vm"], "vm1")
+        self.assertEqual(test_object.params["main_vm_vm2"], "vm2")
+        self.assertEqual(test_object.params["main_vm_vm3"], "vm3")
+        self.assertEqual(test_object.params["os_variant_vm1"], "el8")
+        self.assertEqual(test_object.params["os_variant_vm2"], "win10")
+        self.assertEqual(test_object.params["os_variant_vm3"], "ubuntutrusty")
+
+    def test_parse_object_from_objects(self):
+        """Test for a correctly parsed net composite object from already parsed vm component objects."""
+        vms = []
+        for vm_name, vm_restriction in self.config["vm_strs"].items():
+            vms += self.loader.parse_object_variants({"object_suffix": vm_name, "object_type": "vms"},
+                                                     {vm_name: vm_restriction})
+        net = self.loader.parse_object_from_objects(vms, self.config["param_dict"])
+        self.assertEqual(net.components, vms)
+        for vm in vms:
+            self.assertEqual(vm.composites, [net])
+            # besides object composition we should expect the joined component variants
+            self.assertIn(vm.params["name"], net.params["name"])
+            # each joined component variant must be traceable back to the component object id
+            self.assertEqual(vm.id, net.params[f"object_id_{vm.suffix}"])
+
+    def test_parse_objects_vms(self):
+        """Test for correctly parsed vm objects composition if multiple variants."""
+        self.config["vm_strs"] = {"vm1": "", "vm2": "", "vm3": ""}
+        test_objects = self.loader.parse_objects(self.config["param_dict"],
+                                                 self.config["vm_strs"],
+                                                 skip_nets=True)
+        vms = [o for o in test_objects if o.key == "vms"]
+        images = [o for o in test_objects if o.key == "images"]
+        self.assertEqual(len(test_objects), len(vms) + len(images))
+        self.assertEqual(len(vms), 6)
+        vms_vm1 = [vm for vm in vms if vm.long_suffix == "vm1"]
+        self.assertEqual(len(vms_vm1), 2)
+        self.assertEqual(vms_vm1[0].suffix, vms_vm1[1].suffix)
+        self.assertEqual(vms_vm1[0].long_suffix, vms_vm1[1].long_suffix)
+        self.assertNotEqual(vms_vm1[0].id, vms_vm1[1].id)
+        self.assertEqual(len([vm for vm in vms if vm.long_suffix == "vm2"]), 2)
+        self.assertEqual(len([vm for vm in vms if vm.long_suffix == "vm3"]), 2)
+        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm1"]), 2)
+        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm2"]), 2)
+        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm3"]), 2)
+
+    def test_parse_objects_nets(self):
+        """Test for correctly parsed net objects composition if multiple variants."""
+        self.config["vm_strs"] = {"vm1": "", "vm2": "", "vm3": ""}
+        test_objects = self.loader.parse_objects(self.config["param_dict"],
+                                                 self.config["vm_strs"],
+                                                 skip_nets=False)
+        nets = [o for o in test_objects if o.key == "nets"]
+        self.assertEqual(len(nets), 8)
+        # TODO: typically we should test for some of this in the net1 object variants cases above but due to limitation of the Cartesian parser and lack of
+        # such functionality, the multi-variant nets are generated at this stage and therefore tested here
+        def assertVariant(test_object, name, vm1_os, vm2_os, vm3_os):
+            self.assertEqual(test_object.suffix, "net1")
+            self.assertEqual(test_object.long_suffix, "net1")
+            self.assertRegex(test_object.params["name"], name)
+            self.assertEqual(test_object.params["os_variant_vm1"], vm1_os)
+            self.assertEqual(test_object.params["os_variant_vm2"], vm2_os)
+            self.assertEqual(test_object.params["os_variant_vm3"], vm3_os)
+        assertVariant(nets[0], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "f18", "win7", "ubuntutrusty")
+        assertVariant(nets[1], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_kali.*Kali.*", "f18", "win7", "kl")
+        assertVariant(nets[2], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "f18", "win10", "ubuntutrusty")
+        assertVariant(nets[3], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_kali.*Kali.*", "f18", "win10", "kl")
+        assertVariant(nets[4], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "el8", "win7", "ubuntutrusty")
+        assertVariant(nets[5], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_kali.*Kali.*", "el8", "win7", "kl")
+        assertVariant(nets[6], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "el8", "win10", "ubuntutrusty")
+        assertVariant(nets[7], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_kali.*Kali.*", "el8", "win10", "kl")
+
     def test_params(self):
-        """Test for correctly parsed test object parameters."""
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
-        test_object = graph.get_object_by(param_key="object_suffix", param_val="^vm1$")
+        """Test for correctly parsed and regenerated test object parameters."""
+        test_objects = self.loader.parse_object_variants(self.config["param_dict"],
+                                                         self.config["vm_strs"])
+        self.assertEqual(len(test_objects), 1)
+        test_object = test_objects[0]
         regenerated_params = test_object.object_typed_params(test_object.config.get_params())
         self.assertEqual(len(regenerated_params.keys()), len(test_object.params.keys()),
-                         "The parameters of a test object must be the same as its only parser dictionary")
+                        "The parameters of a test object must be the same as its only parser dictionary")
         for key in regenerated_params.keys():
             self.assertEqual(regenerated_params[key], test_object.params[key],
-                             "The values of key %s %s=%s must be the same" % (key, regenerated_params[key], test_object.params[key]))
+                            "The values of key %s %s=%s must be the same" % (key, regenerated_params[key], test_object.params[key]))
+        # the test object attributes are fully separated from its parameters
+        self.assertNotIn("object_suffix", test_object.params)
+        self.assertNotIn("object_type", test_object.params)
+        self.assertNotIn("object_id", test_object.params)
 
-    def test_sanity(self):
-        """Test generic usage and composition."""
+    def test_sanity_in_graph(self):
+        """Test generic usage and composition of test objects within a graph."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -57,7 +155,7 @@ class CartesianObjectTest(Test):
             graph.new_objects(test_object)
             self.assertEqual(len(graph.suffixes), object_num)
 
-    def test_overwrite(self):
+    def test_overwrite_in_graph(self):
         """Test for correct overwriting of preselected configuration."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -86,7 +184,7 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object_params["new_key"], "123",
                          "A new parameter=%s of %s must be 123" % (test_object_params["new_key"], test_object.suffix))
 
-    def test_overwrite_scope(self):
+    def test_overwrite_scope_in_graph(self):
         """Test the scope of application of overwriting preselected configuration."""
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],

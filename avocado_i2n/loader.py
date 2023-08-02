@@ -62,7 +62,7 @@ class CartesianLoader(Resolver):
     """parsing functionality"""
     def parse_object_variants(self, param_dict=None, object_strs=None, verbose=False):
         """
-        Parse composite test object variants from joined component variants.
+        Parse composite test objects with variants from joined component variants.
 
         :param param_dict: runtime parameters used for extra customization
         :type param_dict: {str, str} or None
@@ -72,8 +72,8 @@ class CartesianLoader(Resolver):
         :returns: parsed test objects
         :rtype: [:py:class:`TestObject`]
 
-        ..todo:: Support is limited to just vms and nets for the time being due to
-                 a vm-only supported suffixes for `object_strs`.
+        ..todo:: Support is limited to just parsing nets from vms for the time
+                 being due to a vm-only supported suffixes for `object_strs`.
         """
         parsed_param_dict = param.ParsedDict(param_dict).parsable_form()
         test_objects = []
@@ -117,7 +117,7 @@ class CartesianLoader(Resolver):
 
     def parse_object_from_objects(self, test_objects, param_dict=None, verbose=False):
         """
-        Parse a unique composite object from joined pre-parsed component objects.
+        Parse a unique composite object from joined already parsed component objects.
 
         :param test_objects: fully parsed test objects to parse the composite from
         :type: test_objects: (:py:class:`TestObject`)
@@ -128,8 +128,10 @@ class CartesianLoader(Resolver):
         :rtype: [:py:class:`TestObject`]
         :raises: :py:class:`exceptions.AssertionError` if the parsed composite is not unique
         """
+        setup_dict = {} if param_dict is None else param_dict.copy()
+        setup_dict.update({f"object_id_{o.suffix}": o.id for o in test_objects})
         object_strs = {o.suffix: o.final_restr for o in test_objects}
-        composite_objects = self.parse_object_variants(param_dict, object_strs, verbose=verbose)
+        composite_objects = self.parse_object_variants(setup_dict, object_strs, verbose=verbose)
 
         if len(composite_objects) > 1:
             raise AssertionError(f"No unique composite could be parsed using {test_objects}\n"
@@ -164,7 +166,7 @@ class CartesianLoader(Resolver):
         else:
             selected_vms = object_strs.keys()
 
-        # TODO: this is only generalized up to the current value of the stateful object chain
+        # TODO: this is only generalized up to the current value of the stateful object chain "nets vms images"
         test_objects = []
         suffix_variants = {}
         for net_name in param.all_objects("nets"):
