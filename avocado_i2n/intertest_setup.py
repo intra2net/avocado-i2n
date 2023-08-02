@@ -116,6 +116,7 @@ def new_job(config):
         loader, runner = config["graph"].l, config["graph"].r
         loader.logdir = job_instance.logdir
         runner.job = job_instance
+        runner.slots = config["param_dict"].get("slots", "").split(" ")
 
         yield job_instance
 
@@ -191,61 +192,6 @@ def unittest(config, tag=""):
 
 
 @with_cartesian_graph
-def full(config, tag=""):
-    """
-    Perform all the setup needed to achieve a certain state and save the state.
-
-    :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
-
-    The state can be achieved all the way from the test object creation. The
-    performed setup depends entirely on the state's dependencies which can
-    be completely different than the regular create->install->deploy path.
-
-    Only singleton test setup is supported within the full setup path since
-    we cannot guarantee other setup involved vms exist.
-    """
-    l, r = config["graph"].l, config["graph"].r
-    selected_vms = sorted(config["vm_strs"].keys())
-    LOG_UI.info("Starting full setup for %s (%s)",
-                ", ".join(selected_vms), os.path.basename(r.job.logdir))
-
-    for vm_name in selected_vms:
-        vm_params = config["vms_params"].object_params(vm_name)
-        state = vm_params.get("to_state", "customize")
-        logging.info("Creating the full state '%s' of %s", state, vm_name)
-        # initial install node can be facilitated by the install tool
-        if state == "install":
-            # TODO: integrate this into:
-            #_reuse_tool_with_param_dict(config, tag, {}, install)
-            vm_strs = config["vm_strs"].copy()
-            config["vm_strs"] = {vm_name: vm_strs[vm_name]}
-            install(config, tag=tag)
-            config["vm_strs"] = vm_strs
-            continue
-
-        # in case of permanent vms, support creation and other otherwise dangerous operations
-        setup_dict = config["param_dict"].copy()
-        setup_dict["create_permanent_vm"] = "yes"
-        setup_dict["main_vm"] = vm_name
-        # overwrite any existing test objects
-        create_graph = l.parse_object_trees(setup_dict, param.re_str("all.." + state),
-                                            {vm_name: config["vm_strs"][vm_name]}, prefix=tag)
-        create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=False)
-        create_graph.flag_parent_intersection(create_graph, flag_type="run", flag=True, skip_shared_root=True)
-
-        # NOTE: this makes sure that any present states are overwritten and no created
-        # states are removed, skipping any state restoring for better performance
-        setup_dict = config["param_dict"].copy()
-        setup_dict.update({"get_mode": "ia", "set_mode": "ff", "unset_mode": "ra"})
-        to_traverse = r.run_traversal(create_graph, setup_dict, "")
-        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_traverse, r.job.timeout or None))
-
-    LOG_UI.info("Finished full setup")
-
-
-@with_cartesian_graph
 def update(config, tag=""):
     """
     Update all states (run all tests) from the state defined as
@@ -255,32 +201,40 @@ def update(config, tag=""):
     :type config: {str, str}
     :param str tag: extra name identifier for the test to be run
 
+    The state can be achieved all the way from the test object creation. The
+    performed setup depends entirely on the state's dependencies which can
+    be completely different than the regular create->install->deploy path.
+
     Thus, a change in a state can be reflected in all the dependent states.
 
     Only singleton test setup is supported within the update setup path since
     we cannot guarantee other setup involved vms exist.
 
-    .. note:: If you want to update the install state, you also need to change the default
-        'from_state=install' to 'from_state=root'. You cannot update the root as this is
-        analogical to running the full manual step.
+    .. note:: If you want to update the install state, you also need to change the
+        starting state to 'from_state=root'. Using 'from_state=install' will keep
+        the install test and update all of its derivatives as it does with any value
+        specified in 'from_state'.
     """
     l, r = config["graph"].l, config["graph"].r
     selected_vms = sorted(config["vm_strs"].keys())
-    LOG_UI.info("Starting update setup for %s (%s)",
+    LOG_UI.info("Update state cache for %s (%s)",
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
     for vm_name in selected_vms:
         vm_params = config["vms_params"].object_params(vm_name)
         from_state = vm_params.get("from_state", "install")
         to_state = vm_params.get("to_state", "customize")
-        if to_state == "install":
-            logging.warning("The root install state of %s cannot be updated - use 'setup=full' instead.", vm_name)
-            continue
         logging.info("Updating state '%s' of %s", to_state, vm_name)
 
-        logging.info("Tracing and removing all old states depending on the updated '%s'...", to_state)
+        logging.info(f"Parsing a standard initial graph for '{to_state}'")
         setup_dict = config["param_dict"].copy()
-        setup_dict["unset_mode"] = "fi"
+        # in case of permanent vms, support creation and other otherwise dangerous operations
+        setup_dict["create_permanent_vm"] = "yes"
+        setup_dict["main_vm"] = vm_name
+        setup_dict["vms"] = vm_name
+        # NOTE: this makes sure that any present states are overwritten and no recreated
+        # states are removed, aborting in any other case
+        setup_dict.update({"get_mode": "ra", "set_mode": "ff", "unset_mode": "fi"})
         setup_str = vm_params.get("remove_set", "leaves")
         for restriction in config["available_restrictions"]:
             if restriction in setup_str:
@@ -288,42 +242,63 @@ def update(config, tag=""):
         else:
             setup_str = "all.." + setup_str
         setup_str = param.re_str(setup_str)
-        # remove all test nodes depending on the updated node if present (unset mode is "ignore otherwise")
-        remove_graph = l.parse_object_trees(setup_dict,
-                                            setup_str,
-                                            config["available_vms"],
-                                            prefix=tag, verbose=False)
-        remove_graph.flag_children(flag_type="run", flag=False)
-        remove_graph.flag_children(flag_type="clean", flag=False, skip_roots=True)
-        remove_graph.flag_children(to_state, vm_name, flag_type="clean", flag=True, skip_roots=True)
-        to_traverse = r.run_traversal(remove_graph, {"vms": vm_name, **config["param_dict"]}, "")
-        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_traverse, r.job.timeout or None))
+        graph = l.parse_object_trees(setup_dict,
+                                     setup_str,
+                                     config["available_vms"],
+                                     prefix=tag, verbose=False)
+        graph.flag_children(flag_type="run", flag=lambda self, slot: False)
+        graph.flag_children(flag_type="clean", flag=lambda self, slot: False, skip_parents=True)
 
-        logging.info("Updating all states before '%s'", to_state)
-        setup_dict = config["param_dict"].copy()
-        setup_dict["vms"] = vm_name
-        # NOTE: this makes sure that no new states are created and the updated
-        # states are not removed, aborting in any other case
-        setup_dict.update({"get_mode": "ra", "set_mode": "fa", "unset_mode": "ra"})
-        update_graph = l.parse_object_trees(setup_dict,
-                                            param.re_str("all.." + to_state),
-                                            {vm_name: config["vm_strs"][vm_name]}, prefix=tag)
-        update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=False)
-        update_graph.flag_parent_intersection(update_graph, flag_type="run", flag=True,
-                                              skip_object_roots=True, skip_shared_root=True)
-        logging.info("Preserving all states before '%s'", from_state)
+        logging.info(f"Flagging for removing all old states depending on the updated '{to_state}'")
+        flag_state = None if to_state == "install" else to_state
+        graph.flag_children(flag_state, vm_name, flag_type="clean", flag=lambda self, slot: True, skip_parents=True)
+
+        logging.info(f"Flagging for updating all states between and including '{from_state}' and '{to_state}'")
+        if to_state == "install":
+            update_graph = TestGraph()
+            update_graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
+            for test_object in graph.objects:
+                if test_object.key != "vms":
+                    continue
+                vm = test_object
+                if vm.suffix != vm_name:
+                    continue
+                if len(vm.components) > 1:
+                    logging.warning(f"Multiple images used by {vm.suffix}, installing on first one")
+                # install only on first image as RAID and other configurations are customizations
+                image = vm.components[0]
+                # parse individual net only for the current vm
+                net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
+                # figure out the install node to compare against
+                setup_str = param.re_str("all..internal..customize")
+                start_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
+                setup_str = param.re_str("all..original.." + start_node.params["get_images"])
+                install_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
+                install_node.params["object_root"] = image.id
+                update_graph.nodes.append(install_node)
+        else:
+            update_graph = l.parse_object_trees(setup_dict,
+                                                param.re_str("all.." + to_state),
+                                                {vm_name: config["vm_strs"][vm_name]},
+                                                prefix=tag)
+        graph.flag_intersection(update_graph, flag_type="run", flag=lambda self, slot: slot not in self.workers,
+                                skip_shared_root=True)
+
         if from_state != "install":
-            setup_dict = config["param_dict"].copy()
-            setup_dict["vms"] = vm_name
+            logging.info(f"Flagging for preserving all states before the updated '{from_state}'")
             reuse_graph = l.parse_object_trees(setup_dict,
                                                param.re_str("all.." + from_state),
                                                {vm_name: config["vm_strs"][vm_name]},
                                                prefix=tag, verbose=False)
-            update_graph.flag_parent_intersection(reuse_graph, flag_type="run", flag=False)
-        to_traverse = r.run_traversal(update_graph, setup_dict, "")
-        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_traverse, r.job.timeout or None))
+            graph.flag_intersection(reuse_graph, flag_type="run", flag=lambda self, slot: False)
+            graph.flag_children(from_state, flag_type="run", flag=lambda self, slot: slot not in self.workers,
+                                skip_children=True)
 
-    LOG_UI.info("Finished update setup")
+        to_traverse = [r.run_traversal(graph, setup_dict, s) for s in r.slots]
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
+                                                                     r.job.timeout or None))
+
+    LOG_UI.info("Finished updating cache")
 
 
 def run(config, tag=""):
@@ -385,45 +360,6 @@ def list(config, tag=""):
 ############################################################
 # VM creation manual user steps
 ############################################################
-
-
-@with_cartesian_graph
-def install(config, tag=""):
-    """
-    Configure installation of each virtual machine and install it,
-    taking the respective 'install' snapshot.
-
-    :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
-    """
-    l, r = config["graph"].l, config["graph"].r
-    selected_vms = sorted(config["vm_strs"].keys())
-    LOG_UI.info("Installing %s (%s)",
-                ", ".join(selected_vms), os.path.basename(r.job.logdir))
-    graph = TestGraph()
-    graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
-    for test_object in graph.objects:
-        if test_object.key != "vms":
-            continue
-        vm = test_object
-        if len(vm.components) > 1:
-            logging.warning("Multiple images used by %s, installing on first one", vm.suffix)
-        # install only on first image as RAID and other configurations are customizations
-        image = vm.components[0]
-        # parse individual net only for the current vm
-        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
-
-        setup_str = param.re_str("all..internal..customize")
-        start_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
-        setup_str = param.re_str("all..original.." + start_node.params["get_images"])
-        install_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
-        install_node.params["object_root"] = image.id
-        graph.nodes.append(install_node)
-        to_install = r.run_terminal_node(graph, image.id, config["param_dict"], "")
-        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_install, r.job.timeout or None))
-
-    LOG_UI.info("Finished installation")
 
 
 @with_cartesian_graph

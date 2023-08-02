@@ -216,7 +216,7 @@ class TestGraph(object):
     """run/clean switching functionality"""
     def flag_children(self, node_name=None, object_name=None,
                       flag_type="run", flag=lambda self, slot: slot not in self.workers,
-                      skip_roots=False):
+                      skip_parents=False, skip_children=False):
         """
         Set the run/clean flag for all children of a parent node of a given name
         or the entire graph.
@@ -227,7 +227,8 @@ class TestGraph(object):
         :type object_name: str or None
         :param str flag_type: 'run' or 'clean' categorization of the children
         :param function flag: whether and when the run/clean action should be executed
-        :param bool skip_roots: whether the roots should not be flagged as well
+        :param bool skip_parents: whether the parents should not be flagged (just children)
+        :param bool skip_children: whether the children should not be flagged (just roots)
         :raises: :py:class:`AssertionError` if obtained # of root tests is != 1
         """
         activity = "running" if flag_type == "run" else "cleanup"
@@ -235,8 +236,7 @@ class TestGraph(object):
         if object_name is None and node_name is None:
             root_tests = self.get_nodes_by(param_key="shared_root", param_val="yes")
         elif node_name is None:
-            root_tests = self.get_nodes_by(param_key="object_root", param_val="(?:\.|^)"+object_name+"(?:-|$)")
-            node_name = "object root"
+            root_tests = self.get_nodes_by(param_key="object_root", param_val="(?:-|\.|^)"+object_name+"(?:-|\.|$)")
         else:
             root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)"+node_name+"(?:\.|$)")
             if object_name:
@@ -251,7 +251,7 @@ class TestGraph(object):
         else:
             test_node = root_tests[0]
 
-        if not skip_roots:
+        if not skip_parents:
             flagged = [test_node]
         else:
             flagged = []
@@ -263,7 +263,8 @@ class TestGraph(object):
                 test_node.should_run = flag.__get__(test_node)
             else:
                 test_node.should_clean = flag.__get__(test_node)
-            flagged.extend(test_node.cleanup_nodes)
+            if not skip_children:
+                flagged.extend(test_node.cleanup_nodes)
 
     def flag_intersection(self, graph,
                           flag_type="run", flag=lambda self, slot: slot not in self.workers,
