@@ -1335,44 +1335,46 @@ class CartesianGraphTest(Test):
 
         # test should not be re-run on these statuses
         for status in ["SKIP", "INTERRUPTED", "CANCEL"]:
-            graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                   self.config["tests_str"], self.config["vm_strs"],
-                                                   prefix=self.prefix)
-            DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                          "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-            DummyTestRun.asserted_tests = [
-                {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-            ]
-            self._run_traversal(graph, self.config["param_dict"])
-            self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+            with self.subTest(f"Test rerun skip on status {status}"):
+                graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                    self.config["tests_str"], self.config["vm_strs"],
+                                                    prefix=self.prefix)
+                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                            "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+                DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                ]
+                self._run_traversal(graph, self.config["param_dict"])
+                self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
-            # assert that tests were not repeated
-            self.assertEqual(len(self.runner.job.result.tests), 1)
-            # also assert the correct results were registered
-            self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status])
-            self.runner.job.result.tests.clear()
+                # assert that tests were not repeated
+                self.assertEqual(len(self.runner.job.result.tests), 1)
+                # also assert the correct results were registered
+                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status])
+                self.runner.job.result.tests.clear()
 
         # test should be re-run on these statuses
         for status in ["PASS", "WARN", "FAIL", "ERROR"]:
-            graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                   self.config["tests_str"], self.config["vm_strs"],
-                                                   prefix=self.prefix)
-            DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                          "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-            DummyTestRun.asserted_tests = [
-                {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-            ]
-            self._run_traversal(graph, self.config["param_dict"])
-            self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+            with self.subTest(f"Test rerun on status {status}"):
+                graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                    self.config["tests_str"], self.config["vm_strs"],
+                                                    prefix=self.prefix)
+                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                            "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+                DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                ]
+                self._run_traversal(graph, self.config["param_dict"])
+                self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
-            # assert that tests were repeated
-            self.assertEqual(len(self.runner.job.result.tests), 4)
-            # also assert the correct results were registered
-            self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status] * 4)
-            self.runner.job.result.tests.clear()
+                # assert that tests were repeated
+                self.assertEqual(len(self.runner.job.result.tests), 4)
+                # also assert the correct results were registered
+                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status] * 4)
+                self.runner.job.result.tests.clear()
 
     def test_run_retry_status_stop(self):
         """Test that the `retry_stop` parameter is respected by the runner."""
@@ -1381,24 +1383,25 @@ class CartesianGraphTest(Test):
 
         # expect success and get success -> should run only once
         for stop_status in ["pass", "warn", "fail", "error"]:
-            self.config["param_dict"]["retry_stop"] = stop_status
-            status = stop_status.upper()
-            graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                self.config["tests_str"], self.config["vm_strs"],
-                                                prefix=self.prefix)
-            DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                          "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-            DummyTestRun.asserted_tests = [
-                {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-            ]
-            self._run_traversal(graph, self.config["param_dict"])
-            self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+            with self.subTest(f"Test rerun stop on status {stop_status}"):
+                self.config["param_dict"]["retry_stop"] = stop_status
+                status = stop_status.upper()
+                graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                                    self.config["tests_str"], self.config["vm_strs"],
+                                                    prefix=self.prefix)
+                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                            "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+                DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                ]
+                self._run_traversal(graph, self.config["param_dict"])
+                self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
-            # assert that tests were not repeated
-            self.assertEqual(len(self.runner.job.result.tests), 1)
-            # also assert the correct results were registered
-            self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status])
-            self.runner.job.result.tests.clear()
+                # assert that tests were not repeated
+                self.assertEqual(len(self.runner.job.result.tests), 1)
+                # also assert the correct results were registered
+                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status])
+                self.runner.job.result.tests.clear()
 
     def test_run_retry_invalid(self):
         """Test if an exception is thrown with invalid retry parameter values."""

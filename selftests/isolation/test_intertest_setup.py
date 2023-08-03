@@ -282,41 +282,43 @@ class IntertestSetupTest(Test):
         self.config["param_dict"]["slots"] = "1 2"
         self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
         for state_action in ["check", "pop", "push", "get", "set", "unset"]:
-            DummyStateControl.asserted_states["get"] = {"root": {self.shared_pool: 0}}
-            DummyTestRun.asserted_tests = [
-                {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c1$",
-                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
-                {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c2$",
-                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
-                {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c2$",
-                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
-                {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c1$",
-                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
-            ]
-            setup_func = getattr(intertest_setup, state_action)
-            setup_func(self.config)
-            self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+            with self.subTest(f"Manual state {state_action}"):
+                DummyStateControl.asserted_states["get"] = {"root": {self.shared_pool: 0}}
+                DummyTestRun.asserted_tests = [
+                    {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c1$",
+                    "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
+                    {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c2$",
+                    "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
+                    {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c2$",
+                    "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
+                    {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c1$",
+                    "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
+                ]
+                setup_func = getattr(intertest_setup, state_action)
+                setup_func(self.config)
+                self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
         for state_action in ["collect", "create", "clean"]:
             operation = "set" if state_action == "create" else "unset"
             operation = "get" if state_action == "collect" else operation
-            DummyTestRun.asserted_tests = [
-                {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c1$",
-                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
-                {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c2$",
-                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
-                {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c2$",
-                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
-                {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c1$",
-                 "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
-            ]
-            for test_dict in DummyTestRun.asserted_tests:
-                test_dict[operation+"_state_images"] = "^root$"
-                test_dict[operation+"_mode_images"] = "^af$" if operation == "set" else "^fa$"
-                test_dict[operation+"_mode_images"] = "^ii$" if operation == "get" else test_dict[operation+"_mode_images"]
-            setup_func = getattr(intertest_setup, state_action)
-            setup_func(self.config, "5m")
-            self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+            with self.subTest(f"Manual state {state_action}"):
+                DummyTestRun.asserted_tests = [
+                    {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c1$",
+                    "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
+                    {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c2$",
+                    "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
+                    {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c2$",
+                    "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
+                    {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c1$",
+                    "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
+                ]
+                for test_dict in DummyTestRun.asserted_tests:
+                    test_dict[operation+"_state_images"] = "^root$"
+                    test_dict[operation+"_mode_images"] = "^af$" if operation == "set" else "^fa$"
+                    test_dict[operation+"_mode_images"] = "^ii$" if operation == "get" else test_dict[operation+"_mode_images"]
+                setup_func = getattr(intertest_setup, state_action)
+                setup_func(self.config, "5m")
+                self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_develop_tool(self):
         """Test the general usage of the sample custom development tool."""
