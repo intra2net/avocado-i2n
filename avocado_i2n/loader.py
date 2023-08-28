@@ -220,11 +220,11 @@ class CartesianLoader(Resolver):
         :param str prefix: extra name identifier for the test to be run
         :returns: parsed test node for the object
         :rtype: :py:class:`TestNode`
-        :raises: :py:class:`AssertionError` if the node is parsed from a non-net object
+        :raises: :py:class:`ValueError` if the node is parsed from a non-net object
         """
         if test_object.key != "nets":
-            raise AssertionError("Test node could be parsed only from test objects of the "
-                                 "same composition level, currently only test nets")
+            raise ValueError("Test node could be parsed only from test objects of the "
+                             "same composition level, currently only test nets")
         config = test_object.config.get_copy()
         config.parse_next_batch(base_file="sets.cfg",
                                 ovrwrt_file=param.tests_ovrwrt_file(),
@@ -448,7 +448,6 @@ class CartesianLoader(Resolver):
 
         return root_for_all
 
-
     def resolve(self, reference):
         """
         Discover (possible) tests from test references.
@@ -484,77 +483,87 @@ class CartesianLoader(Resolver):
         object_type = d.get("object_type", "")
         object_variant = d.get("object_id", ".*").replace(object_name + "-", "")
 
-        # case of singleton test node
         all_vms = param.all_objects(key="vms")
-        if d.get("vms") is None:
-            if object_type != "nets":
-                if object_name:
-                    # as the object depending on this node might not be a vm
-                    # and thus a suffix, we have to obtain the relevant vm (suffix)
-                    vms = [object_name.split("_")[-1]]
+        def needed_vms():
+            # case of singleton test node
+            if d.get("vms") is None:
+                if object_type != "nets":
+                    if object_name:
+                        # as the object depending on this node might not be a vm
+                        # and thus a suffix, we have to obtain the relevant vm (suffix)
+                        vms = [object_name.split("_")[-1]]
+                    else:
+                        vms = [d.get("main_vm", param.main_vm())]
                 else:
-                    vms = [d.get("main_vm", param.main_vm())]
+                    vms = []
+                    for vm_name in all_vms:
+                        if re.search("(\.|^)" + vm_name + "(\.|$)", object_variant):
+                            vms += [vm_name]
             else:
-                vms = []
-                for vm_name in all_vms:
-                    if re.search("(\.|^)" + vm_name + "(\.|$)", object_variant):
-                        vms += [vm_name]
-        else:
-            # case of leaf test node or even specified object (dependency) as well as node
-            vms = d["vms"].split(" ")
+                # case of leaf test node or even specified object (dependency) as well as node
+                vms = d["vms"].split(" ")
+            return vms
+        vms = needed_vms()
         dropped_vms = set(all_vms) - set(vms)
-
         logging.debug(f"Fetching nets composed of {', '.join(vms)} to parse {d['shortname']} nodes")
-        get_nets, get_vms = None, {}
+
+        get_vms = {}
         for vm_name in vms:
-            # minimal filter
-            vm_name_restr = "(\.|^)" + vm_name + "(\.|$)"
-            objects = graph.get_objects_by(param_val=vm_name_restr)
-            # our own parsed stage OR operators and filters
-            or_objects = []
-            for vm_node_variant in d.get("only_%s" % vm_name, ".*").split(","):
-                vm_node_restr = "(\.|^)" + vm_node_variant.strip() + "(\.|$)"
-                or_objects += graph.get_objects_by(param_val=vm_node_restr, subset=objects)
-            objects = or_objects
-            # dependency filter for object
-            if vm_name == object_name or object_type == "images" and object_name.endswith(f"_{vm_name}"):
-                objects = graph.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=objects)
-            net_objects = set()
-            for get_object in objects:
-                if get_object.key != "nets":
-                    continue
-                for dropped_vm in dropped_vms:
-                    if re.search("(\.|^)" + dropped_vm + "(\.|$)", get_object.params["name"]):
-                        logging.info(f"Test net {get_object} not (right-)compatible with the test node "
-                                     f"{d['shortname']} configuration and contains a redundant {dropped_vm}")
-                        break
-                else:
-                    net_objects = net_objects.union({get_object})
-            get_nets = net_objects if get_nets is None else get_nets.intersection(net_objects)
-            vm_objects = [o for o in objects if o.key == "vms"]
-            get_vms[vm_name] = vm_objects
+            # get vm objects of all variants with the current suffix
+            get_vms[vm_name] = [o for o in graph.objects if o.key == "vms" and o.suffix == vm_name]
+            # mix of regex and own OR operator to restrict down to compatible variants
+            filtered_vms = []
+            for vm_variant in d.get(f"only_{vm_name}", ".*").split(","):
+                vm_restr = "(\.|^)" + vm_variant.strip() + "(\.|$)"
+                filtered_vms += graph.get_objects_by(param_val=vm_restr, subset=get_vms[vm_name])
+            get_vms[vm_name] = filtered_vms
+            # dependency filter for child node object has to be applied too
+            if vm_name == object_name or (object_type == "images" and object_name.endswith(f"_{vm_name}")):
+                get_vms[vm_name] = graph.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=get_vms[vm_name])
             if len(get_vms[vm_name]) == 0:
                 raise ValueError(f"Could not fetch any objects for suffix {vm_name} "
                                  f"in the test {d['shortname']}")
-        if object_variant and object_type == "nets":
-            get_nets = graph.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=get_nets)
-        get_nets = sorted(list(get_nets), key=lambda x: x.id)
+            get_vms[vm_name] = sorted(get_vms[vm_name], key=lambda x: x.id)
 
-        logging.debug(f"{len(get_nets)} test nets will be reused for {d['shortname']}")
-        parse_nets = []
-        if len(get_nets) == 0:
-            logging.debug(f"Parsing a new net from vms {', '.join(vms)} for {d['shortname']}")
-            # all possible vm combinations as variants of the same net slot
-            for combination in itertools.product(*get_vms.values()):
+        previous_nets = [o for o in graph.objects if o.key == "nets"]
+        # dependency filter for child node object has to be applied too
+        if object_variant and object_type == "nets":
+            previous_nets = graph.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=previous_nets)
+        get_nets, parse_nets = {"net1": []}, {"net1": []}
+        # all possible vm combinations as variants of the same net slot
+        for combination in itertools.product(*get_vms.values()):
+            # filtering for nets based on complete vm object variant names from the product
+            reused_nets, filtered_nets = [], list(previous_nets)
+            for vm_object in combination:
+                vm_restr = "(\.|^)" + vm_object.params["name"] + "(\.|$)"
+                filtered_nets = graph.get_objects_by(param_val=vm_restr, subset=filtered_nets)
+            # additional filtering for nets based on dropped vm suffixes
+            for get_net in filtered_nets:
+                for vm_suffix in dropped_vms:
+                    if re.search("(\.|^)" + vm_suffix + "(\.|$)", get_net.params["name"]):
+                        logging.info(f"Test net {get_net} not (right-)compatible with the test node "
+                                     f"{d['shortname']} configuration and contains a redundant {vm_suffix}")
+                        break
+                else:
+                    reused_nets += [get_net]
+            if len(reused_nets) == 1:
+                get_nets["net1"] += [reused_nets[0]]
+            elif len(reused_nets) == 0:
+                logging.debug(f"Parsing a new net from vms {', '.join(vms)} for {d['shortname']}")
                 setup_dict = {} if param_dict is None else param_dict.copy()
                 setup_dict.update({"object_suffix": "net1", "object_type": "nets",
-                                   "vms": " ".join(vms)})
+                                    "vms": " ".join(vms)})
                 net = self.parse_object_from_objects(combination, param_dict=setup_dict, verbose=False)
-                parse_nets.append(net)
+                parse_nets["net1"] += [net]
                 graph.objects += [net]
-        parse_nets = sorted(parse_nets, key=lambda x: x.id)
+            else:
+                raise ValueError("Multiple nets reusable for the same vm variant combination:\n{reused_nets}")
+        get_nets["net1"] = sorted(get_nets["net1"], key=lambda x: x.id)
+        parse_nets["net1"] = sorted(parse_nets["net1"], key=lambda x: x.id)
 
-        return get_nets if len(get_nets) > 0 else parse_nets
+        logging.debug(f"{len(get_nets['net1'])} test nets will be reused for {d['shortname']} "
+                      f"with {len(parse_nets['net1'])} newly parsed ones")
+        return get_nets["net1"] + parse_nets["net1"]
 
     def _parse_and_get_parents(self, graph, test_node, test_object, param_dict=None):
         """

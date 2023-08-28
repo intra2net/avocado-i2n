@@ -235,6 +235,112 @@ class CartesianNodeTest(Test):
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
 
+    def test_parse_node_from_object(self):
+        """Test for a correctly parsed node from an already parsed net object."""
+        test_objects = self.loader.parse_objects(self.config["param_dict"],
+                                                 self.config["vm_strs"])
+        nets = [o for o in test_objects if o.key == "nets"]
+        self.assertEqual(len(nets), 1)
+        net = nets[0]
+        node = self.loader.parse_node_from_object(net, self.config["param_dict"],
+                                                  "only all..tutorial_get..explicit_noop\n")
+        self.assertEqual(node.objects[0], net)
+        self.assertIn(net.params["name"], node.params["name"])
+        self.assertEqual(node.params["nets"], net.params["nets"])
+        self.assertEqual(node.params["vms_vm1"], net.params["vms_vm1"])
+        self.assertEqual(node.params["vms_vm2"], net.params["vms_vm2"])
+        self.assertEqual(node.params["vms_vm3"], net.params["vms_vm3"])
+        self.assertEqual(node.params["main_vm"], net.params["main_vm"])
+        self.assertEqual(node.params["main_vm_vm2"], net.params["main_vm_vm2"])
+        self.assertEqual(node.params["main_vm_vm3"], net.params["main_vm_vm3"])
+        self.assertEqual(node.params["os_variant_vm1"], net.params["os_variant_vm1"])
+        self.assertEqual(node.params["os_variant_vm2"], net.params["os_variant_vm2"])
+        self.assertEqual(node.params["os_variant_vm3"], net.params["os_variant_vm3"])
+
+    def test_parse_node_from_object_invalid(self):
+        """Test correctly parsed node is not possible from an already parsed vm object."""
+        test_objects = self.loader.parse_objects(self.config["param_dict"],
+                                                 {"vm1": self.config["vm_strs"]["vm1"]})
+        vms = [o for o in test_objects if o.key == "vms"]
+        self.assertEqual(len(vms), 1)
+        vm = vms[0]
+        with self.assertRaises(ValueError):
+            self.loader.parse_node_from_object(vm, self.config["param_dict"])
+
+    def test_parse_nodes(self):
+        """Test for correctly parsed test nodes from graph retrievable test objects."""
+        self.config["tests_str"] += "only tutorial1,tutorial2\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"],
+                                               {"vm1": ""})
+        graph.nodes = []
+        test_objects = graph.objects
+
+        nets = [o for o in test_objects if o.key == "nets"]
+        self.assertEqual(len(nets), 2)
+        nodes = self.loader.parse_nodes(graph, self.config["param_dict"], self.config["tests_str"])
+        self.assertEqual(len(nodes), 4)
+        self.assertIn(nets[0].params["name"], nodes[0].params["name"])
+        self.assertEqual(nodes[0].params["nets"], "net1")
+        self.assertIn(nets[1].params["name"], nodes[1].params["name"])
+        self.assertEqual(nodes[1].params["nets"], "net1")
+        self.assertIn(nets[0].params["name"], nodes[2].params["name"])
+        self.assertEqual(nodes[2].params["nets"], "net1")
+        self.assertIn(nets[1].params["name"], nodes[3].params["name"])
+        self.assertEqual(nodes[3].params["nets"], "net1")
+
+    def test_parse_nodes_compatibility_complete(self):
+        """Test for correctly parsed test nodes from compatible graph retrievable test objects."""
+        self.config["tests_str"] = "only all\nonly tutorial3\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"],
+                                               {"vm1": "", "vm2": "only Win7\n"})
+        graph.nodes = []
+        test_objects = graph.objects
+
+        nets = [o for o in test_objects if o.key == "nets" if "vm1." in o.params["name"] and "vm2." in o.params["name"]]
+        self.assertEqual(len(nets), 2)
+        self.assertIn("qemu_kvm_centos", nets[0].params["name"])
+        self.assertIn("qemu_kvm_fedora", nets[1].params["name"])
+        self.assertIn("qemu_kvm_windows_7", nets[0].params["name"])
+        self.assertIn("qemu_kvm_windows_7", nets[1].params["name"])
+        nodes = self.loader.parse_nodes(graph, self.config["param_dict"], self.config["tests_str"])
+        self.assertEqual(len(nodes), 18)
+        self.assertNotIn("only_vm1", nodes[0].params)
+        self.assertNotIn("only_vm1", nodes[1].params)
+        self.assertIn(nets[0].params["name"], nodes[0].params["name"])
+        self.assertIn(nets[1].params["name"], nodes[1].params["name"])
+        for i in range(2, 18):
+            self.assertEqual(nodes[i].params["only_vm1"], "qemu_kvm_centos")
+            self.assertIn(nets[0].params["name"], nodes[i].params["name"])
+
+    def test_parse_nodes_compatibility_separate(self):
+        """Test that no restriction leaks across separately restricted variants."""
+        self.config["tests_str"] = "only all\nonly tutorial3.remote.object.control.decorator.util,tutorial_gui.client_noop\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"],
+                                               {"vm1": "", "vm2": ""})
+        graph.nodes = []
+        test_objects = graph.objects
+
+        nets = [o for o in test_objects if o.key == "nets" if "vm1." in o.params["name"] and "vm2." in o.params["name"]]
+        self.assertEqual(len(nets), 4)
+        self.assertRegex(nets[0].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_10")
+        self.assertRegex(nets[1].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_7")
+        self.assertRegex(nets[2].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_10")
+        self.assertRegex(nets[3].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_7")
+        nodes = self.loader.parse_nodes(graph, self.config["param_dict"], self.config["tests_str"])
+        self.assertEqual(len(nodes), 5)
+        self.assertIn("remote", nodes[0].params["name"])
+        self.assertEqual(nodes[0].params["only_vm1"], "qemu_kvm_centos")
+        self.assertEqual(nodes[0].params["only_vm2"], "qemu_kvm_windows_10")
+        self.assertIn(nets[0].params["name"], nodes[0].params["name"])
+        for i in range(1, 5):
+            self.assertIn("client_noop", nodes[i].params["name"])
+            self.assertNotIn("only_vm1", nodes[i].params)
+            self.assertNotIn("only_vm2", nodes[i].params)
+            self.assertIn(nets[i-1].params["name"], nodes[i].params["name"])
+
     def test_params(self):
         """Test for correctly parsed test node parameters."""
         self.config["tests_str"] += "only tutorial1\n"
