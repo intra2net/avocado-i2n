@@ -26,16 +26,16 @@ class CmdParserTest(Test):
         with self.assertRaises(SystemExit):
             cmd.params_from_cmd(self.config)
 
-    def test_selected_vms(self):
-        # test default (from config)
+    def test_selected_vms_default(self):
+        """Test default (from config) vm selection."""
         cmd.params_from_cmd(self.config)
         self.assertEqual(self.config["vm_strs"], self.config["available_vms"])
         self.assertIn("only CentOS", self.config["vm_strs"]["vm1"])
         self.assertIn("only Win10", self.config["vm_strs"]["vm2"])
         self.assertIn("only Ubuntu", self.config["vm_strs"]["vm3"])
 
-        # test override (from command line)
-
+    def test_selected_vms_overwrite(self):
+        """Test overwritten (from command line) vm selection."""
         self.config["params"] += ["only_vm1=Fedora", "only_vm2=Win10"]
         cmd.params_from_cmd(self.config)
         self.assertEqual(self.config["vm_strs"], self.config["available_vms"])
@@ -43,11 +43,21 @@ class CmdParserTest(Test):
         self.assertIn("only Win10", self.config["vm_strs"]["vm2"])
         self.assertIn("only Ubuntu", self.config["vm_strs"]["vm3"])
 
+        # restrict further
         self.config["params"] += ["vms=vm2", "only_vm2=Win7"]
         cmd.params_from_cmd(self.config)
         self.assertEqual(sorted(self.config["available_vms"].keys()), ["vm1", "vm2", "vm3"])
         self.assertEqual(sorted(self.config["vm_strs"].keys()), ["vm2"])
         self.assertIn("only Win7", self.config["vm_strs"]["vm2"])
+
+    def test_selected_vms_unrestricted(self):
+        """Test unrestricted (overwritten from command line) vm variants selection."""
+        self.config["params"] += ["only_vm1=", "only_vm2=Win10"]
+        cmd.params_from_cmd(self.config)
+        self.assertEqual(self.config["vm_strs"], self.config["available_vms"])
+        self.assertEqual("", self.config["vm_strs"]["vm1"])
+        self.assertIn("only Win10", self.config["vm_strs"]["vm2"])
+        self.assertIn("only Ubuntu", self.config["vm_strs"]["vm3"])
 
     def test_selected_vms_invalid(self):
         base_params = self.config["params"]

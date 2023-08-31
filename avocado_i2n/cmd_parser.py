@@ -89,7 +89,8 @@ def params_from_cmd(config):
                     # escape defaults for this vm and use the command line
                     use_vms_default[vm_name] = False
                     # main vm restriction part
-                    vm_strs[vm_name] += "%s %s\n" % (key.replace("_%s" % vm_name, ""), value)
+                    vm_str = "%s %s\n" % (key.replace("_%s" % vm_name, ""), value) if value else ""
+                    vm_strs[vm_name] += vm_str
         # NOTE: comma in a parameter sense implies the same as space in config file
         elif key == "vms":
             # NOTE: no restrictions of the required vms are allowed during tests since
