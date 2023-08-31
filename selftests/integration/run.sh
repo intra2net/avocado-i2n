@@ -58,7 +58,7 @@ echo
 echo "Perform a full sample test suite run"
 test_slots="101,102,103,104,105"
 test_sets="leaves"
-test_options="cartgraph_verbose_level=0"
+test_options="cartgraph_verbose_level=0 only_vm1="
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots=$test_slots only=$test_sets $test_options
 
 # custom checks
@@ -75,12 +75,12 @@ echo "Check if all containers have identical and synced states after the run"
 ims="mnt/local/images"
 containers="$(printf $test_slots | sed "s/,/ /g")"
 for cid in $containers; do
-    diff -r /$ims/c101/rootfs/$ims /$ims/c$cid/rootfs/$ims -x el8-64* -x win10-64* -x vm3
+    diff -r /$ims/c101/rootfs/$ims /$ims/c$cid/rootfs/$ims -x el8-64* -x f33-64* -x win10-64* -x vm3
 done
 # verify that either vm1/vm2 shared pool doesn't exit or is empty for the validity of our tests
 ls -A1q /mnt/local/images/shared/vm1-* 2>/dev/null | grep -q . && exit 1
 ls -A1q /mnt/local/images/shared/vm2-* 2>/dev/null | grep -q . && exit 1
-ls -A1q /mnt/local/images/shared/vm3-* | grep -q . || exit 1
+ls -A1q /mnt/local/images/shared/vm3* | grep -q . || exit 1
 
 echo
 echo "Check replay and overall test reruns behave as expected"
