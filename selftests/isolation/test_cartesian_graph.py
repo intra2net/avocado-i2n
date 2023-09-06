@@ -257,7 +257,7 @@ class CartesianNodeTest(Test):
         self.assertEqual(node.params["os_variant_vm2"], net.params["os_variant_vm2"])
         self.assertEqual(node.params["os_variant_vm3"], net.params["os_variant_vm3"])
 
-    def test_parse_node_from_object_invalid(self):
+    def test_parse_node_from_object_invalid_object_type(self):
         """Test correctly parsed node is not possible from an already parsed vm object."""
         test_objects = self.loader.parse_objects(self.config["param_dict"],
                                                  {"vm1": self.config["vm_strs"]["vm1"]})
@@ -266,6 +266,17 @@ class CartesianNodeTest(Test):
         vm = vms[0]
         with self.assertRaises(ValueError):
             self.loader.parse_node_from_object(vm, self.config["param_dict"])
+
+    def test_parse_node_from_object_invalid_object_mix(self):
+        """Test correctly parsed node is not possible from incompatible vm variants."""
+        test_objects = self.loader.parse_objects(self.config["param_dict"],
+                                                 {"vm1": self.config["vm_strs"]["vm1"], "vm2": "only Win7\n"})
+        nets = [o for o in test_objects if o.key == "nets"]
+        self.assertEqual(len(nets), 1)
+        net = nets[0]
+        with self.assertRaises(param.EmptyCartesianProduct):
+            self.loader.parse_node_from_object(net, self.config["param_dict"],
+                                               "only all..tutorial3.remote.object.control.decorator.util\n")
 
     def test_parse_nodes(self):
         """Test for correctly parsed test nodes from graph retrievable test objects."""
@@ -294,24 +305,27 @@ class CartesianNodeTest(Test):
         self.config["tests_str"] = "only all\nonly tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"],
-                                               {"vm1": "", "vm2": "only Win7\n"})
+                                               {"vm1": "", "vm2": ""})
         graph.nodes = []
         test_objects = graph.objects
 
         nets = [o for o in test_objects if o.key == "nets" if "vm1." in o.params["name"] and "vm2." in o.params["name"]]
-        self.assertEqual(len(nets), 2)
-        self.assertIn("qemu_kvm_centos", nets[0].params["name"])
-        self.assertIn("qemu_kvm_fedora", nets[1].params["name"])
-        self.assertIn("qemu_kvm_windows_7", nets[0].params["name"])
-        self.assertIn("qemu_kvm_windows_7", nets[1].params["name"])
+        self.assertEqual(len(nets), 4)
+        self.assertRegex(nets[0].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_10")
+        self.assertRegex(nets[1].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_7")
+        self.assertRegex(nets[2].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_10")
+        self.assertRegex(nets[3].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_7")
         nodes = self.loader.parse_nodes(graph, self.config["param_dict"], self.config["tests_str"])
-        self.assertEqual(len(nodes), 18)
-        self.assertNotIn("only_vm1", nodes[0].params)
-        self.assertNotIn("only_vm1", nodes[1].params)
-        self.assertIn(nets[0].params["name"], nodes[0].params["name"])
-        self.assertIn(nets[1].params["name"], nodes[1].params["name"])
-        for i in range(2, 18):
+        self.assertEqual(len(nodes), 20)
+        for i in range(0, 4):
+            self.assertIn("no_remote", nodes[i].params["name"])
+            self.assertNotIn("only_vm1", nodes[i].params)
+            self.assertNotIn("only_vm2", nodes[i].params)
+            self.assertIn(nets[i].params["name"], nodes[i].params["name"])
+        for i in range(4, 20):
+            self.assertIn("remote", nodes[i].params["name"])
             self.assertEqual(nodes[i].params["only_vm1"], "qemu_kvm_centos")
+            self.assertEqual(nodes[i].params["only_vm2"], "qemu_kvm_windows_10")
             self.assertIn(nets[0].params["name"], nodes[i].params["name"])
 
     def test_parse_nodes_compatibility_separate(self):

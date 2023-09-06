@@ -221,6 +221,8 @@ class CartesianLoader(Resolver):
         :returns: parsed test node for the object
         :rtype: :py:class:`TestNode`
         :raises: :py:class:`ValueError` if the node is parsed from a non-net object
+        :raises: :py:class:`param.EmptyCartesianProduct` if a vm variant is not compatible
+                 with another vm variant within the same test node
         """
         if test_object.key != "nets":
             raise ValueError("Test node could be parsed only from test objects of the "
@@ -232,6 +234,13 @@ class CartesianLoader(Resolver):
                                 ovrwrt_dict=param_dict)
         test_node = TestNode(prefix, config, test_object)
         test_node.regenerate_params()
+        for vm_name in test_node.params.objects("vms"):
+            if test_node.params.get(f"only_{vm_name}"):
+                for vm_variant in test_node.params[f"only_{vm_name}"].split(","):
+                    if vm_variant in test_node.params["name"]:
+                        break
+                else:
+                    raise param.EmptyCartesianProduct("Mutually incompatible vm variants")
         return test_node
 
     def parse_nodes(self, test_graph, param_dict=None, nodes_str="", prefix="", verbose=False):
