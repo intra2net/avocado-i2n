@@ -949,8 +949,8 @@ class CartesianGraphTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 4)
 
-    def test_permanent_object_and_simple_cloning(self):
-        """Test a complete test run including complex setup."""
+    def test_cloning_simple_permanent_object(self):
+        """Test a complete test run including complex setup that involves permanent vms and cloning."""
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_get\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -1007,7 +1007,84 @@ class CartesianGraphTest(Test):
         # root state of a permanent vm is not synced from a single worker to itself
         self.assertEqual(DummyStateControl.asserted_states["get"]["ready"][self.shared_pool], 0)
 
-    def test_deep_cloning(self):
+    def test_cloning_simple_cross_object(self):
+        """Test a complete test run with multi-variant objects where cloning should not be affected."""
+        self.config["tests_str"] = "only leaves\n"
+        self.config["tests_str"] += "only tutorial_get,tutorial_gui\n"
+        self.config["vm_strs"]["vm1"] = ""
+        self.config["vm_strs"]["vm2"] = ""
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        DummyStateControl.asserted_states["check"]["root"] = {self.shared_pool: True}
+        DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
+                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
+        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
+        DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
+        # test syncing also for permanent vms
+        DummyStateControl.asserted_states["get"]["ready"] = {self.shared_pool: 0}
+        # TODO: currently not used due to excluded self-sync but one that is not the correct implementation
+        DummyStateControl.asserted_states["get"].update({"guisetup.noop": {self.shared_pool: 0}, "guisetup.clicked": {self.shared_pool: 0},
+                                                         "getsetup.noop": {self.shared_pool: 0}, "getsetup.clicked": {self.shared_pool: 0},
+                                                         "getsetup.guisetup.noop": {self.shared_pool: 0},
+                                                         "getsetup.guisetup.clicked": {self.shared_pool: 0}})
+        DummyStateControl.asserted_states["unset"] = {"guisetup.noop": {self.shared_pool: 0},
+                                                      "getsetup.noop": {self.shared_pool: 0},
+                                                      "ready": {self.shared_pool: 0}}
+        DummyTestRun.asserted_tests = [
+            # automated setup of vm1 of CentOS variant
+            {"shortname": "^internal.automated.linux_virtuser.vm1.+CentOS", "vms": "^vm1$"},
+            # automated setup of vm2 of Win7 variant
+            {"shortname": "^internal.automated.windows_virtuser.vm2.+Win7", "vms": "^vm2$"},
+            # first (noop) parent GUI setup dependency through vm2 of Win7 variant
+            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
+            # extra dependency dependency through vm1 of CentOS variant
+            {"shortname": "^internal.automated.connect.vm1.+CentOS", "vms": "^vm1$"},
+            # first (noop) explicit actual test of CentOS+Win7
+            {"shortname": "^leaves.tutorial_get.explicit_noop..+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.noop"},
+            # first (noop) duplicated actual test of CentOS+Win7
+            {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
+            # automated setup of vm2 of Win10 variant
+            {"shortname": "^internal.automated.windows_virtuser.vm2.+Win10", "vms": "^vm2$"},
+            # first (noop) parent GUI setup dependency through vm2 of Win10 variant
+            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
+            # first (noop) explicit actual test of CentOS+Win10
+            {"shortname": "^leaves.tutorial_get.explicit_noop.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.noop"},
+            # first (noop) duplicated actual test of CentOS+Win10
+            {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
+            # second (clicked) parent GUI setup dependency through vm2 of Win7 variant
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+            # second (clicked) explicit actual test of CentOS+Win7
+            {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.clicked"},
+            # second (clicked) duplicated actual test of CentOS+Win7
+            {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
+            # second (clicked) parent GUI setup dependency through vm2 of Win10 variant
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+            # second (clicked) explicit actual test of CentOS+Win10
+            {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.clicked"},
+            # second (clicked) duplicated actual test of CentOS+Win10
+            {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
+            # automated setup of vm1 of Fedora variant, required via extra "tutorial_gui" restriction
+            {"shortname": "^internal.automated.linux_virtuser.vm1.+Fedora", "vms": "^vm1$"},
+            # GUI test for vm1 of Fedora variant which is not first (noop) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
+            # GUI test for vm1 of Fedora variant which is not first (noop) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
+            # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+            # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        # expect four cleanups of four different variant product states
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 4)
+        # expect two cleanups of two different variant product states (vm1 variant restricted)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.noop"][self.shared_pool], 2)
+
+    def test_cloning_deep(self):
         """Test for correct deep cloning."""
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_finale\n"

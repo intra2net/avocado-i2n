@@ -590,6 +590,15 @@ class CartesianLoader(Resolver):
         get_parent = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
                                         subset=graph.get_nodes_by("name",
                                                                   "(\.|^)%s(\.|$)" % setup_obj_resr))
+        # the vm whose dependency we are parsing may not be restrictive enough so reuse optional other
+        # objects variants of the current test node - cloning is only supported in the node restriction
+        if len(get_parent) > 1:
+            for test_object in test_node.objects:
+                object_parents = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % test_object.params["name"],
+                                                    subset=get_parent)
+                get_parent = object_parents if len(object_parents) > 0 else get_parent
+            if len(get_parent) > 0:
+                return get_parent, []
         if len(get_parent) == 1:
             return get_parent, []
         setup_dict = {} if param_dict is None else param_dict.copy()
