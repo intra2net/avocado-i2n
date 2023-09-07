@@ -565,42 +565,54 @@ class CartesianGraphTest(Test):
         to_traverse = [self.runner.run_traversal(graph, params, s) for s in self.runner.slots]
         loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse), None))
 
-    def test_sanity(self):
+    def test_object_node_incompatible(self):
+        """Test incompatibility of parsed tests and pre-parsed available objects."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
+        with self.assertRaises(param.EmptyCartesianProduct):
+            self.loader.parse_object_nodes(self.config["param_dict"],
+                                           self.config["tests_str"], self.config["vm_strs"],
+                                           prefix=self.prefix)
+
+    def test_object_node_intersection(self):
+        """Test restricted vms-tests nonempty intersection of parsed tests and pre-parsed available objects."""
+        self.config["tests_str"] += "only tutorial1,tutorial_get\n"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
+        nodes, objects = self.loader.parse_object_nodes(self.config["param_dict"],
+                                                        self.config["tests_str"], self.config["vm_strs"],
+                                                        prefix=self.prefix)
+        object_suffixes = [o.suffix for o in objects]
+        self.assertIn("vm1", object_suffixes)
+        # due to lacking vm3 tutorial_get will not be parsed and the only already parsed vm remains vm1
+        self.assertNotIn("vm2", object_suffixes)
+        # vm3 is fully lacking
+        self.assertNotIn("vm3", object_suffixes)
+        for n in nodes:
+            if "tutorial1" in n.params["name"]:
+                break
+        else:
+            raise AssertionError("The tutorial1 variant must be present in the object-node intersection")
+        for n in nodes:
+            if "tutorial_get" in n.params["name"]:
+                raise AssertionError("The tutorial_get variant must be skipped since vm3 is not available")
+
+    def test_graph_sanity(self):
         """Test generic usage and composition."""
         self.config["tests_str"] += "only tutorial1\n"
+        nodes, objects = self.loader.parse_object_nodes(self.config["param_dict"],
+                                                        self.config["tests_str"], self.config["vm_strs"],
+                                                        prefix=self.prefix)
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
+        self.assertEqual(set(o.suffix for o in graph.objects), set(o.suffix for o in objects))
+        self.assertEqual(set(n.prefix for n in graph.nodes).intersection(n.prefix for n in nodes),
+                         set(n.prefix for n in nodes))
 
         repr = str(graph)
         self.assertIn("[cartgraph]", repr)
         self.assertIn("[object]", repr)
         self.assertIn("[node]", repr)
-
-    def test_object_node_incompatible(self):
-        """Test incompatibility of parsed tests and preselected available objects."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
-        with self.assertRaises(param.EmptyCartesianProduct):
-            self.loader.parse_object_trees(self.config["param_dict"],
-                                           self.config["tests_str"], self.config["vm_strs"],
-                                           prefix=self.prefix)
-
-        # restrict to vms-tests intersection if the same is nonempty
-        self.config["tests_str"] += "only tutorial1,tutorial_get\n"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "set_state_images": "^install$"},
-            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_images": "^install$", "set_state_images": "^customize$"},
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "set_state_vms": "^on_customize$"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state_vms": "^on_customize$"},
-        ]
-        self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_shared_root_from_object_trees(self):
         """Test correct expectation of separately adding a shared root to a graph of disconnected object trees."""
