@@ -114,5 +114,6 @@ class CmdParserTest(Test):
         with self.assertRaises(param.EmptyCartesianProduct):
             cmd.params_from_cmd(self.config)
 
+
 if __name__ == '__main__':
     unittest.main()
