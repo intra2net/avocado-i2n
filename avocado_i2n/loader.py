@@ -237,7 +237,8 @@ class CartesianLoader(Resolver):
         for vm_name in test_node.params.objects("vms"):
             if test_node.params.get(f"only_{vm_name}"):
                 for vm_variant in test_node.params[f"only_{vm_name}"].split(","):
-                    if vm_variant in test_node.params["name"]:
+                    # TODO: have to check the separate objects!
+                    if vm_variant.strip() in test_node.params["name"]:
                         break
                 else:
                     raise param.EmptyCartesianProduct("Mutually incompatible vm variants")
