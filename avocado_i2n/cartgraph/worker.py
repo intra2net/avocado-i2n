@@ -30,6 +30,7 @@ INTERFACE
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 
+from . import NetObject
 from .. import params_parser as param
 
 
@@ -66,13 +67,21 @@ class TestSwarm(TestEnvironment):
 class TestWorker(TestEnvironment):
     """A wrapper for a test worker traversing the graph."""
 
-    def __init__(self, id):
+    def params(self):
+        """Parameters (cache) property."""
+        return self.net.params
+    params = property(fget=params)
+
+    def __init__(self, id_net: NetObject):
         """
         Construct a test worker (execution environment) for any test nodes (tests).
 
+        :param id_net: flat test net object to get configuration from
+
         The rest of the arguments are inherited from the base class.
         """
-        super().__init__(id)
+        super().__init__(id_net.params["shortname"])
+        self.net = id_net
         self.spawner = "lxc"
 
     def __repr__(self):

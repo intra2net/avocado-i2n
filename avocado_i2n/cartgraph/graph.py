@@ -34,6 +34,7 @@ import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 import collections
 
+from . import NetObject
 
 
 def set_graph_logging_level(level=20):
@@ -93,7 +94,7 @@ class TestGraph(object):
         """Construct the test graph."""
         self.objects = []
         self.nodes = []
-        self.workers = []
+        self.workers = {}
 
     def __repr__(self):
         dump = "[cartgraph] objects='%s' nodes='%s'" % (len(self.objects), len(self.nodes))
@@ -133,20 +134,17 @@ class TestGraph(object):
                 continue
             self.nodes.append(test_node)
 
-    def new_workers(self, workers: list[str] or str) -> None:
+    def new_workers(self, id_nets: list[NetObject] or NetObject) -> None:
         """
         Add new nodes excluding (old) repeating ones as ID.
 
-        :param workers: IDs for test workers
+        :param id_nets: flat network objects with environment configuration
         """
-        if not isinstance(workers, list):
-            workers = [workers]
-        for test_worker in workers:
-            # TODO: need to produce workers from initial parsing itself
-            if isinstance(test_worker, str):
-                from .worker import TestWorker
-                test_worker = TestWorker(test_worker)
-            self.workers.append(test_worker)
+        if not isinstance(id_nets, list):
+            id_nets = [id_nets]
+        for id_net in id_nets:
+            from .worker import TestWorker
+            self.workers[id_net.params["shortname"]] = TestWorker(id_net)
 
     """dumping functionality"""
     def load_setup_list(self, dump_dir, filename="setup_list"):

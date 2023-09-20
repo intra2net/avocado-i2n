@@ -27,21 +27,56 @@ class CartesianWorkerTest(Test):
         self.prefix = ""
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
-        self.runner = CartesianRunner()
+
+    def test_parse_flat_vm1(self):
+        """Test for correctly parsed objects of different object variants from a restriction."""
+        test_objects = self.loader.parse_flat_objects("vm1", "vms")
+        self.assertEqual(len(test_objects), 2)
+        self.assertRegex(test_objects[1].params["name"], r"vms.vm1\.qemu_kvm_centos.*CentOS.*")
+        self.assertEqual(test_objects[1].params["vms"], "vm1")
+        self.assertEqual(test_objects[1].params["os_variant"], "el8")
+        self.assertRegex(test_objects[0].params["name"], r"vms.vm1\.qemu_kvm_fedora.*Fedora.*")
+        self.assertEqual(test_objects[0].params["vms"], "vm1")
+        self.assertEqual(test_objects[0].params["os_variant"], "f33")
+
+    def test_parse_flat_net1(self):
+        """Test for correctly parsed objects of different object variants from a restriction."""
+        test_objects = self.loader.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"nets\.net1\.cluster1")
+        self.assertEqual(test_objects[0].params["nets"], "net1")
+        self.assertEqual(test_objects[0].params["cid"], "1")
+
+    def test_params(self):
+        """Test for correctly parsed and regenerated test worker parameters."""
+        self.config["tests_str"] += "only tutorial1\n"
+        # TODO: API is too inaccessible and this is true also for test_params of nodes and others - obtain simpler graph
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        graph.workers = {}
+        test_objects = self.loader.parse_flat_objects("net1", "nets")
+        graph.new_workers(test_objects[0])
+        self.assertEqual(len(graph.workers), 1)
+        test_worker = list(graph.workers.values())[0]
+        for key in test_worker.params.keys():
+            self.assertEqual(test_worker.net.params[key], test_worker.params[key],
+                            f"The values of key {key} {test_worker.net.params[key]}={test_worker.params[key]} must be the same")
 
     def test_sanity_in_graph(self):
         """Test generic usage and composition."""
-        self.config["param_dict"] = {"slots": "1"}
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        graph.new_workers("c1")
-        self.assertEqual(len(graph.workers), 1)
-
-        test_worker = graph.workers[0]
-        self.assertEqual("c1", test_worker.id)
-        self.assertIn("[worker]", str(test_worker))
+        self.assertEqual(len(graph.workers), 5)
+        for i, worker_id in enumerate(graph.workers):
+            self.assertEqual(f"net{i+1}", worker_id)
+            worker = graph.workers[worker_id]
+            self.assertEqual(worker_id, worker.id)
+            self.assertIn("[worker]", str(worker))
+            graph.new_workers(worker.net)
+        self.assertEqual(len(graph.workers), 5)
 
 
 class CartesianObjectTest(Test):
@@ -101,7 +136,7 @@ class CartesianObjectTest(Test):
         for vm in vms:
             self.assertEqual(vm.composites, [net])
             # besides object composition we should expect the joined component variants
-            self.assertIn(vm.params["name"], net.params["name"])
+            self.assertIn(vm.component_form, net.params["name"])
             # each joined component variant must be traceable back to the component object id
             self.assertEqual(vm.id, net.params[f"object_id_{vm.suffix}"])
 
@@ -366,7 +401,7 @@ class CartesianNodeTest(Test):
         graph.nodes = []
         test_objects = graph.objects
 
-        nets = [o for o in test_objects if o.key == "nets" if "vm1." in o.params["name"] and "vm2." in o.params["name"]]
+        nets = [o for o in test_objects if o.key == "nets" and "vm1." in o.params["name"] and "vm2." in o.params["name"]]
         self.assertEqual(len(nets), 4)
         self.assertRegex(nets[0].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_10")
         self.assertRegex(nets[1].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_7")

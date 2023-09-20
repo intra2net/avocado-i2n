@@ -37,7 +37,7 @@ from avocado.core.plugin_interfaces import Resolver
 from avocado.core.resolver import ReferenceResolution, ReferenceResolutionResult
 
 from . import params_parser as param
-from .cartgraph import TestGraph, TestNode, NetObject, VMObject, ImageObject
+from .cartgraph import *
 
 
 class CartesianLoader(Resolver):
@@ -60,6 +60,38 @@ class CartesianLoader(Resolver):
         super().__init__()
 
     """parsing functionality"""
+    def parse_flat_objects(self, suffix: str, category: str, restriction: str = "", params: dict[str, str] = None) -> list[TestObject]:
+        """
+        Parse a flat object for each variant of a suffix satisfying a restriction.
+
+        :param suffix: suffix to expand into variant objects
+        :param category: category of the suffix that will determine the type of the objects
+        :param restriction: restriction for the generated variants
+        :param params: additional parameters to add to or overwrite all objects' parameters
+        """
+        test_objects = []
+        params = {} if not params else params
+        restriction = category if not restriction else restriction
+        if category == "images":
+            raise TypeError("Multi-variant image test objects are not supported.")
+        object_class = NetObject if category == "nets" else VMObject
+
+        # pick a suffix and all its variants via join operation
+        config = param.Reparsable()
+        config.parse_next_batch(base_file=f"{category}.cfg",
+                                base_str=param.join_str({suffix: "only " + restriction + "\n"},
+                                                        param.ParsedDict(params).parsable_form()),
+                                ovrwrt_file=param.ovrwrt_file("objects"))
+        for d in config.get_parser().get_dicts():
+            variant_config = config.get_copy()
+            variant_config.parse_next_str("only " + d["name"])
+
+            test_object = object_class(suffix, variant_config)
+            test_object.regenerate_params()
+            test_objects += [test_object]
+
+        return test_objects
+
     def parse_object_variants(self, param_dict=None, object_strs=None, verbose=False):
         """
         Parse composite test objects with variants from joined component variants.
@@ -87,7 +119,7 @@ class CartesianLoader(Resolver):
 
         # all possible component object combinations for a given composite object
         config = param.Reparsable()
-        config.parse_next_batch(base_file="objects.cfg",
+        config.parse_next_batch(base_file="vms.cfg",
                                 base_str=param.join_str(object_strs, parsed_param_dict),
                                 # make sure we have the final word on parameters we use to identify objects
                                 base_dict={"main_vm": main_vm},
@@ -169,7 +201,8 @@ class CartesianLoader(Resolver):
         # TODO: this is only generalized up to the current value of the stateful object chain "nets vms images"
         test_objects = []
         suffix_variants = {}
-        for net_name in param.all_objects("nets"):
+        # TODO: temporary backwards compatibility by using a single hardcoded net1 value
+        for net_name in ["net1"]:
             net_vms = param.all_objects("vms", [net_name])
             for vm_name in net_vms:
                 if vm_name not in selected_vms:
@@ -371,6 +404,8 @@ class CartesianLoader(Resolver):
         tests each with connections to its dependencies (parents) and dependables (children).
         """
         graph = TestGraph()
+        for suffix in param.all_objects("nets"):
+            graph.new_workers(self.parse_flat_objects(suffix, "nets"))
 
         # parse leaves and discover necessary setup (internal nodes)
         leaves, stubs = self.parse_object_nodes(param_dict, nodes_str, object_strs,
@@ -545,7 +580,7 @@ class CartesianLoader(Resolver):
             # filtering for nets based on complete vm object variant names from the product
             reused_nets, filtered_nets = [], list(previous_nets)
             for vm_object in combination:
-                vm_restr = "(\.|^)" + vm_object.params["name"] + "(\.|$)"
+                vm_restr = "(\.|^)" + vm_object.component_form + "(\.|$)"
                 filtered_nets = graph.get_objects_by(param_val=vm_restr, subset=filtered_nets)
             # additional filtering for nets based on dropped vm suffixes
             for get_net in filtered_nets:
@@ -583,7 +618,7 @@ class CartesianLoader(Resolver):
         object_params = test_object.object_typed_params(test_node.params)
         # objects can appear within a test without any prior dependencies
         setup_restr = object_params["get"]
-        setup_obj_resr = test_object.id.split("-", maxsplit=1)[1]
+        setup_obj_resr = test_object.component_form
         logging.debug("Cartesian setup of %s for %s uses restriction %s",
                       test_object.long_suffix, test_node.params["shortname"], setup_restr)
 
@@ -595,7 +630,7 @@ class CartesianLoader(Resolver):
         # objects variants of the current test node - cloning is only supported in the node restriction
         if len(get_parent) > 1:
             for test_object in test_node.objects:
-                object_parents = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % test_object.params["name"],
+                object_parents = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % test_object.component_form,
                                                     subset=get_parent)
                 get_parent = object_parents if len(object_parents) > 0 else get_parent
             if len(get_parent) > 0:

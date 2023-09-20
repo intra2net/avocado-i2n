@@ -47,6 +47,10 @@ class TestObject(object):
         return self.config.steps[-1].parsable_form()
     final_restr = property(fget=final_restr)
 
+    def component_form(self):
+        return self.params["name"].replace(self.key + ".", "")
+    component_form = property(fget=component_form)
+
     def long_suffix(self):
         """Sufficiently unique suffix to identify a variantless test object."""
         return self._long_suffix
@@ -75,6 +79,8 @@ class TestObject(object):
 
         self.composites = []
         self.components = []
+
+        self.key = "objects"
 
     def __repr__(self):
         shortname = self.params.get("shortname", "<unknown>")
@@ -180,6 +186,10 @@ class ImageObject(TestObject):
         assert len(self.composites) == 1, "Image objects need a unique composite"
         return self.long_suffix + "-" + self.composites[0].params["name"]
     id = property(fget=id)
+
+    def component_form(self):
+        return self.composites[0].component_form
+    component_form = property(fget=component_form)
 
     def __init__(self, name, config):
         """

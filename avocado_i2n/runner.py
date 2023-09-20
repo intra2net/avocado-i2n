@@ -396,8 +396,8 @@ class CartesianRunner(RunnerInterface):
                         self.skip_tests += [test_details["name"]]
 
         self.slots = params.get("slots", "").split(" ")
-        graph.new_workers(self.slots)
-        for worker in graph.workers:
+        assert len(self.slots) <= len(graph.workers.keys()), f"Slots ({len(self.slots)}) are not as many as the workers ({len(graph.workers.keys())})"
+        for worker in graph.workers.values():
             if not worker.set_up():
                 raise RuntimeError(f"Failed to start environment {worker.id}")
 
