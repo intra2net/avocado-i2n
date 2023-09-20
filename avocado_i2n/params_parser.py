@@ -475,9 +475,9 @@ def join_str(variant_strs, base_str=""):
     :rtype: str
     """
     objects, variant_str = "", ""
-    for params_object, variant in variant_strs.items():
+    for suffix, variant in variant_strs.items():
         subvariant = "".join(["    " + l + "\n" for l in variant.rstrip("\n").split("\n")])
-        variant_str += "%s:\n%s" % (params_object, subvariant)
-        objects += " " + params_object
+        variant_str += "%s:\n%s" % (suffix, subvariant)
+        objects += " " + suffix
     variant_str += "join" + objects + "\n"
     return base_str + variant_str

@@ -23,7 +23,17 @@ class ParamsParserTest(Test):
     def tearDown(self):
         pass
 
+    def test_join_str(self):
+        """Test a resulting join string satifies certain syntactic form."""
+        output = param.join_str({"obj1": "only a", "obj2": "param1 = A\n"}, base_str="")
+        self.assertEqual(output, "obj1:\n"
+                                 "    only a\n"
+                                 "obj2:\n"
+                                 "    param1 = A\n"
+                                 "join obj1 obj2\n")
+
     def test_parser_params(self):
+        """Test that parameters obtain from parser or directly are the same."""
         self.base_str += "only tutorial1\n"
         config = param.Reparsable()
         config.parse_next_batch(base_file=self.base_file,
