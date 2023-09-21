@@ -23,6 +23,7 @@ import os
 import asyncio
 
 from avocado.core.output import LOG_UI, LOG_JOB as logging
+
 from avocado_i2n import params_parser as param
 from avocado_i2n.cartgraph import TestGraph
 from avocado_i2n.intertest_setup import with_cartesian_graph
@@ -52,6 +53,7 @@ def permubuntu(config, tag=""):
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
     graph = TestGraph()
+    graph.new_workers(l.parse_workers(config["param_dict"]))
     graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
     for test_object in graph.objects:
         if test_object.key != "vms":
@@ -75,7 +77,5 @@ def permubuntu(config, tag=""):
         graph.nodes += [test_node]
 
     l.parse_shared_root_from_object_trees(graph, config["param_dict"])
-    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
-    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                                 r.job.timeout or None))
+    r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished permanent vm setup")

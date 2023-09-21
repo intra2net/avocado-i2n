@@ -115,7 +115,6 @@ def new_job(config):
         loader, runner = config["graph"].l, config["graph"].r
         loader.logdir = job_instance.logdir
         runner.job = job_instance
-        runner.slots = config["param_dict"].get("slots", "").split(" ")
 
         yield job_instance
 
@@ -311,13 +310,12 @@ def update(config, tag=""):
                 raise ValueError(f"Could not identify a test node from {vm_name}'s from_state='{from_state}', "
                                  f"is it compatible with the default or specified remove_set?")
 
+        graph.new_workers(l.parse_workers(config["param_dict"]))
         graph.objects += vm_graph.objects
         graph.nodes += vm_graph.nodes
 
     l.parse_shared_root_from_object_trees(graph, config["param_dict"])
-    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
-    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                                 r.job.timeout or None))
+    r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished updating cache")
 
 
@@ -669,13 +667,12 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     tests, objects = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one %s test variant from %s" % (verb[2], tests)
     graph = TestGraph()
+    graph.new_workers(l.parse_workers(config["param_dict"]))
     graph.objects = objects
     graph.nodes = [TestNode(tag, tests[0].config, objects[-1])]
     l.parse_shared_root_from_object_trees(graph, config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: True)
-    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
-    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                                 r.job.timeout or None))
+    r.run_workers(graph, config["param_dict"])
     LOG_UI.info("%s complete", verb[3])
 
 
@@ -695,6 +692,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
                 ", ".join(selected_vms), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form().rstrip("\n"))
     graph = TestGraph()
+    graph.new_workers(l.parse_workers(config["param_dict"]))
     graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
     for test_object in graph.objects:
         if test_object.key != "vms":
@@ -714,9 +712,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
 
     l.parse_shared_root_from_object_trees(graph, config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: slot not in self.workers)
-    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
-    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                                 r.job.timeout or None))
+    r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished %s", operation)
 
 

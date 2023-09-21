@@ -285,7 +285,7 @@ class CartesianLoader(Resolver):
         :param test_graph: test graph of already parsed test objects used to also
                            validate test object uniqueness and main test object
         :type test_graph: :py:class:`TestGraph`
-        :param param_dict: runtime parameters used for extra customization
+        :param param_dict: extra parameters to be used as overwrite dictionary
         :type param_dict: {str, str} or None
         :param str nodes_str: block of node-specific variant restrictions
         :param str prefix: extra name identifier for the test to be run
@@ -387,6 +387,32 @@ class CartesianLoader(Resolver):
 
         return test_nodes, test_objects
 
+    def parse_workers(self, param_dict: dict[str, str] = None) -> list[TestWorker]:
+        """
+        Parse all workers with special strings provided by the runtime.
+
+        :param param_dict: extra parameters to be used as overwrite dictionary
+        :returns: parsed test workers sorted by name with used ones having runtime strings
+        """
+        test_workers = []
+        for suffix in param.all_objects("nets"):
+            for flat_net in self.parse_flat_objects(suffix, "nets", params=param_dict):
+                test_workers += [TestWorker(flat_net)]
+        slot_workers = sorted(test_workers, key=lambda x: x.params["name"])
+
+        TestWorker.run_slots = {}
+
+        # TODO: slots is runtime parameter to deprecate for the sake of overwritable configuration
+        slots = param_dict.get("slots", "").split(" ")
+        for i in range(min(len(slots), len(slot_workers))):
+            env_net, env_name, env_type = TestWorker.slot_attributes(slots[i])
+            if env_net not in TestWorker.run_slots:
+                TestWorker.run_slots[env_net] = {}
+            TestWorker.run_slots[env_net][env_name] = env_type
+            slot_workers[i].params["runtime_str"] = slots[i]
+
+        return slot_workers
+
     def parse_object_trees(self, param_dict=None, nodes_str="", object_strs=None,
                            prefix="", verbose=False, with_shared_root=True):
         """
@@ -404,8 +430,7 @@ class CartesianLoader(Resolver):
         tests each with connections to its dependencies (parents) and dependables (children).
         """
         graph = TestGraph()
-        for suffix in param.all_objects("nets"):
-            graph.new_workers(self.parse_flat_objects(suffix, "nets"))
+        graph.new_workers(self.parse_workers(param_dict))
 
         # parse leaves and discover necessary setup (internal nodes)
         leaves, stubs = self.parse_object_nodes(param_dict, nodes_str, object_strs,

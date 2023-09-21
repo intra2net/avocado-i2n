@@ -26,7 +26,6 @@ def new_job(config):
     loader, runner = config["graph"].l, config["graph"].r
     loader.logdir = job.logdir
     runner.job = job
-    runner.slots = config["param_dict"].get("slots", "localhost").split(" ")
 
     yield job
 
@@ -34,7 +33,8 @@ def new_job(config):
 @mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
 @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
-@mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
+@mock.patch('avocado_i2n.cartgraph.worker.TestWorker.set_up', mock.MagicMock())
+@mock.patch('avocado_i2n.runner.SpawnerDispatcher', mock.MagicMock())
 @mock.patch.object(CartesianRunner, 'run_test_task', DummyTestRun.mock_run_test_task)
 class IntertestSetupTest(Test):
 

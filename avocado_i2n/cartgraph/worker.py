@@ -67,6 +67,8 @@ class TestSwarm(TestEnvironment):
 class TestWorker(TestEnvironment):
     """A wrapper for a test worker traversing the graph."""
 
+    run_slots = {}
+
     def params(self):
         """Parameters (cache) property."""
         return self.net.params
@@ -82,10 +84,37 @@ class TestWorker(TestEnvironment):
         """
         super().__init__(id_net.params["shortname"])
         self.net = id_net
-        self.spawner = "lxc"
+        self.spawner = None
+
+        # TODO: slots is runtime parameter to deprecate for the sake of overwritable configuration
+        slots = id_net.params.get("slots", "").split(" ")
+        index = int(id_net.params["nets"].replace("net", "")) - 1
+        env_id = slots[index] if index < len(slots) else ""
+        # env_net = cluster name, env_name = worker name, env_type = worker spawner
+        env_net, env_name, env_type = TestWorker.slot_attributes(env_id)
+        self.params["nets_gateway"] = env_net
+        self.params["nets_host"] = env_name
+        self.params["nets_spawner"] = env_type
 
     def __repr__(self):
-        return f"[worker] id='{self.id}', spawner='{self.spawner}'"
+        return f"[worker] id='{self.id}', spawner='{self.params['nets_spawner']}'"
+
+    @staticmethod
+    def slot_attributes(env_id: str) -> (str, str, str):
+        env_tuple = tuple(env_id.split("/"))
+        if len(env_tuple) == 1:
+            env_net = ""
+            env_name = "c" + env_tuple[0] if env_tuple[0] else ""
+            # NOTE: at present handle empty environment id (lack of slots) as an indicator
+            # of using non-isolated serial runs via the old process environment spawner
+            env_type = "lxc" if env_name else "process"
+        elif len(env_tuple) == 2:
+            env_net = env_tuple[0]
+            env_name = env_tuple[1]
+            env_type = "remote"
+        else:
+            raise ValueError(f"Environment ID {env_id} could not be parsed")
+        return env_net, env_name, env_type
 
     def set_up(self) -> bool:
         """
@@ -94,13 +123,14 @@ class TestWorker(TestEnvironment):
         :returns: whether the environment is available after current or previous start
         :raises: :py:class:`ValueError` when environment ID could not be parsed
         """
-        env_tuple = tuple(self.id.split("/"))
+        logging.info(f"Setting up worker {self.id} environment")
+        env_tuple = tuple(self.params["runtime_str"].split("/"))
         if len(env_tuple) == 1:
             if env_tuple[0] == "":
                 logging.debug("Serial runs do not have any bootable environment")
                 return True
             import lxc
-            cid = "c" + self.id
+            cid = "c" + env_tuple[0]
             container = lxc.Container(cid)
             if not container.running:
                 logging.info(f"Starting bootable environment {cid}")

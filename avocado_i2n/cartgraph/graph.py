@@ -34,7 +34,7 @@ import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 import collections
 
-from . import NetObject
+from . import TestObject, TestNode, TestWorker
 
 
 def set_graph_logging_level(level=20):
@@ -104,12 +104,11 @@ class TestGraph(object):
             dump = "%s\n\t%s" % (dump, str(test_node))
         return dump
 
-    def new_objects(self, objects):
+    def new_objects(self, objects: list[TestObject] or TestObject) -> None:
         """
         Add new objects excluding (old) repeating ones as ID.
 
         :param objects: candidate test objects
-        :type objects: [:py:class:`TestObject`] or :py:class:`TestObject`
         """
         if not isinstance(objects, list):
             objects = [objects]
@@ -119,12 +118,11 @@ class TestGraph(object):
                 continue
             self.objects.append(test_object)
 
-    def new_nodes(self, nodes):
+    def new_nodes(self, nodes: list[TestNode] or TestNode) -> None:
         """
         Add new nodes excluding (old) repeating ones as ID.
 
         :param nodes: candidate test nodes
-        :type nodes: [:py:class:`TestNode`] or :py:class:`TestNode`
         """
         if not isinstance(nodes, list):
             nodes = [nodes]
@@ -134,17 +132,16 @@ class TestGraph(object):
                 continue
             self.nodes.append(test_node)
 
-    def new_workers(self, id_nets: list[NetObject] or NetObject) -> None:
+    def new_workers(self, workers: list[TestWorker] or TestWorker) -> None:
         """
-        Add new nodes excluding (old) repeating ones as ID.
+        Add new workers excluding (old) repeating ones as ID.
 
-        :param id_nets: flat network objects with environment configuration
+        :param workers: candidate test workers
         """
-        if not isinstance(id_nets, list):
-            id_nets = [id_nets]
-        for id_net in id_nets:
-            from .worker import TestWorker
-            self.workers[id_net.params["shortname"]] = TestWorker(id_net)
+        if not isinstance(workers, list):
+            workers = [workers]
+        for worker in workers:
+            self.workers[worker.params["shortname"]] = worker
 
     """dumping functionality"""
     def load_setup_list(self, dump_dir, filename="setup_list"):

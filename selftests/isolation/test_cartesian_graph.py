@@ -13,6 +13,7 @@ from unittest_utils import DummyTestRun, DummyStateControl
 from avocado_i2n import params_parser as param
 from avocado_i2n.loader import CartesianLoader
 from avocado_i2n.runner import CartesianRunner
+from avocado_i2n.cartgraph import *
 
 
 class CartesianWorkerTest(Test):
@@ -49,19 +50,34 @@ class CartesianWorkerTest(Test):
 
     def test_params(self):
         """Test for correctly parsed and regenerated test worker parameters."""
-        self.config["tests_str"] += "only tutorial1\n"
-        # TODO: API is too inaccessible and this is true also for test_params of nodes and others - obtain simpler graph
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
-        graph.workers = {}
-        test_objects = self.loader.parse_flat_objects("net1", "nets")
-        graph.new_workers(test_objects[0])
-        self.assertEqual(len(graph.workers), 1)
-        test_worker = list(graph.workers.values())[0]
+        self.config["param_dict"]["slots"] = "1 2 3 4 5"
+        test_workers = self.loader.parse_workers(self.config["param_dict"])
+        self.assertEqual(len(test_workers), 5)
+        test_worker = test_workers[0]
         for key in test_worker.params.keys():
             self.assertEqual(test_worker.net.params[key], test_worker.params[key],
                             f"The values of key {key} {test_worker.net.params[key]}={test_worker.params[key]} must be the same")
+            self.assertEqual(test_worker.params["nets_gateway"], "")
+            self.assertEqual(test_worker.params["nets_host"], "c1")
+            self.assertEqual(test_worker.params["nets_spawner"], "lxc")
+
+    def test_params_slots(self):
+        """Test environment setting and validation."""
+        self.config["param_dict"]["slots"] = "1 remote.com/2 "
+        test_workers = self.loader.parse_workers(self.config["param_dict"])
+        self.assertEqual(len(test_workers), 5)
+        test_workers = [w for w in test_workers if "runtime_str" in w.params]
+        self.assertEqual(len(test_workers), 3)
+        self.assertEqual(test_workers[0].params["nets_gateway"], "")
+        self.assertEqual(test_workers[0].params["nets_host"], "c1")
+        self.assertEqual(test_workers[0].params["nets_spawner"], "lxc")
+        self.assertEqual(test_workers[1].params["nets_gateway"], "remote.com")
+        self.assertEqual(test_workers[1].params["nets_host"], "2")
+        self.assertEqual(test_workers[1].params["nets_spawner"], "remote")
+        self.assertEqual(test_workers[2].params["nets_gateway"], "")
+        self.assertEqual(test_workers[2].params["nets_host"], "")
+        self.assertEqual(test_workers[2].params["nets_spawner"], "process")
+        self.assertEqual(TestWorker.run_slots, {"": {"": "process", "c1": "lxc"}, "remote.com": {"2": "remote"}})
 
     def test_sanity_in_graph(self):
         """Test generic usage and composition."""
@@ -507,26 +523,6 @@ class CartesianNodeTest(Test):
         self.assertEqual(test_node.params["images_vm2"], default_object_param,
                          "The second %s of %s should be preserved" % (default_object_param, test_node.prefix))
 
-    @mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
-    def test_set_environment(self):
-        """Test environment setting and validation."""
-        self.config["param_dict"]["slots"] = "1 remote.com/2 "
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
-
-        # should run a leaf test node visited for the first time
-        test_node = graph.get_node_by(param_val="tutorial1")
-        mock_job = mock.MagicMock()
-        mock_job.config = self.config
-        test_node.set_environment(mock_job, "1")
-        self.assertEqual(test_node.all_workers, {"": {"": "process", "c1": "lxc"}, "remote.com": {"2": "remote"}})
-        test_node.set_environment(mock_job, "remote.com/2")
-        test_node.set_environment(mock_job, "")
-        with self.assertRaises(RuntimeError):
-            test_node.set_environment(mock_job, "3")
-
     @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
     @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
     def test_default_run_decision(self):
@@ -536,29 +532,32 @@ class CartesianNodeTest(Test):
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
 
+        worker1 = mock.MagicMock(id="net1", params={"runtime_str": "1"})
+        worker2 = mock.MagicMock(id="net2", params={"runtime_str": "2"})
+
         # should run a leaf test node visited for the first time
         test_node = graph.get_node_by(param_val="tutorial1")
-        self.assertTrue(test_node.default_run_decision("1"))
+        self.assertTrue(test_node.default_run_decision(worker1))
 
         # should run an internal test node without available setup
         DummyStateControl.asserted_states["check"] = {"install": {self.shared_pool: False}}
         test_node = graph.get_node_by(param_val="install")
         test_node.add_location(self.shared_pool)
         test_node.params["nets_host"], test_node.params["nets_gateway"] = "1", ""
-        self.assertTrue(test_node.default_run_decision("1"))
+        self.assertTrue(test_node.default_run_decision(worker1))
         # should not run an internal test node with available setup
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
-        self.assertFalse(test_node.default_run_decision("1"))
+        self.assertFalse(test_node.default_run_decision(worker1))
 
         # should not run already visited internal test node by the same worker
-        test_node.workers.add("1")
-        self.assertFalse(test_node.default_run_decision("1"))
+        test_node.workers.add(worker1)
+        self.assertFalse(test_node.default_run_decision(worker1))
         # should not run already visited leaf test node by the same worker
         test_node = graph.get_node_by(param_val="tutorial1")
-        test_node.workers.add("1")
-        self.assertFalse(test_node.default_run_decision("1"))
+        test_node.workers.add(worker1)
+        self.assertFalse(test_node.default_run_decision(worker1))
         # should not run a leaf test node if run by other worker
-        self.assertFalse(test_node.default_run_decision("2"))
+        self.assertFalse(test_node.default_run_decision(worker2))
 
     @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
     def test_default_clean_decision(self):
@@ -569,24 +568,27 @@ class CartesianNodeTest(Test):
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
 
+        worker1 = mock.MagicMock(id="net1", params={"runtime_str": "1"})
+        worker2 = mock.MagicMock(id="net2", params={"runtime_str": "2"})
+
         # should clean a test node that is not reversible
         test_node = graph.get_node_by(param_val="explicit_clicked")
-        self.assertTrue(test_node.default_clean_decision("1"))
+        self.assertTrue(test_node.default_clean_decision(worker1))
 
         # should not clean a reversible test node that is not globally cleanup ready
         test_node = graph.get_node_by(param_val="explicit_noop")
-        test_node.all_workers = {"": {"1": "lxc", "2": "lxc"}}
-        self.assertFalse(test_node.default_clean_decision("1"))
-        test_node.workers.add("1")
-        self.assertFalse(test_node.default_clean_decision("1"))
+        TestWorker.run_slots = {"": {"1": "lxc", "2": "lxc"}}
+        self.assertFalse(test_node.default_clean_decision(worker1))
+        test_node.workers.add(worker1)
+        self.assertFalse(test_node.default_clean_decision(worker1))
         # should clean a reversible test node that is globally cleanup ready
-        test_node.workers.add("2")
-        self.assertTrue(test_node.default_clean_decision("1"))
+        test_node.workers.add(worker2)
+        self.assertTrue(test_node.default_clean_decision(worker1))
 
 
 @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
-@mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
+@mock.patch('avocado_i2n.runner.SpawnerDispatcher', mock.MagicMock())
 @mock.patch.object(CartesianRunner, 'run_test_task', DummyTestRun.mock_run_test_task)
 class CartesianGraphTest(Test):
 
@@ -620,13 +622,12 @@ class CartesianGraphTest(Test):
         self.job.config = self.config
         self.runner = CartesianRunner()
         self.runner.job = self.job
-        # TODO: migrate run slots to official workers composition as graph attributes
-        self.runner.slots = ["1"]
         self.runner.status_server = self.job
 
     def _run_traversal(self, graph, params):
         loop = asyncio.get_event_loop()
-        to_traverse = [self.runner.run_traversal(graph, params, s) for s in self.runner.slots]
+        slot_workers = sorted(list(graph.workers.values()), key=lambda x: x.params["name"])
+        to_traverse = [self.runner.run_traversal(graph, params, s) for s in slot_workers if "runtime_str" in s.params]
         loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse), None))
 
     def test_object_node_incompatible(self):
@@ -717,8 +718,7 @@ class CartesianGraphTest(Test):
 
     def test_one_leaf_serial(self):
         """Test traversal path of one test without any reusable setup and with a serial unisolated run."""
-        self.runner.slots = [""]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = ""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -735,8 +735,7 @@ class CartesianGraphTest(Test):
 
     def test_one_leaf_with_setup(self):
         """Test traversal path of one test with a reusable setup."""
-        self.runner.slots = [f"{i+1}" for i in range(4)]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -810,15 +809,14 @@ class CartesianGraphTest(Test):
 
     def test_one_leaf_with_occupation_timeout(self):
         """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
-        self.runner.slots += ["dead"]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] += " dead"
         self.config["param_dict"]["test_timeout"] = 1
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
         test_node = graph.get_node_by(param_val="tutorial1")
-        test_node.set_environment(self.job, "dead")
+        test_node.set_environment(graph.workers["net2"])
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
@@ -842,8 +840,7 @@ class CartesianGraphTest(Test):
 
     def test_two_objects_without_setup(self):
         """Test a two-object test run without a reusable setup."""
-        self.runner.slots = [f"{i+1}" for i in range(4)]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -873,8 +870,7 @@ class CartesianGraphTest(Test):
 
     def test_two_objects_with_setup(self):
         """Test a two-object test run with reusable setup."""
-        self.runner.slots = [f"{i+1}" for i in range(4)]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -895,8 +891,7 @@ class CartesianGraphTest(Test):
 
     def test_diverging_paths_with_external_setup(self):
         """Test a multi-object test run with reusable setup of diverging workers and shared pool or previous runs."""
-        self.runner.slots = [f"{i+1}" for i in range(4)]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] += "only tutorial1,tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -931,8 +926,7 @@ class CartesianGraphTest(Test):
 
     def test_diverging_paths_with_swarm_setup(self):
         """Test a multi-object test run where the workers will run multiple tests reusing their own local swarm setup."""
-        self.runner.slots = [f"{i+1}" for i in range(4)]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -973,13 +967,19 @@ class CartesianGraphTest(Test):
 
     def test_diverging_paths_with_remote_setup(self):
         """Test a multi-object test run where the workers will run multiple tests reusing also remote swarm setup."""
-        self.runner.slots = [f"{i+1}" for i in range(2)] + [f"host1/{i+1}" for i in range(2)] + [f"host2/22"]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(2)] + [f"host1/{i+1}" for i in range(2)] + [f"host2/22"])
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
+        workers = sorted(list(graph.workers.values()), key=lambda x: x.params["name"])
+        self.assertEqual(workers[0].params["nets_spawner"], "lxc")
+        self.assertEqual(workers[1].params["nets_spawner"], "lxc")
+        self.assertEqual(workers[2].params["nets_spawner"], "remote")
+        self.assertEqual(workers[3].params["nets_spawner"], "remote")
+        self.assertEqual(workers[4].params["nets_spawner"], "remote")
+
         # this is not what we test but simply a means to remove some initial nodes for simpler testing
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
