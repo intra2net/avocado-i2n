@@ -506,7 +506,7 @@ class TestNode(object):
                              location where the format must be "gateway/host:path"
         """
         # TODO: networks need further refactoring possibly as node environments
-        object_suffix = self.params["object_suffix"]
+        object_suffix = self.params.get("object_suffix", "net1")
         # discard parameters if we are not talking about any specific non-net object
         object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
         source_suffix = "_" + location

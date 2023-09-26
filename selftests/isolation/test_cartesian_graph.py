@@ -108,12 +108,9 @@ class CartesianObjectTest(Test):
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
 
-    def test_parse_object_variants_vm1(self):
+    def test_parse_composite_objects_vm1(self):
         """Test for correctly parsed vm objects from a vm string restriction."""
-        self.config["param_dict"] = {"object_suffix": "vm1", "object_type": "vms"}
-        self.config["vm_strs"] = {"vm1": ""}
-        test_objects = self.loader.parse_object_variants(self.config["param_dict"],
-                                                         self.config["vm_strs"])
+        test_objects = self.loader.parse_composite_objects("vm1", "vms", "")
         self.assertEqual(len(test_objects), 2)
         self.assertRegex(test_objects[1].params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*")
         self.assertEqual(test_objects[1].params["vms"], "vm1")
@@ -124,10 +121,9 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_objects[0].params["main_vm"], "vm1")
         self.assertEqual(test_objects[0].params["os_variant"], "f33")
 
-    def test_parse_object_variants_net1(self):
+    def test_parse_composite_objects_net1(self):
         """Test for a correctly parsed net object from joined vm string restrictions."""
-        test_objects = self.loader.parse_object_variants(self.config["param_dict"],
-                                                         self.config["vm_strs"])
+        test_objects = self.loader.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
         self.assertEqual(len(test_objects), 1)
         test_object = test_objects[0]
         self.assertRegex(test_object.params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*")
@@ -145,9 +141,8 @@ class CartesianObjectTest(Test):
         """Test for a correctly parsed net composite object from already parsed vm component objects."""
         vms = []
         for vm_name, vm_restriction in self.config["vm_strs"].items():
-            vms += self.loader.parse_object_variants({"object_suffix": vm_name, "object_type": "vms"},
-                                                     {vm_name: vm_restriction})
-        net = self.loader.parse_object_from_objects(vms, self.config["param_dict"])
+            vms += self.loader.parse_composite_objects(vm_name, "vms", vm_restriction)
+        net = self.loader.parse_object_from_objects("net1", "nets", vms)
         self.assertEqual(net.components, vms)
         for vm in vms:
             self.assertEqual(vm.composites, [net])
@@ -205,8 +200,7 @@ class CartesianObjectTest(Test):
 
     def test_params(self):
         """Test for correctly parsed and regenerated test object parameters."""
-        test_objects = self.loader.parse_object_variants(self.config["param_dict"],
-                                                         self.config["vm_strs"])
+        test_objects = self.loader.parse_composite_objects("net1", "nets", "", self.config["vm_strs"], params=self.config["param_dict"])
         self.assertEqual(len(test_objects), 1)
         test_object = test_objects[0]
         regenerated_params = test_object.object_typed_params(test_object.config.get_params())
@@ -787,7 +781,7 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        test_object = graph.get_object_by(param_key="object_suffix", param_val="^vm1$")
+        test_object = [o for o in graph.objects if o.suffix == "vm1"][0]
         test_node = graph.get_node_by(param_val="tutorial1")
         self.assertIn(test_object, test_node.objects)
         test_node.validate()
@@ -1059,7 +1053,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$"},
             {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$"},
             # first (noop) parent GUI setup dependency through vm2
-            {"shortname": "^tutorial_gui.client_noop.vm1.virtio_blk.smp2.virtio_net.CentOS.8.0.x86_64.vm2.smp2.Win10.x86_64", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
+            {"shortname": "^tutorial_gui.client_noop.vm1.+CentOS.8.0.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
             # extra dependency dependency through vm1
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$"},
             # first (noop) explicit actual test

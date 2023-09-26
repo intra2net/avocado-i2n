@@ -123,6 +123,11 @@ class TestObject(object):
 class NetObject(TestObject):
     """A Net wrapper for a test object used in one or more test nodes."""
 
+    def component_form(self):
+        # TODO: an unexpected order of joining in the Cartesian config requires us to override base property
+        return self.params["name"]
+    component_form = property(fget=component_form)
+
     def __init__(self, name, config):
         """
         Construct a test object (vm) for any test nodes (tests).

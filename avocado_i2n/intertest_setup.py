@@ -241,7 +241,7 @@ def update(config, tag=""):
         # install only on first image as RAID and other configurations are customizations
         image = vm.components[0]
         # parse individual net only for the current vm
-        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
+        net = l.parse_object_from_objects("net1", "nets", [vm], params=config["param_dict"])
 
         logging.info(f"Parsing a standard initial graph for '{to_state}'")
         setup_dict = config["param_dict"].copy()
@@ -699,7 +699,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
             continue
         vm = test_object
         # parse individual net only for the current vm
-        net = l.parse_object_from_objects([vm], param_dict=param_dict)
+        net = l.parse_object_from_objects("net1", "nets", [vm], params=config["param_dict"])
 
         setup_dict = config["param_dict"].copy()
         setup_dict.update(param_dict)

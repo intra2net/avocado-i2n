@@ -60,7 +60,8 @@ class CartesianLoader(Resolver):
         super().__init__()
 
     """parsing functionality"""
-    def parse_flat_objects(self, suffix: str, category: str, restriction: str = "", params: dict[str, str] = None) -> list[TestObject]:
+    def parse_flat_objects(self, suffix: str, category: str, restriction: str = "",
+                           params: dict[str, str] = None) -> list[TestObject]:
         """
         Parse a flat object for each variant of a suffix satisfying a restriction.
 
@@ -69,18 +70,19 @@ class CartesianLoader(Resolver):
         :param restriction: restriction for the generated variants
         :param params: additional parameters to add to or overwrite all objects' parameters
         """
-        test_objects = []
         params = {} if not params else params
+        params_str = param.ParsedDict(params).parsable_form()
         restriction = category if not restriction else restriction
+
         if category == "images":
             raise TypeError("Multi-variant image test objects are not supported.")
         object_class = NetObject if category == "nets" else VMObject
 
+        test_objects = []
         # pick a suffix and all its variants via join operation
         config = param.Reparsable()
         config.parse_next_batch(base_file=f"{category}.cfg",
-                                base_str=param.join_str({suffix: "only " + restriction + "\n"},
-                                                        param.ParsedDict(params).parsable_form()),
+                                base_str=param.join_str({suffix: "only " + restriction + "\n"}, params_str),
                                 ovrwrt_file=param.ovrwrt_file("objects"))
         for d in config.get_parser().get_dicts():
             variant_config = config.get_copy()
@@ -92,41 +94,51 @@ class CartesianLoader(Resolver):
 
         return test_objects
 
-    def parse_object_variants(self, param_dict=None, object_strs=None, verbose=False):
+    def parse_composite_objects(self, suffix: str, category: str, restriction: str = "",
+                                component_restrs: dict[str, str] = None,
+                                params: dict[str, str] = None, verbose: bool = False) -> list[TestObject]:
         """
-        Parse composite test objects with variants from joined component variants.
+        Parse a composite object for each variant from joined component variants.
 
-        :param param_dict: runtime parameters used for extra customization
-        :type param_dict: {str, str} or None
-        :param object_strs: object-specific names and variant restrictions
-        :type object_strs: {str, str}
-        :param bool verbose: whether to print extra messages or not
+        :param suffix: suffix to expand into variant objects
+        :param category: category of the suffix that will determine the type of the objects
+        :param restriction: restriction for the composite generated variants
+        :param component_restrs: object-specific suffixes (keys) and variant restrictions (values) for the components
+        :param params: runtime parameters used for extra customization
+        :param verbose: whether to print extra messages or not
         :returns: parsed test objects
-        :rtype: [:py:class:`TestObject`]
-
-        ..todo:: Support is limited to just parsing nets from vms for the time
-                 being due to a vm-only supported suffixes for `object_strs`.
         """
-        parsed_param_dict = param.ParsedDict(param_dict).parsable_form()
-        test_objects = []
+        params = {} if not params else params
+        params_str = param.ParsedDict(params).parsable_form()
+        restriction = category if not restriction else restriction
+        if component_restrs is None:
+            # TODO: all possible default suffixes, currently only vms supported
+            component_restrs = {suffix: "" for suffix in param.all_objects("vms")}
 
-        object_suffix = param_dict.get("object_suffix", "net1")
-        object_type = param_dict.get("object_type", "nets")
-        if object_type == "images":
+        if category == "images":
             raise TypeError("Multi-variant image test objects are not supported.")
-        object_class = NetObject if object_type == "nets" else VMObject
-        main_vm = param.main_vm() if len(object_strs.keys()) > 1 else list(object_strs.keys())[0]
+        object_class = NetObject if category == "nets" else VMObject
+        top_restriction = {suffix: "only " + restriction + "\n"}
+        vm_restrs = component_restrs if category == "nets" else top_restriction
+        main_vm = param.main_vm() if len(vm_restrs.keys()) > 1 else list(vm_restrs.keys())[0]
 
+        test_objects = []
         # all possible component object combinations for a given composite object
         config = param.Reparsable()
+        # TODO: an unexpected order of joining in the Cartesian config requires us to parse nets first
+        # instead of the more reasonable vms followed by nets
+        if category == "nets":
+            config.parse_next_batch(base_file="nets.cfg",
+                                    base_str=param.join_str(top_restriction, params_str),
+                                    base_dict={})
         config.parse_next_batch(base_file="vms.cfg",
-                                base_str=param.join_str(object_strs, parsed_param_dict),
+                                base_str=param.join_str(vm_restrs, params_str),
                                 # make sure we have the final word on parameters we use to identify objects
-                                base_dict={"main_vm": main_vm},
-                                ovrwrt_file=param.vms_ovrwrt_file())
+                                base_dict={"main_vm": main_vm})
+        config.parse_next_file(param.vms_ovrwrt_file())
         for d in config.get_parser().get_dicts():
             variant_config = config.get_copy()
-            if object_type == "vms":
+            if category == "vms":
                 variant_config.parse_next_str("only " + d["name"])
             else:
                 # TODO: joined variants do not support follow-up restrictions to generalize this to nets,
@@ -135,7 +147,7 @@ class CartesianLoader(Resolver):
                 #    variant_config.parse_next_str(vm_name + ": only " + object_strs[vm_name])
                 logging.warning("Parsing nets can only be redone from single vm variants")
 
-            test_object = object_class(object_suffix, variant_config)
+            test_object = object_class(suffix, variant_config)
             # TODO: the Cartesian parser does not support checkpoint dictionaries
             #test_object.config = param.Reparsable()
             #test_object.config.parse_next_dict(d)
@@ -147,23 +159,24 @@ class CartesianLoader(Resolver):
 
         return test_objects
 
-    def parse_object_from_objects(self, test_objects, param_dict=None, verbose=False):
+    def parse_object_from_objects(self, suffix: str, category: str, test_objects: tuple[TestObject],
+                                  params: dict[str, str] = None, verbose: bool = False) -> list[TestObject]:
         """
         Parse a unique composite object from joined already parsed component objects.
 
+        :param suffix: suffix to expand into variant objects
+        :param category: category of the suffix that will determine the type of the objects
         :param test_objects: fully parsed test objects to parse the composite from
-        :type: test_objects: (:py:class:`TestObject`)
-        :param param_dict: runtime parameters used for extra customization
-        :type param_dict: {str, str} or None
-        :param bool verbose: whether to print extra messages or not
+        :param params: runtime parameters used for extra customization
+        :param verbose: whether to print extra messages or not
         :returns: parsed test objects
-        :rtype: [:py:class:`TestObject`]
         :raises: :py:class:`exceptions.AssertionError` if the parsed composite is not unique
         """
-        setup_dict = {} if param_dict is None else param_dict.copy()
+        setup_dict = {} if params is None else params.copy()
         setup_dict.update({f"object_id_{o.suffix}": o.id for o in test_objects})
         object_strs = {o.suffix: o.final_restr for o in test_objects}
-        composite_objects = self.parse_object_variants(setup_dict, object_strs, verbose=verbose)
+        composite_objects = self.parse_composite_objects(suffix, category, component_restrs=object_strs,
+                                                         params=setup_dict, verbose=verbose)
 
         if len(composite_objects) > 1:
             raise AssertionError(f"No unique composite could be parsed using {test_objects}\n"
@@ -209,12 +222,10 @@ class CartesianLoader(Resolver):
                     continue
 
                 # TODO: the images don't have variant suffix definitions so just
-                # take the vm generic variant and join it with itself
-                objstr = {vm_name: object_strs[vm_name]}
-                setup_dict = {} if param_dict is None else param_dict.copy()
-                setup_dict.update({"object_suffix": vm_name, "object_type": "vms"})
+                # take the vm generic variant and join it with itself, i.e. here
                 # all possible hardware-software combinations as variants of the same vm slot
-                vms = self.parse_object_variants(setup_dict, object_strs=objstr, verbose=verbose)
+                vms = self.parse_composite_objects(vm_name, "vms", restriction=object_strs[vm_name],
+                                                   params=param_dict, verbose=verbose)
 
                 suffix_variants[f"{vm_name}_{net_name}"] = vms
                 test_objects.extend(vms)
@@ -225,7 +236,6 @@ class CartesianLoader(Resolver):
                         image_suffix = f"{image_name}_{vm_name}"
                         config = param.Reparsable()
                         config.parse_next_dict(vm.params.object_params(image_name))
-                        config.parse_next_dict({"object_suffix": image_suffix, "object_type": "images"})
                         image = ImageObject(image_suffix, config)
                         test_objects.append(image)
                         vm.components.append(image)
@@ -234,9 +244,7 @@ class CartesianLoader(Resolver):
             # all possible vm combinations as variants of the same net slot
             if not skip_nets:
                 for combination in itertools.product(*suffix_variants.values()):
-                    setup_dict = {} if param_dict is None else param_dict.copy()
-                    setup_dict.update({"object_suffix": net_name, "object_type": "nets"})
-                    net = self.parse_object_from_objects(combination, param_dict=setup_dict, verbose=verbose)
+                    net = self.parse_object_from_objects(net_name, "nets", combination, params=param_dict, verbose=verbose)
                     test_objects.append(net)
 
         return test_objects
@@ -620,10 +628,7 @@ class CartesianLoader(Resolver):
                 get_nets["net1"] += [reused_nets[0]]
             elif len(reused_nets) == 0:
                 logging.debug(f"Parsing a new net from vms {', '.join(vms)} for {d['shortname']}")
-                setup_dict = {} if param_dict is None else param_dict.copy()
-                setup_dict.update({"object_suffix": "net1", "object_type": "nets",
-                                    "vms": " ".join(vms)})
-                net = self.parse_object_from_objects(combination, param_dict=setup_dict, verbose=False)
+                net = self.parse_object_from_objects("net1", "nets", combination, params=param_dict, verbose=False)
                 parse_nets["net1"] += [net]
                 graph.objects += [net]
             else:

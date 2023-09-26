@@ -60,7 +60,7 @@ def permubuntu(config, tag=""):
             continue
         vm = test_object
         # parse individual net only for the current vm
-        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
+        net = l.parse_object_from_objects("net1", "nets", [vm], params=config["param_dict"])
         logging.info("Performing extra setup for the permanent %s", vm.suffix)
 
         # consider this as a special kind of state converting test which concerns
