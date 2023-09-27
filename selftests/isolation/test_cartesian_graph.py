@@ -145,6 +145,33 @@ class CartesianObjectTest(Test):
         for i, test_object in enumerate(test_objects):
             self.assertEqual(test_object.dict_index, i)
 
+    def test_parse_suffix_objects_vms(self):
+        """Test for correctly parsed vm objects of all suffices."""
+        self.config["vm_strs"] = {"vm1": "", "vm2": "", "vm3": ""}
+        test_objects = self.loader.parse_suffix_objects("vms", self.config["vm_strs"], self.config["param_dict"])
+        vms = [o for o in test_objects if o.key == "vms"]
+        self.assertEqual(len(test_objects), len(vms))
+        self.assertEqual(len(vms), 6)
+        vms_vm1 = [vm for vm in vms if vm.long_suffix == "vm1"]
+        self.assertEqual(len(vms_vm1), 2)
+        self.assertEqual(vms_vm1[0].suffix, vms_vm1[1].suffix)
+        self.assertEqual(vms_vm1[0].long_suffix, vms_vm1[1].long_suffix)
+        self.assertNotEqual(vms_vm1[0].id, vms_vm1[1].id)
+        self.assertEqual(len([vm for vm in vms if vm.long_suffix == "vm2"]), 2)
+        self.assertEqual(len([vm for vm in vms if vm.long_suffix == "vm3"]), 2)
+
+    def test_parse_suffix_objects_nets_flat(self):
+        """Test for correctly parsed net objects of all suffices."""
+        self.config["net_strs"] = {"net1": "", "net2": ""}
+        test_objects = self.loader.parse_suffix_objects("nets", self.config["net_strs"], self.config["param_dict"], flat=True)
+        nets = [o for o in test_objects if o.key == "nets"]
+        self.assertEqual(len(test_objects), len(nets))
+        self.assertEqual(len(nets), 2)
+        self.assertEqual(nets[0].suffix, "net1")
+        self.assertEqual(nets[0].long_suffix, "net1")
+        self.assertEqual(nets[1].suffix, "net2")
+        self.assertEqual(nets[1].long_suffix, "net2")
+
     def test_parse_object_from_vms(self):
         """Test for a correctly parsed net composite object from already parsed vm component objects."""
         vms = []
@@ -159,33 +186,25 @@ class CartesianObjectTest(Test):
             # each joined component variant must be traceable back to the component object id
             self.assertEqual(vm.id, net.params[f"object_id_{vm.suffix}"])
 
-    def test_parse_objects_vms(self):
-        """Test for correctly parsed vm objects composition if multiple variants."""
-        self.config["vm_strs"] = {"vm1": "", "vm2": "", "vm3": ""}
-        test_objects = self.loader.parse_objects(self.config["param_dict"],
-                                                 self.config["vm_strs"],
-                                                 skip_nets=True)
+    def test_parse_components_for_vm(self):
+        """Test for correctly parsed image components with unflattened vm."""
+        flat_vm = self.loader.parse_flat_objects("vm1", "vms")[0]
+        test_objects = self.loader.parse_components_for_object(flat_vm, "vms", unflatten=True)
         vms = [o for o in test_objects if o.key == "vms"]
         images = [o for o in test_objects if o.key == "images"]
         self.assertEqual(len(test_objects), len(vms) + len(images))
-        self.assertEqual(len(vms), 6)
+        self.assertEqual(len(vms), 2)
         vms_vm1 = [vm for vm in vms if vm.long_suffix == "vm1"]
         self.assertEqual(len(vms_vm1), 2)
         self.assertEqual(vms_vm1[0].suffix, vms_vm1[1].suffix)
         self.assertEqual(vms_vm1[0].long_suffix, vms_vm1[1].long_suffix)
         self.assertNotEqual(vms_vm1[0].id, vms_vm1[1].id)
-        self.assertEqual(len([vm for vm in vms if vm.long_suffix == "vm2"]), 2)
-        self.assertEqual(len([vm for vm in vms if vm.long_suffix == "vm3"]), 2)
-        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm1"]), 2)
-        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm2"]), 2)
-        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm3"]), 2)
+        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm1"]), 1)
 
-    def test_parse_objects_nets(self):
-        """Test for correctly parsed net objects composition if multiple variants."""
-        self.config["vm_strs"] = {"vm1": "", "vm2": "", "vm3": ""}
-        test_objects = self.loader.parse_objects(self.config["param_dict"],
-                                                 self.config["vm_strs"],
-                                                 skip_nets=False)
+    def test_parse_components_for_net(self):
+        """Test for correctly parsed vm components with unflattened net."""
+        flat_net = self.loader.parse_flat_objects("net1", "nets")[0]
+        test_objects = self.loader.parse_components_for_object(flat_net, "nets", unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 8)
         # TODO: typically we should test for some of this in the net1 object variants cases above but due to limitation of the Cartesian parser and lack of
@@ -319,8 +338,8 @@ class CartesianNodeTest(Test):
 
     def test_parse_node_from_object(self):
         """Test for a correctly parsed node from an already parsed net object."""
-        test_objects = self.loader.parse_objects(self.config["param_dict"],
-                                                 self.config["vm_strs"])
+        flat_net = self.loader.parse_net_from_object_strs(self.config["vm_strs"])
+        test_objects = self.loader.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 1)
         net = nets[0]
@@ -341,8 +360,8 @@ class CartesianNodeTest(Test):
 
     def test_parse_node_from_object_invalid_object_type(self):
         """Test correctly parsed node is not possible from an already parsed vm object."""
-        test_objects = self.loader.parse_objects(self.config["param_dict"],
-                                                 {"vm1": self.config["vm_strs"]["vm1"]})
+        flat_net = self.loader.parse_net_from_object_strs({"vm1": self.config["vm_strs"]["vm1"]})
+        test_objects = self.loader.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         vms = [o for o in test_objects if o.key == "vms"]
         self.assertEqual(len(vms), 1)
         vm = vms[0]
@@ -351,8 +370,8 @@ class CartesianNodeTest(Test):
 
     def test_parse_node_from_object_invalid_object_mix(self):
         """Test correctly parsed node is not possible from incompatible vm variants."""
-        test_objects = self.loader.parse_objects(self.config["param_dict"],
-                                                 {"vm1": self.config["vm_strs"]["vm1"], "vm2": "only Win7\n"})
+        flat_net = self.loader.parse_net_from_object_strs({"vm1": self.config["vm_strs"]["vm1"], "vm2": "only Win7\n"})
+        test_objects = self.loader.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 1)
         net = nets[0]
@@ -1518,7 +1537,8 @@ class CartesianGraphTest(Test):
         self.config["param_dict"]["retry_attempts"] = "2"
         self.config["param_dict"]["retry_stop"] = ""
 
-        test_objects = self.loader.parse_objects(self.config["param_dict"], self.config["vm_strs"])
+        flat_net = self.loader.parse_net_from_object_strs(self.config["vm_strs"])
+        test_objects = self.loader.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         net = test_objects[-1]
         test_node = self.loader.parse_node_from_object(net, self.config["param_dict"].copy(),
                                                        param.re_str("normal..tutorial1"))

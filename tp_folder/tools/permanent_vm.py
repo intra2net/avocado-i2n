@@ -54,7 +54,8 @@ def permubuntu(config, tag=""):
 
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
-    graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
+    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    graph.objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for test_object in graph.objects:
         if test_object.key != "vms":
             continue

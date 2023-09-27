@@ -157,6 +157,35 @@ class CartesianLoader(Resolver):
 
         return test_objects
 
+    def parse_suffix_objects(self, category: str, suffix_restrs: dict[str, str] = None,
+                             params: dict[str, str] = None, verbose: bool = False, flat: bool = False) -> list[TestObject]:
+        """
+        Parse all available test objects and their configuration determined by available suffixes.
+
+        :param category: category of suffixes that will determine the type of the objects
+        :param suffix_restrs: object-specific suffixes (keys) and variant restrictions (values) for the final objects
+        :param params: runtime parameters used for extra customization
+        :param verbose: whether to print extra messages or not
+        :param flat: whether to parse flat or composite objects
+        :returns: parsed test objects
+        """
+        if suffix_restrs is None:
+            # all possible default suffixes
+            selected_suffixes = param.all_objects(category)
+            suffix_restrs = {suffix: "" for suffix in selected_suffixes}
+        else:
+            selected_suffixes = suffix_restrs.keys()
+
+        test_objects = []
+        for suffix in selected_suffixes:
+            if flat:
+                test_objects += self.parse_flat_objects(suffix, category, suffix_restrs[suffix], params=params)
+            else:
+                test_objects += self.parse_composite_objects(suffix, category, suffix_restrs[suffix],
+                                                             params=params, verbose=verbose)
+
+        return test_objects
+
     def parse_object_from_objects(self, suffix: str, category: str, test_objects: tuple[TestObject],
                                   params: dict[str, str] = None, verbose: bool = False) -> list[TestObject]:
         """
@@ -187,65 +216,73 @@ class CartesianLoader(Resolver):
 
         return composite
 
-    def parse_objects(self, param_dict=None, object_strs=None, verbose=False, skip_nets=False):
+    def parse_components_for_object(self, test_object: TestObject, category: str, restriction: str = "",
+                                    params: dict[str, str] = None, verbose: bool = False, unflatten: bool = False) -> list[TestObject]:
         """
-        Parse all available test objects and their configurations or
-        a selection of such where the selection is defined by the object
-        string keys.
+        Parse all component objects for an already parsed composite object.
 
-        :param param_dict: runtime parameters used for extra customization
-        :type param_dict: {str, str} or None
-        :param object_strs: object-specific names and variant restrictions
-        :type object_strs: {str, str}
-        :param bool verbose: whether to print extra messages or not
-        :param bool skip_nets: whether to skip parsing nets from current vms
-        :returns: parsed test objects
-        :rtype: [:py:class:`TestObject`]
+        :param test_object: fully parsed test object to parse for components of
+        :param category: category of the suffix that will determine the type of the objects
+        :param restriction: restriction for the unflattened object if needed
+        :param params: runtime parameters used for extra customization
+        :param verbose: whether to print extra messages or not
+        :param unflatten: whether to unflatten flat objects with their components
         """
-        if object_strs is None:
-            # all possible hardware-software combinations
-            selected_vms = param.all_objects("vms")
-            object_strs = {vm_name: "" for vm_name in selected_vms}
-        else:
-            selected_vms = object_strs.keys()
-
-        # TODO: this is only generalized up to the current value of the stateful object chain "nets vms images"
         test_objects = []
+        if category == "images":
+            return test_objects
+        if category == "vms":
+            vm = test_object
+            for image_name in vm.params.objects("images"):
+                image_suffix = f"{image_name}_{vm.suffix}"
+                config = param.Reparsable()
+                config.parse_next_dict(vm.params.object_params(image_name))
+                image = ImageObject(image_suffix, config)
+                test_objects.append(image)
+                vm.components.append(image)
+                image.composites.append(vm)
+            if unflatten:
+                test_objects += self.parse_composite_objects(vm.suffix, "vms", restriction, params=params, verbose=verbose)
+            return test_objects
+
+        net = test_object
         suffix_variants = {}
-        # TODO: temporary backwards compatibility by using a single hardcoded net1 value
-        for net_name in ["net1"]:
-            net_vms = param.all_objects("vms", [net_name])
-            for vm_name in net_vms:
-                if vm_name not in selected_vms:
-                    continue
+        selected_vms = net.params.objects("vms") or param.all_objects("vms")
+        for vm_name in selected_vms:
 
-                # TODO: the images don't have variant suffix definitions so just
-                # take the vm generic variant and join it with itself, i.e. here
-                # all possible hardware-software combinations as variants of the same vm slot
-                vms = self.parse_composite_objects(vm_name, "vms", restriction=object_strs[vm_name],
-                                                   params=param_dict, verbose=verbose)
+            # TODO: the images don't have variant suffix definitions so just
+            # take the vm generic variant and join it with itself, i.e. here
+            # all possible hardware-software combinations as variants of the same vm slot
+            vms = self.parse_composite_objects(vm_name, "vms", restriction=net.params.get("only_" + vm_name, "vms"),
+                                               params=params, verbose=verbose)
 
-                suffix_variants[f"{vm_name}_{net_name}"] = vms
-                test_objects.extend(vms)
+            suffix_variants[f"{vm_name}_{net.suffix}"] = vms
+            test_objects.extend(vms)
 
-                # currently unique handling for nested image test objects
-                for vm in vms:
-                    for image_name in vm.params.objects("images"):
-                        image_suffix = f"{image_name}_{vm_name}"
-                        config = param.Reparsable()
-                        config.parse_next_dict(vm.params.object_params(image_name))
-                        image = ImageObject(image_suffix, config)
-                        test_objects.append(image)
-                        vm.components.append(image)
-                        image.composites.append(vm)
+            # currently unique handling for nested image test objects
+            for vm in vms:
+                self.parse_components_for_object(vm, "vms", params=params)
 
+        if unflatten:
+            # NOTE: due to limitation in Cartesian config vms are not parsed as composite objects
             # all possible vm combinations as variants of the same net slot
-            if not skip_nets:
-                for combination in itertools.product(*suffix_variants.values()):
-                    net = self.parse_object_from_objects(net_name, "nets", combination, params=param_dict, verbose=verbose)
-                    test_objects.append(net)
+            for combination in itertools.product(*suffix_variants.values()):
+                net = self.parse_object_from_objects(net.suffix, "nets", combination, params=params, verbose=verbose)
+                test_objects.append(net)
 
         return test_objects
+
+    def parse_net_from_object_strs(self, object_strs):
+        """
+        Parse a default net with object strings as compatibility.
+
+        :param object_strs: object restrictions
+        :type object_strs: {str, str}
+        """
+        config = param.Reparsable()
+        config.parse_next_dict({"vms": " ".join(list(object_strs.keys()))})
+        config.parse_next_dict({f"only_{s}": object_strs[s] for s in object_strs})
+        return NetObject("net1", config)
 
     def parse_node_from_object(self, test_object, param_dict=None, param_str="", prefix=""):
         """
@@ -363,7 +400,8 @@ class CartesianLoader(Resolver):
         object_strs = {} if object_strs is None else object_strs
 
         graph = TestGraph()
-        graph.objects = self.parse_objects(param_dict, object_strs, verbose=False, skip_nets=True)
+        graph.objects = self.parse_components_for_object(self.parse_net_from_object_strs(object_strs), "nets",
+                                                         params=param_dict, verbose=False, unflatten=False)
         # the parsed test nodes are already fully restricted by the available test objects
         graph.nodes = self.parse_nodes(graph, param_dict, nodes_str, prefix=prefix, verbose=True)
         for test_node in graph.nodes:

@@ -219,7 +219,8 @@ def update(config, tag=""):
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
     graph = TestGraph()
-    initial_objects = l.parse_objects(config["param_dict"], config["vm_strs"])
+    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    initial_objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for i, vm_name in enumerate(selected_vms):
         vm_params = config["vms_params"].object_params(vm_name)
         from_state = vm_params.get("from_state", "install")
@@ -567,7 +568,8 @@ def unset(config, tag=""):
 
     l, r = config["graph"].l, config["graph"].r
     setup_dict = config["param_dict"].copy()
-    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
+    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    for test_object in l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True):
         if test_object.key != "vms":
             continue
         vm = test_object
@@ -693,7 +695,8 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
                 param.ParsedDict(config["param_dict"]).reportable_form().rstrip("\n"))
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
-    graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
+    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    graph.objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for test_object in graph.objects:
         if test_object.key != "vms":
             continue
