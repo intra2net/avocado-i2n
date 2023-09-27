@@ -36,11 +36,13 @@ import signal
 import asyncio
 log.getLogger('asyncio').parent = log.getLogger('avocado.job')
 
+from avocado.core.job import Job
 from avocado.core.nrunner.task import TASK_DEFAULT_CATEGORY, Task
 from avocado.core.messages import MessageHandler
 from avocado.core.plugin_interfaces import SuiteRunner as RunnerInterface
 from avocado.core.status.repo import StatusRepo
 from avocado.core.status.server import StatusServer
+from avocado.core.suite import TestSuite
 from avocado.core.teststatus import STATUSES_MAPPING
 from avocado.core.task.runtime import RuntimeTask, PreRuntimeTask, PostRuntimeTask
 from avocado.core.task.statemachine import TaskStateMachine, Worker
@@ -334,13 +336,33 @@ class CartesianRunner(RunnerInterface):
             if log.getLogger('graph').level <= log.DEBUG:
                 graph.visualize(traverse_dir, f"{time.time():.4f}_{slot.id}")
 
-    def run_workers(self, graph: TestGraph, params: dict[str, str]) -> None:
+    def run_workers(self, test_suite: TestSuite or TestGraph, params: dict[str, str]) -> None:
         """
-        Run all workers in parallel travesing the graph for each.
+        Run all workers in parallel traversing the graph for each.
 
-        :param graph: test graph to traverse
+        :param test_suite: test suite to traverse as graph or a custom test graph to traverse
         :param params: runtime parameters used for extra customization
+        :raises: TypeError if the provided test suite is of unknown type
         """
+        if isinstance(test_suite, TestSuite):
+            param_dict, nodes_str, object_strs = test_suite.config["param_dict"], test_suite.config["tests_str"], test_suite.config["vm_strs"]
+            prefix = test_suite.config["prefix"]
+            # provide the logdir in advance in order to visualize parsed graph there
+            TestGraph.logdir = self.job.logdir
+            graph = TestGraph.parse_object_trees(param_dict, nodes_str, object_strs,
+                                                 prefix=prefix, verbose=test_suite.config["subcommand"]!="list")
+            # validate the test suite refers to the same test graph
+            assert len(test_suite) <= len(graph.nodes)
+            # TODO: parse on demand starting from the test suite and its flat test node runnables
+            #for node1, node2 in zip(test_suite.tests, graph.nodes):
+            #    assert node1.uri == node2.get_runnable().uri
+        elif isinstance(test_suite, TestGraph):
+            graph = test_suite
+        else:
+            raise TypeError(f"Unknown test suite type for {type(test_suite)}, must be a Cartesian graph or an Avocado test suite")
+
+        graph.visualize(self.job.logdir)
+
         for worker in graph.workers.values():
             if not worker.spawner:
                 worker.spawner = SpawnerDispatcher(self.job.config, self.job)[worker.params["nets_spawner"]].obj
@@ -351,16 +373,13 @@ class CartesianRunner(RunnerInterface):
         asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
                                                                      self.job.timeout or None))
 
-    def run_suite(self, job, test_suite):
+    def run_suite(self, job: Job, test_suite: TestSuite) -> set[str]:
         """
         Run one or more tests and report with test result.
 
         :param job: job that includes the test suite
-        :type test_suite: :py:class:`avocado.core.job.Job`
         :param test_suite: test suite with some tests to run
-        :type test_suite: :py:class:`avocado.core.suite.TestSuite`
         :returns: a set with types of test failures
-        :rtype: :py:class:`set`
         """
         summary = set()
 
@@ -383,7 +402,6 @@ class CartesianRunner(RunnerInterface):
         # TODO: this needs more customization
         asyncio.ensure_future(self._update_status())
 
-        graph = self._graph_from_suite(test_suite)
         params = self.job.config["param_dict"]
 
         # TODO: we could really benefit from using an appropriate params object here
@@ -409,10 +427,8 @@ class CartesianRunner(RunnerInterface):
                     if test_details["status"].lower() not in replay_status and test_details["name"] not in self.skip_tests:
                         self.skip_tests += [test_details["name"]]
 
-        graph.visualize(self.job.logdir)
-
         try:
-            self.run_workers(graph, params)
+            self.run_workers(test_suite, params)
             if not self.all_tests_ok:
                 # the summary is a set so only a single failed test is enough
                 summary.add('FAIL')
@@ -601,19 +617,3 @@ class CartesianRunner(RunnerInterface):
 
         setup_source = setup_gateway + "/" + setup_host + ":" + setup_path
         test_node.add_location(setup_source)
-
-    def _graph_from_suite(self, test_suite):
-        """
-        Restore a Cartesian graph from the digested list of test object factories.
-        """
-        # HACK: pass the constructed graph to the runner using static attribute hack
-        # since the currently digested test suite contains factory arguments obtained
-        # from an irreversible (information destructive) approach
-        graph = TestGraph.REFERENCE
-
-        # validate the test suite refers to the same test graph
-        assert len(test_suite) == len(graph.nodes)
-        for node1, node2 in zip(test_suite.tests, graph.nodes):
-            assert node1.uri == node2.get_runnable().uri
-
-        return graph

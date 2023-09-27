@@ -74,7 +74,7 @@ def develop(config, tag=""):
     graph.new_workers(l.parse_workers(config["param_dict"]))
     graph.objects = objects
     graph.nodes = [TestNode(tag, tests[0].config, objects[-1])]
-    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    graph.parse_shared_root_from_object_trees(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: True)
 
     r.run_workers(graph, config["param_dict"])

@@ -129,7 +129,7 @@ def with_cartesian_graph(fn):
     :rtype: function
     """
     def wrapper(config, tag=""):
-        loader = CartesianLoader(config)
+        loader = TestGraph
         runner = CartesianRunner()
         CartesianGraph = namedtuple('CartesianGraph', 'l r')
         config["graph"] = CartesianGraph(l=loader, r=runner)
@@ -315,7 +315,7 @@ def update(config, tag=""):
         graph.objects += vm_graph.objects
         graph.nodes += vm_graph.nodes
 
-    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    graph.parse_shared_root_from_object_trees(config["param_dict"])
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished updating cache")
 
@@ -334,7 +334,7 @@ def run(config, tag=""):
     # is preferential to setup chains with a single "run" step since this is usually the case
     config["prefix"] = tag + "n" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
 
-    loader = CartesianLoader(config)
+    loader = TestGraph
     runner = CartesianRunner()
     CartesianGraph = namedtuple('CartesianGraph', 'l r')
     config["graph"] = CartesianGraph(l=loader, r=runner)
@@ -342,15 +342,9 @@ def run(config, tag=""):
     # essentially we imitate the auto plugin to make the tool plugin a superset
     with new_job(config) as job:
 
-        graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"],
-                                          prefix=config["prefix"], verbose=config["subcommand"]!="list")
-        runnables = [n.get_runnable() for n in graph.nodes]
+        param_dict, nodes_str = config["param_dict"], config["tests_str"]
+        runnables = [n.get_runnable() for n in TestGraph.parse_flat_nodes(param_dict, nodes_str)]
         job.test_suites[0].tests = runnables
-
-        # HACK: pass the constructed graph to the runner using static attribute hack
-        # since the currently digested test suite contains factory arguments obtained
-        # from an irreversible (information destructive) approach
-        TestGraph.REFERENCE = graph
 
         retcode = job.run()
         # runner.run_traversal(graph, config["param_dict"].copy())
@@ -369,11 +363,19 @@ def list(config, tag=""):
 
     This is equivalent to but more powerful than the loader plugin.
     """
-    loader = CartesianLoader(config, {"logdir": data_dir.get_base_dir()})
-    prefix = tag + "l" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
-    graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"],
-                                      prefix=prefix, verbose=True)
-    graph.visualize(data_dir.get_base_dir())
+    loader = TestGraph
+    runner = CartesianRunner()
+    CartesianGraph = namedtuple('CartesianGraph', 'l r')
+    config["graph"] = CartesianGraph(l=loader, r=runner)
+
+    with new_job(config) as job:
+
+        prefix = tag + "l" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
+        # provide the logdir in advance in order to visualize parsed graph there
+        TestGraph.logdir = runner.job.logdir
+        graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"],
+                                          prefix=prefix, verbose=True)
+        graph.visualize(job.logdir)
 
 
 ############################################################
@@ -672,7 +674,7 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     graph.new_workers(l.parse_workers(config["param_dict"]))
     graph.objects = objects
     graph.nodes = [TestNode(tag, tests[0].config, objects[-1])]
-    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    graph.parse_shared_root_from_object_trees(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: True)
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("%s complete", verb[3])
@@ -713,7 +715,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
         test_node.params["object_suffix"] = test_object.long_suffix
         graph.nodes += [test_node]
 
-    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    graph.parse_shared_root_from_object_trees(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: slot not in self.workers)
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished %s", operation)

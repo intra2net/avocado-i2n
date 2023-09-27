@@ -77,6 +77,6 @@ def permubuntu(config, tag=""):
         test_node.params["object_suffix"] = test_object.long_suffix
         graph.nodes += [test_node]
 
-    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    graph.parse_shared_root_from_object_trees(config["param_dict"])
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished permanent vm setup")

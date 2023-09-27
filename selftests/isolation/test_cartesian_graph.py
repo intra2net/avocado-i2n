@@ -31,7 +31,7 @@ class CartesianWorkerTest(Test):
 
     def test_parse_flat_vm1(self):
         """Test for correctly parsed objects of different object variants from a restriction."""
-        test_objects = self.loader.parse_flat_objects("vm1", "vms")
+        test_objects = TestGraph.parse_flat_objects("vm1", "vms")
         self.assertEqual(len(test_objects), 2)
         self.assertRegex(test_objects[1].params["name"], r"vms.vm1\.qemu_kvm_centos.*CentOS.*")
         self.assertEqual(test_objects[1].params["vms"], "vm1")
@@ -42,7 +42,7 @@ class CartesianWorkerTest(Test):
 
     def test_parse_flat_net1(self):
         """Test for correctly parsed objects of different object variants from a restriction."""
-        test_objects = self.loader.parse_flat_objects("net1", "nets")
+        test_objects = TestGraph.parse_flat_objects("net1", "nets")
         self.assertEqual(len(test_objects), 1)
         self.assertRegex(test_objects[0].params["name"], r"nets\.net1\.cluster1")
         self.assertEqual(test_objects[0].params["nets"], "net1")
@@ -51,7 +51,7 @@ class CartesianWorkerTest(Test):
     def test_params(self):
         """Test for correctly parsed and regenerated test worker parameters."""
         self.config["param_dict"]["slots"] = "1 2 3 4 5"
-        test_workers = self.loader.parse_workers(self.config["param_dict"])
+        test_workers = TestGraph.parse_workers(self.config["param_dict"])
         self.assertEqual(len(test_workers), 5)
         test_worker = test_workers[0]
         for key in test_worker.params.keys():
@@ -64,7 +64,7 @@ class CartesianWorkerTest(Test):
     def test_params_slots(self):
         """Test environment setting and validation."""
         self.config["param_dict"]["slots"] = "1 remote.com/2 "
-        test_workers = self.loader.parse_workers(self.config["param_dict"])
+        test_workers = TestGraph.parse_workers(self.config["param_dict"])
         self.assertEqual(len(test_workers), 5)
         test_workers = [w for w in test_workers if "runtime_str" in w.params]
         self.assertEqual(len(test_workers), 3)
@@ -82,9 +82,9 @@ class CartesianWorkerTest(Test):
     def test_sanity_in_graph(self):
         """Test generic usage and composition."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         self.assertEqual(len(graph.workers), 5)
         for i, worker_id in enumerate(graph.workers):
             self.assertEqual(f"net{i+1}", worker_id)
@@ -110,7 +110,7 @@ class CartesianObjectTest(Test):
 
     def test_parse_composite_objects_vm1(self):
         """Test for correctly parsed vm objects from a vm string restriction."""
-        test_objects = self.loader.parse_composite_objects("vm1", "vms", "")
+        test_objects = TestGraph.parse_composite_objects("vm1", "vms", "")
         self.assertEqual(len(test_objects), 2)
         self.assertRegex(test_objects[1].params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*")
         self.assertEqual(test_objects[1].params["vms"], "vm1")
@@ -123,7 +123,7 @@ class CartesianObjectTest(Test):
 
     def test_parse_composite_objects_net1(self):
         """Test for a correctly parsed net object from joined vm string restrictions."""
-        test_objects = self.loader.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
+        test_objects = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
         self.assertEqual(len(test_objects), 1)
         test_object = test_objects[0]
         self.assertRegex(test_object.params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*")
@@ -139,7 +139,7 @@ class CartesianObjectTest(Test):
 
     def test_parse_composite_objects_net1_unrestricted(self):
         """Test for a correctly parsed net object from empty joined vm string restrictions."""
-        test_objects = self.loader.parse_composite_objects("net1", "nets", "")
+        test_objects = TestGraph.parse_composite_objects("net1", "nets", "")
         # TODO: bug in the Cartesian parser, they must be 6!
         self.assertEqual(len(test_objects), 4)
         for i, test_object in enumerate(test_objects):
@@ -148,7 +148,7 @@ class CartesianObjectTest(Test):
     def test_parse_suffix_objects_vms(self):
         """Test for correctly parsed vm objects of all suffices."""
         self.config["vm_strs"] = {"vm1": "", "vm2": "", "vm3": ""}
-        test_objects = self.loader.parse_suffix_objects("vms", self.config["vm_strs"], self.config["param_dict"])
+        test_objects = TestGraph.parse_suffix_objects("vms", self.config["vm_strs"], self.config["param_dict"])
         vms = [o for o in test_objects if o.key == "vms"]
         self.assertEqual(len(test_objects), len(vms))
         self.assertEqual(len(vms), 6)
@@ -163,7 +163,7 @@ class CartesianObjectTest(Test):
     def test_parse_suffix_objects_nets_flat(self):
         """Test for correctly parsed net objects of all suffices."""
         self.config["net_strs"] = {"net1": "", "net2": ""}
-        test_objects = self.loader.parse_suffix_objects("nets", self.config["net_strs"], self.config["param_dict"], flat=True)
+        test_objects = TestGraph.parse_suffix_objects("nets", self.config["net_strs"], self.config["param_dict"], flat=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(test_objects), len(nets))
         self.assertEqual(len(nets), 2)
@@ -176,8 +176,8 @@ class CartesianObjectTest(Test):
         """Test for a correctly parsed net composite object from already parsed vm component objects."""
         vms = []
         for vm_name, vm_restriction in self.config["vm_strs"].items():
-            vms += self.loader.parse_composite_objects(vm_name, "vms", vm_restriction)
-        net = self.loader.parse_object_from_objects("net1", "nets", vms)
+            vms += TestGraph.parse_composite_objects(vm_name, "vms", vm_restriction)
+        net = TestGraph.parse_object_from_objects("net1", "nets", vms)
         self.assertEqual(net.components, vms)
         for vm in vms:
             self.assertEqual(vm.composites, [net])
@@ -188,8 +188,8 @@ class CartesianObjectTest(Test):
 
     def test_parse_components_for_vm(self):
         """Test for correctly parsed image components with unflattened vm."""
-        flat_vm = self.loader.parse_flat_objects("vm1", "vms")[0]
-        test_objects = self.loader.parse_components_for_object(flat_vm, "vms", unflatten=True)
+        flat_vm = TestGraph.parse_flat_objects("vm1", "vms")[0]
+        test_objects = TestGraph.parse_components_for_object(flat_vm, "vms", unflatten=True)
         vms = [o for o in test_objects if o.key == "vms"]
         images = [o for o in test_objects if o.key == "images"]
         self.assertEqual(len(test_objects), len(vms) + len(images))
@@ -203,8 +203,8 @@ class CartesianObjectTest(Test):
 
     def test_parse_components_for_net(self):
         """Test for correctly parsed vm components with unflattened net."""
-        flat_net = self.loader.parse_flat_objects("net1", "nets")[0]
-        test_objects = self.loader.parse_components_for_object(flat_net, "nets", unflatten=True)
+        flat_net = TestGraph.parse_flat_objects("net1", "nets")[0]
+        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 8)
         # TODO: typically we should test for some of this in the net1 object variants cases above but due to limitation of the Cartesian parser and lack of
@@ -227,7 +227,7 @@ class CartesianObjectTest(Test):
 
     def test_params(self):
         """Test for correctly parsed and regenerated test object parameters."""
-        test_objects = self.loader.parse_composite_objects("net1", "nets", "", self.config["vm_strs"], params=self.config["param_dict"])
+        test_objects = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"], params=self.config["param_dict"])
         self.assertEqual(len(test_objects), 1)
         test_object = test_objects[0]
         regenerated_params = test_object.object_typed_params(test_object.config.get_params())
@@ -244,9 +244,9 @@ class CartesianObjectTest(Test):
     def test_sanity_in_graph(self):
         """Test generic usage and composition of test objects within a graph."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
 
         test_objects = graph.get_objects_by(param_val="vm1")
         for test_object in test_objects:
@@ -259,9 +259,9 @@ class CartesianObjectTest(Test):
     def test_overwrite_in_graph(self):
         """Test for correct overwriting of preselected configuration."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         default_object_param = graph.get_node_by(param_val="tutorial1").params["images"]
         custom_object_param = default_object_param + "00"
         custom_node_param = "remote:/some/location"
@@ -269,9 +269,9 @@ class CartesianObjectTest(Test):
         self.config["param_dict"]["images_vm1"] = custom_object_param
         self.config["param_dict"]["shared_pool"] = custom_node_param
         self.config["param_dict"]["new_key"] = "123"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
 
         test_objects = graph.get_objects_by(param_val="vm1")
         vm_objects = [o for o in test_objects if o.key == "vms"]
@@ -288,18 +288,18 @@ class CartesianObjectTest(Test):
     def test_overwrite_scope_in_graph(self):
         """Test the scope of application of overwriting preselected configuration."""
         self.config["tests_str"] += "only tutorial3\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         default_object_param = graph.get_node_by(param_val="tutorial3").params["images"]
         custom_object_param1 = default_object_param + "01"
         custom_object_param2 = default_object_param + "02"
 
         self.config["param_dict"]["images"] = custom_object_param1
         self.config["param_dict"]["images_vm1"] = custom_object_param2
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
 
         # TODO: the current suffix operators make it impossible to fully test this
         test_objects = graph.get_objects_by(param_val="vm1")
@@ -338,13 +338,13 @@ class CartesianNodeTest(Test):
 
     def test_parse_node_from_object(self):
         """Test for a correctly parsed node from an already parsed net object."""
-        flat_net = self.loader.parse_net_from_object_strs(self.config["vm_strs"])
-        test_objects = self.loader.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
+        flat_net = TestGraph.parse_net_from_object_strs(self.config["vm_strs"])
+        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 1)
         net = nets[0]
-        node = self.loader.parse_node_from_object(net, self.config["param_dict"],
-                                                  "only all..tutorial_get..explicit_noop\n")
+        node = TestGraph.parse_node_from_object(net, self.config["param_dict"],
+                                                "only all..tutorial_get..explicit_noop\n")
         self.assertEqual(node.objects[0], net)
         self.assertIn(net.params["name"], node.params["name"])
         self.assertEqual(node.params["nets"], net.params["nets"])
@@ -360,37 +360,37 @@ class CartesianNodeTest(Test):
 
     def test_parse_node_from_object_invalid_object_type(self):
         """Test correctly parsed node is not possible from an already parsed vm object."""
-        flat_net = self.loader.parse_net_from_object_strs({"vm1": self.config["vm_strs"]["vm1"]})
-        test_objects = self.loader.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
+        flat_net = TestGraph.parse_net_from_object_strs({"vm1": self.config["vm_strs"]["vm1"]})
+        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         vms = [o for o in test_objects if o.key == "vms"]
         self.assertEqual(len(vms), 1)
         vm = vms[0]
         with self.assertRaises(ValueError):
-            self.loader.parse_node_from_object(vm, self.config["param_dict"])
+            TestGraph.parse_node_from_object(vm, self.config["param_dict"])
 
     def test_parse_node_from_object_invalid_object_mix(self):
         """Test correctly parsed node is not possible from incompatible vm variants."""
-        flat_net = self.loader.parse_net_from_object_strs({"vm1": self.config["vm_strs"]["vm1"], "vm2": "only Win7\n"})
-        test_objects = self.loader.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
+        flat_net = TestGraph.parse_net_from_object_strs({"vm1": self.config["vm_strs"]["vm1"], "vm2": "only Win7\n"})
+        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 1)
         net = nets[0]
         with self.assertRaises(param.EmptyCartesianProduct):
-            self.loader.parse_node_from_object(net, self.config["param_dict"],
-                                               "only all..tutorial3.remote.object.control.decorator.util\n")
+            TestGraph.parse_node_from_object(net, self.config["param_dict"],
+                                             "only all..tutorial3.remote.object.control.decorator.util\n")
 
     def test_parse_nodes(self):
         """Test for correctly parsed test nodes from graph retrievable test objects."""
         self.config["tests_str"] += "only tutorial1,tutorial2\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"],
-                                               {"vm1": ""})
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"],
+                                             {"vm1": ""})
         graph.nodes = []
         test_objects = graph.objects
 
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 2)
-        nodes = self.loader.parse_nodes(graph, self.config["param_dict"], self.config["tests_str"])
+        nodes = graph.parse_nodes(self.config["param_dict"], self.config["tests_str"])
         self.assertEqual(len(nodes), 4)
         self.assertIn(nets[0].params["name"], nodes[0].params["name"])
         self.assertEqual(nodes[0].params["nets"], "net1")
@@ -404,9 +404,9 @@ class CartesianNodeTest(Test):
     def test_parse_nodes_compatibility_complete(self):
         """Test for correctly parsed test nodes from compatible graph retrievable test objects."""
         self.config["tests_str"] = "only all\nonly tutorial3\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"],
-                                               {"vm1": "", "vm2": ""})
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"],
+                                             {"vm1": "", "vm2": ""})
         graph.nodes = []
         test_objects = graph.objects
 
@@ -416,7 +416,7 @@ class CartesianNodeTest(Test):
         self.assertRegex(nets[1].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_7")
         self.assertRegex(nets[2].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_10")
         self.assertRegex(nets[3].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_7")
-        nodes = self.loader.parse_nodes(graph, self.config["param_dict"], self.config["tests_str"])
+        nodes = graph.parse_nodes(self.config["param_dict"], self.config["tests_str"])
         self.assertEqual(len(nodes), 20)
         for i in range(0, 4):
             self.assertIn("no_remote", nodes[i].params["name"])
@@ -432,9 +432,9 @@ class CartesianNodeTest(Test):
     def test_parse_nodes_compatibility_separate(self):
         """Test that no restriction leaks across separately restricted variants."""
         self.config["tests_str"] = "only all\nonly tutorial3.remote.object.control.decorator.util,tutorial_gui.client_noop\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"],
-                                               {"vm1": "", "vm2": ""})
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"],
+                                             {"vm1": "", "vm2": ""})
         graph.nodes = []
         test_objects = graph.objects
 
@@ -444,7 +444,7 @@ class CartesianNodeTest(Test):
         self.assertRegex(nets[1].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_7")
         self.assertRegex(nets[2].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_10")
         self.assertRegex(nets[3].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_7")
-        nodes = self.loader.parse_nodes(graph, self.config["param_dict"], self.config["tests_str"])
+        nodes = graph.parse_nodes(self.config["param_dict"], self.config["tests_str"])
         self.assertEqual(len(nodes), 5)
         self.assertIn("remote", nodes[0].params["name"])
         self.assertEqual(nodes[0].params["only_vm1"], "qemu_kvm_centos")
@@ -459,9 +459,9 @@ class CartesianNodeTest(Test):
     def test_params(self):
         """Test for correctly parsed test node parameters."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         test_node = graph.get_node_by(param_val="tutorial1")
         dict_generator = test_node.config.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
@@ -474,9 +474,9 @@ class CartesianNodeTest(Test):
     def test_sanity(self):
         """Test generic usage and composition."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
 
         test_node = graph.get_node_by(param_val="tutorial1")
         self.assertIn("1-vm1", test_node.long_prefix)
@@ -488,9 +488,9 @@ class CartesianNodeTest(Test):
     def test_overwrite(self):
         """Test for correct overwriting of preselected configuration."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         default_object_param = graph.get_node_by(param_val="tutorial1").params["images"]
         default_node_param = graph.get_node_by(param_val="tutorial1").params["shared_pool"]
         custom_object_param = default_object_param + "00"
@@ -499,9 +499,9 @@ class CartesianNodeTest(Test):
         self.config["param_dict"]["images_vm1"] = custom_object_param
         self.config["param_dict"]["shared_pool"] = custom_node_param
         self.config["param_dict"]["new_key"] = "123"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
 
         test_node = graph.get_node_by(param_val="tutorial1")
         self.assertNotEqual(test_node.params["shared_pool"], default_node_param,
@@ -518,18 +518,18 @@ class CartesianNodeTest(Test):
     def test_overwrite_scope(self):
         """Test the scope of application of overwriting preselected configuration."""
         self.config["tests_str"] += "only tutorial3\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         default_object_param = graph.get_node_by(param_val="tutorial3").params["images"]
         custom_object_param1 = default_object_param + "01"
         custom_object_param2 = default_object_param + "02"
 
         self.config["param_dict"]["images"] = custom_object_param1
         self.config["param_dict"]["images_vm1"] = custom_object_param2
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
 
         # TODO: the current suffix operators make it impossible to fully test this
         test_node = graph.get_node_by(param_val="tutorial3")
@@ -549,9 +549,9 @@ class CartesianNodeTest(Test):
     def test_default_run_decision(self):
         """Test expectations on the default decision policy of whether to run or skip a test node."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
 
         worker1 = mock.MagicMock(id="net1", params={"runtime_str": "1"})
         worker2 = mock.MagicMock(id="net2", params={"runtime_str": "2"})
@@ -585,9 +585,9 @@ class CartesianNodeTest(Test):
         """Test expectations on the default decision policy of whether to clean or not a test node."""
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_get\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
 
         worker1 = mock.MagicMock(id="net1", params={"runtime_str": "1"})
         worker2 = mock.MagicMock(id="net2", params={"runtime_str": "2"})
@@ -656,17 +656,17 @@ class CartesianGraphTest(Test):
         self.config["tests_str"] += "only tutorial1\n"
         self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
         with self.assertRaises(param.EmptyCartesianProduct):
-            self.loader.parse_object_nodes(self.config["param_dict"],
-                                           self.config["tests_str"], self.config["vm_strs"],
-                                           prefix=self.prefix)
+            TestGraph.parse_object_nodes(self.config["param_dict"],
+                                         self.config["tests_str"], self.config["vm_strs"],
+                                         prefix=self.prefix)
 
     def test_object_node_intersection(self):
         """Test restricted vms-tests nonempty intersection of parsed tests and pre-parsed available objects."""
         self.config["tests_str"] += "only tutorial1,tutorial_get\n"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-        nodes, objects = self.loader.parse_object_nodes(self.config["param_dict"],
-                                                        self.config["tests_str"], self.config["vm_strs"],
-                                                        prefix=self.prefix)
+        nodes, objects = TestGraph.parse_object_nodes(self.config["param_dict"],
+                                                      self.config["tests_str"], self.config["vm_strs"],
+                                                      prefix=self.prefix)
         object_suffixes = [o.suffix for o in objects]
         self.assertIn("vm1", object_suffixes)
         # due to lacking vm3 tutorial_get will not be parsed and the only already parsed vm remains vm1
@@ -685,12 +685,12 @@ class CartesianGraphTest(Test):
     def test_graph_sanity(self):
         """Test generic usage and composition."""
         self.config["tests_str"] += "only tutorial1\n"
-        nodes, objects = self.loader.parse_object_nodes(self.config["param_dict"],
-                                                        self.config["tests_str"], self.config["vm_strs"],
-                                                        prefix=self.prefix)
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        nodes, objects = TestGraph.parse_object_nodes(self.config["param_dict"],
+                                                      self.config["tests_str"], self.config["vm_strs"],
+                                                      prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         self.assertEqual(set(o.suffix for o in graph.objects), set(o.suffix for o in objects))
         self.assertEqual(set(n.prefix for n in graph.nodes).intersection(n.prefix for n in nodes),
                          set(n.prefix for n in nodes))
@@ -703,11 +703,11 @@ class CartesianGraphTest(Test):
     def test_shared_root_from_object_trees(self):
         """Test correct expectation of separately adding a shared root to a graph of disconnected object trees."""
         self.config["tests_str"] += "only tutorial3\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                self.config["tests_str"], self.config["vm_strs"],
-                                                prefix=self.prefix,
-                                                with_shared_root=False)
-        self.loader.parse_shared_root_from_object_trees(graph, self.config["param_dict"])
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix,
+                                             with_shared_root=False)
+        graph.parse_shared_root_from_object_trees(self.config["param_dict"])
         # assert one shared root exists and it connects all object roots
         shared_root_node = None
         for node in graph.nodes:
@@ -724,9 +724,9 @@ class CartesianGraphTest(Test):
     def test_one_leaf(self):
         """Test traversal path of one test without any reusable setup."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "set_state_images": "^install$"},
@@ -741,9 +741,9 @@ class CartesianGraphTest(Test):
         """Test traversal path of one test without any reusable setup and with a serial unisolated run."""
         self.config["param_dict"]["slots"] = ""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$", "nets_spawner": "process"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "nets_spawner": "process"},
@@ -758,9 +758,9 @@ class CartesianGraphTest(Test):
         """Test traversal path of one test with a reusable setup."""
         self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             # cleanup is expected only if at least one of the states is reusable (here root+install)
@@ -774,9 +774,9 @@ class CartesianGraphTest(Test):
     def test_one_leaf_with_step_setup(self):
         """Test traversal path of one test with a single reusable setup test node."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$"},
@@ -790,9 +790,9 @@ class CartesianGraphTest(Test):
     def test_one_leaf_with_failed_setup(self):
         """Test traversal path of one test with a failed reusable setup test node."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c1$", "_status": "FAIL"},
@@ -805,9 +805,9 @@ class CartesianGraphTest(Test):
     def test_one_leaf_validation(self):
         """Test graph (and component) retrieval and validation methods."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         test_object = [o for o in graph.objects if o.suffix == "vm1"][0]
         test_node = graph.get_node_by(param_val="tutorial1")
         self.assertIn(test_object, test_node.objects)
@@ -824,18 +824,18 @@ class CartesianGraphTest(Test):
         # detect reflexive dependencies in the graph
         self.config["param_dict"]["get"] = "tutorial1"
         with self.assertRaisesRegex(ValueError, r"^Detected reflexive dependency of"):
-            self.loader.parse_object_trees(self.config["param_dict"],
-                                           self.config["tests_str"], self.config["vm_strs"],
-                                           prefix=self.prefix)
+            TestGraph.parse_object_trees(self.config["param_dict"],
+                                         self.config["tests_str"], self.config["vm_strs"],
+                                         prefix=self.prefix)
 
     def test_one_leaf_with_occupation_timeout(self):
         """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
         self.config["param_dict"]["slots"] += " dead"
         self.config["param_dict"]["test_timeout"] = 1
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         test_node = graph.get_node_by(param_val="tutorial1")
         test_node.set_environment(graph.workers["net2"])
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
@@ -851,9 +851,9 @@ class CartesianGraphTest(Test):
         """Test dry run of a single leaf test where no test should end up really running."""
         self.config["param_dict"]["dry_run"] = "yes"
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyTestRun.asserted_tests = [
         ]
         self._run_traversal(graph, self.config["param_dict"])
@@ -863,9 +863,9 @@ class CartesianGraphTest(Test):
         """Test a two-object test run without a reusable setup."""
         self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] += "only tutorial3\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = False
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = False
         DummyTestRun.asserted_tests = [
@@ -893,9 +893,9 @@ class CartesianGraphTest(Test):
         """Test a two-object test run with reusable setup."""
         self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] += "only tutorial3\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
@@ -914,9 +914,9 @@ class CartesianGraphTest(Test):
         """Test a multi-object test run with reusable setup of diverging workers and shared pool or previous runs."""
         self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] += "only tutorial1,tutorial3\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
@@ -950,9 +950,9 @@ class CartesianGraphTest(Test):
         self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         # this is not what we test but simply a means to remove some initial nodes for simpler testing
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
@@ -991,9 +991,9 @@ class CartesianGraphTest(Test):
         self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(2)] + [f"host1/{i+1}" for i in range(2)] + [f"host2/22"])
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         workers = sorted(list(graph.workers.values()), key=lambda x: x.params["name"])
         self.assertEqual(workers[0].params["nets_spawner"], "lxc")
         self.assertEqual(workers[1].params["nets_spawner"], "lxc")
@@ -1050,9 +1050,9 @@ class CartesianGraphTest(Test):
         """Test a complete test run including complex setup that involves permanent vms and cloning."""
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_get\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyStateControl.asserted_states["check"]["root"] = {self.shared_pool: True}
         DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
                                                            "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
@@ -1110,9 +1110,9 @@ class CartesianGraphTest(Test):
         self.config["tests_str"] += "only tutorial_get,tutorial_gui\n"
         self.config["vm_strs"]["vm1"] = ""
         self.config["vm_strs"]["vm2"] = ""
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyStateControl.asserted_states["check"]["root"] = {self.shared_pool: True}
         DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
                                                            "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
@@ -1185,9 +1185,9 @@ class CartesianGraphTest(Test):
         """Test for correct deep cloning."""
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_finale\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
         DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
@@ -1233,8 +1233,8 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
         ]
 
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                self.config["tests_str"], self.config["vm_strs"],
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
                                                 prefix=self.prefix, verbose=True)
         self._run_traversal(graph, self.config["param_dict"])
         for action in ["get", "set", "unset"]:
@@ -1245,9 +1245,9 @@ class CartesianGraphTest(Test):
         """Test that traversal is aborted through explicit configuration."""
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_dict"].update({"abort_on_error": "yes"})
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
@@ -1259,9 +1259,9 @@ class CartesianGraphTest(Test):
     def test_abort_objectless_node(self):
         """Test that traversal is aborted on objectless node detection."""
         self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         test_node = graph.get_node_by(param_val="tutorial1")
         # assume we are parsing invalid configuration
         test_node.params["vms"] = ""
@@ -1278,9 +1278,9 @@ class CartesianGraphTest(Test):
         self.config["tests_str"] = "only nonleaves\n"
         self.config["tests_str"] += "only connect\n"
         self.config["param_dict"]["vms"] = "vm1"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
         graph.flag_intersection(graph, flag_type="run", flag=lambda self, slot: False)
         DummyTestRun.asserted_tests = [
         ]
@@ -1293,12 +1293,12 @@ class CartesianGraphTest(Test):
         tests_str1 = self.config["tests_str"] + "only connect\n"
         tests_str2 = self.config["tests_str"] + "only customize\n"
         self.config["param_dict"]["vms"] = "vm1"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               tests_str1, self.config["vm_strs"],
-                                               prefix=self.prefix)
-        reuse_graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                     tests_str2, self.config["vm_strs"],
-                                                     prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             tests_str1, self.config["vm_strs"],
+                                             prefix=self.prefix)
+        reuse_graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                   tests_str2, self.config["vm_strs"],
+                                                   prefix=self.prefix)
 
         #graph.flag_intersection(graph, flag_type="run", flag=lambda self, slot: slot not in self.workers)
         graph.flag_intersection(reuse_graph, flag_type="run", flag=lambda self, slot: False)
@@ -1313,9 +1313,9 @@ class CartesianGraphTest(Test):
         self.config["tests_str"] = "only nonleaves\n"
         self.config["tests_str"] += "only connect\n"
         self.config["param_dict"]["vms"] = "vm1"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
 
         graph.flag_children(flag_type="run", flag=lambda self, slot: False)
         DummyTestRun.asserted_tests = [
@@ -1335,9 +1335,9 @@ class CartesianGraphTest(Test):
         self.config["tests_str"] = "only nonleaves\n"
         self.config["tests_str"] += "only connect\n"
         self.config["param_dict"]["vms"] = "vm1"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
 
         graph.flag_children(flag_type="run", flag=lambda self, slot: False)
         graph.flag_children(node_name="customize", flag_type="run", flag=lambda self, slot: slot not in self.workers)
@@ -1390,7 +1390,7 @@ class CartesianGraphTest(Test):
         """Test that the test is retried `retry_attempts` times if `retry_stop` is not specified."""
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_dict"]["retry_attempts"] = "2"
-        graph = self.loader.parse_object_trees(
+        graph = TestGraph.parse_object_trees(
             self.config["param_dict"], self.config["tests_str"],
             self.config["vm_strs"], prefix="")
         DummyTestRun.asserted_tests = [
@@ -1421,9 +1421,9 @@ class CartesianGraphTest(Test):
         # test should not be re-run on these statuses
         for status in ["SKIP", "INTERRUPTED", "CANCEL"]:
             with self.subTest(f"Test rerun skip on status {status}"):
-                graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                    self.config["tests_str"], self.config["vm_strs"],
-                                                    prefix=self.prefix)
+                graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                     self.config["tests_str"], self.config["vm_strs"],
+                                                     prefix=self.prefix)
                 DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
                                                             "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
                 DummyTestRun.asserted_tests = [
@@ -1441,9 +1441,9 @@ class CartesianGraphTest(Test):
         # test should be re-run on these statuses
         for status in ["PASS", "WARN", "FAIL", "ERROR"]:
             with self.subTest(f"Test rerun on status {status}"):
-                graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                    self.config["tests_str"], self.config["vm_strs"],
-                                                    prefix=self.prefix)
+                graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                     self.config["tests_str"], self.config["vm_strs"],
+                                                     prefix=self.prefix)
                 DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
                                                             "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
                 DummyTestRun.asserted_tests = [
@@ -1471,9 +1471,9 @@ class CartesianGraphTest(Test):
             with self.subTest(f"Test rerun stop on status {stop_status}"):
                 self.config["param_dict"]["retry_stop"] = stop_status
                 status = stop_status.upper()
-                graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                    self.config["tests_str"], self.config["vm_strs"],
-                                                    prefix=self.prefix)
+                graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                     self.config["tests_str"], self.config["vm_strs"],
+                                                     prefix=self.prefix)
                 DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
                                                             "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
                 DummyTestRun.asserted_tests = [
@@ -1498,36 +1498,36 @@ class CartesianGraphTest(Test):
 
         with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3",
                                                          "retry_stop": "invalid"}):
-            graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                   self.config["tests_str"], self.config["vm_strs"],
-                                                   prefix=self.prefix)
+            graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                 self.config["tests_str"], self.config["vm_strs"],
+                                                 prefix=self.prefix)
             with self.assertRaisesRegex(ValueError, r"^Value of retry_stop must be a valid test status"):
                 self._run_traversal(graph, self.config["param_dict"])
 
         # negative values
         with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "-32",
                                                          "retry_stop": "none"}):
-            graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                   self.config["tests_str"], self.config["vm_strs"],
-                                                   prefix=self.prefix)
+            graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                 self.config["tests_str"], self.config["vm_strs"],
+                                                 prefix=self.prefix)
             with self.assertRaisesRegex(ValueError, r"^Value of retry_attempts cannot be less than zero$"):
                 self._run_traversal(graph, self.config["param_dict"])
 
         # floats
         with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3.5",
                                                          "retry_stop": "none"}):
-            graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                   self.config["tests_str"], self.config["vm_strs"],
-                                                   prefix=self.prefix)
+            graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                 self.config["tests_str"], self.config["vm_strs"],
+                                                 prefix=self.prefix)
             with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
                 self._run_traversal(graph, self.config["param_dict"])
 
         # non-integers
         with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "hey",
                                                          "retry_stop": "none"}):
-            graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                                   self.config["tests_str"], self.config["vm_strs"],
-                                                   prefix=self.prefix)
+            graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                 self.config["tests_str"], self.config["vm_strs"],
+                                                 prefix=self.prefix)
             with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
                 self._run_traversal(graph, self.config["param_dict"])
 
@@ -1537,11 +1537,11 @@ class CartesianGraphTest(Test):
         self.config["param_dict"]["retry_attempts"] = "2"
         self.config["param_dict"]["retry_stop"] = ""
 
-        flat_net = self.loader.parse_net_from_object_strs(self.config["vm_strs"])
-        test_objects = self.loader.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
+        flat_net = TestGraph.parse_net_from_object_strs(self.config["vm_strs"])
+        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         net = test_objects[-1]
-        test_node = self.loader.parse_node_from_object(net, self.config["param_dict"].copy(),
-                                                       param.re_str("normal..tutorial1"))
+        test_node = TestGraph.parse_node_from_object(net, self.config["param_dict"].copy(),
+                                                     param.re_str("normal..tutorial1"))
 
         DummyTestRun.asserted_tests = [
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
