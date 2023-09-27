@@ -90,6 +90,62 @@ class TestGraph(object):
         return nodes
     prefixes = property(fget=prefixes)
 
+    @staticmethod
+    def clone_branch(copy_node, copy_object, copy_parents):
+        """
+        Clone a test node and all of its descendants as a branch path within the graph.
+
+        This is done to provide each parent node with a unique successor.
+        """
+        test_nodes = []
+        to_copy = [(copy_node, copy_parents)]
+
+        while len(to_copy) > 0:
+            clone_source, parents = to_copy.pop()
+            clones = []
+            logging.debug("Duplicating test node %s for multiple parents:\n%s",
+                          clone_source.params["shortname"],
+                          "\n".join([p.params["shortname"] for p in parents]))
+            for i, parent in enumerate(parents):
+                if i == 0:
+                    child = clone_source
+                else:
+                    clone_name = clone_source.prefix + "d" + str(i)
+                    clone_config = clone_source.config.get_copy()
+                    clone = TestNode(clone_name, clone_config, clone_source.objects[0])
+                    clone.regenerate_params()
+
+                    # clone setup with the exception of unique parent copy
+                    for clone_setup in clone_source.setup_nodes:
+                        if clone_setup == parents[0]:
+                            clone.setup_nodes.append(parent)
+                            parent.cleanup_nodes.append(clone)
+                        else:
+                            clone.setup_nodes.append(clone_setup)
+                            clone_setup.cleanup_nodes.append(clone)
+
+                    child = clone
+                    clones.append(child)
+
+                state_suffixes = f"_{copy_object.key}_{copy_object.suffix}"
+                state_suffixes += f"_{copy_object.composites[0].suffix}" if copy_object.key == "images" else ""
+
+                parent_object_params = copy_object.object_typed_params(parent.params)
+                parent_state = parent_object_params.get("set_state", "")
+                child.params["shortname"] += "." + parent_state
+                child.params["name"] += "." + parent_state
+                child.params["get_state" + state_suffixes] = parent_state
+                child_object_params = copy_object.object_typed_params(child.params)
+                child_state = child_object_params.get("set_state", "")
+                if child_state:
+                    child.params["set_state" + state_suffixes] = child_state + "." + parent_state
+
+            for grandchild in clone_source.cleanup_nodes:
+                to_copy.append((grandchild, [clone_source, *clones]))
+            test_nodes.extend(clones)
+
+        return test_nodes
+
     def __init__(self):
         """Construct the test graph."""
         self.objects = []
