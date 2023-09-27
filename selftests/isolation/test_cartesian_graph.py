@@ -137,7 +137,15 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object.params["os_variant_vm2"], "win10")
         self.assertEqual(test_object.params["os_variant_vm3"], "ubuntutrusty")
 
-    def test_parse_object_from_objects(self):
+    def test_parse_composite_objects_net1_unrestricted(self):
+        """Test for a correctly parsed net object from empty joined vm string restrictions."""
+        test_objects = self.loader.parse_composite_objects("net1", "nets", "")
+        # TODO: bug in the Cartesian parser, they must be 6!
+        self.assertEqual(len(test_objects), 4)
+        for i, test_object in enumerate(test_objects):
+            self.assertEqual(test_object.dict_index, i)
+
+    def test_parse_object_from_vms(self):
         """Test for a correctly parsed net composite object from already parsed vm component objects."""
         vms = []
         for vm_name, vm_restriction in self.config["vm_strs"].items():

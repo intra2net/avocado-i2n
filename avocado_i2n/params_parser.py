@@ -347,7 +347,7 @@ class Reparsable():
 
         return parser
 
-    def get_params(self, list_of_keys=None,
+    def get_params(self, list_of_keys=None, dict_index=0,
                    show_restriction=False, show_dictionaries=False,
                    show_dict_fullname=False, show_dict_contents=False):
         """
@@ -358,6 +358,7 @@ class Reparsable():
 
         :param list_of_keys: list of parameters key in the final selection
         :type list_of_keys: [str] or None
+        :param int dict_index: index of the dictionary to use as parameters
         :returns: first variant dictionary from all current parsed steps
         :rtype: :py:class:`Params`
         :raises: :py:class:`AssertionError` if the parameter dictionary is not unique
@@ -371,9 +372,11 @@ class Reparsable():
                                  show_empty_cartesian_product=True)
 
         for i, d in enumerate(parser.get_dicts()):
-            if i == 0:
+            if i == dict_index:
                 default_params = d
-            assert i < 1, "There must be at most one configuration for the restriction:\n%s" % self.print_parsed()
+                break
+        else:
+            raise ValueError("There must be a configuration for the restriction:\n%s" % self.print_parsed())
 
         if list_of_keys is None:
             selected_params = default_params

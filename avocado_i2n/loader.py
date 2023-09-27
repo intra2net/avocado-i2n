@@ -136,18 +136,16 @@ class CartesianLoader(Resolver):
                                 # make sure we have the final word on parameters we use to identify objects
                                 base_dict={"main_vm": main_vm})
         config.parse_next_file(param.vms_ovrwrt_file())
-        for d in config.get_parser().get_dicts():
+        for i, d in enumerate(config.get_parser().get_dicts()):
             variant_config = config.get_copy()
+            test_object = object_class(suffix, variant_config)
+
             if category == "vms":
                 variant_config.parse_next_str("only " + d["name"])
-            else:
+            elif category == "nets":
                 # TODO: joined variants do not support follow-up restrictions to generalize this to nets,
                 # this includes stacked vm-specific restrictions or any other join-generic such
-                #for vm_name in object_strs.keys():
-                #    variant_config.parse_next_str(vm_name + ": only " + object_strs[vm_name])
-                logging.warning("Parsing nets can only be redone from single vm variants")
-
-            test_object = object_class(suffix, variant_config)
+                test_object.dict_index = i
             # TODO: the Cartesian parser does not support checkpoint dictionaries
             #test_object.config = param.Reparsable()
             #test_object.config.parse_next_dict(d)

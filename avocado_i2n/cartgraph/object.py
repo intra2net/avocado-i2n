@@ -73,6 +73,8 @@ class TestObject(object):
         self._long_suffix = suffix
         self.config = config
         self._params_cache = None
+        # TODO: Cartesian parser needs support for restrictions after join operations
+        self.dict_index = 0
 
         # TODO: integrate these features better
         self.current_state = "unknown"
@@ -116,7 +118,8 @@ class TestObject(object):
 
         :param bool verbose: whether to show generated parameter dictionaries
         """
-        generic_params = self.config.get_params(show_dictionaries=verbose)
+        generic_params = self.config.get_params(dict_index=self.dict_index,
+                                                show_dictionaries=verbose)
         self._params_cache = self.object_typed_params(generic_params)
 
 
