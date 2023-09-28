@@ -338,13 +338,12 @@ class CartesianNodeTest(Test):
 
     def test_parse_node_from_object(self):
         """Test for a correctly parsed node from an already parsed net object."""
-        flat_net = TestGraph.parse_net_from_object_strs(self.config["vm_strs"])
+        flat_net = TestGraph.parse_net_from_object_strs("net1", self.config["vm_strs"])
         test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 1)
         net = nets[0]
-        node = TestGraph.parse_node_from_object(net, self.config["param_dict"],
-                                                "only all..tutorial_get..explicit_noop\n")
+        node = TestGraph.parse_node_from_object(net, "all..tutorial_get..explicit_noop", params=self.config["param_dict"])
         self.assertEqual(node.objects[0], net)
         self.assertIn(net.params["name"], node.params["name"])
         self.assertEqual(node.params["nets"], net.params["nets"])
@@ -360,24 +359,23 @@ class CartesianNodeTest(Test):
 
     def test_parse_node_from_object_invalid_object_type(self):
         """Test correctly parsed node is not possible from an already parsed vm object."""
-        flat_net = TestGraph.parse_net_from_object_strs({"vm1": self.config["vm_strs"]["vm1"]})
+        flat_net = TestGraph.parse_net_from_object_strs("net1", {"vm1": self.config["vm_strs"]["vm1"]})
         test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         vms = [o for o in test_objects if o.key == "vms"]
         self.assertEqual(len(vms), 1)
         vm = vms[0]
         with self.assertRaises(ValueError):
-            TestGraph.parse_node_from_object(vm, self.config["param_dict"])
+            TestGraph.parse_node_from_object(vm, params=self.config["param_dict"])
 
     def test_parse_node_from_object_invalid_object_mix(self):
         """Test correctly parsed node is not possible from incompatible vm variants."""
-        flat_net = TestGraph.parse_net_from_object_strs({"vm1": self.config["vm_strs"]["vm1"], "vm2": "only Win7\n"})
+        flat_net = TestGraph.parse_net_from_object_strs("net1", {"vm1": self.config["vm_strs"]["vm1"], "vm2": "only Win7\n"})
         test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 1)
         net = nets[0]
         with self.assertRaises(param.EmptyCartesianProduct):
-            TestGraph.parse_node_from_object(net, self.config["param_dict"],
-                                             "only all..tutorial3.remote.object.control.decorator.util\n")
+            TestGraph.parse_node_from_object(net, "all..tutorial3.remote.object.control.decorator.util", params=self.config["param_dict"])
 
     def test_parse_nodes(self):
         """Test for correctly parsed test nodes from graph retrievable test objects."""
@@ -390,7 +388,7 @@ class CartesianNodeTest(Test):
 
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 2)
-        nodes = graph.parse_nodes(self.config["param_dict"], self.config["tests_str"])
+        nodes = graph.parse_nodes(self.config["tests_str"], params=self.config["param_dict"])
         self.assertEqual(len(nodes), 4)
         self.assertIn(nets[0].params["name"], nodes[0].params["name"])
         self.assertEqual(nodes[0].params["nets"], "net1")
@@ -416,7 +414,7 @@ class CartesianNodeTest(Test):
         self.assertRegex(nets[1].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_7")
         self.assertRegex(nets[2].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_10")
         self.assertRegex(nets[3].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_7")
-        nodes = graph.parse_nodes(self.config["param_dict"], self.config["tests_str"])
+        nodes = graph.parse_nodes(self.config["tests_str"], params=self.config["param_dict"])
         self.assertEqual(len(nodes), 20)
         for i in range(0, 4):
             self.assertIn("no_remote", nodes[i].params["name"])
@@ -444,7 +442,7 @@ class CartesianNodeTest(Test):
         self.assertRegex(nets[1].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_7")
         self.assertRegex(nets[2].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_10")
         self.assertRegex(nets[3].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_7")
-        nodes = graph.parse_nodes(self.config["param_dict"], self.config["tests_str"])
+        nodes = graph.parse_nodes(self.config["tests_str"], params=self.config["param_dict"])
         self.assertEqual(len(nodes), 5)
         self.assertIn("remote", nodes[0].params["name"])
         self.assertEqual(nodes[0].params["only_vm1"], "qemu_kvm_centos")
@@ -656,17 +654,15 @@ class CartesianGraphTest(Test):
         self.config["tests_str"] += "only tutorial1\n"
         self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
         with self.assertRaises(param.EmptyCartesianProduct):
-            TestGraph.parse_object_nodes(self.config["param_dict"],
-                                         self.config["tests_str"], self.config["vm_strs"],
-                                         prefix=self.prefix)
+            TestGraph.parse_object_nodes(self.config["tests_str"], object_strs=self.config["vm_strs"],
+                                         prefix=self.prefix, params=self.config["param_dict"])
 
     def test_object_node_intersection(self):
         """Test restricted vms-tests nonempty intersection of parsed tests and pre-parsed available objects."""
         self.config["tests_str"] += "only tutorial1,tutorial_get\n"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-        nodes, objects = TestGraph.parse_object_nodes(self.config["param_dict"],
-                                                      self.config["tests_str"], self.config["vm_strs"],
-                                                      prefix=self.prefix)
+        nodes, objects = TestGraph.parse_object_nodes(self.config["tests_str"], object_strs=self.config["vm_strs"],
+                                                      prefix=self.prefix, params=self.config["param_dict"])
         object_suffixes = [o.suffix for o in objects]
         self.assertIn("vm1", object_suffixes)
         # due to lacking vm3 tutorial_get will not be parsed and the only already parsed vm remains vm1
@@ -685,9 +681,8 @@ class CartesianGraphTest(Test):
     def test_graph_sanity(self):
         """Test generic usage and composition."""
         self.config["tests_str"] += "only tutorial1\n"
-        nodes, objects = TestGraph.parse_object_nodes(self.config["param_dict"],
-                                                      self.config["tests_str"], self.config["vm_strs"],
-                                                      prefix=self.prefix)
+        nodes, objects = TestGraph.parse_object_nodes(self.config["tests_str"], object_strs=self.config["vm_strs"],
+                                                      prefix=self.prefix, params=self.config["param_dict"])
         graph = TestGraph.parse_object_trees(self.config["param_dict"],
                                              self.config["tests_str"], self.config["vm_strs"],
                                              prefix=self.prefix)
@@ -1537,11 +1532,10 @@ class CartesianGraphTest(Test):
         self.config["param_dict"]["retry_attempts"] = "2"
         self.config["param_dict"]["retry_stop"] = ""
 
-        flat_net = TestGraph.parse_net_from_object_strs(self.config["vm_strs"])
+        flat_net = TestGraph.parse_net_from_object_strs("net1", self.config["vm_strs"])
         test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         net = test_objects[-1]
-        test_node = TestGraph.parse_node_from_object(net, self.config["param_dict"].copy(),
-                                                     param.re_str("normal..tutorial1"))
+        test_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"].copy())
 
         DummyTestRun.asserted_tests = [
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},

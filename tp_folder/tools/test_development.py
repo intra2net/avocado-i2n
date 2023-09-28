@@ -66,8 +66,7 @@ def develop(config, tag=""):
 
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
-    setup_str = param.re_str("all..manual..develop.%s" % mode)
-    tests, objects = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
+    tests, objects = l.parse_object_nodes("all..manual..develop.%s" % mode, tag, config["vm_strs"], params=setup_dict)
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
 
     graph = TestGraph()

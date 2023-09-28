@@ -67,7 +67,7 @@ class CartesianLoader(Resolver):
         if reference is not None:
             assert reference.split() == self.config["params"]
 
-        param_dict, nodes_str = self.config["param_dict"], self.config["tests_str"]
-        runnables = [n.get_runnable() for n in TestGraph.parse_flat_nodes(param_dict, nodes_str)]
+        params, restriction = self.config["param_dict"], self.config["tests_str"]
+        runnables = [n.get_runnable() for n in TestGraph.parse_flat_nodes(restriction, params)]
 
         return ReferenceResolution(reference, ReferenceResolutionResult.SUCCESS, runnables)

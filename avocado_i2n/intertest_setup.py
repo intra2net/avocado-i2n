@@ -219,7 +219,7 @@ def update(config, tag=""):
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
     graph = TestGraph()
-    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    flat_net = l.parse_net_from_object_strs("net1", config["vm_strs"])
     initial_objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for i, vm_name in enumerate(selected_vms):
         vm_params = config["vms_params"].object_params(vm_name)
@@ -282,10 +282,9 @@ def update(config, tag=""):
             update_graph = TestGraph()
             update_graph.objects = vm_graph.objects
             # figure out the install node to compare against
-            setup_str = param.re_str("all..internal..customize")
-            start_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
-            setup_str = param.re_str("all..original.." + start_node.params["get_images"])
-            install_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
+            start_node = l.parse_node_from_object(net, "all..internal..customize", prefix=tag, params=config["param_dict"])
+            install_node = l.parse_node_from_object(net, "all..original.." + start_node.params["get_images"],
+                                                    prefix=tag, params=config["param_dict"])
             install_node.params["object_root"] = image.id
             update_graph.nodes.append(install_node)
         else:
@@ -342,8 +341,8 @@ def run(config, tag=""):
     # essentially we imitate the auto plugin to make the tool plugin a superset
     with new_job(config) as job:
 
-        param_dict, nodes_str = config["param_dict"], config["tests_str"]
-        runnables = [n.get_runnable() for n in TestGraph.parse_flat_nodes(param_dict, nodes_str)]
+        params, restriction = config["param_dict"], config["tests_str"]
+        runnables = [n.get_runnable() for n in TestGraph.parse_flat_nodes(restriction, params)]
         job.test_suites[0].tests = runnables
 
         retcode = job.run()
@@ -570,7 +569,7 @@ def unset(config, tag=""):
 
     l, r = config["graph"].l, config["graph"].r
     setup_dict = config["param_dict"].copy()
-    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    flat_net = l.parse_net_from_object_strs("net1", config["vm_strs"])
     for test_object in l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True):
         if test_object.key != "vms":
             continue
@@ -667,8 +666,7 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     vms = " ".join(selected_vms)
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
-    setup_str = param.re_str("all..internal..manage.%s" % verb[1])
-    tests, objects = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
+    tests, objects = l.parse_object_nodes("all..internal..manage.%s" % verb[1], tag, config["vm_strs"], params=setup_dict)
     assert len(tests) == 1, "There must be exactly one %s test variant from %s" % (verb[2], tests)
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
@@ -697,7 +695,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
                 param.ParsedDict(config["param_dict"]).reportable_form().rstrip("\n"))
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
-    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    flat_net = l.parse_net_from_object_strs("net1", config["vm_strs"])
     graph.objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for test_object in graph.objects:
         if test_object.key != "vms":
@@ -708,8 +706,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
 
         setup_dict = config["param_dict"].copy()
         setup_dict.update(param_dict)
-        setup_str = param.re_str("all..internal..manage.unchanged")
-        test_node = l.parse_node_from_object(net, setup_dict, setup_str, prefix=tag)
+        test_node = l.parse_node_from_object(net, "all..internal..manage.unchanged", prefix=tag, params=setup_dict)
         # TODO: traversal relies explicitly on object_suffix which only indicates
         # where a parent node was parsed from, i.e. which test object of the child node
         test_node.params["object_suffix"] = test_object.long_suffix
