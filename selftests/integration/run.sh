@@ -64,63 +64,63 @@ coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots
 # custom checks
 echo
 echo "Check graph verbosity after the complete test suite run"
-test -f "$test_results"/latest/cg_*.svg
-test -d "$test_results"/latest/graph_parse
-find "$test_results"/latest/graph_parse/cg_*.svg > /dev/null
-test -d "$test_results"/latest/graph_traverse
-find "$test_results"/latest/graph_traverse/cg_*.svg > /dev/null
+test -f "$test_results"/latest/cg_*.svg || (echo "Missing minimal main graph dump" && exit 1)
+test -d "$test_results"/latest/graph_parse || (echo "Missing graph parsing dump directory" && exit 1)
+find "$test_results"/latest/graph_parse/cg_*.svg > /dev/null || (echo "Missing graph parsing dumps" && exit 1)
+test -d "$test_results"/latest/graph_traverse || (echo "Missing graph traversal dump directory" && exit 1)
+find "$test_results"/latest/graph_traverse/cg_*.svg > /dev/null || (echo "Missing graph traversal dumps" && exit 1)
 
 echo
 echo "Check if all containers have identical and synced states after the run"
 ims="mnt/local/images"
 containers="$(printf $test_slots | sed "s/,/ /g")"
 for cid in $containers; do
-    diff -r /$ims/c101/rootfs/$ims /$ims/c$cid/rootfs/$ims -x el8-64* -x f33-64* -x win10-64* -x vm3
+    diff -r /$ims/c101/rootfs/$ims /$ims/c$cid/rootfs/$ims -x el8-64* -x f33-64* -x win10-64* -x vm3 || (echo "Different states found at ${cid}" && exit 1)
 done
 # verify that either vm1/vm2 shared pool doesn't exit or is empty for the validity of our tests
-ls -A1q /mnt/local/images/shared/vm1-* 2>/dev/null | grep -q . && exit 1
-ls -A1q /mnt/local/images/shared/vm2-* 2>/dev/null | grep -q . && exit 1
-ls -A1q /mnt/local/images/shared/vm3* | grep -q . || exit 1
+ls -A1q /mnt/local/images/shared/vm1-* 2>/dev/null | grep -q . && (echo "Unexpected vm1 images in the shared pool" && exit 1)
+ls -A1q /mnt/local/images/shared/vm2-* 2>/dev/null | grep -q . && (echo "Unexpected vm2 images in the shared pool" && exit 1)
+ls -A1q /mnt/local/images/shared/vm3* | grep -q . || (echo "Missing vm3 images in the shared pool" && exit 1)
 
 echo
 echo "Check replay and overall test reruns behave as expected"
 latest=$(basename $(realpath "$test_results"/latest))
 test_options="replay=$latest"
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots=$test_slots only=$test_sets $test_options
-test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == 2
-ls -A1q "$test_results/latest/test-results" | grep -q client_noop || exit 1
-ls -A1q "$test_results/latest/test-results" | grep -q explicit_noop || exit 1
+test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == 2 || (echo "Unexpected or missing tests replayed" && exit 1)
+ls -A1q "$test_results/latest/test-results" | grep -q client_noop || (echo "The client_noop test was not rerun or cleaned from previous run" && exit 1)
+ls -A1q "$test_results/latest/test-results" | grep -q explicit_noop || (echo "The explicit_noop test was not rerun or cleaned from previous run" && exit 1)
 latest=$(basename $(realpath "$test_results"/latest))
 test_sets="tutorial1"
 test_options="replay=$latest replay_status=pass"
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots=$test_slots only=$test_sets $test_options
-test -d "$test_results"/latest/test-results
+test -d "$test_results"/latest/test-results || (echo "Passing tests were not replayed" && exit 1)
 
 echo
 echo "Testing a mix of shared pool and serial run"
-ls -A1q /mnt/local/images/shared/vm1-* 2>/dev/null | grep -q . && exit 1
+ls -A1q /mnt/local/images/shared/vm1-* 2>/dev/null | grep -q . && (echo "Unexpected vm1 images in the shared pool found" && exit 1)
 mv /mnt/local/images/swarm/vm1-* /mnt/local/images/shared/
 test_options=""
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=run only=$test_sets $test_options
-test -d "$test_results"/latest/test-results
-ls -A1q "$test_results/latest/test-results" | grep -q install && exit 1
-ls -A1q "$test_results/latest/test-results" | grep -q tutorial1 || exit 1
+test -d "$test_results"/latest/test-results || (echo "No serial tests found" && exit 1)
+ls -A1q "$test_results/latest/test-results" | grep -q install && (echo "Unwanted install test found and shared pool wasn't reused" && exit 1)
+ls -A1q "$test_results/latest/test-results" | grep -q tutorial1 || (echo "The tutorial1 test wasn't run serially" && exit 1)
 
 echo
 echo "Test coverage for manual tools of all main types"
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=control slots=$test_slots vms=vm1,vm2 control_file=manual.control
 container_array=($containers)
-test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == ${#container_array[@]}
-test $(ls -A1q "$test_results/latest/test-results" | grep manage.run | wc -l) == ${#container_array[@]}
+test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == ${#container_array[@]} || (echo "Incorrect total of control file runs" && exit 1)
+test $(ls -A1q "$test_results/latest/test-results" | grep manage.run | wc -l) == ${#container_array[@]} || (echo "Incorrect number of control file runs" && exit 1)
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=get slots=$test_slots vms=vm1,vm2 get_state_images=customize
-test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == 10
-test $(ls -A1q "$test_results/latest/test-results" | grep manage.unchanged.vm1 | wc -l) == 5
-test $(ls -A1q "$test_results/latest/test-results" | grep manage.unchanged.vm2 | wc -l) == 5
+test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == 10 || (echo "Incorrect number of total state retrieval tests" && exit 1)
+test $(ls -A1q "$test_results/latest/test-results" | grep manage.unchanged.vm1 | wc -l) == 5 || (echo "Incorrect number of vm1 state retrieval tests" && exit 1)
+test $(ls -A1q "$test_results/latest/test-results" | grep manage.unchanged.vm2 | wc -l) == 5 || (echo "Incorrect number of vm2 state retrieval tests" && exit 1)
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=update slots=$test_slots vms=vm1,vm2 \
     from_state=customize to_state_vm1=connect remove_set=tutorial3
-test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == 3
-test $(ls -A1q "$test_results/latest/test-results" | grep customize | wc -l) == 2
-test $(ls -A1q "$test_results/latest/test-results" | grep connect.vm1 | wc -l) == 1
+test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == 3 || (echo "Incorrect number of total tests during update" && exit 1)
+test $(ls -A1q "$test_results/latest/test-results" | grep customize | wc -l) == 2 || (echo "Incorrect number of customize tests during update" && exit 1)
+test $(ls -A1q "$test_results/latest/test-results" | grep connect.vm1 | wc -l) == 1 || (echo "Incorrect number of connect tests during update" && exit 1)
 
 echo
 echo "Integration tests passed successfully"
