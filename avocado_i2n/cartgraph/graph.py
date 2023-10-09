@@ -734,18 +734,21 @@ class TestGraph(object):
         return test_node
 
     def parse_and_get_objects_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
-                                                  params: dict[str, str] = None) -> list[TestObject]:
+                                                  params: dict[str, str] = None) -> (list[TestObject], list[TestObject]):
         """
         Generate or reuse all component test objects for a given test node.
 
         Decide about test objects participating in the test node returning the
         final selection of such and the main object for the test.
 
-        :param test_node: fully parsed test node to check the components from
+        :param test_node: possibly flat test node to parse and get objects for
         :param test_object: possibly flat test object to get network suffixes from (currently mostly a flat net)
         :param params: runtime parameters used for extra customization
+        :returns: a tuple of all reused and newly parsed test objects
         """
         d, graph = test_node.params, self
+        if not isinstance(test_object, NetObject):
+            raise NotImplementedError("Can only parse objects for node and net for now")
         object_name = d.get("object_suffix", "")
         object_type = d.get("object_type", "")
         object_variant = d.get("object_id", ".*").replace(object_name + "-", "")
@@ -774,10 +777,17 @@ class TestGraph(object):
         dropped_vms = set(all_vms) - set(vms)
         logging.debug(f"Fetching nets composed of {', '.join(vms)} to parse {d['shortname']} nodes")
 
-        get_vms = {}
+        get_vms, parse_vms = {}, {}
         for vm_name in vms:
             # get vm objects of all variants with the current suffix
             get_vms[vm_name] = [o for o in graph.objects if o.key == "vms" and o.suffix == vm_name]
+            if len(get_vms[vm_name]) == 0:
+                logging.debug(f"Parsing a new vm {vm_name} for the test {d['shortname']}")
+                parse_vms[vm_name] = TestGraph.parse_composite_objects(vm_name, "vms", "", params=params)
+                graph.objects += parse_vms[vm_name]
+                for vm in parse_vms[vm_name]:
+                    graph.objects += TestGraph.parse_components_for_object(vm, "vms", params=params)
+                get_vms[vm_name] = parse_vms[vm_name]
             # mix of regex and own OR operator to restrict down to compatible variants
             filtered_vms = []
             for vm_variant in d.get(f"only_{vm_name}", ".*").split(","):
@@ -827,7 +837,7 @@ class TestGraph(object):
 
         logging.debug(f"{len(get_nets[test_object.suffix])} test nets will be reused for {d['shortname']} "
                       f"with {len(parse_nets[test_object.suffix])} newly parsed ones")
-        return get_nets[test_object.suffix] + parse_nets[test_object.suffix]
+        return get_nets[test_object.suffix], parse_nets[test_object.suffix]
 
     def parse_nodes(self, restriction: str = "", prefix: str = "",
                     params: dict[str, str] = None, verbose: bool = False) -> list[TestNode]:
@@ -853,7 +863,8 @@ class TestGraph(object):
             # get configuration of each participating object and choose the one to mix with the node
             try:
                 default_flat_net = TestGraph.parse_net_from_object_strs("net1", {})
-                test_nets = self.parse_and_get_objects_for_node_and_object(node, default_flat_net, params=params)
+                get_nets, parse_nets = self.parse_and_get_objects_for_node_and_object(node, default_flat_net, params=params)
+                test_nets = get_nets + parse_nets
             except ValueError:
                 logging.debug(f"Could not get or construct a test net that is (right-)compatible "
                               f"with the test node {node.params['shortname']} configuration - skipping")
@@ -909,24 +920,29 @@ class TestGraph(object):
         # starting object restrictions could be specified externally
         object_strs = {} if object_strs is None else object_strs
 
-        graph = TestGraph()
         default_flat_net = TestGraph.parse_net_from_object_strs("net1", object_strs)
-        graph.objects = TestGraph.parse_components_for_object(default_flat_net, "nets",
-                                                              params=params, verbose=False, unflatten=False)
+        objects = TestGraph.parse_components_for_object(default_flat_net, "nets",
+                                                        params=params, verbose=False, unflatten=False)
+        objects = {o.id: o for o in objects}
         # the parsed test nodes are already fully restricted by the available test objects
-        graph.nodes = graph.parse_nodes(restriction, prefix, params=params, verbose=True)
-        for test_node in graph.nodes:
-            test_nodes.append(test_node)
-            for test_object in test_node.objects:
-                if test_object.key == "vms":
+        nodes = TestGraph().parse_nodes(restriction, prefix, params=params, verbose=True)
+        for test_node in nodes:
+            node_vms = [o for o in test_node.objects if o.key == "vms"]
+            for test_object in node_vms:
+                if test_object.id not in objects.keys():
+                    break
+            else:
+                test_nodes.append(test_node)
+                # test node is valid according to the object restriction, now add its objects as valid ones
+                for test_object in node_vms:
                     if test_object not in test_objects:
                         test_objects.append(test_object)
                         test_objects.extend(test_object.components)
                         if verbose:
                             print("vm    %s:  %s" % (test_object.suffix, test_object.params["shortname"]))
-            # reuse additionally parsed net (node-level) objects
-            if test_node.objects[0] not in test_objects:
-                test_objects.append(test_node.objects[0])
+                # reuse additionally parsed net (node-level) objects
+                if test_node.objects[0] not in test_objects:
+                    test_objects.append(test_node.objects[0])
 
         # handle empty product of node and object variants
         if len(test_nodes) == 0:

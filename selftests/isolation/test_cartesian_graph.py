@@ -649,6 +649,35 @@ class CartesianGraphTest(Test):
         to_traverse = [self.runner.run_traversal(graph, params, s) for s in slot_workers if "runtime_str" in s.params]
         loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse), None))
 
+    def test_parse_and_get_objects_for_node_and_object(self):
+        """Test default parsing and retrieval of objects for a flag pair of test node and object."""
+        graph = TestGraph()
+        flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_objects), 1)
+        flat_object = flat_objects[0]
+        get_objects, parse_objects = graph.parse_and_get_objects_for_node_and_object(flat_node, flat_object)
+        self.assertEqual(len(get_objects), 0)
+        test_objects = parse_objects
+
+        self.assertEqual(len(test_objects), 2)
+
+        self.assertEqual(test_objects[0].suffix, "net1")
+        self.assertIn("CentOS", test_objects[0].id)
+        self.assertEqual(len(test_objects[0].components), 1)
+        self.assertIn("CentOS", test_objects[0].components[0].id)
+        self.assertEqual(len(test_objects[0].components[0].components), 1)
+        self.assertEqual(test_objects[0].components[0].components[0].long_suffix, "image1_vm1")
+
+        self.assertEqual(test_objects[1].suffix, "net1")
+        self.assertIn("Fedora", test_objects[1].id)
+        self.assertEqual(len(test_objects[1].components), 1)
+        self.assertIn("Fedora", test_objects[1].components[0].id)
+        self.assertEqual(len(test_objects[1].components[0].components), 1)
+        self.assertEqual(test_objects[1].components[0].components[0].long_suffix, "image1_vm1")
+
     def test_object_node_incompatible(self):
         """Test incompatibility of parsed tests and pre-parsed available objects."""
         self.config["tests_str"] += "only tutorial1\n"
