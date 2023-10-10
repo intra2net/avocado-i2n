@@ -968,9 +968,20 @@ class TestGraph(object):
         :param test_node: fully parsed test node to check the dependencies from
         :param test_object: fully parsed test object to identify a unique node dependency
         :param params: runtime parameters used for extra customization
+        :returns: a tuple of all reused and newly parsed test nodes
         """
         graph = self
         object_params = test_object.object_typed_params(test_node.params)
+        object_dependency = object_params.get("get")
+        # handle nodes without dependency for the given object
+        if not object_dependency:
+            return [], []
+        # TODO: parially loaded nodes are supposed to be already handled
+        # handle partially loaded nodes with already satisfied dependency
+        if len(test_node.setup_nodes) > 0 and test_node.has_dependency(object_dependency, test_object):
+            logging.debug("Dependency already parsed through duplication or partial dependency resolution")
+            return [], []
+
         # objects can appear within a test without any prior dependencies
         setup_restr = object_params["get"]
         setup_obj_resr = test_object.component_form
@@ -1089,15 +1100,6 @@ class TestGraph(object):
             for test_object in test_node.objects:
                 logging.debug(f"Parsing dependencies of {test_node.params['shortname']} "
                               f"for object {test_object.long_suffix}")
-                object_params = test_object.object_typed_params(test_node.params)
-                object_dependency = object_params.get("get")
-                # handle nodes without dependency for the given object
-                if not object_dependency:
-                    continue
-                # handle partially loaded nodes with already satisfied dependency
-                if len(test_node.setup_nodes) > 0 and test_node.has_dependency(object_dependency, test_object):
-                    logging.debug("Dependency already parsed through duplication or partial dependency resolution")
-                    continue
 
                 # get and parse parents
                 get_parents, parse_parents = graph.parse_and_get_nodes_for_node_and_object(test_node, test_object, param_dict)
@@ -1116,9 +1118,9 @@ class TestGraph(object):
                     graph.nodes.extend(clones)
                     unresolved.extend(clones)
 
-                if log.getLogger('graph').level <= log.DEBUG:
-                    step += 1
-                    graph.visualize(parse_dir, str(step))
+            if log.getLogger('graph').level <= log.DEBUG:
+                step += 1
+                graph.visualize(parse_dir, str(step))
             test_node.validate()
 
         if with_shared_root:

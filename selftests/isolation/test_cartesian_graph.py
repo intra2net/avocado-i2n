@@ -683,15 +683,17 @@ class CartesianGraphTest(Test):
         self.config["tests_str"] += "only tutorial1\n"
         self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
         with self.assertRaises(param.EmptyCartesianProduct):
-            TestGraph.parse_object_nodes(self.config["tests_str"], object_strs=self.config["vm_strs"],
-                                         prefix=self.prefix, params=self.config["param_dict"])
+            TestGraph.parse_object_nodes(self.config["tests_str"], prefix=self.prefix,
+                                         object_strs=self.config["vm_strs"],
+                                         params=self.config["param_dict"])
 
     def test_object_node_intersection(self):
         """Test restricted vms-tests nonempty intersection of parsed tests and pre-parsed available objects."""
         self.config["tests_str"] += "only tutorial1,tutorial_get\n"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-        nodes, objects = TestGraph.parse_object_nodes(self.config["tests_str"], object_strs=self.config["vm_strs"],
-                                                      prefix=self.prefix, params=self.config["param_dict"])
+        nodes, objects = TestGraph.parse_object_nodes(self.config["tests_str"], prefix=self.prefix,
+                                                      object_strs=self.config["vm_strs"],
+                                                      params=self.config["param_dict"])
         object_suffixes = [o.suffix for o in objects]
         self.assertIn("vm1", object_suffixes)
         # due to lacking vm3 tutorial_get will not be parsed and the only already parsed vm remains vm1
@@ -706,6 +708,38 @@ class CartesianGraphTest(Test):
         for n in nodes:
             if "tutorial_get" in n.params["name"]:
                 raise AssertionError("The tutorial_get variant must be skipped since vm3 is not available")
+
+    def test_parse_and_get_nodes_for_node_and_object(self):
+        """Test default parsing and retrieval of objects for a flag pair of test node and object."""
+        graph = TestGraph()
+        nodes, objects = TestGraph.parse_object_nodes("normal..tutorial1", prefix=self.prefix,
+                                                      object_strs=self.config["vm_strs"],
+                                                      params=self.config["param_dict"])
+        self.assertEqual(len(nodes), 1)
+        full_node = nodes[0]
+        self.assertEqual(len(objects), 3)
+
+        self.assertEqual(len([o for o in objects if o.key == "nets"]), 1)
+        full_net = [o for o in objects if o.key == "nets"][0]
+        get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_net)
+        self.assertEqual(len(get_nodes), 0)
+        self.assertEqual(len(parse_nodes), 0)
+
+        self.assertEqual(len([o for o in objects if o.key == "vms"]), 1)
+        full_vm = [o for o in objects if o.key == "vms"][0]
+        get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_vm)
+        self.assertEqual(len(get_nodes), 0)
+        self.assertEqual(len(parse_nodes), 1)
+        graph.nodes += parse_nodes
+        get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_vm)
+        self.assertEqual(len(get_nodes), 1)
+        self.assertEqual(len(parse_nodes), 0)
+
+        self.assertEqual(len([o for o in objects if o.key == "images"]), 1)
+        full_image = [o for o in objects if o.key == "images"][0]
+        get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image)
+        self.assertEqual(len(get_nodes), 0)
+        self.assertEqual(len(parse_nodes), 0)
 
     def test_graph_sanity(self):
         """Test generic usage and composition."""
