@@ -664,7 +664,8 @@ class CartesianGraphTest(Test):
     def _run_traversal(self, graph, params):
         loop = asyncio.get_event_loop()
         slot_workers = sorted(list(graph.workers.values()), key=lambda x: x.params["name"])
-        to_traverse = [self.runner.run_traversal(graph, params, s) for s in slot_workers if "runtime_str" in s.params]
+        graph.runner = self.runner
+        to_traverse = [graph.traverse_object_trees(s, params) for s in slot_workers if "runtime_str" in s.params]
         loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse), None))
 
     def test_parse_and_get_objects_for_node_and_object(self):

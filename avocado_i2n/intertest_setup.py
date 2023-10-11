@@ -346,7 +346,6 @@ def run(config, tag=""):
         job.test_suites[0].tests = runnables
 
         retcode = job.run()
-        # runner.run_traversal(graph, config["param_dict"].copy())
 
         config["graph"] = None
         return retcode

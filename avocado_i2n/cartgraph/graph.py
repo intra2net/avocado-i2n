@@ -30,10 +30,12 @@ INTERFACE
 
 import os
 import re
+import time
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 import collections
 import itertools
+import asyncio
 
 from .. import params_parser as param
 from . import TestNode, TestWorker, TestObject, NetObject, VMObject, ImageObject
@@ -156,6 +158,10 @@ class TestGraph(object):
         self.objects = []
         self.nodes = []
         self.workers = {}
+
+        # TODO: these attributes must interface with jobs and runners
+        self.logdir = TestGraph.logdir
+        self.runner = None
 
     def __repr__(self):
         dump = "[cartgraph] objects='%s' nodes='%s'" % (len(self.objects), len(self.nodes))
@@ -377,7 +383,7 @@ class TestGraph(object):
             else:
                 test_node.should_clean = flag.__get__(test_node)
 
-    """get queries"""
+    """parse and get functionality"""
     def get_objects_by(self, param_key="name", param_val="", subset=None):
         """
         Query all test objects by a value in a parameter, returning a set of objects.
@@ -447,7 +453,6 @@ class TestGraph(object):
         assert len(nodes_selection) == 1
         return nodes_selection[0]
 
-    """parsing functionality"""
     @staticmethod
     def parse_flat_objects(suffix: str, category: str, restriction: str = "",
                            params: dict[str, str] = None) -> list[TestObject]:
@@ -1207,3 +1212,264 @@ class TestGraph(object):
         if with_shared_root:
             graph.parse_shared_root_from_object_roots(param_dict)
         return graph
+
+    """traverse functionality"""
+    async def traverse_terminal_node(self, object_name: str, worker: TestWorker, params: dict[str, str]) -> bool:
+        """
+        Traverse an extra set of tests necessary for creating a given test object.
+
+        :param object_name: name of the test object to be created
+        :param worker: worker traversing the terminal node
+        :param params: runtime parameters used for extra customization
+        :returns: whether the terminal node was run successfully or not
+        :raises: :py:class:`NotImplementedError` if using incompatible installation variant
+
+        The current implementation with implicit knowledge on the types of test objects
+        internally spawns an original (otherwise unmodified) install test.
+        """
+        slot = worker
+        object_suffix, object_variant = object_name.split("-")[:1][0], "-".join(object_name.split("-")[1:])
+        object_image, object_vm = object_suffix.split("_")
+        objects = self.get_objects_by(param_val="^"+object_variant+"$",
+                                      subset=self.get_objects_by("images", object_suffix.split("_")[0]))
+        vms = [o for o in objects if o.key == "vms"]
+        assert len(vms) == 1, "Test object %s's vm not existing or unique in: %s" % (object_name, objects)
+        test_object = objects[0]
+
+        nodes = self.get_nodes_by("object_root", object_name)
+        assert len(nodes) == 1, "There should exist one unique root for %s" % object_name
+        test_node = nodes[0]
+
+        if test_object.is_permanent() and not test_node.params.get_boolean("create_permanent_vm"):
+            raise AssertionError("Reached a permanent object root for %s due to incorrect setup"
+                                 % test_object.suffix)
+
+        logging.info("Configuring creation/installation for %s on %s", object_vm, object_image)
+        setup_dict = test_node.params.copy()
+        for key in list(setup_dict.keys()):
+            if "/" in key:
+                del setup_dict[key]
+        setup_dict.update({} if params is None else params.copy())
+        setup_dict.update({"type": "shared_configure_install", "check_mode": "rr",  # explicit root handling
+                           # overwrite some params inherited from the modified install node
+                           f"set_state_images_{object_image}_{object_vm}": "root", "start_vm": "no"})
+        install_config = test_object.config.get_copy()
+        install_config.parse_next_batch(base_file="sets.cfg",
+                                        ovrwrt_file=param.tests_ovrwrt_file(),
+                                        ovrwrt_str=param.re_str("all..noop"),
+                                        ovrwrt_dict=setup_dict)
+        pre_node = TestNode("0t", install_config)
+        pre_node.set_objects_from_net(test_node.objects[0])
+        pre_node.set_environment(slot)
+        status = await self.runner.run_test_node(pre_node)
+        if not status:
+            logging.error("Could not configure the installation for %s on %s", object_vm, object_image)
+            return status
+
+        logging.info("Installing virtual machine %s", test_object.suffix)
+        test_node.params["type"] = test_node.params["configure_install"]
+        return await self.runner.run_test_node(test_node)
+
+    async def traverse_node(self, test_node: TestNode, worker: TestWorker, params: dict[str, str]) -> None:
+        """
+        Traverse a test node according to a given run policy and additional runner conditions.
+
+        :param test_node: node to be traversed
+        :param worker: worker traversing the terminal node
+        :param params: runtime parameters used for extra customization
+        """
+        slot = worker
+        if not test_node.is_occupied():
+            test_node.set_environment(slot)
+        else:
+            return
+
+        if not test_node.params.get("set_location") and not test_node.is_shared_root():
+            shared_locations = test_node.params.get_list("shared_pool", ["/:."])
+            for location in shared_locations:
+                test_node.add_location(location)
+
+        replay_skip = test_node.params["name"] in self.runner.skip_tests
+        if replay_skip:
+            logging.debug(f"Test {test_node.params['shortname']} will be skipped via previous job")
+        if test_node.should_run(slot) and (not replay_skip or test_node.produces_setup()):
+
+            # the primary setup nodes need special treatment
+            if params.get("dry_run", "no") == "yes":
+                logging.info("Running a dry %s", test_node.params["shortname"])
+                status = False
+            elif test_node.is_shared_root():
+                logging.debug(f"Test run on {slot.id} started from the shared root")
+                status = False
+            elif test_node.is_object_root():
+                status = await self.traverse_terminal_node(test_node.params["object_root"], worker, params)
+                if not status:
+                    logging.error("Could not perform the installation from %s", test_node)
+
+            else:
+                # finally, good old running of an actual test
+                status = await self.runner.run_test_node(test_node)
+                if not status:
+                    logging.error("Got nonzero status from the test %s", test_node)
+
+            for test_object in test_node.objects:
+                object_params = test_object.object_typed_params(test_node.params)
+                # if a state was set it is final and the retrieved state was overwritten
+                object_state = object_params.get("set_state", object_params.get("get_state"))
+                if object_state is not None and object_state != "":
+                    test_object.current_state = object_state
+
+            # node is not shared and with owned setup that is not yet claimed
+            if status:
+                setup_host = test_node.params["nets_host"]
+                setup_gateway = test_node.params["nets_gateway"]
+                setup_spawner = test_node.params["nets_spawner"]
+                setup_path = test_node.params.get("swarm_pool", test_node.params["vms_base_dir"])
+                # TODO: add support for local copy and lxc containers?
+                if setup_spawner == "process":
+                    if setup_host != "" or setup_gateway != "":
+                        raise RuntimeError("Serial process test runs cannot be isolated via hosts")
+                    # separate symmetric and asymmetric sharing
+                    if test_node.params.get_boolean("use_symlink"):
+                        setup_path += ";"
+
+                setup_source = setup_gateway + "/" + setup_host + ":" + setup_path
+                test_node.add_location(setup_source)
+
+        else:
+            logging.debug(f"Skipping test {slot.id} on %s", test_node.params["shortname"])
+
+        # free the node for traversal by other workers
+        test_node.workers.add(slot)
+        test_node.worker = None
+
+    async def reverse_node(self, test_node: TestNode, worker: TestWorker, params: dict[str, str]) -> None:
+        """
+        Reverse or traverse in the opposite direction a test node according to a given clean policy.
+
+        :param test_node: node to be reversed (traversed in the opposite direction)
+        :param worker: worker reversing the terminal node
+        :param params: runtime parameters used for extra customization
+
+        The reversal consists of cleanup or sync of any states that could be created by this node
+        instead of running via the test runner which is done for the traversal.
+        """
+        slot = worker
+        if not test_node.is_occupied():
+            test_node.set_environment(slot)
+        else:
+            return
+        if test_node.should_clean(slot):
+
+            if params.get("dry_run", "no") == "yes":
+                logging.info("Cleaning a dry %s", test_node.params["shortname"])
+            elif test_node.is_shared_root():
+                logging.debug(f"Test run on {slot.id} ended at the shared root")
+
+            elif test_node.produces_setup():
+                test_node.sync_states(params)
+
+        else:
+            logging.debug(f"The test %s should not be cleaned up on {slot.id}", test_node.params["shortname"])
+        test_node.worker = None
+
+    async def traverse_object_trees(self, worker: TestWorker, params: dict[str, str]) -> None:
+        """
+        Run all user and system defined tests optimizing the setup reuse and
+        minimizing the repetition of demanded tests.
+
+        :param worker: worker traversing the graph
+        :param params: runtime parameters used for extra customization
+        :raises: :py:class:`AssertionError` if some traversal assertions are violated
+
+        The highest priority is at the setup tests (parents) since the test cannot be
+        run without the required setup, then the current test, then a single child of
+        its children (DFS), and finally the other children (tests that can benefit from
+        the fact that this test/setup was done) followed by the other siblings (tests
+        benefiting from its parent/setup.
+
+        Of course all possible children are restricted by the user-defined "only" and
+        the number of internal test nodes is minimized for achieving this goal.
+        """
+        slot = worker
+        logging.debug(f"Worker {slot.id} starting complete graph traversal with parameters {params}")
+        shared_roots = self.get_nodes_by("shared_root", "yes")
+        assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
+        root = shared_roots[0]
+
+        if log.getLogger('graph').level <= log.DEBUG:
+            traverse_dir = os.path.join(self.logdir, "graph_traverse")
+            if not os.path.exists(traverse_dir):
+                os.makedirs(traverse_dir)
+
+        traverse_path = [root]
+        occupied_at, occupied_wait = None, 0.0
+        while not root.is_cleanup_ready(slot):
+            next = traverse_path[-1]
+            if len(traverse_path) > 1:
+                previous = traverse_path[-2]
+            else:
+                # since the loop is discontinued if len(traverse_path) == 0 or root.is_cleanup_ready()
+                # a valid current node with at least one child is guaranteed
+                traverse_path.append(next.pick_child(slot))
+                continue
+            if next.is_occupied() and next.params.get_boolean("wait_for_occupied", True):
+                # ending with an occupied node would mean we wait for a permill of its duration
+                test_duration = next.params.get_numeric("test_timeout", 3600) * (next.params.get_numeric("retry_attempts", 0) + 1)
+                occupied_timeout = round(max(test_duration/1000, 0.1), 2)
+                if next == occupied_at:
+                    if occupied_wait > test_duration:
+                        raise RuntimeError(f"Worker {slot.id} spent {occupied_wait:.2f} seconds waiting for "
+                                           f"occupied node of maximum test duration {test_duration:.2f}")
+                    occupied_wait += occupied_timeout
+                else:
+                    # reset as we are waiting for a different node now
+                    occupied_wait = 0.0
+                occupied_at = next
+                logging.debug(f"Worker {slot.id} stepping back from already occupied test node {next} for "
+                              f"a period of {occupied_timeout} seconds (total time spent: {occupied_wait:.2f})")
+                traverse_path.pop()
+                await asyncio.sleep(occupied_timeout)
+                continue
+
+            logging.debug("Worker %s at test node %s which is %sready with setup and %sready with cleanup",
+                          slot.id, next.params["shortname"],
+                          "not " if not next.is_setup_ready(slot) else "",
+                          "not " if not next.is_cleanup_ready(slot) else "")
+            logging.debug("Current traverse path/stack for %s:\n%s", slot.id,
+                          "\n".join([n.params["shortname"] for n in traverse_path]))
+            # if previous in path is the child of the next, then the path is reversed
+            # looking for setup so if the next is setup ready and already run, remove
+            # the previous' reference to it and pop the current next from the path
+            if previous in next.cleanup_nodes:
+
+                if next.is_setup_ready(slot):
+                    previous.visit_parent(next, slot)
+                    await self.traverse_node(next, slot, params)
+                    traverse_path.pop()
+                else:
+                    # inverse DFS
+                    traverse_path.append(next.pick_parent(slot))
+            elif previous in next.setup_nodes:
+
+                # stop if test is not a setup leaf since parents have higher priority than children
+                if not next.is_setup_ready(slot):
+                    traverse_path.append(next.pick_parent(slot))
+                    continue
+                else:
+                    await self.traverse_node(next, slot, params)
+
+                if next.is_cleanup_ready(slot):
+                    for setup in next.setup_nodes:
+                        setup.visit_child(next, slot)
+                    await self.reverse_node(next, slot, params)
+                    traverse_path.pop()
+                    self.report_progress()
+                else:
+                    # normal DFS
+                    traverse_path.append(next.pick_child(slot))
+            else:
+                raise AssertionError("Discontinuous path in the test dependency graph detected")
+
+            if log.getLogger('graph').level <= log.DEBUG:
+                self.visualize(traverse_dir, f"{time.time():.4f}_{slot.id}")
