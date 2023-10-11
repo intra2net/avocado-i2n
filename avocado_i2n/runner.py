@@ -514,7 +514,8 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_file=param.tests_ovrwrt_file(),
                                         ovrwrt_str=param.re_str("all..noop"),
                                         ovrwrt_dict=setup_dict)
-        pre_node = TestNode("0t", install_config, test_node.objects[0])
+        pre_node = TestNode("0t", install_config)
+        pre_node.set_objects_from_net(test_node.objects[0])
         pre_node.set_environment(slot)
         status = await self.run_test_node(pre_node)
         if not status:

@@ -72,7 +72,9 @@ def develop(config, tag=""):
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
     graph.objects = objects
-    graph.nodes = [TestNode(tag, tests[0].config, objects[-1])]
+    test_node = TestNode(tag, tests[0].config)
+    test_node.set_objects_from_net(objects[-1])
+    graph.nodes = [test_node]
     graph.parse_shared_root_from_object_trees(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: True)
 

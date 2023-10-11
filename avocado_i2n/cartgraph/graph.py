@@ -116,7 +116,8 @@ class TestGraph(object):
                 else:
                     clone_name = clone_source.prefix + "d" + str(i)
                     clone_config = clone_source.config.get_copy()
-                    clone = TestNode(clone_name, clone_config, clone_source.objects[0])
+                    clone = TestNode(clone_name, clone_config)
+                    clone.set_objects_from_net(clone_source.objects[0])
                     clone.regenerate_params()
 
                     # clone setup with the exception of unique parent copy
@@ -457,6 +458,7 @@ class TestGraph(object):
         :param category: category of the suffix that will determine the type of the objects
         :param restriction: restriction for the generated variants
         :param params: additional parameters to add to or overwrite all objects' parameters
+        :returns: a list of parsed flat test objects
         """
         params = {} if not params else params
         params_str = param.ParsedDict(params).parsable_form()
@@ -477,7 +479,9 @@ class TestGraph(object):
             variant_config.parse_next_str("only " + d["name"])
 
             test_object = object_class(suffix, variant_config)
+            # TODO: this causes a separate re-parsing for each object
             test_object.regenerate_params()
+            # TODO: consider generator as performance option also for flat and composite objects
             test_objects += [test_object]
 
         return test_objects
@@ -681,22 +685,31 @@ class TestGraph(object):
     @staticmethod
     def parse_flat_nodes(restriction: str = "", params: dict[str, str] = None) -> list[TestNode]:
         """
-        Parse flat nodes as a generator in order to compose with test objects.
+        Parse a flat node for each variant of satisfying a restriction.
 
         :param restriction: block of node-specific variant restrictions
         :param params: runtime parameters used for extra customization
-        :returns: generator of flat node items
+        :returns: a list of parsed flat test nodes
         """
-        early_config = param.Reparsable()
-        early_config.parse_next_file("sets.cfg")
-        early_config.parse_next_str(param.re_str(restriction))
-        if params:
-            early_config.parse_next_dict(params)
-        test_node = TestNode("0", early_config, NetObject("net0", early_config))
-        for i, d in enumerate(early_config.get_parser().get_dicts()):
-            test_node.prefix = str(i)
-            test_node._params_cache = d
-            yield test_node
+        params = params or {}
+
+        config = param.Reparsable()
+        config.parse_next_batch(base_file=f"sets.cfg",
+                                base_str=param.re_str(restriction),
+                                base_dict=params)
+
+        test_nodes = []
+        for i, d in enumerate(config.get_parser().get_dicts()):
+            variant_config = config.get_copy()
+            variant_config.parse_next_str("only " + d["name"])
+
+            test_node = TestNode(str(i), variant_config)
+            # TODO: this causes a separate re-parsing for each node
+            test_node.regenerate_params()
+            # TODO: consider generator as performance option also for flat and composite nodes
+            test_nodes += [test_node]
+
+        return test_nodes
 
     @staticmethod
     def parse_node_from_object(test_object: TestObject, restriction: str = "",
@@ -721,7 +734,8 @@ class TestGraph(object):
                                 ovrwrt_file=param.tests_ovrwrt_file(),
                                 ovrwrt_str=param.re_str(restriction),
                                 ovrwrt_dict=params)
-        test_node = TestNode(prefix, config, test_object)
+        test_node = TestNode(prefix, config)
+        test_node.set_objects_from_net(test_object)
         test_node.regenerate_params()
         for vm_name in test_node.params.objects("vms"):
             if test_node.params.get(f"only_{vm_name}"):

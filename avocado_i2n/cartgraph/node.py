@@ -39,7 +39,7 @@ from aexpect import remote_door as door
 from avocado.core.test_id import TestID
 from avocado.core.nrunner.runnable import Runnable
 
-from . import TestWorker
+from . import TestWorker, NetObject
 
 
 door.DUMP_CONTROL_DIR = "/tmp"
@@ -87,15 +87,13 @@ class TestNode(object):
 
     _session_cache = {}
 
-    def __init__(self, prefix, config, object):
+    def __init__(self, prefix, config):
         """
         Construct a test node (test) for any test objects (vms).
 
         :param str name: name of the test node
         :param config: variant configuration for the test node
         :type config: :py:class:`param.Reparsable`
-        :param object: node-level object participating in the test node
-        :type object: :py:class:`NetObject`
         """
         self.prefix = prefix
         self.config = config
@@ -107,29 +105,7 @@ class TestNode(object):
         self.workers = set()
         self.worker = None
 
-        # flattened list of objects (in composition) involved in the test
-        self.objects = [object]
-        # TODO: only three nesting levels from a test net are supported
-        if object.key != "nets":
-            raise AssertionError("Test node could be initialized only from test objects "
-                                 "of the same composition level, currently only test nets")
-        for test_object in object.components:
-            self.objects += [test_object]
-            self.objects += test_object.components
-            # TODO: dynamically added additional images will not be detected here
-            from . import ImageObject
-            from .. import params_parser as param
-            vm_name = test_object.suffix
-            parsed_images = [c.suffix for c in test_object.components]
-            for image_name in self.params.object_params(vm_name).objects("images"):
-                if image_name not in parsed_images:
-                    image_suffix = f"{image_name}_{vm_name}"
-                    config = param.Reparsable()
-                    config.parse_next_dict(test_object.params.object_params(image_name))
-                    config.parse_next_dict({"object_suffix": image_suffix, "object_type": "images"})
-                    image = ImageObject(image_suffix, config)
-                    image.composites.append(test_object)
-                    self.objects += [image]
+        self.objects = []
 
         # lists of parent and children test nodes
         self.setup_nodes = []
@@ -176,6 +152,33 @@ class TestNode(object):
         self.params["nets_host"] = worker.params["nets_host"]
         self.params["nets_spawner"] = worker.params["nets_spawner"]
         self.worker = worker
+
+    def set_objects_from_net(self, net: NetObject) -> None:
+        """
+        Set all node's objects from a provided test net.
+
+        :param net: test net to use as first and top object
+        """
+        # flattened list of objects (in composition) involved in the test
+        self.objects = [net]
+        # TODO: only three nesting levels from a test net are supported
+        for test_object in net.components:
+            self.objects += [test_object]
+            self.objects += test_object.components
+            # TODO: dynamically added additional images will not be detected here
+            from . import ImageObject
+            from .. import params_parser as param
+            vm_name = test_object.suffix
+            parsed_images = [c.suffix for c in test_object.components]
+            for image_name in self.params.object_params(vm_name).objects("images"):
+                if image_name not in parsed_images:
+                    image_suffix = f"{image_name}_{vm_name}"
+                    config = param.Reparsable()
+                    config.parse_next_dict(test_object.params.object_params(image_name))
+                    config.parse_next_dict({"object_suffix": image_suffix, "object_type": "images"})
+                    image = ImageObject(image_suffix, config)
+                    image.composites.append(test_object)
+                    self.objects += [image]
 
     def is_occupied(self):
         return self.worker is not None
@@ -514,9 +517,9 @@ class TestNode(object):
 
         location_tuple = location.split(":")
         gateway, host = ("", "") if len(location_tuple) <= 1 else location_tuple[0].split("/")
-        ip, port = type(self.objects[0]).get_session_ip_port(host, gateway,
-                                                             self.params['nets_ip_prefix'],
-                                                             self.params["nets_shell_port"])
+        ip, port = NetObject.get_session_ip_port(host, gateway,
+                                                 self.params['nets_ip_prefix'],
+                                                 self.params["nets_shell_port"])
 
         if self.params.get("set_location"):
             self.params["set_location"] += " " + location
@@ -551,10 +554,10 @@ class TestNode(object):
         :returns: IP and port in string parameter format
         :rtype: (str, str)
         """
-        return type(self.objects[0]).get_session_ip_port(self.params['nets_host'],
-                                                         self.params['nets_gateway'],
-                                                         self.params['nets_ip_prefix'],
-                                                         self.params["nets_shell_port"])
+        return NetObject.get_session_ip_port(self.params['nets_host'],
+                                             self.params['nets_gateway'],
+                                             self.params['nets_ip_prefix'],
+                                             self.params["nets_shell_port"])
 
     def get_session_to_net(self):
         """
@@ -746,7 +749,7 @@ class TestNode(object):
         if len(attr_nets) > 1 or len(param_nets) > 1:
             raise AssertionError(f"Test node {self} can have only one net ({attr_nets}/{param_nets}")
         param_net_name, attr_net_name = attr_nets[0], param_nets[0]
-        if self.objects[0].suffix != attr_net_name:
+        if self.objects and self.objects[0].suffix != attr_net_name:
             raise AssertionError(f"The net {attr_net_name} must be the first node object {self.objects[0]}")
         if param_net_name != attr_net_name:
             raise AssertionError(f"Parametric and attribute nets differ {param_net_name} != {attr_net_name}")
