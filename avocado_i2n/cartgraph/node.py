@@ -183,6 +183,10 @@ class TestNode(object):
     def is_occupied(self):
         return self.worker is not None
 
+    def is_flat(self):
+        """Check if the test node is flat and does not yet have objects and dependencies to evaluate."""
+        return len(self.objects) == 0
+
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
         return self.prefix.endswith("0s1")

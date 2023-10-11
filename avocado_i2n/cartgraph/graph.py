@@ -617,7 +617,7 @@ class TestGraph(object):
         """
         Parse all component objects for an already parsed composite object.
 
-        :param test_object: fully parsed test object to parse for components of
+        :param test_object: flat or fully parsed test object to parse for components of
         :param category: category of the suffix that will determine the type of the objects
         :param restriction: restriction for the unflattened object if needed
         :param params: runtime parameters used for extra customization
@@ -984,13 +984,12 @@ class TestGraph(object):
         :param params: runtime parameters used for extra customization
         :returns: a tuple of all reused and newly parsed test nodes
         """
-        graph = self
         object_params = test_object.object_typed_params(test_node.params)
         object_dependency = object_params.get("get")
         # handle nodes without dependency for the given object
         if not object_dependency:
             return [], []
-        # TODO: parially loaded nodes are supposed to be already handled
+        # TODO: partially loaded nodes are supposed to be already handled
         # handle partially loaded nodes with already satisfied dependency
         if len(test_node.setup_nodes) > 0 and test_node.has_dependency(object_dependency, test_object):
             logging.debug("Dependency already parsed through duplication or partial dependency resolution")
@@ -999,24 +998,24 @@ class TestGraph(object):
         # objects can appear within a test without any prior dependencies
         setup_restr = object_params["get"]
         setup_obj_resr = test_object.component_form
-        logging.debug("Cartesian setup of %s for %s uses restriction %s",
-                      test_object.long_suffix, test_node.params["shortname"], setup_restr)
+        logging.debug(f"Cartesian setup of {test_object.long_suffix} for {test_node.params['shortname']} "
+                      f"uses restriction {setup_restr}")
 
         # speedup for handling already parsed unique parent cases
-        get_parent = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
-                                        subset=graph.get_nodes_by("name",
-                                                                  "(\.|^)%s(\.|$)" % setup_obj_resr))
+        filtered_parents = self.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
+                                             subset=self.get_nodes_by("name",
+                                                                      "(\.|^)%s(\.|$)" % setup_obj_resr))
         # the vm whose dependency we are parsing may not be restrictive enough so reuse optional other
         # objects variants of the current test node - cloning is only supported in the node restriction
-        if len(get_parent) > 1:
+        if len(filtered_parents) > 1:
             for test_object in test_node.objects:
-                object_parents = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % test_object.component_form,
-                                                    subset=get_parent)
-                get_parent = object_parents if len(object_parents) > 0 else get_parent
-            if len(get_parent) > 0:
-                return get_parent, []
-        if len(get_parent) == 1:
-            return get_parent, []
+                object_parents = self.get_nodes_by("name", "(\.|^)%s(\.|$)" % test_object.component_form,
+                                                   subset=filtered_parents)
+                filtered_parents = object_parents if len(object_parents) > 0 else filtered_parents
+            if len(filtered_parents) > 0:
+                return filtered_parents, []
+        if len(filtered_parents) == 1:
+            return filtered_parents, []
         setup_dict = {} if params is None else params.copy()
         setup_dict.update({"object_suffix": test_object.long_suffix,
                            "object_type": test_object.key,
@@ -1024,7 +1023,7 @@ class TestGraph(object):
                            "require_existence": "yes"})
         name = test_node.prefix + "a"
         new_parents = self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], name, params=setup_dict)
-        if len(get_parent) == 0:
+        if len(filtered_parents) == 0:
             return [], new_parents
 
         get_parents, parse_parents = [], []
@@ -1033,20 +1032,58 @@ class TestGraph(object):
             # re.sub("^(.+\.)*(all|normal|minimal|...)\.", "", NAME)
             # but this regex performs extremely slow (much slower than string replacement)
             parent_name = ".".join(new_parent.params["name"].split(".")[1:])
-            old_parents = graph.get_nodes_by("name", "(\.|^)%s(\.|$)" % parent_name,
-                                             subset=graph.get_nodes_by("name",
-                                                                       "(\.|^)%s(\.|$)" % setup_obj_resr))
+            old_parents = self.get_nodes_by("name", "(\.|^)%s(\.|$)" % parent_name,
+                                            subset=self.get_nodes_by("name",
+                                                                     "(\.|^)%s(\.|$)" % setup_obj_resr))
             if len(old_parents) > 0:
                 for old_parent in old_parents:
-                    logging.debug("Found parsed dependency %s for %s through object %s",
-                                  old_parent.params["shortname"], test_node.params["shortname"], test_object.suffix)
+                    logging.debug(f"Found parsed dependency {old_parent.params['shortname']} for "
+                                  f"{test_node.params['shortname']} through object {test_object.suffix}")
                     if old_parent not in get_parents:
                         get_parents.append(old_parent)
             else:
-                logging.debug("Found new dependency %s for %s through object %s",
-                              new_parent.params["shortname"], test_node.params["shortname"], test_object.suffix)
+                logging.debug(f"Found new dependency {new_parent.params['shortname']} for "
+                              f"{test_node.params['shortname']} through object {test_object.suffix}")
                 parse_parents.append(new_parent)
         return get_parents, parse_parents
+
+    def parse_branches_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
+                                           params: dict[str, str] = None) -> tuple[list[TestNode], list[TestNode], list[TestNode]]:
+        """
+        Parse all objects, parent object dependencies, and child clones for the current node and object.
+
+        :param test_node: possibly flat test node to parse and get nodes for
+        :param test_object: possibly flat test object to get network suffixes from (currently mostly a flat net)
+        :param params: runtime parameters used for extra customization
+        :returns: a tuple of all reused and newly parsed parent test nodes as well as final child test nodes
+        """
+        if test_node.is_flat():
+            children = self.parse_composite_nodes(test_node.params["name"],
+                                                  test_object, test_node.prefix, params=params)
+        else:
+            children = [test_node]
+
+        get_parents, parse_parents = [], []
+        for child in list(children):
+            for component in child.objects:
+                logging.debug(f"Parsing dependencies of {child.params['shortname']} "
+                              f"for object {component.long_suffix}")
+
+                more_get_parents, more_parse_parents = self.parse_and_get_nodes_for_node_and_object(child, component, params)
+                get_parents += more_get_parents
+                parse_parents += more_parse_parents
+                parents = more_get_parents + more_parse_parents
+
+                # connect and replicate children
+                if len(parents) > 0:
+                    assert parents[0] not in child.setup_nodes, f"{parents[0]} not in {child.setup_nodes}"
+                    assert child not in parents[0].cleanup_nodes, f"{child} not in {parents[0].cleanup_nodes}"
+                    child.setup_nodes.append(parents[0])
+                    parents[0].cleanup_nodes.append(child)
+                if len(parents) > 1:
+                    children += TestGraph.clone_branch(child, component, parents)
+
+        return get_parents, parse_parents, children
 
     @staticmethod
     def parse_workers(params: dict[str, str] = None) -> list[TestWorker]:
@@ -1094,6 +1131,8 @@ class TestGraph(object):
         """
         graph = TestGraph()
         graph.new_workers(TestGraph.parse_workers(param_dict))
+        # TODO: custom workers are not yet fully supported in this method
+        default_flat_net = TestGraph.parse_net_from_object_strs("net1", {})
 
         # parse leaves and discover necessary setup (internal nodes)
         leaves, stubs = TestGraph.parse_object_nodes(restriction, object_strs=object_strs,
@@ -1111,26 +1150,14 @@ class TestGraph(object):
 
         while len(unresolved) > 0:
             test_node = unresolved.pop()
-            for test_object in test_node.objects:
-                logging.debug(f"Parsing dependencies of {test_node.params['shortname']} "
-                              f"for object {test_object.long_suffix}")
+            get_parents, parse_parents, children = graph.parse_branches_for_node_and_object(test_node, default_flat_net, param_dict)
 
-                # get and parse parents
-                get_parents, parse_parents = graph.parse_and_get_nodes_for_node_and_object(test_node, test_object, param_dict)
-                graph.nodes.extend(parse_parents)
-                unresolved.extend(parse_parents)
-                parents = get_parents + parse_parents
+            graph.nodes.extend(parse_parents)
+            unresolved.extend(parse_parents)
 
-                # connect and replicate children
-                if len(parents) > 0:
-                    assert parents[0] not in test_node.setup_nodes, f"{parents[0]} not in {test_node.setup_nodes}"
-                    assert test_node not in parents[0].cleanup_nodes, f"{test_node} not in {parents[0].cleanup_nodes}"
-                    test_node.setup_nodes.append(parents[0])
-                    parents[0].cleanup_nodes.append(test_node)
-                if len(parents) > 1:
-                    clones = TestGraph.clone_branch(test_node, test_object, parents)
-                    graph.nodes.extend(clones)
-                    unresolved.extend(clones)
+            children.remove(test_node)
+            graph.nodes.extend(children)
+            unresolved.extend(children)
 
             if log.getLogger('graph').level <= log.DEBUG:
                 step += 1

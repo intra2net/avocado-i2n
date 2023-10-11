@@ -759,6 +759,37 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(get_nodes), 0)
         self.assertEqual(len(parse_nodes), 0)
 
+    def test_parse_branches_for_node_and_object(self):
+        """Test default parsing and retrieval of objects for a flag pair of test node and object."""
+        graph = TestGraph()
+        flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_objects), 1)
+        flat_object = flat_objects[0]
+
+        get_parents, parse_parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
+        self.assertEqual(len(get_parents), 0)
+        self.assertEqual(len(parse_parents), 2)
+
+        self.assertEqual(len(graph.objects), 6)
+        full_nets = sorted([o for o in graph.objects if o.key == "nets"], key=lambda x: x.params["name"])
+        self.assertEqual(len(full_nets), 2)
+        full_vms = sorted([o for o in graph.objects if o.key == "vms"], key=lambda x: x.params["name"])
+        self.assertEqual(len(full_vms), 2)
+        full_images = [o for o in graph.objects if o.key == "images"]
+        self.assertEqual(len(full_images), 2)
+        self.assertEqual(len(children), 2)
+        for i in range(len(children)):
+            self.assertEqual(children[i].objects[0], full_nets[i])
+            self.assertEqual(children[i].objects[0].components[0], full_vms[i])
+
+        graph.nodes = parse_parents
+        get_parents, parse_parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
+        self.assertEqual(len(get_parents), 2)
+        self.assertEqual(len(parse_parents), 0)
+
     def test_graph_sanity(self):
         """Test generic usage and composition."""
         self.config["tests_str"] += "only tutorial1\n"
