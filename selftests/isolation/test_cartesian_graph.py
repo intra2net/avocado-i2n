@@ -377,44 +377,56 @@ class CartesianNodeTest(Test):
         with self.assertRaises(param.EmptyCartesianProduct):
             TestGraph.parse_node_from_object(net, "all..tutorial3.remote.object.control.decorator.util", params=self.config["param_dict"])
 
-    def test_parse_nodes(self):
-        """Test for correctly parsed test nodes from graph retrievable test objects."""
+    def test_parse_composite_nodes(self):
+        """Test for correctly parsed composite nodes from graph retrievable test objects."""
         self.config["tests_str"] += "only tutorial1,tutorial2\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"],
-                                             {"vm1": ""})
-        graph.nodes = []
-        test_objects = graph.objects
 
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_objects), 1)
+        flat_object = flat_objects[0]
+
+        flat_object.params["vms"] = "vm1"
+        test_objects = TestGraph.parse_components_for_object(flat_object, "nets", unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 2)
-        nodes = graph.parse_nodes(self.config["tests_str"], params=self.config["param_dict"])
+        graph = TestGraph()
+        graph.objects = test_objects
+
+        nodes = graph.parse_composite_nodes(self.config["tests_str"], flat_object, params=self.config["param_dict"])
         self.assertEqual(len(nodes), 4)
-        self.assertIn(nets[0].params["name"], nodes[0].params["name"])
+        self.assertIn(nodes[0].objects[0], nets)
         self.assertEqual(nodes[0].params["nets"], "net1")
-        self.assertIn(nets[1].params["name"], nodes[1].params["name"])
+        self.assertEqual(len(nodes[0].objects[0].components), 1)
+        self.assertEqual(len(nodes[0].objects[0].components[0].components), 1)
+        self.assertIn(nodes[1].objects[0], nets)
         self.assertEqual(nodes[1].params["nets"], "net1")
-        self.assertIn(nets[0].params["name"], nodes[2].params["name"])
+        self.assertIn(nodes[2].objects[0], nets)
         self.assertEqual(nodes[2].params["nets"], "net1")
-        self.assertIn(nets[1].params["name"], nodes[3].params["name"])
+        self.assertIn(nodes[3].objects[0], nets)
         self.assertEqual(nodes[3].params["nets"], "net1")
 
-    def test_parse_nodes_compatibility_complete(self):
+    def test_parse_composite_nodes_compatibility_complete(self):
         """Test for correctly parsed test nodes from compatible graph retrievable test objects."""
         self.config["tests_str"] = "only all\nonly tutorial3\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"],
-                                             {"vm1": "", "vm2": ""})
-        graph.nodes = []
-        test_objects = graph.objects
 
-        nets = [o for o in test_objects if o.key == "nets" if "vm1." in o.params["name"] and "vm2." in o.params["name"]]
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_objects), 1)
+        flat_object = flat_objects[0]
+
+        flat_object.params["vms"] = "vm1 vm2"
+        test_objects = TestGraph.parse_components_for_object(flat_object, "nets", unflatten=True)
+        nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 4)
+        graph = TestGraph()
+        graph.objects = test_objects
+
+        self.assertEqual(nets, [o for o in test_objects if o.key == "nets" if "vm1." in o.params["name"] and "vm2." in o.params["name"]])
+        nets = list(reversed([o for o in test_objects if o.key == "nets"]))
         self.assertRegex(nets[0].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_10")
         self.assertRegex(nets[1].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_7")
         self.assertRegex(nets[2].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_10")
         self.assertRegex(nets[3].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_7")
-        nodes = graph.parse_nodes(self.config["tests_str"], params=self.config["param_dict"])
+        nodes = graph.parse_composite_nodes(self.config["tests_str"], flat_object, params=self.config["param_dict"])
         self.assertEqual(len(nodes), 20)
         for i in range(0, 4):
             self.assertIn("no_remote", nodes[i].params["name"])
@@ -427,22 +439,28 @@ class CartesianNodeTest(Test):
             self.assertEqual(nodes[i].params["only_vm2"], "qemu_kvm_windows_10")
             self.assertIn(nets[0].params["name"], nodes[i].params["name"])
 
-    def test_parse_nodes_compatibility_separate(self):
+    def test_parse_composite_nodes_compatibility_separate(self):
         """Test that no restriction leaks across separately restricted variants."""
         self.config["tests_str"] = "only all\nonly tutorial3.remote.object.control.decorator.util,tutorial_gui.client_noop\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"],
-                                             {"vm1": "", "vm2": ""})
-        graph.nodes = []
-        test_objects = graph.objects
 
-        nets = [o for o in test_objects if o.key == "nets" and "vm1." in o.params["name"] and "vm2." in o.params["name"]]
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_objects), 1)
+        flat_object = flat_objects[0]
+
+        flat_object.params["vms"] = "vm1 vm2"
+        test_objects = TestGraph.parse_components_for_object(flat_object, "nets", unflatten=True)
+        nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 4)
+        graph = TestGraph()
+        graph.objects = test_objects
+
+        self.assertEqual(nets, [o for o in test_objects if o.key == "nets" if "vm1." in o.params["name"] and "vm2." in o.params["name"]])
+        nets = list(reversed([o for o in test_objects if o.key == "nets"]))
         self.assertRegex(nets[0].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_10")
         self.assertRegex(nets[1].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_7")
         self.assertRegex(nets[2].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_10")
         self.assertRegex(nets[3].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_7")
-        nodes = graph.parse_nodes(self.config["tests_str"], params=self.config["param_dict"])
+        nodes = graph.parse_composite_nodes(self.config["tests_str"], flat_object, params=self.config["param_dict"])
         self.assertEqual(len(nodes), 5)
         self.assertIn("remote", nodes[0].params["name"])
         self.assertEqual(nodes[0].params["only_vm1"], "qemu_kvm_centos")

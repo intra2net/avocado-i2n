@@ -853,13 +853,14 @@ class TestGraph(object):
                       f"with {len(parse_nets[test_object.suffix])} newly parsed ones")
         return get_nets[test_object.suffix], parse_nets[test_object.suffix]
 
-    def parse_nodes(self, restriction: str = "", prefix: str = "",
-                    params: dict[str, str] = None, verbose: bool = False) -> list[TestNode]:
+    def parse_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
+                              params: dict[str, str] = None, verbose: bool = False) -> list[TestNode]:
         """
         Parse all user defined tests (leaf nodes) using the nodes restriction string
         and possibly restricting to a single test object for the singleton tests.
 
         :param restriction: block of node-specific variant restrictions
+        :param test_object: flat test object to compose the node on top of, typically a test net
         :param prefix: extra name identifier for the test to be run
         :param params: runtime parameters used for extra customization
         :param verbose: whether to print extra messages or not
@@ -876,8 +877,7 @@ class TestGraph(object):
 
             # get configuration of each participating object and choose the one to mix with the node
             try:
-                default_flat_net = TestGraph.parse_net_from_object_strs("net1", {})
-                get_nets, parse_nets = self.parse_and_get_objects_for_node_and_object(node, default_flat_net, params=params)
+                get_nets, parse_nets = self.parse_and_get_objects_for_node_and_object(node, test_object, params=params)
                 test_nets = get_nets + parse_nets
             except ValueError:
                 logging.debug(f"Could not get or construct a test net that is (right-)compatible "
@@ -939,7 +939,7 @@ class TestGraph(object):
                                                         params=params, verbose=False, unflatten=False)
         objects = {o.id: o for o in objects}
         # the parsed test nodes are already fully restricted by the available test objects
-        nodes = TestGraph().parse_nodes(restriction, prefix, params=params, verbose=True)
+        nodes = TestGraph().parse_composite_nodes(restriction, default_flat_net, prefix, params=params, verbose=True)
         for test_node in nodes:
             node_vms = [o for o in test_node.objects if o.key == "vms"]
             for test_object in node_vms:
@@ -1023,7 +1023,7 @@ class TestGraph(object):
                            "object_id": test_object.id,
                            "require_existence": "yes"})
         name = test_node.prefix + "a"
-        new_parents = self.parse_nodes("all.." + setup_restr, name, params=setup_dict)
+        new_parents = self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], name, params=setup_dict)
         if len(get_parent) == 0:
             return [], new_parents
 
