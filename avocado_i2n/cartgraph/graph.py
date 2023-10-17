@@ -1085,6 +1085,53 @@ class TestGraph(object):
 
         return get_parents, parse_parents, children
 
+    def parse_paths_to_object_roots(self, test_node: TestNode, test_object: TestObject,
+                                    params: dict[str, str] = None) -> list[tuple[list[TestNode], list[TestNode], TestNode]]:
+        """
+        Parse the setup paths from a flat node to the terminal nodes of all its objects.
+
+        :param test_node: possibly flat test node to parse and get the complete graph paths for
+        :param test_object: possibly flat test object to get network suffixes from (currently mostly a flat net)
+        :param params: runtime parameters used for extra customization
+        :returns: a generator of all resolved pairs of parents and children
+        """
+        unresolved = [test_node]
+        while len(unresolved) > 0:
+            test_node = unresolved.pop()
+            _, parents, children = self.parse_branches_for_node_and_object(test_node, test_object, params)
+            if not test_node.is_flat():
+                children.remove(test_node)
+            unresolved.extend(parents)
+            unresolved.extend(children)
+            yield parents, children, test_node
+
+    def parse_shared_root_from_object_roots(self, params: dict[str, str] = None) -> TestNode:
+        """
+        Parse the shared root node from used test objects (roots) into a connected graph.
+
+        :param params: runtime parameters used for extra customization
+        :returns: parsed shared root node of all object trees
+        """
+        object_roots = []
+        for test_node in self.nodes:
+            if len(test_node.setup_nodes) == 0:
+                if not test_node.is_object_root():
+                    logging.warning(f"{test_node} is not an object root but will be treated as such")
+                object_roots.append(test_node)
+        setup_dict = {} if params is None else params.copy()
+        setup_dict.update({"shared_root" : "yes",
+                           "vms": " ".join(sorted(list(set(o.suffix for o in self.objects if o.key == "vms"))))})
+        root_for_all = TestGraph.parse_node_from_object(NetObject("net0", param.Reparsable()),
+                                                        "all..internal..noop", prefix="0s", params=setup_dict)
+        logging.debug(f"Parsed shared root {root_for_all.params['shortname']}")
+        self.nodes.append(root_for_all)
+        for root_for_object in object_roots:
+            root_for_object.setup_nodes = [root_for_all]
+            root_for_all.cleanup_nodes.append(root_for_object)
+        root_for_all.should_run = lambda x: False
+
+        return root_for_all
+
     @staticmethod
     def parse_workers(params: dict[str, str] = None) -> list[TestWorker]:
         """
@@ -1139,8 +1186,7 @@ class TestGraph(object):
                                                      prefix=prefix, params=param_dict, verbose=verbose)
         graph.nodes.extend(leaves)
         graph.objects.extend(stubs)
-        # NOTE: reversing here turns the leaves into a simple stack
-        unresolved = sorted(leaves, key=lambda x: int(re.match("^(\d+)", x.prefix).group(1)), reverse=True)
+        leaves = sorted(leaves, key=lambda x: int(re.match("^(\d+)", x.prefix).group(1)))
 
         if log.getLogger('graph').level <= log.DEBUG:
             parse_dir = os.path.join(graph.logdir, "graph_parse")
@@ -1148,49 +1194,16 @@ class TestGraph(object):
                 os.makedirs(parse_dir)
             step = 0
 
-        while len(unresolved) > 0:
-            test_node = unresolved.pop()
-            get_parents, parse_parents, children = graph.parse_branches_for_node_and_object(test_node, default_flat_net, param_dict)
+        for test_node in leaves:
+            for parents, siblings, current in graph.parse_paths_to_object_roots(test_node, default_flat_net, param_dict):
+                graph.nodes.extend(parents)
+                graph.nodes.extend(siblings)
 
-            graph.nodes.extend(parse_parents)
-            unresolved.extend(parse_parents)
-
-            children.remove(test_node)
-            graph.nodes.extend(children)
-            unresolved.extend(children)
-
-            if log.getLogger('graph').level <= log.DEBUG:
-                step += 1
-                graph.visualize(parse_dir, str(step))
-            test_node.validate()
+                if log.getLogger('graph').level <= log.DEBUG:
+                    step += 1
+                    graph.visualize(parse_dir, str(step))
+                current.validate()
 
         if with_shared_root:
-            graph.parse_shared_root_from_object_trees(param_dict)
+            graph.parse_shared_root_from_object_roots(param_dict)
         return graph
-
-    def parse_shared_root_from_object_trees(self, params: dict[str, str] = None) -> TestNode:
-        """
-        Parse the shared root node from used test objects (roots) into a connected graph.
-
-        :param params: runtime parameters used for extra customization
-        :returns: parsed shared root node of all object trees
-        """
-        object_roots = []
-        for test_node in self.nodes:
-            if len(test_node.setup_nodes) == 0:
-                if not test_node.is_object_root():
-                    logging.warning(f"{test_node} is not an object root but will be treated as such")
-                object_roots.append(test_node)
-        setup_dict = {} if params is None else params.copy()
-        setup_dict.update({"shared_root" : "yes",
-                           "vms": " ".join(sorted(list(set(o.suffix for o in self.objects if o.key == "vms"))))})
-        root_for_all = TestGraph.parse_node_from_object(NetObject("net0", param.Reparsable()),
-                                                        "all..internal..noop", prefix="0s", params=setup_dict)
-        logging.debug(f"Parsed shared root {root_for_all.params['shortname']}")
-        self.nodes.append(root_for_all)
-        for root_for_object in object_roots:
-            root_for_object.setup_nodes = [root_for_all]
-            root_for_all.cleanup_nodes.append(root_for_object)
-        root_for_all.should_run = lambda x: False
-
-        return root_for_all

@@ -314,7 +314,7 @@ def update(config, tag=""):
         graph.objects += vm_graph.objects
         graph.nodes += vm_graph.nodes
 
-    graph.parse_shared_root_from_object_trees(config["param_dict"])
+    graph.parse_shared_root_from_object_roots(config["param_dict"])
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished updating cache")
 
@@ -674,7 +674,7 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     test_node = TestNode(tag, tests[0].config)
     test_node.set_objects_from_net(objects[-1])
     graph.nodes = [test_node]
-    graph.parse_shared_root_from_object_trees(config["param_dict"])
+    graph.parse_shared_root_from_object_roots(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: True)
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("%s complete", verb[3])
@@ -714,7 +714,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
         test_node.params["object_suffix"] = test_object.long_suffix
         graph.nodes += [test_node]
 
-    graph.parse_shared_root_from_object_trees(config["param_dict"])
+    graph.parse_shared_root_from_object_roots(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: slot not in self.workers)
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished %s", operation)

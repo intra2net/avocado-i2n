@@ -790,6 +790,52 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(get_parents), 2)
         self.assertEqual(len(parse_parents), 0)
 
+    def test_parse_paths_to_object_roots(self):
+        """Test correct expectation of parsing graph dependency paths from a leaf to all their object roots."""
+        graph = TestGraph()
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_objects), 1)
+        flat_object = flat_objects[0]
+        flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
+
+        generator = graph.parse_paths_to_object_roots(flat_node, flat_object)
+        flat_parents, flat_children, flat_node2 = next(generator)
+        self.assertEqual(flat_node, flat_node2)
+        self.assertNotIn(flat_node, flat_children)
+        self.assertEqual(len(flat_children), 2)
+        self.assertEqual(len(flat_parents), 2)
+        leaf_parents1, leaf_children1, leaf_node1 = next(generator)
+        self.assertIn(leaf_node1, flat_children)
+        self.assertEqual(len(leaf_children1), 0)
+        self.assertEqual(len(leaf_parents1), 0)
+        leaf_parents2, leaf_children2, leaf_node2 = next(generator)
+        self.assertIn(leaf_node2, flat_children)
+        self.assertEqual(len(leaf_children2), 0)
+        self.assertEqual(len(leaf_parents2), 0)
+
+    def test_shared_root_from_object_roots(self):
+        """Test correct expectation of separately adding a shared root to a graph of disconnected object trees."""
+        self.config["tests_str"] += "only tutorial3\n"
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix,
+                                             with_shared_root=False)
+        graph.parse_shared_root_from_object_roots(self.config["param_dict"])
+        # assert one shared root exists and it connects all object roots
+        shared_root_node = None
+        for node in graph.nodes:
+            if node.is_shared_root():
+                if shared_root_node is not None:
+                    raise AssertionError("More than one shared root nodes found in graph")
+                shared_root_node = node
+        if not shared_root_node:
+            raise AssertionError("No shared root nodes found in graph")
+        for node in graph.nodes:
+            if node.is_object_root():
+                self.assertEqual(node.setup_nodes, [shared_root_node])
+
     def test_graph_sanity(self):
         """Test generic usage and composition."""
         self.config["tests_str"] += "only tutorial1\n"
@@ -806,27 +852,6 @@ class CartesianGraphTest(Test):
         self.assertIn("[cartgraph]", repr)
         self.assertIn("[object]", repr)
         self.assertIn("[node]", repr)
-
-    def test_shared_root_from_object_trees(self):
-        """Test correct expectation of separately adding a shared root to a graph of disconnected object trees."""
-        self.config["tests_str"] += "only tutorial3\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix,
-                                             with_shared_root=False)
-        graph.parse_shared_root_from_object_trees(self.config["param_dict"])
-        # assert one shared root exists and it connects all object roots
-        shared_root_node = None
-        for node in graph.nodes:
-            if node.is_shared_root():
-                if shared_root_node is not None:
-                    raise AssertionError("More than one shared root nodes found in graph")
-                shared_root_node = node
-        if not shared_root_node:
-            raise AssertionError("No shared root nodes found in graph")
-        for node in graph.nodes:
-            if node.is_object_root():
-                self.assertEqual(node.setup_nodes, [shared_root_node])
 
     def test_one_leaf(self):
         """Test traversal path of one test without any reusable setup."""
@@ -1176,23 +1201,23 @@ class CartesianGraphTest(Test):
                                                       "getsetup.noop": {self.shared_pool: 0},
                                                       "ready": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
-            # automated setup of vm1
+            # automated setup of vm1 from tutorial_gui
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$"},
-            # automated setup of vm2
+            # automated setup of vm2 from tutorial_gui
             {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$"},
             {"shortname": "^original.unattended_install.cdrom.in_cdrom_ks.default_install.aio_threads.vm2", "vms": "^vm2$"},
             {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$"},
             {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$"},
             # first (noop) parent GUI setup dependency through vm2
             {"shortname": "^tutorial_gui.client_noop.vm1.+CentOS.8.0.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
-            # extra dependency dependency through vm1
+            # automated setup of vm1 from tutorial_get
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$"},
             # first (noop) explicit actual test
             {"shortname": "^leaves.tutorial_get.explicit_noop.vm1", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.noop"},
-            # first (noop) duplicated actual test
+            # first (noop) duplicated actual test (child priority to reuse setup)
             {"shortname": "^leaves.tutorial_get.implicit_both.vm1", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
             # second (clicked) parent GUI setup dependency through vm2
             {"shortname": "^tutorial_gui.client_clicked.vm1", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
