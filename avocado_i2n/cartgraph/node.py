@@ -541,6 +541,9 @@ class TestNode(Runnable):
 
         This function also does recursive calls of sub-prefixes.
         """
+        if prefix1 == prefix2:
+            # identical prefixes detected, nothing we can do but choose a default
+            return 1
         match1, match2 = re.match(r"^(\d+)(\w)(.+)", prefix1), re.match(r"^(\d+)(\w)(.+)", prefix2)
         digit1, alpha1, else1 = (prefix1, None, None) if match1 is None else match1.group(1, 2, 3)
         digit2, alpha2, else2 = (prefix2, None, None) if match2 is None else match2.group(1, 2, 3)
@@ -564,6 +567,8 @@ class TestNode(Runnable):
             return 1 if alpha1 > alpha2 else -1
         # redo the comparison for the next prefix part
         else:
+            assert else1 is not None, f"could not match test prefix part {prefix1} to choose priority"
+            assert else2 is not None, f"could not match test prefix part {prefix2} to choose priority"
             return cls.prefix_priority(else1, else2)
 
     @classmethod
