@@ -45,7 +45,7 @@ from . import TestWorker, NetObject
 door.DUMP_CONTROL_DIR = "/tmp"
 
 
-class TestNode(object):
+class TestNode(Runnable):
     """
     A wrapper for all test relevant parts like parameters, parser, used
     objects and dependencies to/from other test nodes (setup/cleanup).
@@ -60,7 +60,7 @@ class TestNode(object):
 
     def final_restr(self):
         """Final restriction to make the object parsing variant unique."""
-        return self.config.steps[-2].parsable_form()
+        return self.recipe.steps[-2].parsable_form()
     final_restr = property(fget=final_restr)
 
     def setless_form(self):
@@ -96,16 +96,18 @@ class TestNode(object):
 
     _session_cache = {}
 
-    def __init__(self, prefix, config):
+    def __init__(self, prefix, recipe):
         """
         Construct a test node (test) for any test objects (vms).
 
         :param str name: name of the test node
-        :param config: variant configuration for the test node
-        :type config: :py:class:`param.Reparsable`
+        :param recipe: variant parsing recipe for the test node
+        :type recipe: :py:class:`param.Reparsable`
         """
+        super().__init__("avocado-vt", prefix, {})
+
         self.prefix = prefix
-        self.config = config
+        self.recipe = recipe
         self._params_cache = None
 
         self.should_run = self.default_run_decision
@@ -125,27 +127,6 @@ class TestNode(object):
     def __repr__(self):
         shortname = self.params.get("shortname", "<unknown>")
         return f"[node] longprefix='{self.long_prefix}', shortname='{shortname}'"
-
-    def get_runnable(self):
-        """
-        Get test factory from which the test loader will get a runnable test instance.
-
-        :return: test class and constructor parameters
-        :rtype: :py:class:`Runnable`
-        """
-        self.params['short_id'] = self.long_prefix
-        self.params['id'] = self.id_test.str_uid + "_" + self.id_test.name
-
-        uri = self.params.get('name')
-        vt_params = self.params.copy()
-
-        # Flatten the vt_params, discarding the attributes that are not
-        # scalars, and will not be used in the context of nrunner
-        for key in ('_name_map_file', '_short_name_map_file', 'dep'):
-            if key in self.params:
-                del(vt_params[key])
-
-        return Runnable('avocado-vt', uri, **vt_params)
 
     def set_environment(self, worker: TestWorker) -> None:
         """
@@ -584,7 +565,21 @@ class TestNode(object):
 
         :param bool verbose: whether to show generated parameter dictionaries
         """
-        self._params_cache = self.config.get_params(show_dictionaries=verbose)
+        self._params_cache = self.recipe.get_params(show_dictionaries=verbose)
+        self.regenerate_vt_parameters()
+
+    def regenerate_vt_parameters(self):
+        """
+        Regenerate the parameters provided to the VT runner.
+        """
+        uri = self.params.get('name')
+        vt_params = self.params.copy()
+        # Flatten the vt_params, discarding the attributes that are not
+        # scalars, and will not be used in the context of nrunner
+        for key in ('_name_map_file', '_short_name_map_file', 'dep'):
+            if key in self.params:
+                del(vt_params[key])
+        super().__init__('avocado-vt', uri, **vt_params)
 
     def get_session_ip_port(self):
         """

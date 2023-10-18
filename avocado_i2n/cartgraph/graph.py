@@ -117,7 +117,7 @@ class TestGraph(object):
                     child = clone_source
                 else:
                     clone_name = clone_source.prefix + "d" + str(i)
-                    clone_config = clone_source.config.get_copy()
+                    clone_config = clone_source.recipe.get_copy()
                     clone = TestNode(clone_name, clone_config)
                     clone.set_objects_from_net(clone_source.objects[0])
                     clone.regenerate_params()

@@ -514,13 +514,15 @@ class CartesianNodeTest(Test):
                                              self.config["tests_str"], self.config["vm_strs"],
                                              prefix=self.prefix)
         test_node = graph.get_node_by(param_val="tutorial1")
-        dict_generator = test_node.config.get_parser().get_dicts()
+        dict_generator = test_node.recipe.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
-        # Parser of test objects must contain exactly one dictionary
+        # parser of test objects must contain exactly one dictionary
         self.assertRaises(StopIteration, dict_generator.__next__)
         self.assertEqual(len(dict1.keys()), len(test_node.params.keys()), "The parameters of a test node must be the same as its only parser dictionary")
         for key in dict1.keys():
             self.assertEqual(dict1[key], test_node.params[key], "The values of key %s %s=%s must be the same" % (key, dict1[key], test_node.params[key]))
+        # all VT attributes must be initialized
+        self.assertEqual(test_node.uri, test_node.params["name"])
 
     def test_sanity(self):
         """Test generic usage and composition."""
@@ -594,6 +596,32 @@ class CartesianNodeTest(Test):
         #                 "The new %s of %s must be %s" % (default_object_param, test_node.prefix, custom_object_param2))
         self.assertEqual(test_node.params["images_vm2"], default_object_param,
                          "The second %s of %s should be preserved" % (default_object_param, test_node.prefix))
+
+    def test_validation(self):
+        """Test graph (and component) retrieval and validation methods."""
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
+        test_object = [o for o in graph.objects if o.suffix == "vm1"][0]
+        test_node = graph.get_node_by(param_val="tutorial1")
+        self.assertIn(test_object, test_node.objects)
+        test_node.validate()
+        test_node.objects.remove(test_object)
+        with self.assertRaisesRegex(ValueError, r"^Additional parametric objects .+ not in .+$"):
+            test_node.validate()
+        test_node.objects.append(test_object)
+        test_node.validate()
+        test_node.params["vms"] = ""
+        with self.assertRaisesRegex(ValueError, r"^Missing parametric objects .+ from .+$"):
+            test_node.validate()
+
+        # detect reflexive dependencies in the graph
+        self.config["param_dict"]["get"] = "tutorial1"
+        with self.assertRaisesRegex(ValueError, r"^Detected reflexive dependency of"):
+            TestGraph.parse_object_trees(self.config["param_dict"],
+                                         self.config["tests_str"], self.config["vm_strs"],
+                                         prefix=self.prefix)
 
     @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
     @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
@@ -744,7 +772,8 @@ class CartesianGraphTest(Test):
         self.runner.job = self.job
         self.runner.status_server = self.job
 
-    def _run_traversal(self, graph, params):
+    def _run_traversal(self, graph, params=None):
+        params = params or {"test_timeout": 100}
         loop = asyncio.get_event_loop()
         slot_workers = sorted(list(graph.workers.values()), key=lambda x: x.params["name"])
         graph.runner = self.runner
@@ -1201,12 +1230,13 @@ class CartesianGraphTest(Test):
         self.assertIn("[object]", repr)
         self.assertIn("[node]", repr)
 
-    def test_one_leaf(self):
+    def test_traverse_one_leaf_parallel(self):
         """Test traversal path of one test without any reusable setup."""
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)])}))
+
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "set_state_images": "^install$"},
@@ -1214,15 +1244,16 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "set_state_vms": "^on_customize$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state_vms": "^on_customize$"},
         ]
-        self._run_traversal(graph, self.config["param_dict"])
 
-    def test_one_leaf_serial(self):
+        self._run_traversal(graph)
+
+    def test_traverse_one_leaf_serial(self):
         """Test traversal path of one test without any reusable setup and with a serial unisolated run."""
-        self.config["param_dict"]["slots"] = ""
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": ""}))
+
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$", "nets_spawner": "process"},
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "nets_spawner": "process"},
@@ -1230,15 +1261,16 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets_spawner": "process"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "nets_spawner": "process"},
         ]
-        self._run_traversal(graph, self.config["param_dict"])
 
-    def test_one_leaf_with_setup(self):
+        self._run_traversal(graph)
+
+    def test_traverse_one_leaf_with_setup(self):
         """Test traversal path of one test with a reusable setup."""
-        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(3)])}))
+
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             # cleanup is expected only if at least one of the states is reusable (here root+install)
@@ -1246,14 +1278,16 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets_spawner": "lxc", "nets_host": "^c1$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "nets_spawner": "lxc", "nets_host": "^c1$"},
         ]
-        self._run_traversal(graph, self.config["param_dict"])
 
-    def test_one_leaf_with_step_setup(self):
+        self._run_traversal(graph)
+
+    def test_traverse_one_leaf_with_step_setup(self):
         """Test traversal path of one test with a single reusable setup test node."""
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(3)])}))
+
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$"},
@@ -1261,56 +1295,34 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        self._run_traversal(graph, self.config["param_dict"])
 
-    def test_one_leaf_with_failed_setup(self):
+        self._run_traversal(graph)
+
+    def test_traverse_one_leaf_with_failed_setup(self):
         """Test traversal path of one test with a failed reusable setup test node."""
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(2)])}))
+
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c1$", "_status": "FAIL"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+            # TODO: a cleaner policy would be if other worker's don't retry the failed test later on unless permitted
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c2$", "_status": "FAIL"},
         ]
-        self._run_traversal(graph, self.config["param_dict"])
 
-    def test_one_leaf_validation(self):
-        """Test graph (and component) retrieval and validation methods."""
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
-        test_object = [o for o in graph.objects if o.suffix == "vm1"][0]
-        test_node = graph.get_node_by(param_val="tutorial1")
-        self.assertIn(test_object, test_node.objects)
-        test_node.validate()
-        test_node.objects.remove(test_object)
-        with self.assertRaisesRegex(ValueError, r"^Additional parametric objects .+ not in .+$"):
-            test_node.validate()
-        test_node.objects.append(test_object)
-        test_node.validate()
-        test_node.params["vms"] = ""
-        with self.assertRaisesRegex(ValueError, r"^Missing parametric objects .+ from .+$"):
-            test_node.validate()
+        self._run_traversal(graph)
 
-        # detect reflexive dependencies in the graph
-        self.config["param_dict"]["get"] = "tutorial1"
-        with self.assertRaisesRegex(ValueError, r"^Detected reflexive dependency of"):
-            TestGraph.parse_object_trees(self.config["param_dict"],
-                                         self.config["tests_str"], self.config["vm_strs"],
-                                         prefix=self.prefix)
-
-    def test_one_leaf_with_occupation_timeout(self):
+    def test_traverse_one_leaf_with_occupation_timeout(self):
         """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
-        self.config["param_dict"]["slots"] += " dead"
-        self.config["param_dict"]["test_timeout"] = 1
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1", {"test_timeout": "1"})
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": "1 dead", }))
+
         test_node = graph.get_node_by(param_val="tutorial1")
         test_node.set_environment(graph.workers["net2"])
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
@@ -1318,27 +1330,17 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
         ]
+
         with self.assertRaisesRegex(RuntimeError, r"^Worker .+ spent [\d\.]+ seconds waiting for occupied node"):
             self._run_traversal(graph, self.config["param_dict"])
 
-    def test_one_leaf_dry_run(self):
-        """Test dry run of a single leaf test where no test should end up really running."""
-        self.config["param_dict"]["dry_run"] = "yes"
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
-        DummyTestRun.asserted_tests = [
-        ]
-        self._run_traversal(graph, self.config["param_dict"])
+    def test_traverse_two_objects_without_setup(self):
+        """Test a two-object test traversal without a reusable setup."""
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial3")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)])}))
 
-    def test_two_objects_without_setup(self):
-        """Test a two-object test run without a reusable setup."""
-        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
-        self.config["tests_str"] += "only tutorial3\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = False
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = False
         DummyTestRun.asserted_tests = [
@@ -1354,27 +1356,29 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
             {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
         ]
-        self._run_traversal(graph, self.config["param_dict"])
+
+        self._run_traversal(graph)
         # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
         self.assertEqual(DummyStateControl.asserted_states["get"]["install"][self.shared_pool], 6)
         self.assertEqual(DummyStateControl.asserted_states["get"]["customize"][self.shared_pool], 6)
         # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
         self.assertEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 3)
 
-    def test_two_objects_with_setup(self):
-        """Test a two-object test run with reusable setup."""
-        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
-        self.config["tests_str"] += "only tutorial3\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
+    def test_traverse_two_objects_with_setup(self):
+        """Test a two-object test traversal with reusable setup."""
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial3")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)])}))
+
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
             {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
         ]
-        self._run_traversal(graph, self.config["param_dict"])
+
+        self._run_traversal(graph)
         # get reusable setup from shared pool once to skip and once to sync (node reversal)
         self.assertEqual(DummyStateControl.asserted_states["get"]["install"][self.shared_pool], 8)
         self.assertEqual(DummyStateControl.asserted_states["get"]["customize"][self.shared_pool], 8)
@@ -1757,10 +1761,13 @@ class CartesianGraphTest(Test):
         # expect a single cleanup call only for the states of enforcing cleanup policy
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
 
-    def test_complete_graph_dry_run(self):
+    def test_dry_run(self):
         """Test a complete dry run traversal of a graph."""
-        self.config["tests_str"] = "only all\n"
-        self.config["param_dict"]["dry_run"] = "yes"
+        graph = TestGraph()
+        # TODO: cannot parse "all" with flat nodes with largest available test set being "leaves"
+        graph.nodes = TestGraph.parse_flat_nodes("leaves")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(3)])}))
 
         DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
                                                            "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
@@ -1769,28 +1776,26 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
         ]
 
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                                prefix=self.prefix, verbose=True)
-        self._run_traversal(graph, self.config["param_dict"])
+        self._run_traversal(graph, {"dry_run": "yes"})
         for action in ["get", "set", "unset"]:
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
 
     def test_abort_run(self):
         """Test that traversal is aborted through explicit configuration."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"].update({"abort_on_error": "yes"})
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("tutorial1")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(3)])}))
+
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "set_state_vms_on_error": "^$", "_status": "FAIL"},
         ]
+
         with self.assertRaisesRegex(exceptions.TestSkipError, r"^God wanted this test to abort$"):
-            self._run_traversal(graph, self.config["param_dict"])
+            self._run_traversal(graph, {"abort_on_error": "yes"})
 
     def test_abort_objectless_node(self):
         """Test that traversal is aborted on objectless node detection."""
@@ -1919,9 +1924,9 @@ class CartesianGraphTest(Test):
 
     @mock.patch('avocado_i2n.runner.StatusRepo')
     @mock.patch('avocado_i2n.runner.StatusServer')
-    @mock.patch('avocado_i2n.cartgraph.worker.TestWorker.set_up')
-    @mock.patch('avocado_i2n.cartgraph.graph.TestGraph.visualize')
-    def test_loader_runner_entries(self, _mock_visualize, _mock_start_environment,
+    @mock.patch('avocado_i2n.runner.TestGraph')
+    @mock.patch('avocado_i2n.loader.TestGraph')
+    def test_loader_runner_entries(self, mock_load_graph, mock_run_graph,
                                    mock_status_server, _mock_status_repo):
         """Test that the default loader and runner entries work as expected."""
         self.config["tests_str"] += "only tutorial1\n"
@@ -1929,31 +1934,40 @@ class CartesianGraphTest(Test):
         self.config["params"] = reference.split()
         self.config["prefix"] = ""
         self.config["subcommand"] = "run"
-        self.loader.config = self.config
 
+        mock_load_graph.parse_flat_nodes.return_value = [mock.MagicMock(prefix="1"),
+                                                         mock.MagicMock(prefix="2")]
+
+        self.loader.config = self.config
         resolutions = [self.loader.resolve(reference)]
+        mock_load_graph.parse_flat_nodes.assert_called_with(self.config["tests_str"],
+                                                            self.config["param_dict"])
         runnables = resolutions_to_runnables(resolutions, self.config)
         test_suite = TestSuite('suite',
                                config=self.config,
                                tests=runnables,
                                resolutions=resolutions)
+        self.assertEqual(len(test_suite), 2)
 
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$"},
-            {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "set_state_images": "^install$"},
-            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_images": "^install$", "set_state_images": "^customize$"},
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "set_state_vms": "^on_customize$"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state_vms": "^on_customize$"},
-        ]
-
+        # test status result collection needs a lot of extra mocking as a boundary
         async def create_server(): pass
         async def serve_forever(): pass
         server_instance = mock_status_server.return_value
         server_instance.create_server = create_server
         server_instance.serve_forever = serve_forever
+        self.runner._update_status = mock.AsyncMock()
+
+        run_graph_instance = mock_run_graph.return_value
+        run_graph_instance.traverse_object_trees = mock.AsyncMock()
+        run_graph_workers = run_graph_instance.workers.values.return_value = [mock.MagicMock()]
+        run_graph_workers[0].params = {"runtime_str": "", "name": "net1"}
 
         self.runner.job.config = self.config
         self.runner.run_suite(self.runner.job, test_suite)
+        run_graph_instance.parse_shared_root_from_object_roots.assert_called_once()
+        mock_run_graph.parse_workers.assert_called_once()
+        run_graph_workers[0].set_up.assert_called()
+        run_graph_instance.traverse_object_trees.assert_called()
 
     def test_run_retry_times(self):
         """Test that the test is retried `retry_attempts` times if `retry_stop` is not specified."""
@@ -1970,16 +1984,16 @@ class CartesianGraphTest(Test):
             {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
             {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
             {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "short_id": r"^[a\d]+r1-vm1$"},
-            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "short_id": r"^[a\d]+r2-vm1$"},
+            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
+            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
             {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$", "short_id": r"^[a\d]+r1-vm1$"},
-            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$", "short_id": r"^[a\d]+r2-vm1$"},
+            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
+            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
             {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "short_id": r"^[a\d]+r1-vm1$"},
-            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "short_id": r"^[a\d]+r2-vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
         ]
-        self._run_traversal(graph, {})
+        self._run_traversal(graph)
 
     def test_run_retry_status(self):
         """Test that certain statuses are ignored when retrying a test."""
@@ -1998,7 +2012,7 @@ class CartesianGraphTest(Test):
                 DummyTestRun.asserted_tests = [
                     {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
                 ]
-                self._run_traversal(graph, self.config["param_dict"])
+                self._run_traversal(graph)
 
                 # assert that tests were not repeated
                 self.assertEqual(len(self.runner.job.result.tests), 1)
@@ -2020,7 +2034,7 @@ class CartesianGraphTest(Test):
                     {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
                     {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
                 ]
-                self._run_traversal(graph, self.config["param_dict"])
+                self._run_traversal(graph)
 
                 # assert that tests were repeated
                 self.assertEqual(len(self.runner.job.result.tests), 4)
@@ -2046,7 +2060,7 @@ class CartesianGraphTest(Test):
                 DummyTestRun.asserted_tests = [
                     {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
                 ]
-                self._run_traversal(graph, self.config["param_dict"])
+                self._run_traversal(graph)
 
                 # assert that tests were not repeated
                 self.assertEqual(len(self.runner.job.result.tests), 1)
@@ -2068,7 +2082,7 @@ class CartesianGraphTest(Test):
                                                  self.config["tests_str"], self.config["vm_strs"],
                                                  prefix=self.prefix)
             with self.assertRaisesRegex(ValueError, r"^Value of retry_stop must be a valid test status"):
-                self._run_traversal(graph, self.config["param_dict"])
+                self._run_traversal(graph)
 
         # negative values
         with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "-32",
@@ -2077,7 +2091,7 @@ class CartesianGraphTest(Test):
                                                  self.config["tests_str"], self.config["vm_strs"],
                                                  prefix=self.prefix)
             with self.assertRaisesRegex(ValueError, r"^Value of retry_attempts cannot be less than zero$"):
-                self._run_traversal(graph, self.config["param_dict"])
+                self._run_traversal(graph)
 
         # floats
         with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3.5",
@@ -2086,7 +2100,7 @@ class CartesianGraphTest(Test):
                                                  self.config["tests_str"], self.config["vm_strs"],
                                                  prefix=self.prefix)
             with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
-                self._run_traversal(graph, self.config["param_dict"])
+                self._run_traversal(graph)
 
         # non-integers
         with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "hey",
@@ -2095,7 +2109,7 @@ class CartesianGraphTest(Test):
                                                  self.config["tests_str"], self.config["vm_strs"],
                                                  prefix=self.prefix)
             with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
-                self._run_traversal(graph, self.config["param_dict"])
+                self._run_traversal(graph)
 
     def test_run_exit_code(self):
         """Test that the return value of the last run is preserved."""

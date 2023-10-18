@@ -342,7 +342,7 @@ def run(config, tag=""):
     with new_job(config) as job:
 
         params, restriction = config["param_dict"], config["tests_str"]
-        runnables = [n.get_runnable() for n in TestGraph.parse_flat_nodes(restriction, params)]
+        runnables = TestGraph.parse_flat_nodes(restriction, params)
         job.test_suites[0].tests = runnables
 
         retcode = job.run()
@@ -670,7 +670,7 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
     graph.objects = objects
-    test_node = TestNode(tag, tests[0].config)
+    test_node = TestNode(tag, tests[0].recipe)
     test_node.set_objects_from_net(objects[-1])
     graph.nodes = [test_node]
     graph.parse_shared_root_from_object_roots(config["param_dict"])

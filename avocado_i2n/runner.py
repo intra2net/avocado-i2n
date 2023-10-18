@@ -118,7 +118,8 @@ class CartesianRunner(RunnerInterface):
             asyncio.ensure_future(self._update_status())
 
         status_server_uri = self.job.config.get('run.status_server_uri')
-        raw_task = Task(node.get_runnable(), node.id_test,
+        node.regenerate_vt_parameters()
+        raw_task = Task(node, node.id_test,
                         [status_server_uri],
                         category=TASK_DEFAULT_CATEGORY,
                         job_id=self.job.unique_id)
@@ -243,17 +244,10 @@ class CartesianRunner(RunnerInterface):
         :raises: TypeError if the provided test suite is of unknown type
         """
         if isinstance(test_suite, TestSuite):
-            param_dict, nodes_str, object_strs = test_suite.config["param_dict"], test_suite.config["tests_str"], test_suite.config["vm_strs"]
-            prefix = test_suite.config["prefix"]
-            # provide the logdir in advance in order to visualize parsed graph there
-            TestGraph.logdir = self.job.logdir
-            graph = TestGraph.parse_object_trees(param_dict, nodes_str, object_strs,
-                                                 prefix=prefix, verbose=test_suite.config["subcommand"]!="list")
-            # validate the test suite refers to the same test graph
-            assert len(test_suite) <= len(graph.nodes)
-            # TODO: parse on demand starting from the test suite and its flat test node runnables
-            #for node1, node2 in zip(test_suite.tests, graph.nodes):
-            #    assert node1.uri == node2.get_runnable().uri
+            graph = TestGraph()
+            graph.nodes = test_suite.tests
+            graph.parse_shared_root_from_object_roots(params)
+            graph.new_workers(TestGraph.parse_workers(params))
         elif isinstance(test_suite, TestGraph):
             graph = test_suite
         else:
