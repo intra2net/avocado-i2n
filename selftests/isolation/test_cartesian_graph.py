@@ -120,6 +120,7 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_objects[0].params["vms"], "vm1")
         self.assertEqual(test_objects[0].params["main_vm"], "vm1")
         self.assertEqual(test_objects[0].params["os_variant"], "f33")
+        self.assertNotIn("only", test_objects[0].params)
 
     def test_parse_composite_objects_net1(self):
         """Test for a correctly parsed net object from joined vm string restrictions."""
@@ -136,6 +137,10 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object.params["os_variant_vm1"], "el8")
         self.assertEqual(test_object.params["os_variant_vm2"], "win10")
         self.assertEqual(test_object.params["os_variant_vm3"], "ubuntutrusty")
+        self.assertNotIn("only", test_object.params)
+        self.assertNotIn("only_vm1", test_object.params)
+        self.assertNotIn("only_vm2", test_object.params)
+        self.assertNotIn("only_vm3", test_object.params)
 
     def test_parse_composite_objects_net1_unrestricted(self):
         """Test for a correctly parsed net object from empty joined vm string restrictions."""
@@ -185,6 +190,8 @@ class CartesianObjectTest(Test):
             self.assertIn(vm.component_form, net.params["name"])
             # each joined component variant must be traceable back to the component object id
             self.assertEqual(vm.id, net.params[f"object_id_{vm.suffix}"])
+            # each joined component variant must inform about supported vms via workaround restrictions
+            self.assertEqual(vm.component_form, net.params[f"object_only_{vm.suffix}"])
 
     def test_parse_components_for_vm(self):
         """Test for correctly parsed image components with unflattened vm."""
@@ -668,8 +675,8 @@ class CartesianGraphTest(Test):
         to_traverse = [graph.traverse_object_trees(s, params) for s in slot_workers if "runtime_str" in s.params]
         loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse), None))
 
-    def test_parse_and_get_objects_for_node_and_object(self):
-        """Test default parsing and retrieval of objects for a flag pair of test node and object."""
+    def test_parse_and_get_objects_for_node_and_object_flat(self):
+        """Test parsing and retrieval of objects for a flat pair of test node and object."""
         graph = TestGraph()
         flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
         self.assertEqual(len(flat_nodes), 1)
@@ -677,11 +684,38 @@ class CartesianGraphTest(Test):
         flat_objects = TestGraph.parse_flat_objects("net1", "nets")
         self.assertEqual(len(flat_objects), 1)
         flat_object = flat_objects[0]
+        self.assertNotIn("only_vm1", flat_object.params)
+        flat_object.params["only_vm1"] = "CentOS"
         get_objects, parse_objects = graph.parse_and_get_objects_for_node_and_object(flat_node, flat_object)
         self.assertEqual(len(get_objects), 0)
         test_objects = parse_objects
 
-        self.assertEqual(len(test_objects), 2)
+        self.assertEqual(len(test_objects), 1)
+        self.assertEqual(test_objects[0].suffix, "net1")
+        #self.assertIn("CentOS", test_objects[0].params[""])
+        self.assertIn("CentOS", test_objects[0].id)
+        self.assertEqual(len(test_objects[0].components), 1)
+        self.assertIn("CentOS", test_objects[0].components[0].id)
+        self.assertEqual(len(test_objects[0].components[0].components), 1)
+        self.assertEqual(test_objects[0].components[0].components[0].long_suffix, "image1_vm1")
+
+    def test_parse_and_get_objects_for_node_and_object_full(self):
+        """Test default parsing and retrieval of objects for a flat test node and full test object."""
+        graph = TestGraph()
+        flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
+        full_objects = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
+        self.assertEqual(len(full_objects), 1)
+        full_object = full_objects[0]
+        # TODO: limitation in the Cartesian config
+        self.assertNotIn("object_only_vm1", full_object.params)
+        full_object.params["object_only_vm1"] = "CentOS"
+        get_objects, parse_objects = graph.parse_and_get_objects_for_node_and_object(flat_node, full_object)
+        self.assertEqual(len(get_objects), 0)
+        test_objects = parse_objects
+
+        self.assertEqual(len(test_objects), 1)
 
         self.assertEqual(test_objects[0].suffix, "net1")
         self.assertIn("CentOS", test_objects[0].id)
@@ -689,13 +723,6 @@ class CartesianGraphTest(Test):
         self.assertIn("CentOS", test_objects[0].components[0].id)
         self.assertEqual(len(test_objects[0].components[0].components), 1)
         self.assertEqual(test_objects[0].components[0].components[0].long_suffix, "image1_vm1")
-
-        self.assertEqual(test_objects[1].suffix, "net1")
-        self.assertIn("Fedora", test_objects[1].id)
-        self.assertEqual(len(test_objects[1].components), 1)
-        self.assertIn("Fedora", test_objects[1].components[0].id)
-        self.assertEqual(len(test_objects[1].components[0].components), 1)
-        self.assertEqual(test_objects[1].components[0].components[0].long_suffix, "image1_vm1")
 
     def test_object_node_incompatible(self):
         """Test incompatibility of parsed tests and pre-parsed available objects."""

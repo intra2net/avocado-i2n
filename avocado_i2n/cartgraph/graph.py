@@ -465,7 +465,7 @@ class TestGraph(object):
         :param params: additional parameters to add to or overwrite all objects' parameters
         :returns: a list of parsed flat test objects
         """
-        params = {} if not params else params
+        params = params or {}
         params_str = param.ParsedDict(params).parsable_form()
         restriction = category if not restriction else restriction
 
@@ -506,8 +506,8 @@ class TestGraph(object):
         :param verbose: whether to print extra messages or not
         :returns: parsed test objects
         """
-        params = {} if not params else params
-        params_str = param.ParsedDict(params).parsable_form()
+        params = params or {}
+        params_str = param.ParsedDict({k: v for k, v in params.items() if not k.startswith("only_")}).parsable_form()
         restriction = category if not restriction else restriction
         if component_restrs is None:
             # TODO: all possible default suffixes, currently only vms supported
@@ -599,8 +599,14 @@ class TestGraph(object):
         :returns: parsed test objects
         :raises: :py:class:`exceptions.AssertionError` if the parsed composite is not unique
         """
-        setup_dict = {} if params is None else params.copy()
+        params = params or {}
+        setup_dict = {k: v for k, v in params.items() if not k.startswith("only_")}
         setup_dict.update({f"object_id_{o.suffix}": o.id for o in test_objects})
+        # TODO: this should have been "only_*" but the Cartesian config limitation disallowing
+        # conditional overwriting means we should not define this parameter in advance in order
+        # to fully consider "only_*" object restrictions from nodes parsed from such nets
+        setup_dict.update({f"object_only_{o.suffix}": o.component_form for o in test_objects})
+        # TODO: deprecate final restr for the sake of component form
         object_strs = {o.suffix: o.final_restr for o in test_objects}
         composite_objects = TestGraph.parse_composite_objects(suffix, category, component_restrs=object_strs,
                                                               params=setup_dict, verbose=verbose)
@@ -651,9 +657,9 @@ class TestGraph(object):
         selected_vms = net.params.objects("vms") or param.all_objects("vms")
         for vm_name in selected_vms:
 
-            # TODO: the images don't have variant suffix definitions so just
-            # take the vm generic variant and join it with itself, i.e. here
-            # all possible hardware-software combinations as variants of the same vm slot
+            # TODO: the images don't have variant suffix definitions so just take the vm generic variant and join
+            # it with itself, i.e. here all possible hardware-software combinations as variants of the same vm slot
+            # TODO: parsing vms from a full net does not guarantee the full net has the component id-s and restrictions
             vms = TestGraph.parse_composite_objects(vm_name, "vms", restriction=net.params.get("only_" + vm_name, "vms"),
                                                     params=params, verbose=verbose)
 
@@ -683,8 +689,9 @@ class TestGraph(object):
         :returns: default net object
         """
         config = param.Reparsable()
+        config.parse_next_dict({"nets": suffix})
         config.parse_next_dict({"vms": " ".join(list(object_strs.keys()))})
-        config.parse_next_dict({f"only_{s}": object_strs[s] for s in object_strs})
+        config.parse_next_dict({f"only_{s}": object_strs[s].replace("only ", "") for s in object_strs})
         return NetObject(suffix, config)
 
     @staticmethod
@@ -734,6 +741,10 @@ class TestGraph(object):
         if test_object.key != "nets":
             raise ValueError("Test node could be parsed only from test objects of the "
                              "same composition level, currently only test nets")
+        for component in test_object.components:
+            if f"only_{component.suffix}" in test_object.params:
+                raise RuntimeError("A vm restriction found in a test net that a node is "
+                                   "parsed from, not yet supported by the Cartesian config")
         config = test_object.config.get_copy()
         config.parse_next_batch(base_file="sets.cfg",
                                 ovrwrt_file=param.tests_ovrwrt_file(),
@@ -749,7 +760,8 @@ class TestGraph(object):
                     if vm_variant.strip() in test_node.params["name"]:
                         break
                 else:
-                    raise param.EmptyCartesianProduct("Mutually incompatible vm variants")
+                    raise param.EmptyCartesianProduct(f"{test_node} has incompatible {vm_name} "
+                                                      f"restriction {test_node.params[f'only_{vm_name}']}")
         return test_node
 
     def parse_and_get_objects_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
@@ -765,24 +777,24 @@ class TestGraph(object):
         :param params: runtime parameters used for extra customization
         :returns: a tuple of all reused and newly parsed test objects
         """
-        d, graph = test_node.params, self
         if not isinstance(test_object, NetObject):
             raise NotImplementedError("Can only parse objects for node and net for now")
-        object_name = d.get("object_suffix", "")
-        object_type = d.get("object_type", "")
-        object_variant = d.get("object_id", ".*").replace(object_name + "-", "")
+        object_name = test_node.params.get("object_suffix", "")
+        object_type = test_node.params.get("object_type", "")
+        object_variant = test_node.params.get("object_id", ".*").replace(object_name + "-", "")
+        node_name = test_node.params["shortname"]
 
         all_vms = param.all_objects(key="vms")
         def needed_vms():
             # case of singleton test node
-            if d.get("vms") is None:
+            if test_node.params.get("vms") is None:
                 if object_type != "nets":
                     if object_name:
                         # as the object depending on this node might not be a vm
                         # and thus a suffix, we have to obtain the relevant vm (suffix)
                         vms = [object_name.split("_")[-1]]
                     else:
-                        vms = [d.get("main_vm", param.main_vm())]
+                        vms = [test_node.params.get("main_vm", param.main_vm())]
                 else:
                     vms = []
                     for vm_name in all_vms:
@@ -790,41 +802,46 @@ class TestGraph(object):
                             vms += [vm_name]
             else:
                 # case of leaf test node or even specified object (dependency) as well as node
-                vms = d["vms"].split(" ")
+                vms = test_node.params["vms"].split(" ")
             return vms
         vms = needed_vms()
         dropped_vms = set(all_vms) - set(vms)
-        logging.debug(f"Fetching nets composed of {', '.join(vms)} to parse {d['shortname']} nodes")
+        logging.debug(f"Fetching nets composed of {', '.join(vms)} to parse {node_name} nodes")
 
         get_vms, parse_vms = {}, {}
         for vm_name in vms:
             # get vm objects of all variants with the current suffix
-            get_vms[vm_name] = [o for o in graph.objects if o.key == "vms" and o.suffix == vm_name]
+            get_vms[vm_name] = [o for o in self.objects if o.key == "vms" and o.suffix == vm_name]
             if len(get_vms[vm_name]) == 0:
-                logging.debug(f"Parsing a new vm {vm_name} for the test {d['shortname']}")
+                logging.debug(f"Parsing a new vm {vm_name} for the test {node_name}")
                 parse_vms[vm_name] = TestGraph.parse_composite_objects(vm_name, "vms", "", params=params)
-                graph.objects += parse_vms[vm_name]
+                self.objects += parse_vms[vm_name]
                 for vm in parse_vms[vm_name]:
-                    graph.objects += TestGraph.parse_components_for_object(vm, "vms", params=params)
+                    self.objects += TestGraph.parse_components_for_object(vm, "vms", params=params)
                 get_vms[vm_name] = parse_vms[vm_name]
             # mix of regex and own OR operator to restrict down to compatible variants
             filtered_vms = []
-            for vm_variant in d.get(f"only_{vm_name}", ".*").split(","):
-                vm_restr = "(\.|^)" + vm_variant.strip() + "(\.|$)"
-                filtered_vms += graph.get_objects_by(param_val=vm_restr, subset=get_vms[vm_name])
+            needed_restr = test_node.params.get(f"only_{vm_name}", "")
+            supported_restr = test_object.params.get(f"only_{vm_name}", test_object.params.get(f"object_only_{vm_name}", ""))
+            logging.debug(f"Needed vms have restriction '{needed_restr}' and the supported vms have restriction '{supported_restr}'")
+            for needed_variant, supported_variant in itertools.product(needed_restr.split(","), supported_restr.split(",")):
+                needed, supported = needed_variant.strip() or ".*", supported_variant.strip() or ".*"
+                filtered_vms += self.get_objects_by(param_val="(\.|^)"+needed+"(\.|$)",
+                                                    subset=self.get_objects_by(param_val="(\.|^)"+supported+"(\.|$)",
+                                                                               subset=get_vms[vm_name]))
             get_vms[vm_name] = filtered_vms
             # dependency filter for child node object has to be applied too
             if vm_name == object_name or (object_type == "images" and object_name.endswith(f"_{vm_name}")):
-                get_vms[vm_name] = graph.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=get_vms[vm_name])
+                get_vms[vm_name] = self.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=get_vms[vm_name])
             if len(get_vms[vm_name]) == 0:
                 raise ValueError(f"Could not fetch any objects for suffix {vm_name} "
-                                 f"in the test {d['shortname']}")
+                                 f"in the test {node_name}")
             get_vms[vm_name] = sorted(get_vms[vm_name], key=lambda x: x.id)
 
-        previous_nets = [o for o in graph.objects if o.key == "nets" and o.suffix == test_object.suffix]
+        previous_nets = [o for o in self.objects if o.key == "nets" and o.suffix == test_object.suffix]
         # dependency filter for child node object has to be applied too
         if object_variant and object_type == "nets":
-            previous_nets = graph.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=previous_nets)
+            previous_nets = self.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=previous_nets)
         get_nets, parse_nets = {test_object.suffix: []}, {test_object.suffix: []}
         # all possible vm combinations as variants of the same net slot
         for combination in itertools.product(*get_vms.values()):
@@ -832,29 +849,29 @@ class TestGraph(object):
             reused_nets, filtered_nets = [], list(previous_nets)
             for vm_object in combination:
                 vm_restr = "(\.|^)" + vm_object.component_form + "(\.|$)"
-                filtered_nets = graph.get_objects_by(param_val=vm_restr, subset=filtered_nets)
+                filtered_nets = self.get_objects_by(param_val=vm_restr, subset=filtered_nets)
             # additional filtering for nets based on dropped vm suffixes
             for get_net in filtered_nets:
                 for vm_suffix in dropped_vms:
                     if re.search("(\.|^)" + vm_suffix + "(\.|$)", get_net.params["name"]):
-                        logging.info(f"Test net {get_net} not (right-)compatible with the test node "
-                                     f"{d['shortname']} configuration and contains a redundant {vm_suffix}")
+                        logging.debug(f"Test net {get_net} not (right-)compatible with the test node "
+                                      f"{node_name} configuration and contains a redundant {vm_suffix}")
                         break
                 else:
                     reused_nets += [get_net]
             if len(reused_nets) == 1:
                 get_nets[test_object.suffix] += [reused_nets[0]]
             elif len(reused_nets) == 0:
-                logging.debug(f"Parsing a new net from vms {', '.join(vms)} for {d['shortname']}")
+                logging.debug(f"Parsing a new net from vms {', '.join(vms)} for {node_name}")
                 net = TestGraph.parse_object_from_objects(test_object.suffix, test_object.key, combination, params=params, verbose=False)
                 parse_nets[test_object.suffix] += [net]
-                graph.objects += [net]
+                self.objects += [net]
             else:
                 raise ValueError("Multiple nets reusable for the same vm variant combination:\n{reused_nets}")
         get_nets[test_object.suffix] = sorted(get_nets[test_object.suffix], key=lambda x: x.id)
         parse_nets[test_object.suffix] = sorted(parse_nets[test_object.suffix], key=lambda x: x.id)
 
-        logging.debug(f"{len(get_nets[test_object.suffix])} test nets will be reused for {d['shortname']} "
+        logging.debug(f"{len(get_nets[test_object.suffix])} test nets will be reused for {node_name} "
                       f"with {len(parse_nets[test_object.suffix])} newly parsed ones")
         return get_nets[test_object.suffix], parse_nets[test_object.suffix]
 
@@ -878,7 +895,7 @@ class TestGraph(object):
         test_nodes = []
 
         # prepare initial parser as starting configuration and get through tests
-        for i, node in enumerate(self.parse_flat_nodes(restriction, params)):
+        for i, node in enumerate(self.parse_flat_nodes(restriction, params=params)):
 
             # get configuration of each participating object and choose the one to mix with the node
             try:
@@ -897,8 +914,8 @@ class TestGraph(object):
                     node_prefix = prefix + str(i+1) + j_prefix
                     test_node = self.parse_node_from_object(net, node.params['name'],
                                                             prefix=node_prefix, params=params)
-                    logging.debug(f"Parsed a test node {test_node.params['shortname']} from "
-                                  f"two-way compatible test net {net}")
+                    logging.info(f"Parsed a test node {test_node.params['shortname']} from "
+                                 f"two-way compatible test net {net}")
                     # provide dynamic fingerprint to an original object root node
                     if re.search("(\.|^)original(\.|$)", test_node.params["name"]):
                         test_node.params["object_root"] = node.params.get("object_id", net.id)
@@ -942,13 +959,15 @@ class TestGraph(object):
         default_flat_net = TestGraph.parse_net_from_object_strs("net1", object_strs)
         objects = TestGraph.parse_components_for_object(default_flat_net, "nets",
                                                         params=params, verbose=False, unflatten=False)
-        objects = {o.id: o for o in objects}
         # the parsed test nodes are already fully restricted by the available test objects
         nodes = TestGraph().parse_composite_nodes(restriction, default_flat_net, prefix, params=params, verbose=True)
+        logging.info(f"Intersecting {len(nodes)} initially parsed nodes with {len(objects)} initially parsed objects")
+        object_ids = [o.id for o in objects]
         for test_node in nodes:
             node_vms = [o for o in test_node.objects if o.key == "vms"]
             for test_object in node_vms:
-                if test_object.id not in objects.keys():
+                if test_object.id not in object_ids:
+                    logging.warning(f"Dropping test node as required {test_object} not in {test_node}")
                     break
             else:
                 test_nodes.append(test_node)
@@ -965,9 +984,8 @@ class TestGraph(object):
 
         # handle empty product of node and object variants
         if len(test_nodes) == 0:
-            object_restrictions = param.join_str(object_strs)
             config = param.Reparsable()
-            config.parse_next_str(object_restrictions)
+            config.parse_next_str(param.join_str(object_strs))
             config.parse_next_str(param.re_str(restriction))
             config.parse_next_dict(params)
             raise param.EmptyCartesianProduct(config.print_parsed())
@@ -1145,6 +1163,8 @@ class TestGraph(object):
         :param param_dict: extra parameters to be used as overwrite dictionary
         :returns: parsed test workers sorted by name with used ones having runtime strings
         """
+        params = params or {}
+
         test_workers = []
         for suffix in param.all_objects("nets"):
             for flat_net in TestGraph.parse_flat_objects(suffix, "nets", params=params):
