@@ -207,6 +207,20 @@ class TestNode(object):
         """Check if the test node is not defined with any test object."""
         return len(self.objects) == 0 or self.params["vms"] == ""
 
+    def is_unrolled(self, worker_id: str) -> bool:
+        """
+        Check if the test is unrolled as composite node with dependencies.
+
+        :param worker: worker a flat node is unrolled for
+        :raises: :py:class:`RuntimeError` if the current node is not flat (cannot be unrolled)
+        """
+        if not self.is_flat():
+            raise RuntimeError(f"Only flat nodes can be unrolled, {self} is not flat")
+        for node in self.cleanup_nodes:
+            if self.params["name"] in node.id and worker_id in node.id:
+                return True
+        return False
+
     def is_setup_ready(self, worker: TestWorker) -> bool:
         """
         Check if all dependencies of the test were run or there were none.

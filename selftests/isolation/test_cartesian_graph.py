@@ -479,6 +479,34 @@ class CartesianNodeTest(Test):
             self.assertNotIn("only_vm2", nodes[i].params)
             self.assertIn(nets[i-1].params["name"], nodes[i].params["name"])
 
+    def test_is_unrolled(self):
+        """Test that a flat test node is considered unrolled under the right circumstances."""
+        graph = TestGraph()
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_objects), 1)
+        flat_object = flat_objects[0]
+        flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
+        self.assertFalse(flat_node.is_unrolled(TestWorker(flat_object).id))
+
+        composite_nodes = graph.parse_composite_nodes("normal..tutorial1", flat_object)
+        self.assertEqual(len(composite_nodes), 2)
+        for node in composite_nodes:
+            flat_node.cleanup_nodes.append(node)
+        self.assertTrue(flat_node.is_unrolled(TestWorker(flat_object).id))
+        more_flat_objects = TestGraph.parse_flat_objects("net2", "nets")
+        self.assertEqual(len(more_flat_objects), 1)
+        self.assertFalse(flat_node.is_unrolled(TestWorker(more_flat_objects[0]).id))
+
+        more_composite_nodes = graph.parse_composite_nodes("normal..tutorial2", flat_object)
+        self.assertGreater(len(more_composite_nodes), 0)
+        flat_node.cleanup_nodes = [more_composite_nodes[0]]
+        self.assertFalse(flat_node.is_unrolled(TestWorker(flat_object).id))
+
+        with self.assertRaises(RuntimeError):
+            composite_nodes[0].is_unrolled(TestWorker(flat_object).id)
+
     def test_params(self):
         """Test for correctly parsed test node parameters."""
         self.config["tests_str"] += "only tutorial1\n"
@@ -674,6 +702,7 @@ class CartesianGraphTest(Test):
         graph.runner = self.runner
         to_traverse = [graph.traverse_object_trees(s, params) for s in slot_workers if "runtime_str" in s.params]
         loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse), None))
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_parse_and_get_objects_for_node_and_object_flat(self):
         """Test parsing and retrieval of objects for a flat pair of test node and object."""
@@ -895,7 +924,6 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state_vms": "^on_customize$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_one_leaf_serial(self):
         """Test traversal path of one test without any reusable setup and with a serial unisolated run."""
@@ -912,7 +940,6 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "nets_spawner": "process"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_one_leaf_with_setup(self):
         """Test traversal path of one test with a reusable setup."""
@@ -929,7 +956,6 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "nets_spawner": "lxc", "nets_host": "^c1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_one_leaf_with_step_setup(self):
         """Test traversal path of one test with a single reusable setup test node."""
@@ -945,7 +971,6 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_one_leaf_with_failed_setup(self):
         """Test traversal path of one test with a failed reusable setup test node."""
@@ -960,7 +985,6 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_one_leaf_validation(self):
         """Test graph (and component) retrieval and validation methods."""
@@ -1005,7 +1029,6 @@ class CartesianGraphTest(Test):
         ]
         with self.assertRaisesRegex(RuntimeError, r"^Worker .+ spent [\d\.]+ seconds waiting for occupied node"):
             self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_one_leaf_dry_run(self):
         """Test dry run of a single leaf test where no test should end up really running."""
@@ -1017,7 +1040,6 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_two_objects_without_setup(self):
         """Test a two-object test run without a reusable setup."""
@@ -1042,7 +1064,6 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
         # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
         self.assertEqual(DummyStateControl.asserted_states["get"]["install"][self.shared_pool], 6)
         self.assertEqual(DummyStateControl.asserted_states["get"]["customize"][self.shared_pool], 6)
@@ -1063,7 +1084,6 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
         # get reusable setup from shared pool once to skip and once to sync (node reversal)
         self.assertEqual(DummyStateControl.asserted_states["get"]["install"][self.shared_pool], 8)
         self.assertEqual(DummyStateControl.asserted_states["get"]["customize"][self.shared_pool], 8)
@@ -1090,7 +1110,6 @@ class CartesianGraphTest(Test):
              "get_location_image1_vm1": "/:/mnt/local/images/shared /c2:/mnt/local/images/swarm"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
         # expect four sync and no other cleanup calls, one for each worker
         for action in ["get"]:
             for state in ["install", "customize"]:
@@ -1141,7 +1160,6 @@ class CartesianGraphTest(Test):
             # all others now step back from already occupied tutorial2.names (by c1)
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
         # expect three sync (one for each worker without self-sync) and one cleanup call
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
@@ -1201,7 +1219,6 @@ class CartesianGraphTest(Test):
             # all others now step back from already occupied nodes
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
         # expect three sync (one for each worker without self-sync) and one cleanup call
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 4)
@@ -1255,7 +1272,6 @@ class CartesianGraphTest(Test):
             {"shortname": "^leaves.tutorial_get.implicit_both.vm1", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
         # expect a single cleanup call only for the states of enforcing cleanup policy
         # expect four sync and respectively cleanup calls, one for each worker
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
@@ -1335,7 +1351,6 @@ class CartesianGraphTest(Test):
             {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
         # expect four cleanups of four different variant product states
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 4)
         # expect two cleanups of two different variant product states (vm1 variant restricted)
@@ -1377,7 +1392,6 @@ class CartesianGraphTest(Test):
             {"shortname": "^leaves.tutorial_finale.+getsetup.guisetup.clicked", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "getsetup.guisetup.clicked"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
         # expect a single cleanup call only for the states of enforcing cleanup policy
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
 
@@ -1445,7 +1459,6 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_flag_intersection(self):
         """Test for correct node intersection of two Cartesian graphs."""
@@ -1466,7 +1479,6 @@ class CartesianGraphTest(Test):
             {"shortname": "^nonleaves.internal.automated.connect.vm1", "vms": "^vm1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_flag_children_all(self):
         """Test for correct node children flagging of a complete Cartesian graph."""
@@ -1481,14 +1493,12 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
         graph.flag_children(flag_type="run", flag=lambda self, slot: True)
         graph.flag_children(object_name="image1_vm1", flag_type="run", flag=lambda self, slot: False)
         DummyTestRun.asserted_tests = [
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_flag_children(self):
         """Test for correct node children flagging for a given node."""
@@ -1506,7 +1516,44 @@ class CartesianGraphTest(Test):
             {"shortname": "^nonleaves.internal.automated.connect.vm1", "vms": "^vm1$"},
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+
+    def test_parsing_on_demand(self):
+        """Test that parsing on demand works as expected."""
+        # make sure to parse flat nodes (with CentOS restriction) that will never be composed with any objects
+        self.config["vm_strs"]["vm1"] = "only Fedora\n"
+
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("leaves")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(3)])}))
+
+        # wrap the on-demand parsing within a mock as a spy option
+        actual_parsing = graph.parse_paths_to_object_roots
+        graph.parse_paths_to_object_roots = mock.MagicMock()
+        graph.parse_paths_to_object_roots.side_effect = actual_parsing
+
+        DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
+                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
+        DummyTestRun.asserted_tests = [
+        ]
+
+        self._run_traversal(graph, {"dry_run": "yes"})
+
+        # all flat nodes must be unrolled once must have parsed paths
+        flat_nodes = [node for node in graph.nodes if node.is_flat()]
+        self.assertEqual(graph.parse_paths_to_object_roots.call_count, len(flat_nodes))
+        for node in flat_nodes:
+            self.assertTrue(node.is_unrolled("net1"))
+            graph.parse_paths_to_object_roots.assert_any_call(node, mock.ANY, mock.ANY)
+        # the graph has a specific connectedness with the shared root
+        shared_roots = graph.get_nodes_by("shared_root", "yes")
+        assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
+        root = shared_roots[0]
+        for node in graph.nodes:
+            if node in root.cleanup_nodes:
+                self.assertTrue(node.is_flat() or node.is_object_root())
 
     @mock.patch('avocado_i2n.runner.StatusRepo')
     @mock.patch('avocado_i2n.runner.StatusServer')
@@ -1590,7 +1637,6 @@ class CartesianGraphTest(Test):
                     {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
                 ]
                 self._run_traversal(graph, self.config["param_dict"])
-                self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
                 # assert that tests were not repeated
                 self.assertEqual(len(self.runner.job.result.tests), 1)
@@ -1613,7 +1659,6 @@ class CartesianGraphTest(Test):
                     {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
                 ]
                 self._run_traversal(graph, self.config["param_dict"])
-                self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
                 # assert that tests were repeated
                 self.assertEqual(len(self.runner.job.result.tests), 4)
@@ -1640,7 +1685,6 @@ class CartesianGraphTest(Test):
                     {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
                 ]
                 self._run_traversal(graph, self.config["param_dict"])
-                self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
                 # assert that tests were not repeated
                 self.assertEqual(len(self.runner.job.result.tests), 1)
