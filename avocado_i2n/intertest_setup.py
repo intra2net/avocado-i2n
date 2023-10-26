@@ -449,6 +449,10 @@ def list(config: dict[str, Any], tag: str = "") -> None:
 
     This is equivalent to but more powerful than the loader plugin.
     """
+    #_reuse_tool_with_param_dict(config, tag,
+    #                            {"dry_run": "yes"},
+    #                            run)
+
     loader = TestGraph
     runner = TestRunner()
     CartesianGraph = namedtuple("CartesianGraph", "l r")
