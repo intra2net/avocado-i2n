@@ -1089,27 +1089,29 @@ class TestGraph(object):
         else:
             children = [test_node]
 
-        get_parents, parse_parents = [], []
+        parents = []
         for child in list(children):
             for component in child.objects:
                 logging.debug(f"Parsing dependencies of {child.params['shortname']} "
                               f"for object {component.long_suffix}")
 
-                more_get_parents, more_parse_parents = self.parse_and_get_nodes_for_node_and_object(child, component, params)
-                get_parents += more_get_parents
-                parse_parents += more_parse_parents
-                parents = more_get_parents + more_parse_parents
+                get_parents, parse_parents = self.parse_and_get_nodes_for_node_and_object(child, component, params)
+                # the graph node cache has to be updated as early as possible to avoid redundancy
+                self.nodes += parse_parents
+                parents += parse_parents
+                more_parents = get_parents + parse_parents
 
                 # connect and replicate children
-                if len(parents) > 0:
-                    assert parents[0] not in child.setup_nodes, f"{parents[0]} not in {child.setup_nodes}"
-                    assert child not in parents[0].cleanup_nodes, f"{child} not in {parents[0].cleanup_nodes}"
-                    child.setup_nodes.append(parents[0])
-                    parents[0].cleanup_nodes.append(child)
-                if len(parents) > 1:
-                    children += TestGraph.clone_branch(child, component, parents)
+                if len(more_parents) > 0:
+                    assert more_parents[0] not in child.setup_nodes, f"{more_parents[0]} not in {child.setup_nodes}"
+                    assert child not in more_parents[0].cleanup_nodes, f"{child} not in {more_parents[0].cleanup_nodes}"
+                    child.setup_nodes.append(more_parents[0])
+                    more_parents[0].cleanup_nodes.append(child)
+                if len(more_parents) > 1:
+                    children += TestGraph.clone_branch(child, component, more_parents)
 
-        return get_parents, parse_parents, children
+        self.nodes += children if test_node.is_flat() else [c for c in children if c != test_node]
+        return parents, children
 
     def parse_paths_to_object_roots(self, test_node: TestNode, test_object: TestObject,
                                     params: dict[str, str] = None) -> list[tuple[list[TestNode], list[TestNode], TestNode]]:
@@ -1124,7 +1126,7 @@ class TestGraph(object):
         unresolved = [test_node]
         while len(unresolved) > 0:
             test_node = unresolved.pop()
-            _, parents, children = self.parse_branches_for_node_and_object(test_node, test_object, params)
+            parents, children = self.parse_branches_for_node_and_object(test_node, test_object, params)
             if not test_node.is_flat():
                 children.remove(test_node)
             unresolved.extend(parents)
@@ -1224,8 +1226,6 @@ class TestGraph(object):
 
         for test_node in leaves:
             for parents, siblings, current in graph.parse_paths_to_object_roots(test_node, default_flat_net, param_dict):
-                graph.nodes.extend(parents)
-                graph.nodes.extend(siblings)
 
                 if log.getLogger('graph').level <= log.DEBUG:
                     step += 1
@@ -1455,8 +1455,6 @@ class TestGraph(object):
                         if parent.is_object_root():
                             parent.setup_nodes.append(root)
                             root.cleanup_nodes.append(parent)
-                    self.nodes.extend(parents)
-                    self.nodes.extend(siblings)
 
             if next.is_occupied() and next.params.get_boolean("wait_for_occupied", True):
                 # ending with an occupied node would mean we wait for a permill of its duration

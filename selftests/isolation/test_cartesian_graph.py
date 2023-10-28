@@ -858,9 +858,11 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(flat_objects), 1)
         flat_object = flat_objects[0]
 
-        get_parents, parse_parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
-        self.assertEqual(len(get_parents), 0)
-        self.assertEqual(len(parse_parents), 2)
+        parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
+        self.assertEqual(len(parents), 2)
+        # validate cache is exactly as expected, namely just the newly parsed nodes
+        self.assertEqual(len(graph.nodes), len(parents + children))
+        self.assertEqual(set(graph.nodes), set(parents + children))
 
         self.assertEqual(len(graph.objects), 6)
         full_nets = sorted([o for o in graph.objects if o.key == "nets"], key=lambda x: x.params["name"])
@@ -869,15 +871,14 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(full_vms), 2)
         full_images = [o for o in graph.objects if o.key == "images"]
         self.assertEqual(len(full_images), 2)
+
         self.assertEqual(len(children), 2)
         for i in range(len(children)):
             self.assertEqual(children[i].objects[0], full_nets[i])
             self.assertEqual(children[i].objects[0].components[0], full_vms[i])
 
-        graph.nodes = parse_parents
-        get_parents, parse_parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
-        self.assertEqual(len(get_parents), 2)
-        self.assertEqual(len(parse_parents), 0)
+        parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
+        self.assertEqual(len(parents), 0)
 
     def test_parse_branches_for_node_and_object_with_cloning(self):
         """Test default parsing and retrieval of branches for a pair of cloned test node and object."""
@@ -889,9 +890,11 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(flat_objects), 1)
         flat_object = flat_objects[0]
 
-        get_parents, parse_parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
-        self.assertEqual(len(get_parents), 0)
-        self.assertEqual(len([p for p in parse_parents if "tutorial_gui" in p.id]), 2)
+        parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
+        self.assertEqual(len([p for p in parents if "tutorial_gui" in p.id]), 2)
+        # validate cache is exactly as expected, namely just the newly parsed nodes
+        self.assertEqual(len(graph.nodes), len(parents + children))
+        self.assertEqual(set(graph.nodes), set(parents + children))
 
         self.assertEqual(len(graph.objects), 3+6+6)
         # nets are one triple, one double, and one single (triple for current, double and single for parents)
@@ -902,15 +905,59 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(full_vms), 6)
         full_images = [o for o in graph.objects if o.key == "images"]
         self.assertEqual(len(full_images), 6)
+
         self.assertEqual(len(children), 2)
         for i in range(len(children)):
             self.assertIn(children[i].objects[0], full_nets)
             self.assertTrue(set(children[i].objects[0].components) <= set(full_vms))
 
-        graph.nodes = parse_parents
-        get_parents, parse_parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
-        self.assertEqual(len([p for p in get_parents if "tutorial_gui" in p.id]), 2)
-        self.assertEqual(len(parse_parents), 0)
+        parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
+        self.assertEqual(len(parents), 0)
+
+    def test_parse_branches_for_node_and_object_with_cloning_multivariant(self):
+        """Test default parsing and retrieval of branches for a pair of cloned test node and object."""
+        graph = TestGraph()
+        flat_nodes = [n for n in TestGraph.parse_flat_nodes("leaves..tutorial_get..implicit_both")]
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "", "only_vm2": "", "only_vm3": ""})
+        self.assertEqual(len(flat_objects), 1)
+        flat_object = flat_objects[0]
+
+        # use params to overwrite the full node parameters and remove its default restriction on vm1
+        parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object, params={"only_vm1": ""})
+        # two variants of connect for the two variants of vm1
+        self.assertEqual(len([p for p in parents if "connect" in p.id]), 2)
+        # 4 variants of tutorial_gui for the 2x2 variants of vm1 and vm2 (as setup for vm2)
+        self.assertEqual(len([p for p in parents if "tutorial_gui" in p.id]), 4)
+        # validate cache is exactly as expected, namely just the newly parsed nodes
+        self.assertEqual(len(graph.nodes), len(parents + children))
+        self.assertEqual(set(graph.nodes), set(parents + children))
+
+        self.assertEqual(len(graph.objects), 12+6+6)
+        # nets are one triple, one double, and one single (triple for current, double and single for parents)
+        full_nets = sorted([o for o in graph.objects if o.key == "nets"], key=lambda x: x.params["name"])
+        # all triple, two double (both of CentOS with each windows variant due to one-edge reusability), and two single (vm1)
+        self.assertEqual(len(full_nets), 2**3+2+2)
+        # we always parse all vms independently of restrictions since they play the role of base for filtering
+        full_vms = sorted([o for o in graph.objects if o.key == "vms"], key=lambda x: x.params["name"])
+        self.assertEqual(len(full_vms), 6)
+        full_images = [o for o in graph.objects if o.key == "images"]
+        self.assertEqual(len(full_images), 6)
+
+        self.assertEqual(len(children), 2**4)
+        self.assertEqual(len([c for c in children if "implicit_both" in c.id]), 2**4)
+        self.assertEqual(len([c for c in children if "implicit_both" in c.id and "guisetup.noop" in c.id]), 2**3)
+        self.assertEqual(len([c for c in children if "implicit_both" in c.id and "guisetup.clicked" in c.id]), 2**3)
+        for i in range(len(children)):
+            self.assertIn(children[i].objects[0], full_nets)
+            self.assertTrue(set(children[i].objects[0].components) <= set(full_vms))
+
+        parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
+        self.assertEqual(len(parents), 0)
+        for flat_node in TestGraph.parse_flat_nodes("leaves..tutorial_get"):
+            parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
+            self.assertEqual(len(parents), 0)
 
     def test_parse_paths_to_object_roots(self):
         """Test correct expectation of parsing graph dependency paths from a leaf to all their object roots."""
@@ -1416,7 +1463,6 @@ class CartesianGraphTest(Test):
         # root state of a permanent vm is not synced from a single worker to itself
         self.assertEqual(DummyStateControl.asserted_states["get"]["ready"][self.shared_pool], 0)
 
-    @skip("Newly found problem with cross object leakage in branch parsing")
     def test_cloning_simple_cross_object(self):
         """Test a complete test run with multi-variant objects where cloning should not be affected."""
         graph = TestGraph()
