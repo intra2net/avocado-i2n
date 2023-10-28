@@ -92,7 +92,7 @@ class DummyStateControl(object):
                 do_sources = do_source.split()
                 for do_source in do_sources:
                     # TODO: currently we cannot fully test additional state sources
-                    if not do_source.startswith("/:"):
+                    if not do_source.endswith("shared"):
                         continue
                     if do == "check":
                         if not self.asserted_states[do][do_state][do_source] and len(do_sources) == 1:

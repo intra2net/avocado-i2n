@@ -1019,14 +1019,14 @@ class TestGraph(object):
 
         # objects can appear within a test without any prior dependencies
         setup_restr = object_params["get"]
-        setup_obj_resr = test_object.component_form
+        setup_obj_restr = test_object.component_form
         logging.debug(f"Cartesian setup of {test_object.long_suffix} for {test_node.params['shortname']} "
                       f"uses restriction {setup_restr}")
 
         # speedup for handling already parsed unique parent cases
         filtered_parents = self.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
                                              subset=self.get_nodes_by("name",
-                                                                      "(\.|^)%s(\.|$)" % setup_obj_resr))
+                                                                      "(\.|^)%s(\.|$)" % setup_obj_restr))
         # the vm whose dependency we are parsing may not be restrictive enough so reuse optional other
         # objects variants of the current test node - cloning is only supported in the node restriction
         if len(filtered_parents) > 1:
@@ -1035,9 +1035,13 @@ class TestGraph(object):
                                                    subset=filtered_parents)
                 filtered_parents = object_parents if len(object_parents) > 0 else filtered_parents
             if len(filtered_parents) > 0:
+                logging.debug(f"Reusing {len(filtered_parents)} parent nodes for {test_node}")
                 return filtered_parents, []
         if len(filtered_parents) == 1:
+            logging.debug(f"Reusing a unique parent node {filtered_parents[0]} for {test_node}")
             return filtered_parents, []
+
+        # main parsing entry point for the parents
         setup_dict = {} if params is None else params.copy()
         setup_dict.update({"object_suffix": test_object.long_suffix,
                            "object_type": test_object.key,
@@ -1056,7 +1060,7 @@ class TestGraph(object):
             parent_name = ".".join(new_parent.params["name"].split(".")[1:])
             old_parents = self.get_nodes_by("name", "(\.|^)%s(\.|$)" % parent_name,
                                             subset=self.get_nodes_by("name",
-                                                                     "(\.|^)%s(\.|$)" % setup_obj_resr))
+                                                                     "(\.|^)%s(\.|$)" % setup_obj_restr))
             if len(old_parents) > 0:
                 for old_parent in old_parents:
                     logging.debug(f"Found parsed dependency {old_parent.params['shortname']} for "
