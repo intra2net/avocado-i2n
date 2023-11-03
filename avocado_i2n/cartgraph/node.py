@@ -431,6 +431,7 @@ class TestNode(object):
         :type node1: :py:class:`TestNode`
         :param node2: first node to use for the priority comparison
         :type node2: :py:class:`TestNode`
+        :returns: -1 if node1 < node2, 1 if node1 > node2, 0 otherwise
 
         By default (if not externally set), it implements the divergent paths
         policy whereby workers will spread and explore the test space or
@@ -454,6 +455,7 @@ class TestNode(object):
         :type node1: :py:class:`TestNode`
         :param node2: first node to use for the priority comparison
         :type node2: :py:class:`TestNode`
+        :returns: -1 if node1 < node2, 1 if node1 > node2, 0 otherwise
 
         By default (if not externally set), it implements the divergent paths
         policy whereby workers will spread and explore the test space or

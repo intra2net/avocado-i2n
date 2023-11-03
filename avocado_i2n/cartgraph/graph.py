@@ -1423,6 +1423,7 @@ class TestGraph(object):
         """
         # TODO: custom workers are not yet fully supported in this method
         default_flat_net = TestGraph.parse_net_from_object_strs("net1", self.runner.job.config["vm_strs"])
+        default_worker_id = TestWorker(default_flat_net).id
         logging.debug(f"Worker {worker.id} starting complete graph traversal with parameters {params}")
         shared_roots = self.get_nodes_by("shared_root", "yes")
         assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
@@ -1445,7 +1446,7 @@ class TestGraph(object):
                 traverse_path.append(next.pick_child(worker))
                 continue
 
-            if next.is_flat() and not next.is_unrolled(TestWorker(default_flat_net).id):
+            if next.is_flat() and not next.is_unrolled(default_worker_id):
                 for parents, siblings, current in self.parse_paths_to_object_roots(next, default_flat_net, params):
                     if current == next:
                         if len(siblings) == 0:
@@ -1484,7 +1485,7 @@ class TestGraph(object):
                           "not " if not next.is_setup_ready(worker) else "",
                           "not " if not next.is_cleanup_ready(worker) else "")
             logging.debug("Current traverse path/stack for %s:\n%s", worker.id,
-                          "\n".join([n.params["shortname"] for n in traverse_path]))
+                          "\n".join([n.params["shortname"] for n in traverse_path[-5:]]))
             # if previous in path is the child of the next, then the path is reversed
             # looking for setup so if the next is setup ready and already run, remove
             # the previous' reference to it and pop the current next from the path
@@ -1509,12 +1510,23 @@ class TestGraph(object):
                 if next.is_cleanup_ready(worker):
                     for setup in next.setup_nodes:
                         setup.visit_child(next, worker)
+                    self.report_progress()
+
+                    unexplored_nodes = [node for node in self.nodes if node.is_flat() and not node.is_unrolled(default_worker_id)]
+                    if len(unexplored_nodes) > 0:
+                        # postpone cleaning up current node since it might have newly added children
+                        traverse_path.append(root)
+                        traverse_path.append(root.pick_child(worker))
+                        continue
+
                     await self.reverse_node(next, worker, params)
                     traverse_path.pop()
-                    self.report_progress()
                 else:
                     # normal DFS
                     traverse_path.append(next.pick_child(worker))
+            elif next == root:
+                # discontinuous paths allowed via the shared root (waiting cleanup and else)
+                traverse_path.pop()
             else:
                 raise AssertionError("Discontinuous path in the test dependency graph detected")
 

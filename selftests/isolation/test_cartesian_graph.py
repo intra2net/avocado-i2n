@@ -657,6 +657,54 @@ class CartesianNodeTest(Test):
         test_node.workers.add(worker2)
         self.assertTrue(test_node.default_clean_decision(worker1))
 
+    def test_cleanup_priority(self):
+        """Test that cleanup priority prioritizes workers and then secondary criteria."""
+        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_nets), 1)
+        flat_net = flat_nets[0]
+        full_nets = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
+        self.assertEqual(len(full_nets), 1)
+        net = full_nets[0]
+
+        node1 = TestGraph.parse_node_from_object(net, "normal..tutorial1", prefix="1")
+        node2 = TestGraph.parse_node_from_object(net, "normal..tutorial1", prefix="2")
+        worker = TestWorker(flat_net)
+
+        # must return -1 (choose lesser node1) since node1 < node2 at prefix
+        self.assertEqual(TestNode.cleanup_priority(node1, node2), -1)
+        node1.workers = [worker]
+        # lesser node2 has 1 worker less
+        self.assertEqual(TestNode.cleanup_priority(node1, node2), 1)
+        # resort to prefix again
+        node2.workers = [worker]
+        self.assertEqual(TestNode.cleanup_priority(node1, node2), -1)
+        # lesser node 2 has fewer visited children
+        child_node = TestGraph.parse_node_from_object(net, "normal..tutorial1")
+        node1.visited_cleanup_nodes[child_node] = set([worker])
+        self.assertEqual(TestNode.cleanup_priority(node1, node2), 1)
+
+    def test_pick_and_visit_child(self):
+        """Test that children are picked according to previous visits."""
+        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_nets), 1)
+        flat_net = flat_nets[0]
+        full_nets = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
+        self.assertEqual(len(full_nets), 1)
+        net = full_nets[0]
+
+        node = TestGraph.parse_node_from_object(net, "normal..tutorial1")
+        child_node1 = TestGraph.parse_node_from_object(net, "normal..tutorial1", prefix="1")
+        child_node2 = TestGraph.parse_node_from_object(net, "normal..tutorial1", prefix="2")
+        node.cleanup_nodes = [child_node1, child_node2]
+        worker = TestWorker(flat_net)
+
+        picked_child = node.pick_child(worker)
+        self.assertEqual(picked_child, child_node1)
+        node.visit_child(picked_child, worker)
+        picked_child = node.pick_child(worker)
+        self.assertEqual(picked_child, child_node2)
+        node.visit_child(picked_child, worker)
+
 
 @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
@@ -1614,6 +1662,7 @@ class CartesianGraphTest(Test):
                                                       "getsetup.noop": {self.shared_pool: 0},
                                                       "ready": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
+            # setup and first setup related leaves
             # automated setup of vm1 of CentOS variant
             {"shortname": "^internal.automated.linux_virtuser.vm1.+CentOS", "vms": "^vm1$"},
             # automated setup of vm2 of Win10 variant
@@ -1628,39 +1677,38 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.linux_virtuser.vm1.+Fedora", "vms": "^vm1$"},
             # GUI test for vm1 of Fedora variant which is not first (noop) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
             {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
-            # GUI test for vm1 of Fedora variant which is not first (noop) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
-            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
 
+            # pure exploration diverging from own previous paths
             # second (clicked) parent GUI setup dependency through vm2 of Win10 variant
             {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
-            # second (clicked) parent GUI setup dependency through vm2 of Win7 variant
-            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
-            # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
-            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
-            # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
-            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
-
             # automated setup of vm1 of CentOS variant from tutorial_get
             {"shortname": "^internal.automated.connect.vm1.+CentOS", "vms": "^vm1$"},
-
             # first (noop) explicit actual test of CentOS+Win10
             {"shortname": "^leaves.tutorial_get.explicit_noop.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.noop"},
-            # first (noop) explicit actual test of CentOS+Win7
-            {"shortname": "^leaves.tutorial_get.explicit_noop..+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.noop"},
             # second (clicked) explicit actual test of CentOS+Win10
             {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.clicked"},
-            # second (clicked) explicit actual test of CentOS+Win7
-            {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.clicked"},
-
-            # TODO: order here somewhat arbitrary
             # first (noop) duplicated actual test of CentOS+Win10
             {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
+
+            # gradual return to previously discontinued paths
+            # second (clicked) parent GUI setup dependency through vm2 of Win7 variant
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
             # second (clicked) duplicated actual test of CentOS+Win7
             {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
             # first (noop) duplicated actual test of CentOS+Win7
             {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
             # second (clicked) duplicated actual test of CentOS+Win10
             {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
+            # second (clicked) explicit actual test of CentOS+Win7
+            {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.clicked"},
+            # first (noop) explicit actual test of CentOS+Win7
+            {"shortname": "^leaves.tutorial_get.explicit_noop..+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.noop"},
+            # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+            # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+            # GUI test for vm1 of Fedora variant which is not first (noop) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
         ]
 
         self._run_traversal(graph, self.config["param_dict"])
