@@ -1054,13 +1054,8 @@ class TestGraph(object):
 
         get_parents, parse_parents = [], []
         for new_parent in new_parents:
-            # BUG: a good way to get a variant valid test name was to use
-            # re.sub("^(.+\.)*(all|normal|minimal|...)\.", "", NAME)
-            # but this regex performs extremely slow (much slower than string replacement)
-            parent_name = ".".join(new_parent.params["name"].split(".")[1:])
-            old_parents = self.get_nodes_by("name", "(\.|^)%s(\.|$)" % parent_name,
-                                            subset=self.get_nodes_by("name",
-                                                                     "(\.|^)%s(\.|$)" % setup_obj_restr))
+            old_parents = self.get_nodes_by("name", f"(\.|^){new_parent.setless_form}(\.|$)",
+                                            subset=self.get_nodes_by("name", f"(\.|^){setup_obj_restr}(\.|$)"))
             if len(old_parents) > 0:
                 for old_parent in old_parents:
                     logging.debug(f"Found parsed dependency {old_parent.params['shortname']} for "
@@ -1084,8 +1079,17 @@ class TestGraph(object):
         :returns: a tuple of all reused and newly parsed parent test nodes as well as final child test nodes
         """
         if test_node.is_flat():
-            children = self.parse_composite_nodes(test_node.params["name"],
-                                                  test_object, test_node.prefix, params=params)
+            old_children = self.get_nodes_by("name", f"(\.|^){test_node.setless_form}(\.|$)",
+                                             subset=self.get_nodes_by("name", f"(\.|^){test_object.suffix}(\.|$)"))
+            if len(old_children) > 0:
+                for old_child in old_children:
+                    logging.debug(f"Found parsed expansion {old_child.params['shortname']} for flat node "
+                                  f"{test_node.params['shortname']} through object {test_object.suffix}")
+                children = []
+            else:
+                logging.debug(f"Will newly expand flat {test_node.params['shortname']} for {test_object.suffix}")
+                children = self.parse_composite_nodes(test_node.params["name"],
+                                                      test_object, test_node.prefix, params=params)
         else:
             children = [test_node]
 

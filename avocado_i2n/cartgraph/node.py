@@ -63,6 +63,15 @@ class TestNode(object):
         return self.config.steps[-2].parsable_form()
     final_restr = property(fget=final_restr)
 
+    def setless_form(self):
+        """Test set invariant form of the test node name."""
+        max_restr = ""
+        for main_restr in self.params.objects("main_restrictions"):
+            if self.params["name"].startswith(main_restr):
+                max_restr = main_restr if len(main_restr) > len(max_restr) else max_restr
+        return self.params["name"].replace(max_restr + ".", "", 1)
+    setless_form = property(fget=setless_form)
+
     def long_prefix(self):
         """Sufficiently unique prefix to identify a diagram test node."""
         return self.prefix + "-" + self.params["vms"].replace(" ", "")

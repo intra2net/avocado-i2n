@@ -816,6 +816,59 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(get_nodes), 0)
         self.assertEqual(len(parse_nodes), 0)
 
+    def test_parse_and_get_nodes_for_node_and_object_with_leaves(self):
+        """Test that leaf nodes are properly reused when parsed as dependencies for node and object."""
+        graph = TestGraph()
+        nodes, objects = TestGraph.parse_object_nodes("all..tutorial_get.explicit_clicked", prefix=self.prefix,
+                                                      object_strs=self.config["vm_strs"],
+                                                      params=self.config["param_dict"])
+        self.assertEqual(len(nodes), 1)
+        full_node = nodes[0]
+        self.assertEqual(len(objects), 1+3+3)
+
+        self.assertEqual(len([o for o in objects if o.key == "nets"]), 1)
+        full_net = [o for o in objects if o.key == "nets"][0]
+        get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_net)
+        self.assertEqual(len(get_nodes), 0)
+        self.assertEqual(len(parse_nodes), 0)
+
+        self.assertEqual(len([o for o in objects if o.key == "vms"]), 3)
+        for full_vm in [o for o in objects if o.key == "vms"]:
+            get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_vm)
+            self.assertEqual(len(get_nodes), 0)
+            self.assertEqual(len(parse_nodes), 0)
+
+        self.assertEqual(len([o for o in objects if o.key == "images"]), 3)
+
+        # standard handling for vm1 as in other tests
+        full_image1 = [o for o in objects if o.key == "images" and "vm1" in o.long_suffix][0]
+        get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image1)
+        self.assertEqual(len(get_nodes), 0)
+        self.assertEqual(len(parse_nodes), 1)
+        graph.nodes += parse_nodes
+        get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image1)
+        self.assertEqual(len(get_nodes), 1)
+        self.assertEqual(len(parse_nodes), 0)
+
+        # most important part regarding reusability
+        full_image2 = [o for o in objects if o.key == "images" and "vm2" in o.long_suffix][0]
+        get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image2)
+        self.assertEqual(len(get_nodes), 0)
+        self.assertEqual(len(parse_nodes), 1)
+        # we are adding a leaf node that should be reused as the setup of this node
+        leaf_nodes = graph.parse_composite_nodes("leaves..tutorial_gui.client_clicked", full_net)
+        graph.nodes += leaf_nodes
+        get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image2)
+        self.assertEqual(len(get_nodes), 1)
+        self.assertEqual(len(parse_nodes), 0)
+        self.assertEqual(get_nodes, leaf_nodes)
+
+        # no nodes for permanent object vm3
+        full_image3 = [o for o in objects if o.key == "images" and "vm3" in o.long_suffix][0]
+        get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image3)
+        self.assertEqual(len(get_nodes), 0)
+        self.assertEqual(len(parse_nodes), 0)
+
     def test_parse_and_get_nodes_for_node_and_object_with_cloning(self):
         """Test parsing and retrieval of nodes for a pair of cloned test node and object."""
         graph = TestGraph()
@@ -879,6 +932,15 @@ class CartesianGraphTest(Test):
 
         parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
         self.assertEqual(len(parents), 0)
+        self.assertEqual(len(children), 0)
+
+        # make sure the node reuse does not depend on test set restrictions
+        flat_nodes = [n for n in TestGraph.parse_flat_nodes("all..tutorial1")]
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
+        parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
+        self.assertEqual(len(parents), 0)
+        self.assertEqual(len(children), 0)
 
     def test_parse_branches_for_node_and_object_with_cloning(self):
         """Test default parsing and retrieval of branches for a pair of cloned test node and object."""
