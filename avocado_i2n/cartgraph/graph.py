@@ -1309,7 +1309,7 @@ class TestGraph(object):
         else:
             return
 
-        if not test_node.params.get("set_location") and not test_node.is_shared_root() and not test_node.is_flat():
+        if not test_node.is_shared_root() and not test_node.is_flat():
             shared_locations = test_node.params.get_list("shared_pool", ["/:."])
             for location in shared_locations:
                 test_node.add_location(location)

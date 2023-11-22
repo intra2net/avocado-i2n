@@ -528,43 +528,53 @@ class TestNode(object):
         visitors.add(worker)
         self.visited_cleanup_nodes[test_node] = visitors
 
-    def add_location(self, location):
+    def add_location(self, location: str) -> None:
         """
-        Add a setup reuse location information to the current node and its children.
+        Add a setup reuse location information to the current node.
 
         :param str location: a special format string containing all information on the
                              location where the format must be "gateway/host:path"
         """
-        # TODO: networks need further refactoring possibly as node environments
-        object_suffix = self.params.get("object_suffix", "net1")
-        # discard parameters if we are not talking about any specific non-net object
-        object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
-        source_suffix = "_" + location
-        source_object_suffix = source_suffix + object_suffix
-
-        location_tuple = location.split(":")
-        gateway, host = ("", "") if len(location_tuple) <= 1 else location_tuple[0].split("/")
-        ip, port = NetObject.get_session_ip_port(host, gateway,
-                                                 self.params['nets_ip_prefix'],
-                                                 self.params["nets_shell_port"])
+        def ip_and_port_from_location(location):
+            location_tuple = location.split(":")
+            gateway, host = ("", "") if len(location_tuple) <= 1 else location_tuple[0].split("/")
+            ip, port = NetObject.get_session_ip_port(host, gateway,
+                                                    self.params['nets_ip_prefix'],
+                                                    self.params["nets_shell_port"])
+            return ip, port
 
         if self.params.get("set_location"):
-            self.params["set_location"] += " " + location
+            if location not in self.params["set_location"]:
+                self.params["set_location"] += " " + location
         else:
             self.params["set_location"] = location
+        source_suffix = "_" + location
+        ip, port = ip_and_port_from_location(location)
         self.params[f"nets_shell_host{source_suffix}"] = ip
         self.params[f"nets_shell_port{source_suffix}"] = port
         self.params[f"nets_file_transfer_port{source_suffix}"] = port
 
-        for node in self.cleanup_nodes:
-            if node.params.get(f"get_location{object_suffix}"):
-                node.params[f"get_location{object_suffix}"] += " " + location
-            else:
-                node.params[f"get_location{object_suffix}"] = location
+        for node in self.setup_nodes:
+            # TODO: networks need further refactoring possibly as node environments
+            object_suffix = node.params.get("object_suffix", "net1")
+            # discard parameters if we are not talking about any specific non-net object
+            object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
+            setup_locations = node.params.get_list("set_location", [])
 
-            node.params[f"nets_shell_host{source_object_suffix}"] = ip
-            node.params[f"nets_shell_port{source_object_suffix}"] = port
-            node.params[f"nets_file_transfer_port{source_object_suffix}"] = port
+            if self.params.get(f"get_location{object_suffix}"):
+                for setup_location in setup_locations:
+                    if setup_location not in self.params[f"get_location{object_suffix}"]:
+                        self.params[f"get_location{object_suffix}"] += " " + setup_location
+            else:
+                self.params[f"get_location{object_suffix}"] = " ".join(setup_locations)
+
+            for setup_location in setup_locations:
+                source_suffix = "_" + setup_location
+                source_object_suffix = source_suffix + object_suffix
+                ip, port = ip_and_port_from_location(setup_location)
+                self.params[f"nets_shell_host{source_object_suffix}"] = ip
+                self.params[f"nets_shell_port{source_object_suffix}"] = port
+                self.params[f"nets_file_transfer_port{source_object_suffix}"] = port
 
     def regenerate_params(self, verbose=False):
         """

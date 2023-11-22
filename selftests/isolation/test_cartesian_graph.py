@@ -1333,13 +1333,14 @@ class CartesianGraphTest(Test):
         # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
         self.assertEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 3)
 
-    def test_diverging_paths_with_external_setup(self):
+    def test_diverging_paths_external(self):
         """Test a multi-object test run with reusable setup of diverging workers and shared pool or previous runs."""
-        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
-        self.config["tests_str"] += "only tutorial1,tutorial3\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1,normal..tutorial3")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)]),
+                                                   "shared_pool": self.shared_pool}))
+
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
@@ -1352,6 +1353,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "nets_host": "^c2$",
              "get_location_image1_vm1": "/:/mnt/local/images/shared /c2:/mnt/local/images/swarm"},
         ]
+
         self._run_traversal(graph, self.config["param_dict"])
         # expect four sync and no other cleanup calls, one for each worker
         for action in ["get"]:
@@ -1367,8 +1369,121 @@ class CartesianGraphTest(Test):
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
 
-    def test_diverging_paths_with_swarm_setup(self):
+    def test_diverging_paths_swarm(self):
         """Test a multi-object test run where the workers will run multiple tests reusing their own local swarm setup."""
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("leaves..tutorial2,leaves..tutorial_gui")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)]),
+                                                   "shared_pool": self.shared_pool}))
+
+        workers = sorted(list(graph.workers.values()), key=lambda x: x.params["name"])
+        self.assertEqual(workers[0].params["nets_spawner"], "lxc")
+        self.assertEqual(workers[1].params["nets_spawner"], "lxc")
+        self.assertEqual(workers[2].params["nets_spawner"], "lxc")
+        self.assertEqual(workers[3].params["nets_spawner"], "lxc")
+
+        # this is not what we test but simply a means to remove some initial nodes for simpler testing
+        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
+        DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
+        DummyStateControl.asserted_states["check"]["guisetup.noop"] = {self.shared_pool: False}
+        DummyStateControl.asserted_states["check"]["guisetup.clicked"] = {self.shared_pool: False}
+        DummyStateControl.asserted_states["get"]["guisetup.noop"] = {self.shared_pool: 0}
+        DummyStateControl.asserted_states["get"]["guisetup.clicked"] = {self.shared_pool: 0}
+        DummyStateControl.asserted_states["unset"] = {"guisetup.noop": {self.shared_pool: 0}}
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$",
+             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c1$"},
+            # c2 starts from second tutorial variant and waits for its single (same) setup to be provided
+            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$",
+             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c3$"},
+            # c4 picks the newly available waiting setup directly from the shared node
+            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$",
+             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c4$"},
+            # c1 now moves on to its planned test
+            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$",
+             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c1$",
+             "get_location_vm1": "[\w:/]+ /c1:/mnt/local/images/swarm"},
+            # c2 no longer waits and picks its planned tests reusing setup from c1
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$",
+             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c2$",
+             "get_location_vm1": "[\w:/]+ /c1:/mnt/local/images/swarm"},
+            # c3 is done with 1/2 of the setup for client_noop and waits for c4 to provide the other half
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$",
+             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c4$",
+             "get_location_image1_vm1": "[\w:/]+ /c3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ /c4:/mnt/local/images/swarm"},
+            # continuing with c1 after last considering c4 (starting from first worker again)
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$",
+             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c1$",
+             "get_location_image1_vm1": "[\w:/]+ /c3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ /c4:/mnt/local/images/swarm"},
+        ]
+
+        self._run_traversal(graph, self.config["param_dict"])
+        # expect three sync (one for each worker without self-sync) and one cleanup call
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
+        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
+
+    def test_diverging_paths_remote(self):
+        """Test a multi-object test run where the workers will run multiple tests reusing also remote swarm setup."""
+        graph = TestGraph()
+        graph.nodes = TestGraph.parse_flat_nodes("leaves..tutorial2,leaves..tutorial_gui")
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"host1/{i+1}" for i in range(2)] + [f"host2/{i+1}" for i in range(2)]),
+                                                   "shared_pool": self.shared_pool}))
+
+        workers = sorted(list(graph.workers.values()), key=lambda x: x.params["name"])
+        self.assertEqual(workers[0].params["nets_spawner"], "remote")
+        self.assertEqual(workers[1].params["nets_spawner"], "remote")
+        self.assertEqual(workers[2].params["nets_spawner"], "remote")
+        self.assertEqual(workers[3].params["nets_spawner"], "remote")
+
+        # this is not what we test but simply a means to remove some initial nodes for simpler testing
+        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
+        DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
+        DummyStateControl.asserted_states["check"]["guisetup.noop"] = {self.shared_pool: False}
+        DummyStateControl.asserted_states["check"]["guisetup.clicked"] = {self.shared_pool: False}
+        DummyStateControl.asserted_states["get"]["guisetup.noop"] = {self.shared_pool: 0}
+        DummyStateControl.asserted_states["get"]["guisetup.clicked"] = {self.shared_pool: 0}
+        DummyStateControl.asserted_states["unset"] = {"guisetup.noop": {self.shared_pool: 0}}
+        DummyTestRun.asserted_tests = [
+            # TODO: localhost is not acceptable when we mix hosts
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$",
+             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^1$"},
+            # c2 starts from second tutorial variant and waits for its single (same) setup to be provided
+            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$",
+             "nets_spawner": "remote", "nets_gateway": "^host2$", "nets_host": "^1$"},
+            # c4 picks the newly available waiting setup directly from the shared node
+            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$",
+             "nets_spawner": "remote", "nets_gateway": "^host2$", "nets_host": "^2$"},
+            # c1 now moves on to its planned test
+            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$",
+             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^1$",
+             "get_location_vm1": "[\w:/]+ host1/1:/mnt/local/images/swarm",
+             "nets_shell_port_host1/1:/mnt/local/images/swarm_vm1": "22"},
+            # c2 no longer waits and picks its planned tests reusing setup from c1
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$",
+             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^2$",
+             "get_location_vm1": "[\w:/]+ host1/1:/mnt/local/images/swarm",
+             "nets_shell_port_host1/1:/mnt/local/images/swarm_vm1": "22"},
+            # c3 is done with 1/2 of the setup for client_noop and waits for c4 to provide the other half
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$",
+             "nets_spawner": "remote", "nets_gateway": "^host2$", "nets_host": "^2$",
+             "get_location_image1_vm1": "[\w:/]+ host2/1:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ host2/2:/mnt/local/images/swarm",
+             "nets_shell_port_host2/1:/mnt/local/images/swarm_image1_vm1": "221", "nets_shell_port_host2/2:/mnt/local/images/swarm_image1_vm2": "222"},
+            # continuing with c1 after last considering c4 (starting from first worker again)
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$",
+             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^1$",
+             "get_location_image1_vm1": "[\w:/]+ host2/1:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ host2/2:/mnt/local/images/swarm",
+             "nets_shell_port_host2/1:/mnt/local/images/swarm_image1_vm1": "221", "nets_shell_port_host2/2:/mnt/local/images/swarm_image1_vm2": "222"},
+        ]
+
+        self._run_traversal(graph, self.config["param_dict"])
+        # expect three sync (one for each worker without self-sync) and one cleanup call
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
+        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
+
+    def test_diverging_paths_preparsed(self):
+        """Test a multi-object parsed in advance test run where the workers will run multiple tests reusing their setup."""
         self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
@@ -1407,64 +1522,10 @@ class CartesianGraphTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
 
-    def test_diverging_paths_with_remote_setup(self):
-        """Test a multi-object test run where the workers will run multiple tests reusing also remote swarm setup."""
-        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(2)] + [f"host1/{i+1}" for i in range(2)] + [f"host2/22"])
-        self.config["tests_str"] = "only leaves\n"
-        self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
-        workers = sorted(list(graph.workers.values()), key=lambda x: x.params["name"])
-        self.assertEqual(workers[0].params["nets_spawner"], "lxc")
-        self.assertEqual(workers[1].params["nets_spawner"], "lxc")
-        self.assertEqual(workers[2].params["nets_spawner"], "remote")
-        self.assertEqual(workers[3].params["nets_spawner"], "remote")
-        self.assertEqual(workers[4].params["nets_spawner"], "remote")
-
-        # this is not what we test but simply a means to remove some initial nodes for simpler testing
-        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
-        DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
-        DummyStateControl.asserted_states["check"]["guisetup.noop"] = {self.shared_pool: False}
-        DummyStateControl.asserted_states["check"]["guisetup.clicked"] = {self.shared_pool: False}
-        DummyStateControl.asserted_states["get"]["guisetup.noop"] = {self.shared_pool: 0}
-        DummyStateControl.asserted_states["get"]["guisetup.clicked"] = {self.shared_pool: 0}
-        DummyStateControl.asserted_states["unset"] = {"guisetup.noop": {self.shared_pool: 0}}
-        DummyTestRun.asserted_tests = [
-            # TODO: localhost is not acceptable when we mix hosts
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$",
-             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c1$"},
-            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$",
-             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c2$"},
-            # this tests remote container reuse of previous setup
-            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$",
-             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^1$"},
-            # c1 reuses its own setup moving further down
-            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$",
-             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c1$",
-             "get_location_vm1": "[\w:/]+ /c1:/mnt/local/images/swarm",
-             "nets_shell_port_/c1:/mnt/local/images/swarm_vm1": "22"},
-            # remote container reused setup from itself and from local c2
-            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$",
-             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^1$",
-             "get_location_image1_vm1": "[\w:/]+ host1/1:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ /c2:/mnt/local/images/swarm",
-             "nets_shell_port_host1/1:/mnt/local/images/swarm_image1_vm1": "221", "nets_shell_port_/c2:/mnt/local/images/swarm_image1_vm2": "22"},
-            # ultimate speed up comes from the second remote container from the first remote location
-            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$",
-             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^2$",
-             "get_location_image1_vm1": "[\w:/]+ host1/1:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ /c2:/mnt/local/images/swarm",
-             "nets_shell_port_host1/1:/mnt/local/images/swarm_image1_vm1": "221", "nets_shell_port_/c2:/mnt/local/images/swarm_image1_vm2": "22"},
-            # all of local c1's setup will be reused by a second remote location containers that would pick up tutorial2.names
-            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$",
-             "nets_spawner": "remote", "nets_gateway": "^host2$", "nets_host": "^22$",
-             "get_location_vm1": "[\w:/]+ /c1:/mnt/local/images/swarm",
-             "nets_shell_port_/c1:/mnt/local/images/swarm_vm1": "22"},
-            # all others now step back from already occupied nodes
-        ]
         self._run_traversal(graph, self.config["param_dict"])
         # expect three sync (one for each worker without self-sync) and one cleanup call
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 4)
+        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
 
     def test_cloning_simple_permanent_object(self):
         """Test a complete test run including complex setup that involves permanent vms and cloning."""
