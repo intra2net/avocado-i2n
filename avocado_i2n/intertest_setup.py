@@ -260,10 +260,13 @@ def update(config, tag=""):
         else:
             setup_str = "all.." + setup_str
         setup_str = param.re_str(setup_str)
-        vm_graph = l.parse_object_trees(setup_dict,
-                                        setup_str,
-                                        config["available_vms"],
-                                        prefix=f"{tag}m{i+1}", verbose=False, with_shared_root=False)
+        vm_graph = l.parse_object_trees(
+            restriction=setup_str,
+            prefix=f"{tag}m{i+1}",
+            object_strs=config["available_vms"],
+            params=setup_dict,
+            verbose=False, with_shared_root=False,
+        )
         # flagging children will require connected graphs while flagging intersection can also handle disconnected ones
         vm_graph.flag_intersection(vm_graph, flag_type="run", flag=lambda self, slot: False)
         vm_graph.flag_intersection(vm_graph, flag_type="clean", flag=lambda self, slot: False)
@@ -288,19 +291,24 @@ def update(config, tag=""):
             install_node.params["object_root"] = image.id
             update_graph.new_nodes(install_node)
         else:
-            update_graph = l.parse_object_trees(setup_dict,
-                                                param.re_str("all.." + to_state),
-                                                {vm_name: config["vm_strs"][vm_name]},
-                                                prefix=tag)
+            update_graph = l.parse_object_trees(
+                restriction=param.re_str("all.." + to_state),
+                prefix=tag,
+                object_strs={vm_name: config["vm_strs"][vm_name]},
+                params=setup_dict,
+            )
         vm_graph.flag_intersection(update_graph, flag_type="run", flag=lambda self, slot: len(self.workers) == 0,
                                    skip_shared_root=True)
 
         if from_state != "install":
             logging.info(f"Flagging for preserving all states before the updated '{from_state}'")
-            reuse_graph = l.parse_object_trees(setup_dict,
-                                               param.re_str("all.." + from_state),
-                                               {vm_name: config["vm_strs"][vm_name]},
-                                               prefix=tag, verbose=False)
+            reuse_graph = l.parse_object_trees(
+                restriction=param.re_str("all.." + from_state),
+                prefix=tag,
+                object_strs={vm_name: config["vm_strs"][vm_name]},
+                params=setup_dict,
+                verbose=False,
+            )
             vm_graph.flag_intersection(reuse_graph, flag_type="run", flag=lambda self, slot: False)
             try:
                 vm_graph.flag_children(from_state, flag_type="run", flag=lambda self, slot: len(self.workers) == 0,
@@ -371,8 +379,13 @@ def list(config, tag=""):
         prefix = tag + "l" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
         # provide the logdir in advance in order to visualize parsed graph there
         TestGraph.logdir = runner.job.logdir
-        graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"],
-                                          prefix=prefix, verbose=True)
+        graph = loader.parse_object_trees(
+            restriction=config["tests_str"],
+            prefix=prefix,
+            object_strs=config["vm_strs"],
+            params=config["param_dict"],
+            verbose=True,
+        )
         graph.visualize(job.logdir)
 
 
@@ -665,7 +678,7 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     vms = " ".join(selected_vms)
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
-    tests, objects = l.parse_object_nodes("all..internal..manage.%s" % verb[1], tag, config["vm_strs"], params=setup_dict)
+    tests, objects = l.parse_object_nodes(None, "all..internal..manage.%s" % verb[1], tag, config["vm_strs"], params=setup_dict)
     assert len(tests) == 1, "There must be exactly one %s test variant from %s" % (verb[2], tests)
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))

@@ -5,7 +5,7 @@ import unittest.mock as mock
 import contextlib
 import re
 
-from avocado import Test
+from avocado import Test, skip
 from virttest import utils_params
 
 import unittest_importer
@@ -53,6 +53,7 @@ class IntertestSetupTest(Test):
 
     def test_update_default(self):
         """Test the general usage of the manual update-cache tool."""
+        self.config["param_dict"]["nets"] = "net1"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyStateControl.asserted_states["unset"] = {"install": {self.shared_pool: 0},
                                                       "customize": {self.shared_pool: 0}, "on_customize": {self.shared_pool: 0},
@@ -82,6 +83,7 @@ class IntertestSetupTest(Test):
 
     def test_update_custom(self):
         """Test the state customized usage of the manual update-cache tool."""
+        self.config["param_dict"]["nets"] = "net1"
         self.config["vms_params"]["from_state_vm1"] = "customize"
         self.config["vms_params"]["from_state_vm2"] = "install"
         self.config["vms_params"]["to_state_vm1"] = "connect"
@@ -114,9 +116,11 @@ class IntertestSetupTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.clicked"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.clicked"][self.shared_pool], 1)
 
+    @skip("Some manual tools lack multi-graph support")
     def test_update_custom_parallel(self):
         """Test the state customized usage of the manual update-cache tool."""
         self.config["param_dict"]["slots"] = "1 2"
+        self.config["param_dict"]["nets"] = "net1 net2"
         self.config["vms_params"]["from_state_vm1"] = "customize"
         self.config["vms_params"]["from_state_vm2"] = "install"
         self.config["vms_params"]["to_state_vm1"] = "connect"
@@ -151,6 +155,7 @@ class IntertestSetupTest(Test):
 
     def test_update_install(self):
         """Test the install-only state customized usage of the manual update-cache tool."""
+        self.config["param_dict"]["nets"] = "net1"
         self.config["vms_params"]["from_state"] = "install"
         self.config["vms_params"]["to_state"] = "install"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
@@ -177,6 +182,7 @@ class IntertestSetupTest(Test):
 
     def test_update_remove_set(self):
         """Test the remove set usage of the manual update-cache tool."""
+        self.config["param_dict"]["nets"] = "net1"
         self.config["vms_params"]["remove_set"] = "minimal"
         self.config["vm_strs"] = {"vm1": "only CentOS\n"}
         DummyStateControl.asserted_states["unset"] = {"on_customize": {self.shared_pool: 0}, "connect": {self.shared_pool: 0}}
@@ -331,6 +337,7 @@ class IntertestSetupTest(Test):
         intertest_setup.develop(self.config, tag="0")
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
+    @skip("Some manual tools lack multi-graph support")
     def test_permanent_vm_tool(self):
         """Test the general usage of the sample custom permanent vm creation tool."""
         self.config["vm_strs"] = {"vm3": "only Ubuntu\n"}

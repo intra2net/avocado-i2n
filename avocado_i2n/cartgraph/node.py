@@ -272,7 +272,7 @@ class TestNode(Runnable):
         """Check if the test node is not defined with any test object."""
         return len(self.objects) == 0 or self.params["vms"] == ""
 
-    def is_unrolled(self, worker_id: str) -> bool:
+    def is_unrolled(self, worker: TestWorker) -> bool:
         """
         Check if the test is unrolled as composite node with dependencies.
 
@@ -282,7 +282,7 @@ class TestNode(Runnable):
         if not self.is_flat():
             raise RuntimeError(f"Only flat nodes can be unrolled, {self} is not flat")
         for node in self.cleanup_nodes:
-            if self.params["name"] in node.id and worker_id in node.id:
+            if self.params["name"] in node.id and worker.id in node.id:
                 return True
         return False
 
@@ -403,10 +403,11 @@ class TestNode(Runnable):
                     return True
         return False
 
-    def should_rerun(self) -> bool:
+    def should_rerun(self, worker: TestWorker = None) -> bool:
         """
         Check if the test node should be rerun based on some retry criteria.
 
+        :param worker: evaluate with respect to an optional worker ID scope or globally if none given
         :returns: whether the test node should be retried
 
         The retry parameters are `max_tries` and `rerun_status` or `stop_status`. The
@@ -421,6 +422,8 @@ class TestNode(Runnable):
             return False
         elif self.is_shared_root():
             logging.debug(f"Should not rerun the shared root")
+            return False
+        elif worker and worker.id not in self.params["name"]:
             return False
 
         all_statuses = ["fail", "error", "pass", "warn", "skip", "cancel", "interrupted"]
@@ -489,9 +492,12 @@ class TestNode(Runnable):
         :param worker: worker which makes the run decision
         :returns: whether the worker should run the test node
         """
+        if worker.id not in self.params["name"]:
+            return False
+
         if not self.produces_setup():
             # most standard stateless behavior is to run each test node once then rerun if needed
-            should_run = len(self.results) == 0 or self.should_rerun()
+            should_run = len(self.results) == 0 or self.should_rerun(worker)
 
         else:
             should_run_from_scan = False
@@ -501,10 +507,10 @@ class TestNode(Runnable):
                 logging.debug(f"Should{' ' if should_run_from_scan else ' not '}run from scan {self}")
             # rerunning of test from previous jobs is never intended
             if len(self.results) == 0 and not should_run_from_scan:
-                self.should_rerun = lambda : False
+                self.should_rerun = lambda _: False
 
             should_run = should_run_from_scan if should_scan else False
-            should_run = should_run or self.should_rerun()
+            should_run = should_run or self.should_rerun(worker)
 
         return should_run
 
@@ -515,6 +521,9 @@ class TestNode(Runnable):
         :param worker: worker which makes the clean decision
         :returns: whether the worker should clean the test node
         """
+        if worker.id not in self.params["name"]:
+            return False
+
         # no support for parallelism within reversible nodes since we might hit a race condition
         # whereby a node will be run for missing setup but its parent will be reversed before it
         # gets any parent-provided states
@@ -525,6 +534,7 @@ class TestNode(Runnable):
             is_reversible |= object_params.get("unset_mode_vms", object_params["unset_mode"])[0] == "f"
             if is_reversible:
                 break
+
         if not is_reversible:
             return True
         else:

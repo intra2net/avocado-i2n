@@ -17,8 +17,9 @@
 
 SUMMARY
 ------------------------------------------------------
-Main test suite data structure containing tests as nodes in graph
-and their dependencies or edges as stateful objects.
+Main test suite data structure containing tests as nodes in a bidirected graph
+with edges to their dependencies (parents) and dependables (children) but also
+with a separate edge for each stateful object.
 
 Copyright: Intra2net AG
 
@@ -730,11 +731,14 @@ class TestGraph(object):
             if f"only_{component.suffix}" in test_object.params:
                 raise RuntimeError("A vm restriction found in a test net that a node is "
                                    "parsed from, not yet supported by the Cartesian config")
+
+        setup_dict = params.copy() if params else {}
+        setup_dict.update({"nets": test_object.suffix})
         config = test_object.config.get_copy()
         config.parse_next_batch(base_file="sets.cfg",
                                 ovrwrt_file=param.tests_ovrwrt_file(),
                                 ovrwrt_str=param.re_str(restriction),
-                                ovrwrt_dict=params)
+                                ovrwrt_dict=setup_dict)
         test_node = TestNode(prefix, config)
         test_node.set_objects_from_net(test_object)
         test_node.regenerate_params()
@@ -918,11 +922,12 @@ class TestGraph(object):
         return test_nodes
 
     @staticmethod
-    def parse_object_nodes(restriction: str = "", prefix: str = "", object_strs: dict[str, str] = None,
+    def parse_object_nodes(worker: TestWorker = None, restriction: str = "", prefix: str = "", object_strs: dict[str, str] = None,
                            params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestObject]]:
         """
         Parse test nodes based on a selection of parsable objects.
 
+        :param worker: worker to parse the objects and nodes with or none for backward compatibility
         :param restriction: block of node-specific variant restrictions
         :param prefix: extra name identifier for the test to be run
         :param object_strs: vm restrictions as component restrictions for the nets and thus nodes
@@ -940,12 +945,14 @@ class TestGraph(object):
         test_nodes, test_objects = [], []
         # starting object restrictions could be specified externally
         object_strs = {} if object_strs is None else object_strs
+        if worker:
+            worker.params.update({f"only_{s}": object_strs[s].replace("only ", "") for s in object_strs})
 
-        default_flat_net = TestGraph.parse_net_from_object_strs("net1", object_strs)
-        objects = TestGraph.parse_components_for_object(default_flat_net, "nets",
+        flat_net = worker.net if worker else TestGraph.parse_net_from_object_strs("net1", object_strs)
+        objects = TestGraph.parse_components_for_object(flat_net, "nets",
                                                         params=params, verbose=False, unflatten=False)
         # the parsed test nodes are already fully restricted by the available test objects
-        nodes = TestGraph().parse_composite_nodes(restriction, default_flat_net, prefix, params=params, verbose=True)
+        nodes = TestGraph().parse_composite_nodes(restriction, flat_net, prefix, params=params, verbose=True)
         logging.info(f"Intersecting {len(nodes)} initially parsed nodes with {len(objects)} initially parsed objects")
         object_ids = [o.id for o in objects]
         for test_node in nodes:
@@ -1006,12 +1013,15 @@ class TestGraph(object):
         # objects can appear within a test without any prior dependencies
         setup_restr = object_params["get"]
         setup_obj_restr = test_object.component_form
+        setup_net_restr = test_node.objects[0].suffix
         logging.debug(f"Cartesian setup of {test_object.long_suffix} for {test_node.params['shortname']} "
                       f"uses restriction {setup_restr}")
 
         # speedup for handling already parsed unique parent cases
         filtered_parents = self.get_nodes_by_name(setup_restr)
         filtered_parents = self.get_nodes_by("name", f"(\.|^){setup_obj_restr}(\.|$)",
+                                             subset=filtered_parents)
+        filtered_parents = self.get_nodes_by("name", f"(\.|^){setup_net_restr}(\.|$)",
                                              subset=filtered_parents)
         # the vm whose dependency we are parsing may not be restrictive enough so reuse optional other
         # objects variants of the current test node - cloning is only supported in the node restriction
@@ -1157,13 +1167,14 @@ class TestGraph(object):
         """
         Parse all workers with special strings provided by the runtime.
 
-        :param param_dict: extra parameters to be used as overwrite dictionary
+        :param params: extra parameters to be used as overwrite dictionary
         :returns: parsed test workers sorted by name with used ones having runtime strings
         """
         params = params or {}
 
         test_workers = []
-        for suffix in param.all_objects("nets"):
+        nets = params.get("nets", "").split(" ") if params.get("nets") else param.all_objects("nets")
+        for suffix in nets:
             for flat_net in TestGraph.parse_flat_objects(suffix, "nets", params=params):
                 test_workers += [TestWorker(flat_net)]
         slot_workers = sorted(test_workers, key=lambda x: x.params["name"])
@@ -1182,50 +1193,61 @@ class TestGraph(object):
         return slot_workers
 
     @staticmethod
-    def parse_object_trees(param_dict=None, restriction="", object_strs=None,
-                           prefix="", verbose=False, with_shared_root=True):
+    def parse_object_trees(worker: TestWorker = None, restriction: str = "", prefix: str = "", object_strs: dict[str, str] = None,
+                           params: dict[str, str] = None, verbose: bool = False, with_shared_root: bool =True) -> "TestGraph":
         """
+        Parse a complete test graph.
+
+        :param worker: worker traversing the graph with or none for backward compatibility
+        :param restriction: block of node-specific variant restrictions
+        :param prefix: extra name identifier for the test to be run
+        :param object_strs: vm restrictions as component restrictions for the nets and thus nodes
+        :param params: runtime parameters used for extra customization
+        :param verbose: whether to print extra messages or not
+        :param with_shared_root: whether to connect all object trees via shared root node
+        :returns: parsed graph of test nodes and test objects
+
         Parse all user defined tests (leaves) and their dependencies (internal nodes)
         connecting them according to the required/provided setup states of each test
-        object (vm) and the required/provided objects per test node (test).
-
-        :param bool with_shared_root: whether to connect all object trees via shared root node
-        :returns: parsed graph of test nodes and test objects
-        :rtype: :py:class:`TestGraph`
-
-        The rest of the parameters are identical to the methods before.
-
-        The parsed structure can also be viewed as a directed graph of all runnable
-        tests each with connections to its dependencies (parents) and dependables (children).
+        object (vm) and the required/provided objects per test node (test), obtaining
+        and independent graph copy for each worker.
         """
         graph = TestGraph()
-        graph.new_workers(TestGraph.parse_workers(param_dict))
-        # TODO: custom workers are not yet fully supported in this method
-        default_flat_net = TestGraph.parse_net_from_object_strs("net1", {})
+        if not worker:
+            graph.new_workers(TestGraph.parse_workers(params))
+            workers = graph.workers.values()
+        else:
+            workers = [worker]
 
-        # parse leaves and discover necessary setup (internal nodes)
-        leaves, stubs = TestGraph.parse_object_nodes(restriction, object_strs=object_strs,
-                                                     prefix=prefix, params=param_dict, verbose=verbose)
-        graph.new_nodes(leaves)
-        graph.objects.extend(stubs)
-        leaves = sorted(leaves, key=lambda x: int(re.match("^(\d+)", x.prefix).group(1)))
+        for i, worker in enumerate(workers):
+            logging.info(f"Parsing a copy of the object trees for {worker.id}")
+            # parse leaves and discover necessary setup (internal nodes)
+            leaves, stubs = TestGraph.parse_object_nodes(worker, restriction, object_strs=object_strs,
+                                                         prefix=prefix, params=params, verbose=verbose)
+            graph.new_nodes(leaves)
+            # TODO: to make such changes more gradual at least for now reuse vms and image (<net) objects
+            if i == 0:
+                graph.objects.extend(stubs)
+            else:
+                graph.objects.extend(s for s in stubs if s.key == "nets")
+            leaves = sorted(leaves, key=lambda x: int(re.match("^(\d+)", x.prefix).group(1)))
 
-        if log.getLogger('graph').level <= log.DEBUG:
-            parse_dir = os.path.join(graph.logdir, "graph_parse")
-            if not os.path.exists(parse_dir):
-                os.makedirs(parse_dir)
-            step = 0
+            if log.getLogger('graph').level <= log.DEBUG:
+                parse_dir = os.path.join(graph.logdir, "graph_parse")
+                if not os.path.exists(parse_dir):
+                    os.makedirs(parse_dir)
+                step = 0
 
-        for test_node in leaves:
-            for parents, siblings, current in graph.parse_paths_to_object_roots(test_node, default_flat_net, param_dict):
+            for test_node in leaves:
+                for _, _, current in graph.parse_paths_to_object_roots(test_node, worker.net, params):
 
-                if log.getLogger('graph').level <= log.DEBUG:
-                    step += 1
-                    graph.visualize(parse_dir, str(step))
-                current.validate()
+                    if log.getLogger('graph').level <= log.DEBUG:
+                        step += 1
+                        graph.visualize(parse_dir, str(step))
+                    current.validate()
 
         if with_shared_root:
-            graph.parse_shared_root_from_object_roots(param_dict)
+            graph.parse_shared_root_from_object_roots(params)
         return graph
 
     """traverse functionality"""
@@ -1250,7 +1272,7 @@ class TestGraph(object):
         assert len(vms) == 1, "Test object %s's vm not existing or unique in: %s" % (object_name, objects)
         test_object = objects[0]
 
-        nodes = self.get_nodes_by("object_root", object_name)
+        nodes = self.get_nodes_by("object_root", object_name, subset=self.get_nodes_by_name(worker.id))
         assert len(nodes) == 1, "There should exist one unique root for %s" % object_name
         test_node = nodes[0]
 
@@ -1412,9 +1434,6 @@ class TestGraph(object):
         Of course all possible children are restricted by the user-defined "only" and
         the number of internal test nodes is minimized for achieving this goal.
         """
-        # TODO: custom workers are not yet fully supported in this method
-        default_flat_net = TestGraph.parse_net_from_object_strs("net1", self.runner.job.config["vm_strs"])
-        default_worker_id = TestWorker(default_flat_net).id
         logging.debug(f"Worker {worker.id} starting complete graph traversal with parameters {params}")
         shared_roots = self.get_nodes_by("shared_root", "yes")
         assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
@@ -1437,8 +1456,8 @@ class TestGraph(object):
                 traverse_path.append(next.pick_child(worker))
                 continue
 
-            if next.is_flat() and not next.is_unrolled(default_worker_id):
-                for parents, siblings, current in self.parse_paths_to_object_roots(next, default_flat_net, params):
+            if next.is_flat() and not next.is_unrolled(worker):
+                for parents, siblings, current in self.parse_paths_to_object_roots(next, worker.net, params):
                     if current == next:
                         if len(siblings) == 0:
                             logging.warning(f"Could not compose flat node {next} due to test object incompatibility")
@@ -1484,7 +1503,7 @@ class TestGraph(object):
 
                 if next.is_setup_ready(worker):
                     await self.traverse_node(next, worker, params)
-                    if next == root or not next.should_rerun():
+                    if next == root or not next.should_rerun(worker):
                         previous.visit_parent(next, worker)
                     traverse_path.pop()
                 else:
@@ -1499,7 +1518,7 @@ class TestGraph(object):
                 else:
                     await self.traverse_node(next, worker, params)
                     # cleanup nodes that should be retried postpone traversal down
-                    if next.should_rerun():
+                    if next.should_rerun(worker):
                         traverse_path.pop()
                         continue
 
@@ -1508,7 +1527,7 @@ class TestGraph(object):
                         setup.visit_child(next, worker)
                     self.report_progress()
 
-                    unexplored_nodes = [node for node in self.nodes if node.is_flat() and not node.is_unrolled(default_worker_id)]
+                    unexplored_nodes = [node for node in self.nodes if node.is_flat() and not node.is_unrolled(worker)]
                     if len(unexplored_nodes) > 0:
                         # postpone cleaning up current node since it might have newly added children
                         traverse_path.append(root)
