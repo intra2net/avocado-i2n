@@ -781,6 +781,116 @@ class CartesianGraphTest(Test):
         loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse), None))
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
+    def test_flag_children_all(self):
+        """Test for correct node children flagging of a complete Cartesian graph."""
+        self.config["tests_str"] = "only nonleaves\n"
+        self.config["tests_str"] += "only connect\n"
+        self.config["param_dict"]["vms"] = "vm1"
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
+
+        graph.flag_children(flag_type="run", flag=lambda self, slot: False)
+        DummyTestRun.asserted_tests = [
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+
+        graph.flag_children(flag_type="run", flag=lambda self, slot: True)
+        graph.flag_children(object_name="image1_vm1", flag_type="run", flag=lambda self, slot: False)
+        DummyTestRun.asserted_tests = [
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+
+    def test_flag_children(self):
+        """Test for correct node children flagging for a given node."""
+        self.config["tests_str"] = "only nonleaves\n"
+        self.config["tests_str"] += "only connect\n"
+        self.config["param_dict"]["vms"] = "vm1"
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
+
+        graph.flag_children(flag_type="run", flag=lambda self, slot: False)
+        graph.flag_children(node_name="customize", flag_type="run", flag=lambda self, slot: slot not in self.workers)
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^nonleaves.internal.automated.connect.vm1", "vms": "^vm1$"},
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+
+    def test_flag_intersection_all(self):
+        """Test for correct node flagging of a Cartesian graph with itself."""
+        self.config["tests_str"] = "only nonleaves\n"
+        self.config["tests_str"] += "only connect\n"
+        self.config["param_dict"]["vms"] = "vm1"
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
+        graph.flag_intersection(graph, flag_type="run", flag=lambda self, slot: False)
+        DummyTestRun.asserted_tests = [
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+
+    def test_flag_intersection(self):
+        """Test for correct node intersection of two Cartesian graphs."""
+        self.config["tests_str"] = "only nonleaves\n"
+        tests_str1 = self.config["tests_str"] + "only connect\n"
+        tests_str2 = self.config["tests_str"] + "only customize\n"
+        self.config["param_dict"]["vms"] = "vm1"
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             tests_str1, self.config["vm_strs"],
+                                             prefix=self.prefix)
+        reuse_graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                   tests_str2, self.config["vm_strs"],
+                                                   prefix=self.prefix)
+
+        #graph.flag_intersection(graph, flag_type="run", flag=lambda self, slot: slot not in self.workers)
+        graph.flag_intersection(reuse_graph, flag_type="run", flag=lambda self, slot: False)
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^nonleaves.internal.automated.connect.vm1", "vms": "^vm1$"},
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+
+    def test_get_objects_by(self):
+        """Test object retrieval with various arguments and thus calls."""
+        graph = TestGraph()
+        graph.objects = [n for n in TestGraph.parse_suffix_objects("vms")]
+        self.assertEqual(len(graph.objects), 6)
+        get_objects = graph.get_objects_by(param_val="vm\d")
+        self.assertEqual(len(get_objects), len(graph.objects))
+        get_objects = graph.get_objects_by(param_val="vm1")
+        self.assertEqual(len(get_objects), 2)
+        get_objects = graph.get_objects_by(param_val="\.CentOS", subset=get_objects)
+        self.assertEqual(len(get_objects), 1)
+        get_objects = graph.get_objects_by("os_type", param_val="linux", subset=get_objects)
+        self.assertEqual(len(get_objects), 1)
+        get_objects = graph.get_objects_by(param_key="os_variant", param_val="el8", subset=get_objects)
+        self.assertEqual(len(get_objects), 1)
+        get_node = graph.get_node_by(param_key="os_type", param_val="linux", subset=get_objects)
+        self.assertIn(get_node, get_objects)
+        get_nodes = graph.get_nodes_by(param_val="vm1", subset=[])
+        self.assertEqual(len(get_nodes), 0)
+
+    def test_get_nodes_by(self):
+        """Test node retrieval with various arguments and thus calls."""
+        graph = TestGraph()
+        graph.nodes = [n for n in TestGraph.parse_flat_nodes("all..tutorial3")]
+        self.assertEqual(len(graph.nodes), 17)
+        get_nodes = graph.get_nodes_by(param_val="tutorial3")
+        self.assertEqual(len(get_nodes), len(graph.nodes))
+        get_nodes = graph.get_nodes_by(param_val="tutorial3.remote")
+        self.assertEqual(len(get_nodes), 16)
+        get_nodes = graph.get_nodes_by(param_val="\.object", subset=get_nodes)
+        self.assertEqual(len(get_nodes), 8)
+        get_nodes = graph.get_nodes_by("remote_control_check", param_val="yes", subset=get_nodes)
+        self.assertEqual(len(get_nodes), 4)
+        get_nodes = graph.get_nodes_by(param_key="remote_decorator_check", param_val="yes", subset=get_nodes)
+        self.assertEqual(len(get_nodes), 2)
+        get_node = graph.get_node_by(param_key="remote_util_check", param_val="yes", subset=get_nodes)
+        self.assertIn(get_node, get_nodes)
+        get_nodes = graph.get_nodes_by(param_val="tutorial3", subset=[])
+        self.assertEqual(len(get_nodes), 0)
+
     def test_parse_and_get_objects_for_node_and_object_flat(self):
         """Test parsing and retrieval of objects for a flat pair of test node and object."""
         graph = TestGraph()
@@ -1813,76 +1923,6 @@ class CartesianGraphTest(Test):
         ]
         with self.assertRaisesRegex(AssertionError, r"^Cannot run test nodes not using any test objects"):
             self._run_traversal(graph, self.config["param_dict"])
-
-    def test_flag_intersection_all(self):
-        """Test for correct node flagging of a Cartesian graph with itself."""
-        self.config["tests_str"] = "only nonleaves\n"
-        self.config["tests_str"] += "only connect\n"
-        self.config["param_dict"]["vms"] = "vm1"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
-        graph.flag_intersection(graph, flag_type="run", flag=lambda self, slot: False)
-        DummyTestRun.asserted_tests = [
-        ]
-        self._run_traversal(graph, self.config["param_dict"])
-
-    def test_flag_intersection(self):
-        """Test for correct node intersection of two Cartesian graphs."""
-        self.config["tests_str"] = "only nonleaves\n"
-        tests_str1 = self.config["tests_str"] + "only connect\n"
-        tests_str2 = self.config["tests_str"] + "only customize\n"
-        self.config["param_dict"]["vms"] = "vm1"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             tests_str1, self.config["vm_strs"],
-                                             prefix=self.prefix)
-        reuse_graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                                   tests_str2, self.config["vm_strs"],
-                                                   prefix=self.prefix)
-
-        #graph.flag_intersection(graph, flag_type="run", flag=lambda self, slot: slot not in self.workers)
-        graph.flag_intersection(reuse_graph, flag_type="run", flag=lambda self, slot: False)
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^nonleaves.internal.automated.connect.vm1", "vms": "^vm1$"},
-        ]
-        self._run_traversal(graph, self.config["param_dict"])
-
-    def test_flag_children_all(self):
-        """Test for correct node children flagging of a complete Cartesian graph."""
-        self.config["tests_str"] = "only nonleaves\n"
-        self.config["tests_str"] += "only connect\n"
-        self.config["param_dict"]["vms"] = "vm1"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
-
-        graph.flag_children(flag_type="run", flag=lambda self, slot: False)
-        DummyTestRun.asserted_tests = [
-        ]
-        self._run_traversal(graph, self.config["param_dict"])
-
-        graph.flag_children(flag_type="run", flag=lambda self, slot: True)
-        graph.flag_children(object_name="image1_vm1", flag_type="run", flag=lambda self, slot: False)
-        DummyTestRun.asserted_tests = [
-        ]
-        self._run_traversal(graph, self.config["param_dict"])
-
-    def test_flag_children(self):
-        """Test for correct node children flagging for a given node."""
-        self.config["tests_str"] = "only nonleaves\n"
-        self.config["tests_str"] += "only connect\n"
-        self.config["param_dict"]["vms"] = "vm1"
-        graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                             self.config["tests_str"], self.config["vm_strs"],
-                                             prefix=self.prefix)
-
-        graph.flag_children(flag_type="run", flag=lambda self, slot: False)
-        graph.flag_children(node_name="customize", flag_type="run", flag=lambda self, slot: slot not in self.workers)
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
-            {"shortname": "^nonleaves.internal.automated.connect.vm1", "vms": "^vm1$"},
-        ]
-        self._run_traversal(graph, self.config["param_dict"])
 
     def test_parsing_on_demand(self):
         """Test that parsing on demand works as expected."""

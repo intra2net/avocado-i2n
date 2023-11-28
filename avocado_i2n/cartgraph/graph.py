@@ -384,74 +384,61 @@ class TestGraph(object):
                 test_node.should_clean = flag.__get__(test_node)
 
     """parse and get functionality"""
-    def get_objects_by(self, param_key="name", param_val="", subset=None):
+    def get_objects_by(self, param_key: str = "name", param_val: str = "", subset: list[TestObject] = None) -> list[TestObject]:
         """
-        Query all test objects by a value in a parameter, returning a set of objects.
+        Query all test objects by a value in a parameter, returning a list of objects.
 
-        :param str param_key: exact key to use for the search
-        :param str param_val: regex to match the object parameter values
+        :param param_key: exact key to use for the search
+        :param param_val: regex to match the object parameter values
         :param subset: a subset of test objects within the graph to search in
-        :type subset: [:py:class:`TestObject`]
         :returns: a selection of objects satisfying ``key=val`` criterion
-        :rtype: [:py:class:`TestObject`]
         """
-        objects_selection = []
-        if subset is None:
-            subset = self.objects
-        for test_object in subset:
-            if re.search(param_val, test_object.params.get(param_key, "")):
-                objects_selection.append(test_object)
-        logging.debug("Retrieved %s/%s test objects with %s = %s",
-                      len(objects_selection), len(subset), param_key, param_val)
-        return objects_selection
+        regex = re.compile(param_val)
+        subset = self.objects if subset is None else subset
+        objects = [o for o in subset if param_key in o.params and regex.search(o.params[param_key])]
+        logging.debug(f"Retrieved {len(objects)}/{len(subset)} test objects with {param_key} = {param_val}")
+        return objects
 
-    def get_object_by(self, param_key="name", param_val="", subset=None):
+    def get_object_by(self, param_key: str = "name", param_val: str = "", subset: list[TestObject] = None) -> TestObject:
         """
         Query all test objects by a value in a parameter, returning a unique object.
 
         :returns: a unique object satisfying ``key=val`` criterion
-        :rtype: :py:class:`TestObject`
 
         The rest of the arguments are analogical to the plural version.
         """
-        objects_selection = self.get_objects_by(param_key, param_val, subset)
-        assert len(objects_selection) == 1, "Test object with %s=%s not existing"\
-               " or unique in: %s" % (param_key, param_val, objects_selection)
-        return objects_selection[0]
+        objects = self.get_objects_by(param_key, param_val, subset)
+        assert len(objects) == 1, f"Test object with {param_key}={param_val} not existing"\
+               f" or unique in: {objects}"
+        return objects[0]
 
-    def get_nodes_by(self, param_key="name", param_val="", subset=None):
+    def get_nodes_by(self, param_key: str = "name", param_val: str = "", subset: list[TestNode] = None) -> list[TestNode]:
         """
-        Query all test nodes by a value in a parameter, returning a set of nodes.
+        Query all test nodes by a value in a parameter, returning a list of nodes.
 
-        :param str param_key: exact key to use for the search
-        :param str param_val: regex to match the object parameter values
+        :param param_key: exact key to use for the search
+        :param param_val: regex to match the object parameter values
         :param subset: a subset of test nodes within the graph to search in
-        :type subset: [:py:class:`TestNode`]
         :returns: a selection of nodes satisfying ``key=val`` criterion
-        :rtype: [:py:class:`TestNode`]
         """
-        nodes_selection = []
-        if subset is None:
-            subset = self.nodes
-        for test_node in subset:
-            if re.search(param_val, test_node.params.get(param_key, "")):
-                nodes_selection.append(test_node)
-        logging.debug("Retrieved %s/%s test nodes with %s = %s",
-                      len(nodes_selection), len(subset), param_key, param_val)
-        return nodes_selection
+        regex = re.compile(param_val)
+        subset = self.nodes if subset is None else subset
+        nodes = [n for n in subset if param_key in n.params and regex.search(n.params[param_key])]
+        logging.debug(f"Retrieved {len(nodes)}/{len(subset)} test nodes with {param_key} = {param_val}")
+        return nodes
 
-    def get_node_by(self, param_key="name", param_val="", subset=None):
+    def get_node_by(self, param_key: str = "name", param_val: str = "", subset: list[TestNode] = None) -> TestNode:
         """
         Query all test nodes by a value in a parameter, returning a unique node.
 
         :returns: a unique node satisfying ``key=val`` criterion
-        :rtype: :py:class:`TestNode`
 
         The rest of the arguments are analogical to the plural version.
         """
-        nodes_selection = self.get_nodes_by(param_key, param_val, subset)
-        assert len(nodes_selection) == 1
-        return nodes_selection[0]
+        nodes = self.get_nodes_by(param_key, param_val, subset)
+        assert len(nodes) == 1, f"Test node with {param_key}={param_val} not existing"\
+               f" or unique in: {nodes}"
+        return nodes[0]
 
     @staticmethod
     def parse_flat_objects(suffix: str, category: str, restriction: str = "",
