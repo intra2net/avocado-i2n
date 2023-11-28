@@ -286,7 +286,7 @@ def update(config, tag=""):
             install_node = l.parse_node_from_object(net, "all..original.." + start_node.params["get_images"],
                                                     prefix=tag, params=config["param_dict"])
             install_node.params["object_root"] = image.id
-            update_graph.nodes.append(install_node)
+            update_graph.new_nodes(install_node)
         else:
             update_graph = l.parse_object_trees(setup_dict,
                                                 param.re_str("all.." + to_state),
@@ -312,7 +312,7 @@ def update(config, tag=""):
 
         graph.new_workers(l.parse_workers(config["param_dict"]))
         graph.objects += vm_graph.objects
-        graph.nodes += vm_graph.nodes
+        graph.new_nodes(vm_graph.nodes)
 
     graph.parse_shared_root_from_object_roots(config["param_dict"])
     r.run_workers(graph, config["param_dict"])
@@ -672,7 +672,7 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     graph.objects = objects
     test_node = TestNode(tag, tests[0].recipe)
     test_node.set_objects_from_net(objects[-1])
-    graph.nodes = [test_node]
+    graph.new_nodes(test_node)
     graph.parse_shared_root_from_object_roots(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: True)
     r.run_workers(graph, config["param_dict"])
@@ -711,7 +711,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
         # TODO: traversal relies explicitly on object_suffix which only indicates
         # where a parent node was parsed from, i.e. which test object of the child node
         test_node.params["object_suffix"] = test_object.long_suffix
-        graph.nodes += [test_node]
+        graph.new_nodes(test_node)
 
     graph.parse_shared_root_from_object_roots(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: slot not in self.workers)

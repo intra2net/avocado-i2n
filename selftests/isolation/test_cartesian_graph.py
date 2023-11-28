@@ -343,6 +343,88 @@ class CartesianNodeTest(Test):
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
 
+    def test_prefix_tree_contains(self):
+        """Test that a prefix tree contains the right variants."""
+        tree = PrefixTree()
+        node1 = TestNode("1", None)
+        node2 = TestNode("2", None)
+        node3 = TestNode("3", None)
+        node1._params_cache = {"name": "aaa.bbb.ccc"}
+        node2._params_cache = {"name": "aaa.bbb.fff"}
+        node3._params_cache = {"name": "eee.bbb.fff"}
+        tree.insert(node1)
+        tree.insert(node2)
+        tree.insert(node3)
+
+        self.assertTrue("aaa" in tree)
+        self.assertTrue("aaa.bbb" in tree)
+        self.assertTrue("bbb.ccc" in tree)
+        self.assertTrue("bbb" in tree)
+        self.assertTrue("bbb.fff" in tree)
+        self.assertTrue("eee.bbb" in tree)
+        self.assertTrue("ddd" not in tree)
+        self.assertTrue("ccc.ddd" not in tree)
+        self.assertTrue("aaa.ddd" not in tree)
+        self.assertTrue("aaa.fff" not in tree)
+
+    def test_prefix_tree_insert(self):
+        """Test the right variants are produced when inserting a test node into the prefix tree."""
+        tree = PrefixTree()
+        node1 = TestNode("1", None)
+        node2 = TestNode("2", None)
+        node3 = TestNode("3", None)
+        node1._params_cache = {"name": "aaa.bbb.ccc"}
+        node2._params_cache = {"name": "aaa.bbb.fff"}
+        node3._params_cache = {"name": "eee.bbb.fff"}
+        tree.insert(node1)
+        tree.insert(node2)
+        tree.insert(node3)
+
+        self.assertEqual(tree.variant_nodes.keys(), set(["aaa", "bbb", "ccc", "eee", "fff"]))
+        self.assertEqual(len(tree.variant_nodes["aaa"]), 1)
+        self.assertIn("bbb", tree.variant_nodes["aaa"][0].children)
+        self.assertEqual(len(tree.variant_nodes["bbb"]), 2)
+        self.assertEqual(len(tree.variant_nodes["bbb"][0].children), 2)
+        self.assertIn("ccc", tree.variant_nodes["bbb"][0].children)
+        self.assertIn("fff", tree.variant_nodes["bbb"][0].children)
+        self.assertEqual(len(tree.variant_nodes["bbb"][1].children), 1)
+        self.assertIn("fff", tree.variant_nodes["bbb"][1].children)
+        self.assertNotIn(tree.variant_nodes["bbb"][1].children["fff"], tree.variant_nodes["bbb"][0].children)
+
+    def test_prefix_tree_get(self):
+        """Test the right test nodes are retrieved when looking up a composite variant."""
+        tree = PrefixTree()
+        node1 = TestNode("1", None)
+        node2 = TestNode("2", None)
+        node3 = TestNode("3", None)
+        node1._params_cache = {"name": "aaa.bbb.ccc"}
+        node2._params_cache = {"name": "aaa.bbb.fff"}
+        node3._params_cache = {"name": "eee.bbb.fff"}
+        tree.insert(node1)
+        tree.insert(node2)
+        tree.insert(node3)
+
+        self.assertEqual(len(tree.get("aaa")), 2)
+        self.assertIn(node1, tree.get("aaa"))
+        self.assertIn(node2, tree.get("aaa"))
+        self.assertEqual(len(tree.get("aaa.bbb")), 2)
+        self.assertIn(node1, tree.get("aaa.bbb"))
+        self.assertIn(node2, tree.get("aaa.bbb"))
+        self.assertEqual(len(tree.get("bbb.ccc")), 1)
+        self.assertIn(node1, tree.get("bbb.ccc"))
+
+        self.assertEqual(len(tree.get("bbb")), 3)
+        self.assertEqual(len(tree.get("bbb.fff")), 2)
+        self.assertIn(node2, tree.get("bbb.fff"))
+        self.assertIn(node3, tree.get("bbb.fff"))
+        self.assertEqual(len(tree.get("eee.bbb")), 1)
+        self.assertIn(node3, tree.get("bbb.fff"))
+        self.assertEqual(len(tree.get("ddd")), 0)
+
+        self.assertEqual(len(tree.get("ccc.ddd")), 0)
+        self.assertEqual(len(tree.get("aaa.ddd")), 0)
+        self.assertEqual(len(tree.get("aaa.fff")), 0)
+
     def test_parse_node_from_object(self):
         """Test for a correctly parsed node from an already parsed net object."""
         flat_net = TestGraph.parse_net_from_object_strs("net1", self.config["vm_strs"])
@@ -533,10 +615,6 @@ class CartesianNodeTest(Test):
 
         test_node = graph.get_node_by(param_val="tutorial1")
         self.assertIn("1-vm1", test_node.long_prefix)
-        self.assertIn(test_node.long_prefix, graph.prefixes.keys())
-        node_num = len(graph.prefixes)
-        graph.new_nodes(test_node)
-        self.assertEqual(len(graph.prefixes), node_num)
 
     def test_overwrite(self):
         """Test for correct overwriting of preselected configuration."""
@@ -871,10 +949,26 @@ class CartesianGraphTest(Test):
         get_nodes = graph.get_nodes_by(param_val="vm1", subset=[])
         self.assertEqual(len(get_nodes), 0)
 
+    def test_get_nodes_by_name(self):
+        """Test node retrieval by name using a trie as an index."""
+        graph = TestGraph()
+        graph.new_nodes(TestGraph.parse_flat_nodes("all..tutorial3"))
+        self.assertEqual(len(graph.nodes), 17)
+        get_nodes = graph.get_nodes_by_name("tutorial3")
+        self.assertEqual(len(get_nodes), len(graph.nodes))
+        get_nodes = graph.get_nodes_by_name("tutorial3.remote")
+        self.assertEqual(len(get_nodes), 16)
+        get_nodes = graph.get_nodes_by_name("object")
+        self.assertEqual(len(get_nodes), 8)
+        get_nodes = graph.get_nodes_by_name("object.control")
+        self.assertEqual(len(get_nodes), 4)
+        get_nodes = graph.get_nodes_by_name("tutorial3.remote.object.control.decorator")
+        self.assertEqual(len(get_nodes), 2)
+
     def test_get_nodes_by(self):
         """Test node retrieval with various arguments and thus calls."""
         graph = TestGraph()
-        graph.nodes = [n for n in TestGraph.parse_flat_nodes("all..tutorial3")]
+        graph.new_nodes(TestGraph.parse_flat_nodes("all..tutorial3"))
         self.assertEqual(len(graph.nodes), 17)
         get_nodes = graph.get_nodes_by(param_val="tutorial3")
         self.assertEqual(len(get_nodes), len(graph.nodes))
@@ -992,7 +1086,7 @@ class CartesianGraphTest(Test):
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_vm)
         self.assertEqual(len(get_nodes), 0)
         self.assertEqual(len(parse_nodes), 1)
-        graph.nodes += parse_nodes
+        graph.new_nodes(parse_nodes)
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_vm)
         self.assertEqual(len(get_nodes), 1)
         self.assertEqual(len(parse_nodes), 0)
@@ -1032,7 +1126,7 @@ class CartesianGraphTest(Test):
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image1)
         self.assertEqual(len(get_nodes), 0)
         self.assertEqual(len(parse_nodes), 1)
-        graph.nodes += parse_nodes
+        graph.new_nodes(parse_nodes)
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image1)
         self.assertEqual(len(get_nodes), 1)
         self.assertEqual(len(parse_nodes), 0)
@@ -1044,7 +1138,7 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(parse_nodes), 1)
         # we are adding a leaf node that should be reused as the setup of this node
         leaf_nodes = graph.parse_composite_nodes("leaves..tutorial_gui.client_clicked", full_net)
-        graph.nodes += leaf_nodes
+        graph.new_nodes(leaf_nodes)
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image2)
         self.assertEqual(len(get_nodes), 1)
         self.assertEqual(len(parse_nodes), 0)
@@ -1083,7 +1177,7 @@ class CartesianGraphTest(Test):
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image)
         self.assertEqual(len(get_nodes), 0)
         self.assertEqual(len(parse_nodes), 2)
-        graph.nodes += parse_nodes
+        graph.new_nodes(parse_nodes)
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image)
         self.assertEqual(len(get_nodes), 2)
         self.assertEqual(len(parse_nodes), 0)
@@ -1343,7 +1437,7 @@ class CartesianGraphTest(Test):
     def test_traverse_one_leaf_parallel(self):
         """Test traversal path of one test without any reusable setup."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)])}))
 
@@ -1360,7 +1454,7 @@ class CartesianGraphTest(Test):
     def test_traverse_one_leaf_serial(self):
         """Test traversal path of one test without any reusable setup and with a serial unisolated run."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": ""}))
 
@@ -1377,7 +1471,7 @@ class CartesianGraphTest(Test):
     def test_traverse_one_leaf_with_setup(self):
         """Test traversal path of one test with a reusable setup."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(3)])}))
 
@@ -1394,7 +1488,7 @@ class CartesianGraphTest(Test):
     def test_traverse_one_leaf_with_step_setup(self):
         """Test traversal path of one test with a single reusable setup test node."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(3)])}))
 
@@ -1411,7 +1505,7 @@ class CartesianGraphTest(Test):
     def test_traverse_one_leaf_with_failed_setup(self):
         """Test traversal path of one test with a failed reusable setup test node."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(2)])}))
 
@@ -1429,7 +1523,7 @@ class CartesianGraphTest(Test):
     def test_traverse_one_leaf_with_occupation_timeout(self):
         """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1", {"test_timeout": "1"})
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1", {"test_timeout": "1"}))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": "1 dead", }))
 
@@ -1447,7 +1541,7 @@ class CartesianGraphTest(Test):
     def test_traverse_two_objects_without_setup(self):
         """Test a two-object test traversal without a reusable setup."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial3")
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial3"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)])}))
 
@@ -1477,7 +1571,7 @@ class CartesianGraphTest(Test):
     def test_traverse_two_objects_with_setup(self):
         """Test a two-object test traversal with reusable setup."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial3")
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial3"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)])}))
 
@@ -1498,7 +1592,7 @@ class CartesianGraphTest(Test):
     def test_diverging_paths_external(self):
         """Test a multi-object test run with reusable setup of diverging workers and shared pool or previous runs."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("normal..tutorial1,normal..tutorial3")
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1,normal..tutorial3"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)]),
                                                    "shared_pool": self.shared_pool}))
@@ -1534,7 +1628,7 @@ class CartesianGraphTest(Test):
     def test_diverging_paths_swarm(self):
         """Test a multi-object test run where the workers will run multiple tests reusing their own local swarm setup."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("leaves..tutorial2,leaves..tutorial_gui")
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2,leaves..tutorial_gui"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)]),
                                                    "shared_pool": self.shared_pool}))
@@ -1588,7 +1682,7 @@ class CartesianGraphTest(Test):
     def test_diverging_paths_remote(self):
         """Test a multi-object test run where the workers will run multiple tests reusing also remote swarm setup."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("leaves..tutorial2,leaves..tutorial_gui")
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2,leaves..tutorial_gui"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"host1/{i+1}" for i in range(2)] + [f"host2/{i+1}" for i in range(2)]),
                                                    "shared_pool": self.shared_pool}))
@@ -1692,7 +1786,7 @@ class CartesianGraphTest(Test):
     def test_cloning_simple_permanent_object(self):
         """Test a complete test run including complex setup that involves permanent vms and cloning."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("leaves..tutorial_get")
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial_get"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"shared_pool": self.shared_pool}))
 
@@ -1751,7 +1845,7 @@ class CartesianGraphTest(Test):
     def test_cloning_simple_cross_object(self):
         """Test a complete test run with multi-variant objects where cloning should not be affected."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("leaves..tutorial_get,leaves..tutorial_gui")
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial_get,leaves..tutorial_gui"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"shared_pool": self.shared_pool}))
 
@@ -1834,7 +1928,7 @@ class CartesianGraphTest(Test):
     def test_cloning_deep(self):
         """Test for correct deep cloning."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("leaves..tutorial_finale")
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial_finale"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(1)])}))
 
@@ -1875,7 +1969,7 @@ class CartesianGraphTest(Test):
         """Test a complete dry run traversal of a graph."""
         graph = TestGraph()
         # TODO: cannot parse "all" with flat nodes with largest available test set being "leaves"
-        graph.nodes = TestGraph.parse_flat_nodes("leaves")
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(3)])}))
 
@@ -1894,7 +1988,7 @@ class CartesianGraphTest(Test):
     def test_abort_run(self):
         """Test that traversal is aborted through explicit configuration."""
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("tutorial1")
+        graph.new_nodes(TestGraph.parse_flat_nodes("tutorial1"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(3)])}))
 
@@ -1930,7 +2024,7 @@ class CartesianGraphTest(Test):
         self.config["vm_strs"]["vm1"] = "only Fedora\n"
 
         graph = TestGraph()
-        graph.nodes = TestGraph.parse_flat_nodes("leaves")
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(3)])}))
 

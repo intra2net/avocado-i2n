@@ -45,6 +45,80 @@ from . import TestWorker, NetObject
 door.DUMP_CONTROL_DIR = "/tmp"
 
 
+class PrefixTreeNode(object):
+    def __init__(self, variant=None, parent=None):
+        self.variant = variant
+        self.parent = parent
+        self.end_test_node = None
+        self.children = {}
+
+    def check_child(self, variant):
+        return variant in self.children
+
+    def get_child(self, variant):
+        return self.children[variant]
+
+    def set_child(self, variant, child):
+        self.children[variant] = child
+
+    def unset_child(self, variant):
+        del self.children[variant]
+
+    def traverse(self):
+        yield self
+        for child in self.children.values():
+            yield from child.traverse()
+
+
+class PrefixTree(object):
+    def __init__(self):
+        self.variant_nodes = {}
+
+    def __contains__(self, name: str) -> bool:
+        variants = name.split(".")
+        if variants[0] not in self.variant_nodes:
+            return False
+        for current in self.variant_nodes[variants[0]]:
+            for variant in variants[1:]:
+                if not current.check_child(variant):
+                    break
+                current = current.get_child(variant)
+            else:
+                return True
+        return False
+
+    def insert(self, test_node: "TestNode") -> None:
+        variants = test_node.params["name"].split(".")
+        if variants[0] not in self.variant_nodes.keys():
+            self.variant_nodes[variants[0]] = [PrefixTreeNode(variants[0])]
+        for current in self.variant_nodes[variants[0]]:
+            for variant in variants[1:]:
+                if not current.check_child(variant):
+                    new_child = PrefixTreeNode(variant)
+                    current.set_child(variant, new_child)
+                    if variant not in self.variant_nodes:
+                        self.variant_nodes[variant] = []
+                    self.variant_nodes[variant] += [new_child]
+                current = current.get_child(variant)
+            current.end_test_node = test_node
+
+    def get(self, name: str) -> list["TestNode"]:
+        variants = name.split(".")
+        if variants[0] not in self.variant_nodes:
+            return []
+        test_nodes = []
+        for current in self.variant_nodes[variants[0]]:
+            for variant in variants[1:]:
+                if not current.check_child(variant):
+                    break
+                current = current.get_child(variant)
+            else:
+                for node in current.traverse():
+                    if node.end_test_node is not None:
+                        test_nodes.append(node.end_test_node)
+        return test_nodes
+
+
 class TestNode(Runnable):
     """
     A wrapper for all test relevant parts like parameters, parser, used

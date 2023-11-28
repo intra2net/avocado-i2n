@@ -38,7 +38,7 @@ import itertools
 import asyncio
 
 from .. import params_parser as param
-from . import TestNode, TestWorker, TestObject, NetObject, VMObject, ImageObject
+from . import PrefixTreeNode, PrefixTree, TestNode, TestWorker, TestObject, NetObject, VMObject, ImageObject
 
 
 def set_graph_logging_level(level=20):
@@ -83,18 +83,6 @@ class TestGraph(object):
                 objects[suffix] = test_object.params["name"]
         return objects
     suffixes = property(fget=suffixes)
-
-    def prefixes(self):
-        """Test node prefixes and their variant restrictions."""
-        nodes = collections.OrderedDict()
-        for test_node in self.nodes:
-            prefix = test_node.long_prefix
-            if prefix in nodes.keys():
-                nodes[prefix] += "," + test_node.params["name"]
-            else:
-                nodes[prefix] = test_node.params["name"]
-        return nodes
-    prefixes = property(fget=prefixes)
 
     @staticmethod
     def clone_branch(copy_node, copy_object, copy_parents):
@@ -159,6 +147,8 @@ class TestGraph(object):
         self.nodes = []
         self.workers = {}
 
+        self.nodes_index = PrefixTree()
+
         # TODO: these attributes must interface with jobs and runners
         self.logdir = TestGraph.logdir
         self.runner = None
@@ -193,11 +183,9 @@ class TestGraph(object):
         """
         if not isinstance(nodes, list):
             nodes = [nodes]
-        test_node_prefixes = self.prefixes.keys()
         for test_node in nodes:
-            if test_node.long_prefix in test_node_prefixes:
-                continue
             self.nodes.append(test_node)
+            self.nodes_index.insert(test_node)
 
     def new_workers(self, workers: list[TestWorker] or TestWorker) -> None:
         """
@@ -318,7 +306,7 @@ class TestGraph(object):
         elif node_name is None:
             root_tests = self.get_nodes_by(param_key="object_root", param_val="(?:-|\.|^)"+object_name+"(?:-|\.|$)")
         else:
-            root_tests = self.get_nodes_by(param_key="name", param_val="(?:\.|^)"+node_name+"(?:\.|$)")
+            root_tests = self.get_nodes_by_name(node_name)
             if object_name:
                 # TODO: we only support vm objects at the moment
                 root_tests = self.get_nodes_by(param_key="vms",
@@ -411,6 +399,17 @@ class TestGraph(object):
         assert len(objects) == 1, f"Test object with {param_key}={param_val} not existing"\
                f" or unique in: {objects}"
         return objects[0]
+
+    def get_nodes_by_name(self, name: str = "") -> list[TestNode]:
+        """
+        Query all test nodes by their name, returning a list of matching nodes.
+
+        :param name: variant-composition name as part of the complete node name
+        :returns: a selection of objects satisfying name inclusion criterion
+        """
+        nodes = self.nodes_index.get(name)
+        logging.debug(f"Retrieved {len(nodes)}/{len(self.nodes)} test nodes with name like {name}")
+        return nodes
 
     def get_nodes_by(self, param_key: str = "name", param_val: str = "", subset: list[TestNode] = None) -> list[TestNode]:
         """
@@ -1011,14 +1010,14 @@ class TestGraph(object):
                       f"uses restriction {setup_restr}")
 
         # speedup for handling already parsed unique parent cases
-        filtered_parents = self.get_nodes_by("name", "(\.|^)%s(\.|$)" % setup_restr,
-                                             subset=self.get_nodes_by("name",
-                                                                      "(\.|^)%s(\.|$)" % setup_obj_restr))
+        filtered_parents = self.get_nodes_by_name(setup_restr)
+        filtered_parents = self.get_nodes_by("name", f"(\.|^){setup_obj_restr}(\.|$)",
+                                             subset=filtered_parents)
         # the vm whose dependency we are parsing may not be restrictive enough so reuse optional other
         # objects variants of the current test node - cloning is only supported in the node restriction
         if len(filtered_parents) > 1:
             for test_object in test_node.objects:
-                object_parents = self.get_nodes_by("name", "(\.|^)%s(\.|$)" % test_object.component_form,
+                object_parents = self.get_nodes_by("name", f"(\.|^){test_object.component_form}(\.|$)",
                                                    subset=filtered_parents)
                 filtered_parents = object_parents if len(object_parents) > 0 else filtered_parents
             if len(filtered_parents) > 0:
@@ -1041,8 +1040,9 @@ class TestGraph(object):
 
         get_parents, parse_parents = [], []
         for new_parent in new_parents:
-            old_parents = self.get_nodes_by("name", f"(\.|^){new_parent.setless_form}(\.|$)",
-                                            subset=self.get_nodes_by("name", f"(\.|^){setup_obj_restr}(\.|$)"))
+            old_parents = self.get_nodes_by_name(new_parent.setless_form)
+            old_parents = self.get_nodes_by("name", f"(\.|^){setup_obj_restr}(\.|$)",
+                                            subset=old_parents)
             if len(old_parents) > 0:
                 for old_parent in old_parents:
                     logging.debug(f"Found parsed dependency {old_parent.params['shortname']} for "
@@ -1066,8 +1066,9 @@ class TestGraph(object):
         :returns: a tuple of all reused and newly parsed parent test nodes as well as final child test nodes
         """
         if test_node.is_flat():
-            old_children = self.get_nodes_by("name", f"(\.|^){test_node.setless_form}(\.|$)",
-                                             subset=self.get_nodes_by("name", f"(\.|^){test_object.suffix}(\.|$)"))
+            old_children = self.get_nodes_by_name(test_node.setless_form)
+            old_children = self.get_nodes_by("name", f"(\.|^){test_object.component_form}(\.|$)",
+                                             subset=old_children)
             if len(old_children) > 0:
                 for old_child in old_children:
                     logging.debug(f"Found parsed expansion {old_child.params['shortname']} for flat node "
@@ -1088,7 +1089,7 @@ class TestGraph(object):
 
                 get_parents, parse_parents = self.parse_and_get_nodes_for_node_and_object(child, component, params)
                 # the graph node cache has to be updated as early as possible to avoid redundancy
-                self.nodes += parse_parents
+                self.new_nodes(parse_parents)
                 parents += parse_parents
                 more_parents = get_parents + parse_parents
 
@@ -1101,7 +1102,7 @@ class TestGraph(object):
                 if len(more_parents) > 1:
                     children += TestGraph.clone_branch(child, component, more_parents)
 
-        self.nodes += children if test_node.is_flat() else [c for c in children if c != test_node]
+        self.new_nodes(children if test_node.is_flat() else [c for c in children if c != test_node])
         return parents, children
 
     def parse_paths_to_object_roots(self, test_node: TestNode, test_object: TestObject,
@@ -1143,7 +1144,7 @@ class TestGraph(object):
         root_for_all = TestGraph.parse_node_from_object(NetObject("net0", param.Reparsable()),
                                                         "all..internal..noop", prefix="0s", params=setup_dict)
         logging.debug(f"Parsed shared root {root_for_all.params['shortname']}")
-        self.nodes.append(root_for_all)
+        self.new_nodes(root_for_all)
         for root_for_object in object_roots:
             root_for_object.setup_nodes = [root_for_all]
             root_for_all.cleanup_nodes.append(root_for_object)
@@ -1205,7 +1206,7 @@ class TestGraph(object):
         # parse leaves and discover necessary setup (internal nodes)
         leaves, stubs = TestGraph.parse_object_nodes(restriction, object_strs=object_strs,
                                                      prefix=prefix, params=param_dict, verbose=verbose)
-        graph.nodes.extend(leaves)
+        graph.new_nodes(leaves)
         graph.objects.extend(stubs)
         leaves = sorted(leaves, key=lambda x: int(re.match("^(\d+)", x.prefix).group(1)))
 

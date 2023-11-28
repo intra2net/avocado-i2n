@@ -74,7 +74,7 @@ def permubuntu(config, tag=""):
         # TODO: traversal relies explicitly on object_suffix which only indicates
         # where a parent node was parsed from, i.e. which test object of the child node
         test_node.params["object_suffix"] = test_object.long_suffix
-        graph.nodes += [test_node]
+        graph.new_nodes(test_node)
 
     graph.parse_shared_root_from_object_roots(config["param_dict"])
     r.run_workers(graph, config["param_dict"])

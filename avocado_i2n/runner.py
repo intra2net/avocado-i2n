@@ -245,7 +245,7 @@ class CartesianRunner(RunnerInterface):
         """
         if isinstance(test_suite, TestSuite):
             graph = TestGraph()
-            graph.nodes = test_suite.tests
+            graph.new_nodes(test_suite.tests)
             graph.parse_shared_root_from_object_roots(params)
             graph.new_workers(TestGraph.parse_workers(params))
         elif isinstance(test_suite, TestGraph):

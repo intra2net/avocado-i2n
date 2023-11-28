@@ -74,7 +74,7 @@ def develop(config, tag=""):
     graph.objects = objects
     test_node = TestNode(tag, tests[0].recipe)
     test_node.set_objects_from_net(objects[-1])
-    graph.nodes = [test_node]
+    graph.new_nodes(test_node)
     graph.parse_shared_root_from_object_roots(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: True)
 
