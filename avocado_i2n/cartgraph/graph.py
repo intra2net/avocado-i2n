@@ -1298,20 +1298,17 @@ class TestGraph(object):
         else:
             return
 
+        # add pre-existing shared pool locations
         if not test_node.is_shared_root() and not test_node.is_flat():
             shared_locations = test_node.params.get_list("shared_pool", ["/:."])
             for location in shared_locations:
                 test_node.add_location(location)
-
         # add previous results if traversed for the first time (could be parsed on demand)
         if len(test_node.results) == 0:
             test_name = test_node.params["name"]
             test_node.results += [r for r in self.runner.previous_results if r["name"] == test_name]
-        replay_results = [r["time"] for r in test_node.results if "time" in r]
-        replay_skip = len(replay_results) > 0
-        if replay_skip:
-            logging.debug(f"Test {test_node.params['shortname']} was found in a previous job")
-        if test_node.should_run(worker) and (not replay_skip or test_node.produces_setup()):
+
+        if test_node.should_run(worker):
 
             # the primary setup nodes need special treatment
             if params.get("dry_run", "no") == "yes":

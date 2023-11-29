@@ -451,6 +451,14 @@ class TestNode(Runnable):
         if not self.produces_setup():
             # most standard stateless behavior is to run each test node once then rerun if needed
             should_run = len(self.workers) == 0 or self.should_rerun()
+
+            # everything that did not have a replay status will be skipped
+            replay_results = [r["time"] for r in self.results if "time" in r]
+            replay_skip = len(replay_results) > 0
+            if replay_skip:
+                logging.debug(f"Test {self.params['shortname']} was found in a previous job")
+            should_run = should_run and not replay_skip
+
         else:
             # scanning will be triggered once for each worker on internal nodes
             should_scan = worker not in self.workers
