@@ -1302,7 +1302,12 @@ class TestGraph(object):
             for location in shared_locations:
                 test_node.add_location(location)
 
-        replay_skip = test_node.params["name"] in self.runner.skip_tests
+        # add previous results if traversed for the first time (could be parsed on demand)
+        if len(test_node.results) == 0:
+            test_name = test_node.params["name"]
+            test_node.results += [r for r in self.runner.previous_results if r["name"] == test_name]
+        replay_results = [r["time"] for r in test_node.results if "time" in r]
+        replay_skip = len(replay_results) > 0
         if replay_skip:
             logging.debug(f"Test {test_node.params['shortname']} was found in a previous job")
         if test_node.should_run(worker) and (not replay_skip or test_node.produces_setup()):

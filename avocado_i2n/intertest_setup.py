@@ -138,7 +138,7 @@ def with_cartesian_graph(fn):
             fn(config, tag=tag)
 
             config["graph"] = None
-            return 0 if runner.all_tests_ok else 1
+            return 0 if runner.all_results_ok() else 1
 
     return wrapper
 

@@ -189,6 +189,7 @@ class TestNode(Runnable):
 
         self.workers = set()
         self.worker = None
+        self.results = []
 
         self.objects = []
 

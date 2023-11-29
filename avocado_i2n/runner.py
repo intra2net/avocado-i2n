@@ -57,27 +57,15 @@ class CartesianRunner(RunnerInterface):
     name = 'traverser'
     description = 'Runs tests through a Cartesian graph traversal'
 
-    @property
-    def all_tests_ok(self):
-        """
-        Evaluate if all tests run under this runner have an ok status.
-
-        :returns: whether all tests ended with acceptable status
-        :rtype: bool
-        """
-        mapped_status = {STATUSES_MAPPING[t["status"]] for t in self.job.result.tests}
-        return all(mapped_status)
-
     def __init__(self):
         """Construct minimal attributes for the Cartesian runner."""
         self.tasks = []
 
         self.status_repo = None
         self.status_server = None
+        self.previous_results = []
 
-        self.skip_tests = []
-
-    """running functionality"""
+    """results functionality"""
     async def _update_status(self):
         message_handler = MessageHandler()
         while True:
@@ -95,6 +83,51 @@ class CartesianRunner(RunnerInterface):
             task = tasks_by_id.get(task_id)
             message_handler.process_message(message, task, self.job)
 
+    def all_results_ok(self):
+        """
+        Evaluate if all tests run under this runner have an ok status.
+
+        :returns: whether all tests ended with acceptable status
+        :rtype: bool
+
+        ..todo:: There might be repeated tests here that have eventually
+            passed so we might need to return an overall "pass" status.
+        """
+        mapped_status = {STATUSES_MAPPING[t["status"]] for t in self.job.result.tests}
+        return all(mapped_status)
+
+    def results_from_previous_jobs(self, graph: TestGraph) -> None:
+        """
+        Parse results from previous job for all parsed graph nodes.
+
+        :param graph: test graph to add previous results to
+        """
+        params = self.job.config["param_dict"]
+        # TODO: we could really benefit from using an appropriate params object here
+        replay_jobs = params.get("replay", "").split(" ")
+        replay_status = params.get("replay_status", "fail,error,warn").split(",")
+        disallowed_status = {*replay_status} - {"fail", "error", "pass", "warn", "skip"}
+        if len(disallowed_status) > 0:
+            raise ValueError(f"Value of replay_status must be a valid test status,"
+                             f" found {', '.join(disallowed_status)}")
+        for replay_job in replay_jobs:
+            if not replay_job:
+                continue
+            replay_dir = self.job.config.get("datadir.paths.logs_dir", ".")
+            replay_results = os.path.join(replay_dir, replay_job, "results.json")
+            if not os.path.isfile(replay_results):
+                raise RuntimeError("Cannot find replay job results file %s" % replay_results)
+            with open(replay_results) as json_file:
+                logging.info(f"Parsing previous results to replay {replay_results}")
+                data = json.load(json_file)
+                if 'tests' not in data:
+                    raise RuntimeError(f"Cannot find tests to replay against in {replay_results}")
+                for test_details in data["tests"]:
+                    if test_details["status"].lower() not in replay_status:
+                        logging.info(f"Updating with previous test results {test_details}")
+                        self.previous_results += [test_details]
+
+    """running functionality"""
     async def run_test_task(self, node):
         """
         Run a test instance inside a subprocess.
@@ -209,6 +242,7 @@ class CartesianRunner(RunnerInterface):
                 try:
                     test_result = next((x for x in self.job.result.tests if x["name"].name == name and x["name"].uid == uid))
                     test_status = test_result["status"]
+                    node.results += test_result
                     break
                 except StopIteration:
                     await asyncio.sleep(30)
@@ -254,6 +288,7 @@ class CartesianRunner(RunnerInterface):
             raise TypeError(f"Unknown test suite type for {type(test_suite)}, must be a Cartesian graph or an Avocado test suite")
 
         graph.visualize(self.job.logdir)
+        self.results_from_previous_jobs(graph)
         graph.runner = self
 
         for worker in graph.workers.values():
@@ -296,33 +331,9 @@ class CartesianRunner(RunnerInterface):
         asyncio.ensure_future(self._update_status())
 
         params = self.job.config["param_dict"]
-
-        # TODO: we could really benefit from using an appropriate params object here
-        replay_jobs = params.get("replay", "").split(" ")
-        replay_status = params.get("replay_status", "fail,error,warn").split(",")
-        disallowed_status = set(replay_status).difference(set(["fail", "error", "pass", "warn", "skip"]))
-        if len(disallowed_status) > 0:
-            raise ValueError(f"Value of replay_status must be a valid test status,"
-                             f" found {', '.join(disallowed_status)}")
-        for replay_job in replay_jobs:
-            if not replay_job:
-                continue
-            replay_dir = self.job.config.get("datadir.paths.logs_dir", ".")
-            replay_results = os.path.join(replay_dir, replay_job, "results.json")
-            if not os.path.isfile(replay_results):
-                raise RuntimeError("Cannot find replay job results file %s" % replay_results)
-            with open(replay_results) as json_file:
-                logging.info(f"Parsing previous results to replay {replay_results}")
-                data = json.load(json_file)
-                if 'tests' not in data:
-                    raise RuntimeError(f"Cannot find tests to replay against in {replay_results}")
-                for test_details in data["tests"]:
-                    if test_details["status"].lower() not in replay_status and test_details["name"] not in self.skip_tests:
-                        self.skip_tests += [test_details["name"]]
-
         try:
             self.run_workers(test_suite, params)
-            if not self.all_tests_ok:
+            if not self.all_results_ok():
                 # the summary is a set so only a single failed test is enough
                 summary.add('FAIL')
         except (KeyboardInterrupt, asyncio.TimeoutError) as error:
