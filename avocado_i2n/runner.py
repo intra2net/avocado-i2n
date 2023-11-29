@@ -192,79 +192,48 @@ class CartesianRunner(RunnerInterface):
                      spawner=node.worker.spawner, max_running=1,
                      task_timeout=self.job.config.get('task.timeout.running')).run()
 
-    async def run_test_node(self, node):
+    async def run_test_node(self, node: TestNode, status_timeout: int = 10) -> bool:
         """
-        Run a node once, and optionally re-run it depending on the parameters.
+        Run a test node with a potential retry prefix modification.
 
         :param node: test node to run
-        :type node: :py:class:`TestNode`
-        :returns: run status of :py:meth:`run_test_task`
-        :rtype: bool
+        :returns: whether the test succeeded as a simple boolean test result status
         :raises: :py:class:`AssertionError` if the ran test node contains no objects
-
-        The retry parameters are `retry_attempts` and `retry_stop`. The first is
-        the maximum number of retries, and the second indicates when to stop retrying
-        in terms of encountered test status and can be a list of statuses to stop on.
-
-        Only tests with the status of pass, warning, error or failure will be retried.
-        Other statuses will be ignored and the test will run only once.
-
-        This method also works as a convenience wrapper around :py:meth:`run_test`,
-        providing some default arguments.
         """
         if node.is_objectless():
             raise AssertionError("Cannot run test nodes not using any test objects, here %s" % node)
 
-        retry_stop = node.params.get_list("retry_stop", [])
-        # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
-        runs_left = 1 + node.params.get_numeric("retry_attempts", 0)
-        # do not log when the user is not using the retry feature
-        if runs_left > 1:
-            logging.debug(f"Running test with retry_stop={', '.join(retry_stop)} and retry_attempts={runs_left}")
-        if runs_left < 1:
-            raise ValueError("Value of retry_attempts cannot be less than zero")
-        disallowed_status = set(retry_stop).difference(set(["fail", "error", "pass", "warn", "skip"]))
-        if len(disallowed_status) > 0:
-            raise ValueError(f"Value of retry_stop must be a valid test status,"
-                             f" found {', '.join(disallowed_status)}")
-
         original_prefix = node.prefix
-        for r in range(runs_left):
-            # appending a suffix to retries so we can tell them apart
-            if r > 0:
-                node.prefix = original_prefix + f"r{r}"
-            uid = node.id_test.uid
-            name = node.params["name"]
+        # appending a suffix to retries so we can tell them apart
+        run_times = len(node.results)
+        if run_times > 0:
+            node.prefix = original_prefix + f"r{run_times}"
+        uid = node.id_test.uid
+        name = node.params["name"]
 
-            await self.run_test_task(node)
+        await self.run_test_task(node)
 
-            for i in range(10):
-                try:
-                    test_result = next((x for x in self.job.result.tests if x["name"].name == name and x["name"].uid == uid))
-                    test_status = test_result["status"]
-                    node.results += test_result
-                    break
-                except StopIteration:
-                    await asyncio.sleep(30)
-                    logging.warning(f"Test result {uid} wasn't yet found and could not be extracted")
-                    test_status = "ERROR"
-            else:
-                logging.error(f"Test result {uid} for {name} could not be found and extracted, defaulting to ERROR")
-            if test_status not in ["PASS", "WARN", "ERROR", "FAIL"]:
-                # it doesn't make sense to retry with other status
-                logging.info(f"Will not attempt to retry test with status {test_status}")
+        for i in range(status_timeout):
+            try:
+                test_result = next((x for x in self.job.result.tests if x["name"].name == name and x["name"].uid == uid))
+                test_status = test_result["status"].lower()
+                node.results += [test_result]
                 break
-            if test_status.lower() in retry_stop:
-                logging.info(f"Stop retrying after test status {test_status.lower()}")
-                break
+            except StopIteration:
+                await asyncio.sleep(30)
+                logging.warning(f"Test result {uid} wasn't yet found and could not be extracted ({i}/{status_timeout})")
+                test_status = "error"
+        else:
+            logging.error(f"Test result {uid} for {name} could not be found and extracted, defaulting to ERROR")
         node.prefix = original_prefix
-        logging.info(f"Finished running test with status {test_status}")
+
+        logging.info(f"Finished running test with status {test_status.upper()}")
         # no need to log when test was not repeated
-        if runs_left > 1:
-            logging.info(f"Finished running test {r+1} times")
+        if run_times > 0:
+            logging.info(f"Finished running test {run_times+1} times")
 
         # FIX: as VT's retval is broken (always True), we fix its handling here
-        if test_status in ["ERROR", "FAIL"]:
+        if test_status in ["error", "fail"]:
             return False
         else:
             return True

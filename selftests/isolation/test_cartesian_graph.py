@@ -726,16 +726,31 @@ class CartesianNodeTest(Test):
         # should not run an internal test node with available setup
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         self.assertFalse(test_node.default_run_decision(worker1))
-
         # should not run already visited internal test node by the same worker
         test_node.workers.add(worker1)
         self.assertFalse(test_node.default_run_decision(worker1))
+
+        # should not run an internal test node if needed reruns and setup from past runs
+        test_node.should_rerun = lambda : True
+        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
+        test_node.results = []
+        self.assertFalse(test_node.default_run_decision(worker2))
+        # should run an internal test node if needed reruns and setup from current runs
+        test_node.should_rerun = lambda : True
+        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
+        test_node.results = ["some-result"]
+        self.assertTrue(test_node.default_run_decision(worker2))
+
         # should not run already visited leaf test node by the same worker
         test_node = graph.get_node_by(param_val="tutorial1")
         test_node.workers.add(worker1)
         self.assertFalse(test_node.default_run_decision(worker1))
         # should not run a leaf test node if run by other worker
         self.assertFalse(test_node.default_run_decision(worker2))
+        # should run leaf if more reruns are needed
+        test_node.should_rerun = lambda : True
+        self.assertTrue(test_node.default_run_decision(worker1))
+        self.assertTrue(test_node.default_run_decision(worker2))
 
     @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
     def test_default_clean_decision(self):
@@ -1520,6 +1535,27 @@ class CartesianGraphTest(Test):
 
         self._run_traversal(graph)
 
+    def test_traverse_one_leaf_with_retried_setup(self):
+        """Test traversal path of one test with a failed but retried setup test node."""
+        graph = TestGraph()
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1"))
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)])}))
+
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$"},
+            {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "_status": "FAIL"},
+            {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$"},
+            {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "_status": "PASS"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "_status": "FAIL"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "_status": "FAIL"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "_status": "PASS"},
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+        ]
+
+        self._run_traversal(graph, {"retry_attempts": "3", "retry_stop": "pass"})
+
     def test_traverse_one_leaf_with_occupation_timeout(self):
         """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
         graph = TestGraph()
@@ -2056,6 +2092,190 @@ class CartesianGraphTest(Test):
             if node in root.cleanup_nodes:
                 self.assertTrue(node.is_flat() or node.is_object_root())
 
+    def test_run_retry_times(self):
+        """Test that the test is retried `retry_attempts` times if `retry_stop` is not specified."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_dict"]["retry_attempts"] = "2"
+        graph = TestGraph.parse_object_trees(
+            self.config["param_dict"], self.config["tests_str"],
+            self.config["vm_strs"], prefix="")
+        DummyTestRun.asserted_tests = [
+            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
+            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
+            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
+            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
+        ]
+        self._run_traversal(graph)
+
+    def test_run_retry_status_valid(self):
+        """Test that valid statuses are considered when retrying a test."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_dict"]["retry_attempts"] = "3"
+        self.config["param_dict"]["retry_stop"] = ""
+
+        # test should be re-run on these statuses
+        for status in ["PASS", "WARN", "FAIL", "ERROR", "SKIP", "INTERRUPTED", "CANCEL"]:
+            with self.subTest(f"Test rerun on status {status}"):
+                graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                     self.config["tests_str"], self.config["vm_strs"],
+                                                     prefix=self.prefix)
+                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                              "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+                DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                ]
+                self._run_traversal(graph)
+
+                # assert that tests were repeated
+                self.assertEqual(len(self.runner.job.result.tests), 4)
+                self.assertEqual(len(graph.get_node_by(param_val="tutorial1").results), 4)
+                # also assert the correct results were registered
+                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status] * 4)
+                self.assertEqual(self.runner.job.result.tests, graph.get_node_by(param_val="tutorial1").results)
+                # the test graph and thus the test node is recreated
+                self.runner.job.result.tests.clear()
+
+    def test_run_retry_status_stop(self):
+        """Test that the `retry_stop` parameter is respected by the runner."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_dict"]["retry_attempts"] = "3"
+
+        # expect success and get success -> should run only once
+        for stop_status in ["pass", "warn", "fail", "error"]:
+            with self.subTest(f"Test rerun stop on status {stop_status}"):
+                self.config["param_dict"]["retry_stop"] = stop_status
+                status = stop_status.upper()
+                graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                     self.config["tests_str"], self.config["vm_strs"],
+                                                     prefix=self.prefix)
+                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                              "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+                DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                ]
+                self._run_traversal(graph)
+
+                # assert that tests were not repeated
+                self.assertEqual(len(self.runner.job.result.tests), 1)
+                self.assertEqual(len(graph.get_node_by(param_val="tutorial1").results), 1)
+                # also assert the correct results were registered
+                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status])
+                self.assertEqual(self.runner.job.result.tests, graph.get_node_by(param_val="tutorial1").results)
+                # the test graph and thus the test node is recreated
+                self.runner.job.result.tests.clear()
+
+    def test_run_retry_invalid(self):
+        """Test if an exception is thrown with invalid retry parameter values."""
+        self.config["tests_str"] += "only tutorial1\n"
+        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+
+        DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+        ]
+        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3",
+                                                         "retry_stop": "invalid"}):
+            graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                 self.config["tests_str"], self.config["vm_strs"],
+                                                 prefix=self.prefix)
+            with self.assertRaisesRegex(ValueError, r"^Value of retry_stop must be a valid test status"):
+                self._run_traversal(graph)
+
+        # negative values
+        DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+        ]
+        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "-32",
+                                                         "retry_stop": "none"}):
+            graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                 self.config["tests_str"], self.config["vm_strs"],
+                                                 prefix=self.prefix)
+            with self.assertRaisesRegex(ValueError, r"^Number of retry_attempts cannot be less than zero$"):
+                self._run_traversal(graph)
+
+        # floats
+        DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+        ]
+        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3.5",
+                                                         "retry_stop": "none"}):
+            graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                 self.config["tests_str"], self.config["vm_strs"],
+                                                 prefix=self.prefix)
+            with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
+                self._run_traversal(graph)
+
+        # non-integers
+        DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+        ]
+        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "hey",
+                                                         "retry_stop": "none"}):
+            graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                 self.config["tests_str"], self.config["vm_strs"],
+                                                 prefix=self.prefix)
+            with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
+                self._run_traversal(graph)
+
+    def test_run_exit_code(self):
+        """Test that the test status is properly converted to a simple exit status."""
+        self.config["tests_str"] += "only tutorial1\n"
+
+        flat_net = TestGraph.parse_net_from_object_strs("net1", self.config["vm_strs"])
+        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
+        net = test_objects[-1]
+        test_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"].copy())
+
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
+        ]
+        to_run = self.runner.run_test_node(test_node)
+        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
+        # all runs succeed - status must be True
+        self.assertTrue(status)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        self.runner.job.result.tests.clear()
+        test_node.results.clear()
+
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
+        ]
+        to_run = self.runner.run_test_node(test_node)
+        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
+        # last run fails - status must be False
+        self.assertFalse(status, "Runner did not preserve last run fail status")
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        self.runner.job.result.tests.clear()
+        test_node.results.clear()
+
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
+        ]
+        to_run = self.runner.run_test_node(test_node)
+        _ = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
+        to_run = self.runner.run_test_node(test_node)
+        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
+        # only previous run fails - status must be True
+        self.assertTrue(status, "Runner did not preserve last run fail status")
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        self.runner.job.result.tests.clear()
+        test_node.results.clear()
+
     @mock.patch('avocado_i2n.runner.StatusRepo')
     @mock.patch('avocado_i2n.runner.StatusServer')
     @mock.patch('avocado_i2n.runner.TestGraph')
@@ -2102,195 +2322,6 @@ class CartesianGraphTest(Test):
         mock_run_graph.parse_workers.assert_called_once()
         run_graph_workers[0].set_up.assert_called()
         run_graph_instance.traverse_object_trees.assert_called()
-
-    def test_run_retry_times(self):
-        """Test that the test is retried `retry_attempts` times if `retry_stop` is not specified."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["retry_attempts"] = "2"
-        graph = TestGraph.parse_object_trees(
-            self.config["param_dict"], self.config["tests_str"],
-            self.config["vm_strs"], prefix="")
-        DummyTestRun.asserted_tests = [
-            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
-            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
-            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
-            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
-            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
-            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
-        ]
-        self._run_traversal(graph)
-
-    def test_run_retry_status(self):
-        """Test that certain statuses are ignored when retrying a test."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["retry_attempts"] = "3"
-        self.config["param_dict"]["retry_stop"] = ""
-
-        # test should not be re-run on these statuses
-        for status in ["SKIP", "INTERRUPTED", "CANCEL"]:
-            with self.subTest(f"Test rerun skip on status {status}"):
-                graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                                     self.config["tests_str"], self.config["vm_strs"],
-                                                     prefix=self.prefix)
-                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                            "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-                DummyTestRun.asserted_tests = [
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                ]
-                self._run_traversal(graph)
-
-                # assert that tests were not repeated
-                self.assertEqual(len(self.runner.job.result.tests), 1)
-                # also assert the correct results were registered
-                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status])
-                self.runner.job.result.tests.clear()
-
-        # test should be re-run on these statuses
-        for status in ["PASS", "WARN", "FAIL", "ERROR"]:
-            with self.subTest(f"Test rerun on status {status}"):
-                graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                                     self.config["tests_str"], self.config["vm_strs"],
-                                                     prefix=self.prefix)
-                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                            "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-                DummyTestRun.asserted_tests = [
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                ]
-                self._run_traversal(graph)
-
-                # assert that tests were repeated
-                self.assertEqual(len(self.runner.job.result.tests), 4)
-                # also assert the correct results were registered
-                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status] * 4)
-                self.runner.job.result.tests.clear()
-
-    def test_run_retry_status_stop(self):
-        """Test that the `retry_stop` parameter is respected by the runner."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["retry_attempts"] = "3"
-
-        # expect success and get success -> should run only once
-        for stop_status in ["pass", "warn", "fail", "error"]:
-            with self.subTest(f"Test rerun stop on status {stop_status}"):
-                self.config["param_dict"]["retry_stop"] = stop_status
-                status = stop_status.upper()
-                graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                                     self.config["tests_str"], self.config["vm_strs"],
-                                                     prefix=self.prefix)
-                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                            "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-                DummyTestRun.asserted_tests = [
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                ]
-                self._run_traversal(graph)
-
-                # assert that tests were not repeated
-                self.assertEqual(len(self.runner.job.result.tests), 1)
-                # also assert the correct results were registered
-                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status])
-                self.runner.job.result.tests.clear()
-
-    def test_run_retry_invalid(self):
-        """Test if an exception is thrown with invalid retry parameter values."""
-        self.config["tests_str"] += "only tutorial1\n"
-        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-        DummyTestRun.asserted_tests = [
-        ]
-
-        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3",
-                                                         "retry_stop": "invalid"}):
-            graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                                 self.config["tests_str"], self.config["vm_strs"],
-                                                 prefix=self.prefix)
-            with self.assertRaisesRegex(ValueError, r"^Value of retry_stop must be a valid test status"):
-                self._run_traversal(graph)
-
-        # negative values
-        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "-32",
-                                                         "retry_stop": "none"}):
-            graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                                 self.config["tests_str"], self.config["vm_strs"],
-                                                 prefix=self.prefix)
-            with self.assertRaisesRegex(ValueError, r"^Value of retry_attempts cannot be less than zero$"):
-                self._run_traversal(graph)
-
-        # floats
-        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3.5",
-                                                         "retry_stop": "none"}):
-            graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                                 self.config["tests_str"], self.config["vm_strs"],
-                                                 prefix=self.prefix)
-            with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
-                self._run_traversal(graph)
-
-        # non-integers
-        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "hey",
-                                                         "retry_stop": "none"}):
-            graph = TestGraph.parse_object_trees(self.config["param_dict"],
-                                                 self.config["tests_str"], self.config["vm_strs"],
-                                                 prefix=self.prefix)
-            with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
-                self._run_traversal(graph)
-
-    def test_run_exit_code(self):
-        """Test that the return value of the last run is preserved."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["retry_attempts"] = "2"
-        self.config["param_dict"]["retry_stop"] = ""
-
-        flat_net = TestGraph.parse_net_from_object_strs("net1", self.config["vm_strs"])
-        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
-        net = test_objects[-1]
-        test_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"].copy())
-
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
-        ]
-        to_run = self.runner.run_test_node(test_node)
-        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
-        # all runs succeed - status must be True
-        self.assertTrue(status)
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        self.runner.job.result.tests.clear()
-
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
-        ]
-        to_run = self.runner.run_test_node(test_node)
-        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
-        # last run fails - status must be False
-        self.assertFalse(status, "Runner did not preserve last run fail status")
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        self.runner.job.result.tests.clear()
-
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
-        ]
-        to_run = self.runner.run_test_node(test_node)
-        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
-        # fourth run fails - status must be True
-        self.assertTrue(status, "Runner did not preserve last pass status after previous fail")
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        self.runner.job.result.tests.clear()
 
 
 if __name__ == '__main__':

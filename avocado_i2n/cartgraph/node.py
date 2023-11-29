@@ -248,6 +248,44 @@ class TestNode(Runnable):
     def is_occupied(self):
         return self.worker is not None
 
+    def should_rerun(self) -> bool:
+        """
+        Check if the test node should be rerun based on some retry criteria.
+
+        :returns: whether the test node should be retried
+
+        The retry parameters are `retry_attempts` and `retry_stop`. The first is
+        the maximum number of retries, and the second indicates when to stop retrying
+        in terms of encountered test status and can be a list of statuses to stop on.
+        """
+        retry_stop = self.params.get_list("retry_stop", [])
+        # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
+        retry_attempts = self.params.get_numeric("retry_attempts", 0)
+        # do not log when the user is not using the retry feature
+        if retry_attempts > 0:
+            stop_condition = ', '.join(retry_stop) if retry_stop else "NONE"
+            logging.info(f"Could rerun {self} with retry stop condition {stop_condition}"
+                         f" and a maximum of {retry_attempts} retries")
+        if retry_attempts < 0:
+           raise ValueError("Number of retry_attempts cannot be less than zero")
+        disallowed_status = set(retry_stop).difference(set(["fail", "error", "pass", "warn", "skip"]))
+        if len(disallowed_status) > 0:
+            raise ValueError(f"Value of retry_stop must be a valid test status,"
+                             f" found {', '.join(disallowed_status)}")
+
+        test_statuses = [r["status"].lower() for r in self.results]
+
+        stop_statuses_found = set(retry_stop).intersection(set(test_statuses))
+        if len(stop_statuses_found) > 0:
+            logging.info(f"Stopping retries due to obtained test statuses: {', '.join(stop_statuses_found)}")
+            return False
+
+        reruns_left = retry_attempts - max(len(test_statuses) - 1, 0)
+        if reruns_left > 0:
+            logging.debug(f"Still have {reruns_left} allowed reruns left for {self}")
+            return True
+        return False
+
     def is_flat(self):
         """Check if the test node is flat and does not yet have objects and dependencies to evaluate."""
         return len(self.objects) == 0
@@ -411,12 +449,19 @@ class TestNode(Runnable):
         :returns: whether the worker should run the test node
         """
         if not self.produces_setup():
-            # most standard stateless behavior is to run each test node by exactly one worker
-            should_run = len(self.workers) == 0
+            # most standard stateless behavior is to run each test node once then rerun if needed
+            should_run = len(self.workers) == 0 or self.should_rerun()
         else:
             # scanning will be triggered once for each worker on internal nodes
             should_scan = worker not in self.workers
-            should_run = self.scan_states() if should_scan else False
+            if should_scan:
+                should_run_from_scan = self.scan_states()
+                # rerunning of test from previous jobs is never intended
+                if len(self.results) == 0 and not should_run_from_scan:
+                    self.should_rerun = lambda : False
+
+            should_run = should_run_from_scan if should_scan else False
+            should_run = should_run or self.should_rerun()
 
         return should_run
 

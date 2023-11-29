@@ -1273,6 +1273,7 @@ class TestGraph(object):
                                         ovrwrt_str=param.re_str("all..noop"),
                                         ovrwrt_dict=setup_dict)
         pre_node = TestNode("0t", install_config)
+        pre_node.results = list(test_node.results)
         pre_node.set_objects_from_net(test_node.objects[0])
         pre_node.set_environment(worker)
         status = await self.runner.run_test_node(pre_node)
@@ -1485,8 +1486,9 @@ class TestGraph(object):
             if previous in next.cleanup_nodes:
 
                 if next.is_setup_ready(worker):
-                    previous.visit_parent(next, worker)
                     await self.traverse_node(next, worker, params)
+                    if next == root or not next.should_rerun():
+                        previous.visit_parent(next, worker)
                     traverse_path.pop()
                 else:
                     # inverse DFS
@@ -1499,6 +1501,10 @@ class TestGraph(object):
                     continue
                 else:
                     await self.traverse_node(next, worker, params)
+                    # cleanup nodes that should be retried postpone traversal down
+                    if next.should_rerun():
+                        traverse_path.pop()
+                        continue
 
                 if next.is_cleanup_ready(worker):
                     for setup in next.setup_nodes:
