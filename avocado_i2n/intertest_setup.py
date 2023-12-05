@@ -67,8 +67,7 @@ from .runner import CartesianRunner
 
 
 #: list of all available manual steps or simply semi-automation tools
-__all__ = ["noop", "unittest", "full", "update", "run", "list",
-           "install", "deploy", "internal",
+__all__ = ["noop", "unittest", "update", "run", "list",
            "boot", "download", "control", "upload", "shutdown",
            "check", "pop", "push", "get", "set", "unset",
            "collect", "create", "clean"]
