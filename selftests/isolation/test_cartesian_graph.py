@@ -1529,8 +1529,6 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c1$", "_status": "FAIL"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
-            # TODO: a cleaner policy would be if other worker's don't retry the failed test later on unless permitted
-            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c2$", "_status": "FAIL"},
         ]
 
         self._run_traversal(graph)

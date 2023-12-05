@@ -286,6 +286,23 @@ class TestNode(Runnable):
             return True
         return False
 
+    def should_scan(self, worker: TestWorker = None) -> bool:
+        """
+        Check if the test node should scan for reusable states based on scope criteria.
+
+        :param worker: evaluate with respect to an optional worker ID scope or globally if none given
+        :returns: whether the test node should scan for states
+        """
+        if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
+            # is scanned separately by each worker
+            return worker not in self.workers
+        elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
+            # is scanned for an entire swarm by just one of its workers
+            return worker.params["runtime_str"].split("/")[0] not in set(worker.params["runtime_str"].split("/")[0] for worker in self.workers)
+        else:
+            # should scan globally by just one worker
+            return len(self.workers) == 0
+
     def is_flat(self):
         """Check if the test node is flat and does not yet have objects and dependencies to evaluate."""
         return len(self.objects) == 0
@@ -360,7 +377,7 @@ class TestNode(Runnable):
         """
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
             # is finished separately by each worker
-            return worker.params["runtime_str"].split("/")[-1] in set(worker for worker in self.workers)
+            return worker in self.workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             # is finished for an entire swarm by at least one of its workers
             return worker.params["runtime_str"].split("/")[0] in set(worker.params["runtime_str"].split("/")[0] for worker in self.workers)
@@ -380,7 +397,7 @@ class TestNode(Runnable):
         """
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
             # is finished separately by each worker and for all workers
-            return worker.params["runtime_str"].split("/")[-1] in set(worker for worker in self.workers)
+            return worker in self.workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             # is finished for an entire swarm by all of its workers
             slot_cluster = worker.params["runtime_str"].split("/")[0]
@@ -460,13 +477,14 @@ class TestNode(Runnable):
             should_run = should_run and not replay_skip
 
         else:
-            # scanning will be triggered once for each worker on internal nodes
-            should_scan = worker not in self.workers
+            should_run_from_scan = False
+            should_scan = self.should_scan(worker)
             if should_scan:
                 should_run_from_scan = self.scan_states()
-                # rerunning of test from previous jobs is never intended
-                if len(self.results) == 0 and not should_run_from_scan:
-                    self.should_rerun = lambda : False
+                logging.debug(f"Should{' ' if should_run_from_scan else ' not '}run from scan {self}")
+            # rerunning of test from previous jobs is never intended
+            if len(self.results) == 0 and not should_run_from_scan:
+                self.should_rerun = lambda : False
 
             should_run = should_run_from_scan if should_scan else False
             should_run = should_run or self.should_rerun()
