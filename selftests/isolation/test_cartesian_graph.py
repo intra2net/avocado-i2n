@@ -738,14 +738,13 @@ class CartesianNodeTest(Test):
         # should run an internal test node if needed reruns and setup from current runs
         test_node.should_rerun = lambda : True
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
-        test_node.results = ["some-result"]
+        test_node.results = [{"status": "PASS"}]
         self.assertTrue(test_node.default_run_decision(worker2))
 
-        # should not run already visited leaf test node by the same worker
+        # should not run already visited leaf test node by any worker
         test_node = graph.get_node_by(param_val="tutorial1")
         test_node.workers.add(worker1)
         self.assertFalse(test_node.default_run_decision(worker1))
-        # should not run a leaf test node if run by other worker
         self.assertFalse(test_node.default_run_decision(worker2))
         # should run leaf if more reruns are needed
         test_node.should_rerun = lambda : True
@@ -2228,6 +2227,26 @@ class CartesianGraphTest(Test):
                                                  prefix=self.prefix)
             with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
                 self._run_traversal(graph)
+
+    def test_run_warn_duration(self):
+        """Test that a good test status is converted to warning if test takes too long."""
+        self.config["tests_str"] += "only tutorial1\n"
+
+        flat_net = TestGraph.parse_net_from_object_strs("net1", self.config["vm_strs"])
+        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
+        net = test_objects[-1]
+        test_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"].copy())
+
+        test_node.results = [{"status": "PASS", "time": 3}]
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status": "PASS", "_time": "10"},
+        ]
+        to_run = self.runner.run_test_node(test_node)
+        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
+        self.assertTrue(status)
+        # the test succeed but too long so its status must be changed to WARN
+        self.assertEqual(test_node.results[-1]["status"], "WARN")
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_run_exit_code(self):
         """Test that the test status is properly converted to a simple exit status."""

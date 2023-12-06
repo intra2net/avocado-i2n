@@ -248,61 +248,6 @@ class TestNode(Runnable):
     def is_occupied(self):
         return self.worker is not None
 
-    def should_rerun(self) -> bool:
-        """
-        Check if the test node should be rerun based on some retry criteria.
-
-        :returns: whether the test node should be retried
-
-        The retry parameters are `retry_attempts` and `retry_stop`. The first is
-        the maximum number of retries, and the second indicates when to stop retrying
-        in terms of encountered test status and can be a list of statuses to stop on.
-        """
-        retry_stop = self.params.get_list("retry_stop", [])
-        # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
-        retry_attempts = self.params.get_numeric("retry_attempts", 0)
-        # do not log when the user is not using the retry feature
-        if retry_attempts > 0:
-            stop_condition = ', '.join(retry_stop) if retry_stop else "NONE"
-            logging.info(f"Could rerun {self} with retry stop condition {stop_condition}"
-                         f" and a maximum of {retry_attempts} retries")
-        if retry_attempts < 0:
-           raise ValueError("Number of retry_attempts cannot be less than zero")
-        disallowed_status = set(retry_stop).difference(set(["fail", "error", "pass", "warn", "skip"]))
-        if len(disallowed_status) > 0:
-            raise ValueError(f"Value of retry_stop must be a valid test status,"
-                             f" found {', '.join(disallowed_status)}")
-
-        test_statuses = [r["status"].lower() for r in self.results]
-
-        stop_statuses_found = set(retry_stop).intersection(set(test_statuses))
-        if len(stop_statuses_found) > 0:
-            logging.info(f"Stopping retries due to obtained test statuses: {', '.join(stop_statuses_found)}")
-            return False
-
-        reruns_left = retry_attempts - max(len(test_statuses) - 1, 0)
-        if reruns_left > 0:
-            logging.debug(f"Still have {reruns_left} allowed reruns left for {self}")
-            return True
-        return False
-
-    def should_scan(self, worker: TestWorker = None) -> bool:
-        """
-        Check if the test node should scan for reusable states based on scope criteria.
-
-        :param worker: evaluate with respect to an optional worker ID scope or globally if none given
-        :returns: whether the test node should scan for states
-        """
-        if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
-            # is scanned separately by each worker
-            return worker not in self.workers
-        elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
-            # is scanned for an entire swarm by just one of its workers
-            return worker.params["runtime_str"].split("/")[0] not in set(worker.params["runtime_str"].split("/")[0] for worker in self.workers)
-        else:
-            # should scan globally by just one worker
-            return len(self.workers) == 0
-
     def is_flat(self):
         """Check if the test node is flat and does not yet have objects and dependencies to evaluate."""
         return len(self.objects) == 0
@@ -458,6 +403,80 @@ class TestNode(Runnable):
                     return True
         return False
 
+    def should_rerun(self) -> bool:
+        """
+        Check if the test node should be rerun based on some retry criteria.
+
+        :returns: whether the test node should be retried
+
+        The retry parameters are `retry_attempts` and `retry_stop`. The first is
+        the maximum number of retries, and the second indicates when to stop retrying
+        in terms of encountered test status and can be a list of statuses to stop on.
+        """
+        retry_stop = self.params.get_list("retry_stop", [])
+        # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
+        retry_attempts = self.params.get_numeric("retry_attempts", 0)
+        # do not log when the user is not using the retry feature
+        if retry_attempts > 0:
+            stop_condition = ', '.join(retry_stop) if retry_stop else "NONE"
+            logging.info(f"Could rerun {self} with retry stop condition {stop_condition}"
+                         f" and a maximum of {retry_attempts} retries")
+        if retry_attempts < 0:
+           raise ValueError("Number of retry_attempts cannot be less than zero")
+        disallowed_status = set(retry_stop).difference(set(["fail", "error", "pass", "warn", "skip"]))
+        if len(disallowed_status) > 0:
+            raise ValueError(f"Value of retry_stop must be a valid test status,"
+                             f" found {', '.join(disallowed_status)}")
+
+        test_statuses = [r["status"].lower() for r in self.results]
+
+        stop_statuses_found = set(retry_stop).intersection(set(test_statuses))
+        if len(stop_statuses_found) > 0:
+            logging.info(f"Stopping retries due to obtained test statuses: {', '.join(stop_statuses_found)}")
+            return False
+
+        reruns_left = retry_attempts - max(len(test_statuses) - 1, 0)
+        if reruns_left > 0:
+            logging.debug(f"Still have {reruns_left} allowed reruns left for {self}")
+            return True
+        return False
+
+    def should_replay(self) -> bool:
+        """
+        Check if the test node should be rerun based on replay status from previous jobs.
+
+        :returns: whether the test node should be retried
+        """
+        if not self.params.get("replay"):
+            return True
+        replay_status = self.params.get("replay_status", "fail,error,warn").split(",")
+        disallowed_status = {*replay_status} - {"fail", "error", "pass", "warn", "skip"}
+        if len(disallowed_status) > 0:
+            raise ValueError(f"Value of replay_status must be a valid test status,"
+                            f" found {', '.join(disallowed_status)}")
+        replay_results = [r for r in self.results if r["status"].lower() not in replay_status]
+        if len(replay_results) > 0:
+            logging.debug(f"Test {self.params['shortname']} should be skipped via "
+                          f"replay status {replay_status}")
+        return len(replay_results) == 0
+
+    def should_scan(self, worker: TestWorker = None) -> bool:
+        """
+        Check if the test node should scan for reusable states based on scope criteria.
+
+        :param worker: evaluate with respect to an optional worker ID scope or globally if none given
+        :returns: whether the test node should scan for states
+        """
+        if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
+            # is scanned separately by each worker
+            return worker not in self.workers
+        elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
+            # is scanned for an entire swarm by just one of its workers
+            return worker.params["runtime_str"].split("/")[0] not in set(worker.params["runtime_str"].split("/")[0] for worker in self.workers)
+        else:
+            # should scan globally by just one worker
+            return len(self.workers) == 0
+
     def default_run_decision(self, worker: TestWorker) -> bool:
         """
         Default decision policy on whether a test node should be run or skipped.
@@ -469,11 +488,10 @@ class TestNode(Runnable):
             # most standard stateless behavior is to run each test node once then rerun if needed
             should_run = len(self.workers) == 0 or self.should_rerun()
 
-            # everything that did not have a replay status will be skipped
-            replay_results = [r["time"] for r in self.results if "time" in r]
-            replay_skip = len(replay_results) > 0
-            if replay_skip:
-                logging.debug(f"Test {self.params['shortname']} was found in a previous job")
+            # everything that has a status other than just a replay status will be skipped
+            replay_skip = not self.should_replay()
+
+            # final positive should_run can be overriden by replay_skip
             should_run = should_run and not replay_skip
 
         else:

@@ -96,20 +96,11 @@ class CartesianRunner(RunnerInterface):
         mapped_status = {STATUSES_MAPPING[t["status"]] for t in self.job.result.tests}
         return all(mapped_status)
 
-    def results_from_previous_jobs(self, graph: TestGraph) -> None:
-        """
-        Parse results from previous job for all parsed graph nodes.
-
-        :param graph: test graph to add previous results to
-        """
+    def results_from_previous_jobs(self) -> None:
+        """Parse results from previous job to add to all traversed graph nodes."""
         params = self.job.config["param_dict"]
         # TODO: we could really benefit from using an appropriate params object here
         replay_jobs = params.get("replay", "").split(" ")
-        replay_status = params.get("replay_status", "fail,error,warn").split(",")
-        disallowed_status = {*replay_status} - {"fail", "error", "pass", "warn", "skip"}
-        if len(disallowed_status) > 0:
-            raise ValueError(f"Value of replay_status must be a valid test status,"
-                             f" found {', '.join(disallowed_status)}")
         for replay_job in replay_jobs:
             if not replay_job:
                 continue
@@ -123,9 +114,8 @@ class CartesianRunner(RunnerInterface):
                 if 'tests' not in data:
                     raise RuntimeError(f"Cannot find tests to replay against in {replay_results}")
                 for test_details in data["tests"]:
-                    if test_details["status"].lower() not in replay_status:
-                        logging.info(f"Updating with previous test results {test_details}")
-                        self.previous_results += [test_details]
+                    logging.info(f"Updating with previous test results {test_details}")
+                    self.previous_results += [test_details]
 
     """running functionality"""
     async def run_test_task(self, node):
@@ -216,8 +206,18 @@ class CartesianRunner(RunnerInterface):
         for i in range(status_timeout):
             try:
                 test_result = next((x for x in self.job.result.tests if x["name"].name == name and x["name"].uid == uid))
-                test_status = test_result["status"].lower()
+                if len(node.results) > 0:
+                    # TODO: avocado's choice of result attributes is not uniform for past and current results
+                    get_duration = lambda x: float(x.get('time_elapsed', x['time']))
+                    duration = get_duration(test_result)
+                    max_allowed = max([get_duration(r) for r in node.results if r["status"] == "PASS"], default=duration)
+                    logging.info(f"Validating test duration {duration} is within usual bounds ({max_allowed})")
+                    if float(duration) > 1.25 * max_allowed:
+                        logging.warning(f"Test result {uid} was obtained but test took much longer ({duration}) than usual")
+                        # TODO: could we replace with WARN before the status is announced to the status server?
+                        test_result["status"] = "WARN"
                 node.results += [test_result]
+                test_status = test_result["status"].lower()
                 break
             except StopIteration:
                 await asyncio.sleep(30)
@@ -257,7 +257,7 @@ class CartesianRunner(RunnerInterface):
             raise TypeError(f"Unknown test suite type for {type(test_suite)}, must be a Cartesian graph or an Avocado test suite")
 
         graph.visualize(self.job.logdir)
-        self.results_from_previous_jobs(graph)
+        self.results_from_previous_jobs()
         graph.runner = self
 
         for worker in graph.workers.values():

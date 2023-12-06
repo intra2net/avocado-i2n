@@ -1484,7 +1484,7 @@ class TestGraph(object):
 
                 if next.is_setup_ready(worker):
                     await self.traverse_node(next, worker, params)
-                    if next == root or not next.should_rerun():
+                    if next == root or not (next.should_rerun() and next.should_replay()):
                         previous.visit_parent(next, worker)
                     traverse_path.pop()
                 else:
@@ -1499,7 +1499,7 @@ class TestGraph(object):
                 else:
                     await self.traverse_node(next, worker, params)
                     # cleanup nodes that should be retried postpone traversal down
-                    if next.should_rerun():
+                    if next.should_rerun() and next.should_replay():
                         traverse_path.pop()
                         continue
 
