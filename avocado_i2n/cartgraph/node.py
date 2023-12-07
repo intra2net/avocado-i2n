@@ -409,56 +409,61 @@ class TestNode(Runnable):
 
         :returns: whether the test node should be retried
 
-        The retry parameters are `retry_attempts` and `retry_stop`. The first is
-        the maximum number of retries, and the second indicates when to stop retrying
-        in terms of encountered test status and can be a list of statuses to stop on.
+        The retry parameters are `max_tries` and `rerun_status` or `stop_status`. The
+        first is the maximum number of tries, and the second two indicate when to continue
+        or stop retrying in terms of encountered test status and can be a list of statuses.
         """
-        retry_stop = self.params.get_list("retry_stop", [])
-        # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
-        retry_attempts = self.params.get_numeric("retry_attempts", 0)
-        # do not log when the user is not using the retry feature
-        if retry_attempts > 0:
-            stop_condition = ', '.join(retry_stop) if retry_stop else "NONE"
-            logging.info(f"Could rerun {self} with retry stop condition {stop_condition}"
-                         f" and a maximum of {retry_attempts} retries")
-        if retry_attempts < 0:
-           raise ValueError("Number of retry_attempts cannot be less than zero")
-        disallowed_status = set(retry_stop).difference(set(["fail", "error", "pass", "warn", "skip"]))
-        if len(disallowed_status) > 0:
-            raise ValueError(f"Value of retry_stop must be a valid test status,"
-                             f" found {', '.join(disallowed_status)}")
-
-        test_statuses = [r["status"].lower() for r in self.results]
-
-        stop_statuses_found = set(retry_stop).intersection(set(test_statuses))
-        if len(stop_statuses_found) > 0:
-            logging.info(f"Stopping retries due to obtained test statuses: {', '.join(stop_statuses_found)}")
+        if self.params.get("dry_run", "no") == "yes":
+            logging.info(f"Should not rerun via dry test run {self}")
+            return False
+        elif self.is_flat():
+            logging.debug(f"Should not rerun a flat node {self}")
+            return False
+        elif self.is_shared_root():
+            logging.debug(f"Should not rerun the shared root")
             return False
 
-        reruns_left = retry_attempts - max(len(test_statuses) - 1, 0)
+        all_statuses = ["fail", "error", "pass", "warn", "skip", "cancel", "interrupted"]
+        if self.params.get("replay"):
+            rerun_status = self.params.get_list("rerun_status", "fail,error,warn", delimiter=",")
+        else:
+            rerun_status = self.params.get_list("rerun_status", []) or all_statuses
+        stop_status = self.params.get_list("stop_status", [])
+        for status, status_type in [(rerun_status, "rerun"), (stop_status, "stop")]:
+            disallowed_status = {*status} - {*all_statuses}
+            if len(disallowed_status) > 0:
+                raise ValueError(f"Value of {status_type} status must be a valid test status,"
+                                 f" found {', '.join(disallowed_status)}")
+
+        # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
+        max_tries = self.params.get_numeric("max_tries", 2 if self.params.get("replay") else 1)
+        # do not log when the user is not using the retry feature
+        if max_tries > 1:
+            stop_condition = ", ".join(stop_status) if stop_status else "NONE"
+            rerun_condition = ", ".join(rerun_status) if rerun_status else "NONE"
+            logging.debug(f"Could rerun {self} with stop condition {stop_condition}, a rerun condition "
+                          f"{rerun_condition}, and a maximum of {max_tries} tries")
+        if max_tries < 0:
+           raise ValueError("Number of max_tries cannot be less than zero")
+
+        # analyzing rerun and stop status conditions
+        test_statuses = [r["status"].lower() for r in self.results]
+        rerun_statuses_violated = {*test_statuses} - {*rerun_status}
+        if len(rerun_statuses_violated) > 0:
+            logging.debug(f"Stopping test tries due to violated rerun test statuses: {rerun_status}")
+            return False
+        stop_statuses_found = {*stop_status} & {*test_statuses}
+        if len(stop_statuses_found) > 0:
+            logging.info(f"Stopping test tries due to obtained stop test statuses: {', '.join(stop_statuses_found)}")
+            return False
+
+        # implicitly this means that setting >1 retries will be done on tests actually collecting results (no flat nodes, dry runs, etc.)
+        reruns_left = 0 if max_tries == 1 else max_tries - len(test_statuses)
         if reruns_left > 0:
-            logging.debug(f"Still have {reruns_left} allowed reruns left for {self}")
+            logging.debug(f"Still have {reruns_left} allowed reruns left and should rerun {self}")
             return True
+        logging.debug(f"Should not rerun {self}")
         return False
-
-    def should_replay(self) -> bool:
-        """
-        Check if the test node should be rerun based on replay status from previous jobs.
-
-        :returns: whether the test node should be retried
-        """
-        if not self.params.get("replay"):
-            return True
-        replay_status = self.params.get("replay_status", "fail,error,warn").split(",")
-        disallowed_status = {*replay_status} - {"fail", "error", "pass", "warn", "skip"}
-        if len(disallowed_status) > 0:
-            raise ValueError(f"Value of replay_status must be a valid test status,"
-                            f" found {', '.join(disallowed_status)}")
-        replay_results = [r for r in self.results if r["status"].lower() not in replay_status]
-        if len(replay_results) > 0:
-            logging.debug(f"Test {self.params['shortname']} should be skipped via "
-                          f"replay status {replay_status}")
-        return len(replay_results) == 0
 
     def should_scan(self, worker: TestWorker = None) -> bool:
         """
@@ -486,13 +491,7 @@ class TestNode(Runnable):
         """
         if not self.produces_setup():
             # most standard stateless behavior is to run each test node once then rerun if needed
-            should_run = len(self.workers) == 0 or self.should_rerun()
-
-            # everything that has a status other than just a replay status will be skipped
-            replay_skip = not self.should_replay()
-
-            # final positive should_run can be overriden by replay_skip
-            should_run = should_run and not replay_skip
+            should_run = len(self.results) == 0 or self.should_rerun()
 
         else:
             should_run_from_scan = False

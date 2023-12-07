@@ -1327,7 +1327,7 @@ class TestGraph(object):
 
             else:
                 # finally, good old running of an actual test
-                logging.debug(f"Worker {worker.id} running the test node {test_node}")
+                logging.info(f"Worker {worker.id} running the test node {test_node}")
                 status = await self.runner.run_test_node(test_node)
                 if not status:
                     logging.error(f"Worker {worker.id} got nonzero status from the test {test_node}")
@@ -1454,7 +1454,7 @@ class TestGraph(object):
 
             if next.is_occupied() and next.params.get_boolean("wait_for_occupied", True):
                 # ending with an occupied node would mean we wait for a permill of its duration
-                test_duration = next.params.get_numeric("test_timeout", 3600) * (next.params.get_numeric("retry_attempts", 0) + 1)
+                test_duration = next.params.get_numeric("test_timeout", 3600) * next.params.get_numeric("max_tries", 1)
                 occupied_timeout = round(max(test_duration/1000, 0.1), 2)
                 if next == occupied_at:
                     if occupied_wait > test_duration:
@@ -1484,7 +1484,7 @@ class TestGraph(object):
 
                 if next.is_setup_ready(worker):
                     await self.traverse_node(next, worker, params)
-                    if next == root or not (next.should_rerun() and next.should_replay()):
+                    if next == root or not next.should_rerun():
                         previous.visit_parent(next, worker)
                     traverse_path.pop()
                 else:
@@ -1499,7 +1499,7 @@ class TestGraph(object):
                 else:
                     await self.traverse_node(next, worker, params)
                     # cleanup nodes that should be retried postpone traversal down
-                    if next.should_rerun() and next.should_replay():
+                    if next.should_rerun():
                         traverse_path.pop()
                         continue
 

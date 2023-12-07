@@ -744,6 +744,7 @@ class CartesianNodeTest(Test):
         # should not run already visited leaf test node by any worker
         test_node = graph.get_node_by(param_val="tutorial1")
         test_node.workers.add(worker1)
+        test_node.results += [{"status": "PASS"}]
         self.assertFalse(test_node.default_run_decision(worker1))
         self.assertFalse(test_node.default_run_decision(worker2))
         # should run leaf if more reruns are needed
@@ -1551,7 +1552,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
 
-        self._run_traversal(graph, {"retry_attempts": "3", "retry_stop": "pass"})
+        self._run_traversal(graph, {"max_tries": "3", "stop_status": "pass"})
 
     def test_traverse_one_leaf_with_occupation_timeout(self):
         """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
@@ -2089,10 +2090,10 @@ class CartesianGraphTest(Test):
             if node in root.cleanup_nodes:
                 self.assertTrue(node.is_flat() or node.is_object_root())
 
-    def test_run_retry_times(self):
-        """Test that the test is retried `retry_attempts` times if `retry_stop` is not specified."""
+    def test_rerun_max_times(self):
+        """Test that the test is tried `max_tries` times if no status is not specified."""
         self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["retry_attempts"] = "2"
+        self.config["param_dict"]["max_tries"] = "3"
         graph = TestGraph.parse_object_trees(
             self.config["param_dict"], self.config["tests_str"],
             self.config["vm_strs"], prefix="")
@@ -2115,11 +2116,11 @@ class CartesianGraphTest(Test):
         ]
         self._run_traversal(graph)
 
-    def test_run_retry_status_valid(self):
+    def test_rerun_status_times(self):
         """Test that valid statuses are considered when retrying a test."""
         self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["retry_attempts"] = "3"
-        self.config["param_dict"]["retry_stop"] = ""
+        self.config["param_dict"]["max_tries"] = "4"
+        self.config["param_dict"]["stop_status"] = ""
 
         # test should be re-run on these statuses
         for status in ["PASS", "WARN", "FAIL", "ERROR", "SKIP", "INTERRUPTED", "CANCEL"]:
@@ -2146,15 +2147,15 @@ class CartesianGraphTest(Test):
                 # the test graph and thus the test node is recreated
                 self.runner.job.result.tests.clear()
 
-    def test_run_retry_status_stop(self):
-        """Test that the `retry_stop` parameter is respected by the runner."""
+    def test_rerun_status_stop(self):
+        """Test that the `stop_status` parameter lets the traversal continue as usual."""
         self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["retry_attempts"] = "3"
+        self.config["param_dict"]["max_tries"] = "3"
 
         # expect success and get success -> should run only once
         for stop_status in ["pass", "warn", "fail", "error"]:
             with self.subTest(f"Test rerun stop on status {stop_status}"):
-                self.config["param_dict"]["retry_stop"] = stop_status
+                self.config["param_dict"]["stop_status"] = stop_status
                 status = stop_status.upper()
                 graph = TestGraph.parse_object_trees(self.config["param_dict"],
                                                      self.config["tests_str"], self.config["vm_strs"],
@@ -2175,7 +2176,113 @@ class CartesianGraphTest(Test):
                 # the test graph and thus the test node is recreated
                 self.runner.job.result.tests.clear()
 
-    def test_run_retry_invalid(self):
+    def test_rerun_status_rerun(self):
+        """Test that the `rerun_status` parameter keep the traversal repeating a run."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_dict"]["max_tries"] = "3"
+
+        # expect success and get success -> should run only once
+        for stop_status in ["pass", "warn", "fail", "error"]:
+            with self.subTest(f"Test rerun stop on status {stop_status}"):
+                self.config["param_dict"]["rerun_status"] = stop_status
+                status = stop_status.upper()
+                graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                                     self.config["tests_str"], self.config["vm_strs"],
+                                                     prefix=self.prefix)
+                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                              "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+                DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "INTERRUPTED"},
+                ]
+                self._run_traversal(graph)
+
+                # assert that tests were not repeated
+                self.assertEqual(len(self.runner.job.result.tests), 2)
+                self.assertEqual(len(graph.get_node_by(param_val="tutorial1").results), 2)
+                # also assert the correct results were registered
+                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status, "INTERRUPTED"])
+                self.assertEqual(self.runner.job.result.tests, graph.get_node_by(param_val="tutorial1").results)
+                # the test graph and thus the test node is recreated
+                self.runner.job.result.tests.clear()
+
+    def test_rerun_previous_job_default(self):
+        """Test that rerunning a previous job gives more tries and works reasonably."""
+        # need proper previous results from full nodes
+        self.config["tests_str"] = "only leaves..tutorial2\n"
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
+        node1, node2 = graph.get_nodes_by(param_val="tutorial2")
+        # results from the previous job (inclusive of setup that should now be skipped)
+        self.runner.previous_results += [{"name": graph.get_node_by(param_val="on_customize").params["name"], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": node1.params["name"], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": node2.params["name"], "status": "FAIL", "time": 0.2}]
+
+        # include flat and other types of nodes by traversing partially parsed graph
+        graph = TestGraph()
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2"))
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": "1"}))
+        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+        DummyTestRun.asserted_tests = [
+            # skip the previously passed test since it doesn't have a rerun status and rerun second test
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$"},
+        ]
+        self._run_traversal(graph, {"replay": "previous_job"})
+
+        node1, node2 = graph.get_nodes_by(param_val="tutorial2.+vm1")
+        # assert that tests were repeated only when needed
+        self.assertEqual(len(self.runner.job.result.tests), 1)
+        self.assertEqual(len(node1.results), 1)
+        self.assertEqual(len(node2.results), 2)
+        # also assert the correct results were registered
+        self.assertEqual([x["status"] for x in self.runner.job.result.tests], ["PASS"])
+        self.assertEqual([x["status"] for x in node1.results], ["PASS"])
+        self.assertEqual([x["status"] for x in node2.results], ["FAIL", "PASS"])
+        self.assertEqual(self.runner.job.result.tests, node2.results[1:])
+
+    def test_rerun_previous_job_status(self):
+        """Test that rerunning a previous job gives more tries and works reasonably."""
+        # need proper previous results from full nodes
+        self.config["tests_str"] = "only leaves..tutorial2\n"
+        graph = TestGraph.parse_object_trees(self.config["param_dict"],
+                                             self.config["tests_str"], self.config["vm_strs"],
+                                             prefix=self.prefix)
+        node1, node2 = graph.get_nodes_by(param_val="tutorial2")
+        # results from the previous job (inclusive of setup that should now be skipped)
+        self.runner.previous_results += [{"name": graph.get_node_by(param_val="on_customize").params["name"], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": node1.params["name"], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": node2.params["name"], "status": "FAIL", "time": 0.2}]
+
+        # include flat and other types of nodes by traversing partially parsed graph
+        graph = TestGraph()
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2"))
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": "1"}))
+        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+        DummyTestRun.asserted_tests = [
+            # previously run setup tests with rerun status are still rerun (scan is overriden)
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "set_state_vms": "^on_customize$"},
+            # skip the previously passed test since it doesn't have a rerun status and rerun second test
+            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$"},
+        ]
+        self._run_traversal(graph, {"replay": "previous_job", "rerun_status": "pass"})
+
+        node1, node2 = graph.get_nodes_by(param_val="tutorial2.+vm1")
+        # assert that tests were repeated only when needed
+        self.assertEqual(len(self.runner.job.result.tests), 2)
+        self.assertEqual(len(node1.results), 2)
+        self.assertEqual(len(node2.results), 1)
+        # also assert the correct results were registered
+        self.assertEqual([x["status"] for x in self.runner.job.result.tests], ["PASS", "PASS"])
+        self.assertEqual([x["status"] for x in node1.results], ["PASS", "PASS"])
+        self.assertEqual([x["status"] for x in node2.results], ["FAIL"])
+        self.assertEqual(self.runner.job.result.tests[1:], node1.results[1:])
+
+    def test_rerun_invalid(self):
         """Test if an exception is thrown with invalid retry parameter values."""
         self.config["tests_str"] += "only tutorial1\n"
         DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
@@ -2184,32 +2291,32 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
                     {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3",
-                                                         "retry_stop": "invalid"}):
+        with mock.patch.dict(self.config["param_dict"], {"max_tries": "3",
+                                                         "stop_status": "invalid"}):
             graph = TestGraph.parse_object_trees(self.config["param_dict"],
                                                  self.config["tests_str"], self.config["vm_strs"],
                                                  prefix=self.prefix)
-            with self.assertRaisesRegex(ValueError, r"^Value of retry_stop must be a valid test status"):
+            with self.assertRaisesRegex(ValueError, r"^Value of stop status must be a valid test status"):
                 self._run_traversal(graph)
 
         # negative values
         DummyTestRun.asserted_tests = [
                     {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "-32",
-                                                         "retry_stop": "none"}):
+        with mock.patch.dict(self.config["param_dict"], {"max_tries": "-32",
+                                                         "stop_status": ""}):
             graph = TestGraph.parse_object_trees(self.config["param_dict"],
                                                  self.config["tests_str"], self.config["vm_strs"],
                                                  prefix=self.prefix)
-            with self.assertRaisesRegex(ValueError, r"^Number of retry_attempts cannot be less than zero$"):
+            with self.assertRaisesRegex(ValueError, r"^Number of max_tries cannot be less than zero$"):
                 self._run_traversal(graph)
 
         # floats
         DummyTestRun.asserted_tests = [
                     {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "3.5",
-                                                         "retry_stop": "none"}):
+        with mock.patch.dict(self.config["param_dict"], {"max_tries": "3.5",
+                                                         "stop_status": ""}):
             graph = TestGraph.parse_object_trees(self.config["param_dict"],
                                                  self.config["tests_str"], self.config["vm_strs"],
                                                  prefix=self.prefix)
@@ -2220,8 +2327,8 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
                     {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
-        with mock.patch.dict(self.config["param_dict"], {"retry_attempts": "hey",
-                                                         "retry_stop": "none"}):
+        with mock.patch.dict(self.config["param_dict"], {"max_tries": "hey",
+                                                         "stop_status": ""}):
             graph = TestGraph.parse_object_trees(self.config["param_dict"],
                                                  self.config["tests_str"], self.config["vm_strs"],
                                                  prefix=self.prefix)

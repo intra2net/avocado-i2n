@@ -90,7 +90,7 @@ ls -A1q "$test_results/latest/test-results" | grep -q client_noop || (echo "The 
 ls -A1q "$test_results/latest/test-results" | grep -q explicit_noop || (echo "The explicit_noop test was not rerun or cleaned from previous run" && exit 1)
 latest=$(basename $(realpath "$test_results"/latest))
 test_sets="tutorial1"
-test_options="replay=$latest replay_status=pass"
+test_options="replay=$latest rerun_status=pass"
 coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots=$test_slots only=$test_sets $test_options
 test -d "$test_results"/latest/test-results || (echo "Passing tests were not replayed" && exit 1)
 
