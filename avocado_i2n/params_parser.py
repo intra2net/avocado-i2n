@@ -221,6 +221,12 @@ class Reparsable():
         """Initialize the parsable structure."""
         self.steps = []
 
+    def __repr__(self):
+        restriction = "Parsing parameters with the following configuration:\n"
+        for step in self.steps:
+            restriction += step.reportable_form()
+        return restriction
+
     def parse_next_file(self, pfile):
         """
         Add a file parsing step.
@@ -325,7 +331,7 @@ class Reparsable():
 
         # log any required information and detect empty Cartesian product
         if show_restriction:
-            logging.debug(self.print_parsed())
+            logging.debug(self)
         if show_dictionaries or show_empty_cartesian_product:
             options = collections.namedtuple("options", ['repr_mode', 'fullname', 'contents'])
             peek_parser = self.get_parser(show_dictionaries=False, show_empty_cartesian_product=False)
@@ -340,7 +346,7 @@ class Reparsable():
                         cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents),
                                                      peek_generator)
                 except StopIteration:
-                    raise EmptyCartesianProduct(self.print_parsed()) from None
+                    raise EmptyCartesianProduct(str(self)) from None
             else:
                 cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents),
                                              peek_generator)
@@ -376,7 +382,7 @@ class Reparsable():
                 default_params = d
                 break
         else:
-            raise ValueError("There must be a configuration for the restriction:\n%s" % self.print_parsed())
+            raise ValueError(f"There must be a configuration for the restriction:\n{self}")
 
         if list_of_keys is None:
             selected_params = default_params
@@ -396,18 +402,6 @@ class Reparsable():
         new = Reparsable()
         new.steps = copy.copy(self.steps)
         return new
-
-    def print_parsed(self):
-        """
-        Return printable information about what was parsed so far.
-
-        :returns: structured text of the base/ovrwrt file/str/dict parse steps
-        :rtype: str
-        """
-        restriction = "Parsing parameters with the following configuration:\n"
-        for step in self.steps:
-            restriction += step.reportable_form()
-        return restriction
 
 
 ###################################################################

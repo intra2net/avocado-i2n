@@ -75,25 +75,24 @@ class TestGraph(object):
 
     logdir = None
 
-    def suffixes(self):
-        """Test object suffixes and their variant restrictions."""
-        objects = collections.OrderedDict()
-        for test_object in self.objects:
-            suffix = test_object.long_suffix
-            if suffix in objects.keys():
-                objects[suffix] += "," + test_object.params["name"]
-            else:
-                objects[suffix] = test_object.params["name"]
-        return objects
-    suffixes = property(fget=suffixes)
+    def nodes(self) -> list["TestNode"]:
+        """Read-only list of test nodes."""
+        return tuple(self._nodes)
+    nodes = property(fget=nodes)
+
+    def objects(self) -> list["TestObject"]:
+        """Read-only list of test objects."""
+        return tuple(self._objects)
+    objects = property(fget=objects)
 
     def __init__(self):
         """Construct the test graph."""
-        self.objects = []
-        self.nodes = []
+        self._objects = []
+        self._nodes = []
         self.workers = {}
 
         self.nodes_index = PrefixTree()
+        self.objects_index = {}
 
         self.restrs = {}
         # TODO: these attributes must interface with jobs and runners
@@ -114,13 +113,13 @@ class TestGraph(object):
 
         :param objects: candidate test objects
         """
-        if not isinstance(objects, list):
+        if not (isinstance(objects, list) or isinstance(objects, tuple)):
             objects = [objects]
-        test_object_suffixes = self.suffixes.keys()
         for test_object in objects:
-            if test_object.long_suffix in test_object_suffixes:
-                continue
-            self.objects.append(test_object)
+            # TODO: consider separate flat-composite inclusion like:
+            # {suffix: {flat object variant: {composite object variant: params}}}
+            self.objects_index[test_object.long_suffix] = test_object
+            self._objects.append(test_object)
 
     def new_nodes(self, nodes: list[TestNode] or TestNode) -> None:
         """
@@ -128,11 +127,11 @@ class TestGraph(object):
 
         :param nodes: candidate test nodes
         """
-        if not isinstance(nodes, list):
+        if not (isinstance(nodes, list) or isinstance(nodes, tuple)):
             nodes = [nodes]
         for test_node in nodes:
-            self.nodes.append(test_node)
             self.nodes_index.insert(test_node)
+            self._nodes.append(test_node)
 
     def new_workers(self, workers: list[TestWorker] or TestWorker) -> None:
         """
@@ -140,10 +139,10 @@ class TestGraph(object):
 
         :param workers: candidate test workers
         """
-        if not isinstance(workers, list):
+        if not (isinstance(workers, list) or isinstance(workers, tuple)):
             workers = [workers]
-        for worker in workers:
-            self.workers[worker.params["shortname"]] = worker
+        for test_worker in workers:
+            self.workers[test_worker.params["shortname"]] = test_worker
 
     """dumping functionality"""
     def load_setup_list(self, dump_dir, filename="setup_list"):
@@ -537,8 +536,8 @@ class TestGraph(object):
                 # this includes stacked vm-specific restrictions or any other join-generic such
                 test_object.dict_index = i
             # TODO: the Cartesian parser does not support checkpoint dictionaries
-            #test_object.config = param.Reparsable()
-            #test_object.config.parse_next_dict(d)
+            #test_object.recipe = param.Reparsable()
+            #test_object.recipe.parse_next_dict(d)
             test_object.regenerate_params()
             test_object.update_restrs(component_restrs)
             # apply only_vm restrictions for nets during runtime (after initial parsing)
@@ -694,7 +693,7 @@ class TestGraph(object):
         flat_object = flat_objects[0]
         flat_object.update_restrs(object_restrs)
         flat_object_vms = " ".join(list(object_restrs.keys()))
-        flat_object.config.parse_next_dict({"vms": flat_object_vms})
+        flat_object.recipe.parse_next_dict({"vms": flat_object_vms})
         flat_object.params["vms"] = flat_object_vms
         return flat_object
 
@@ -756,12 +755,12 @@ class TestGraph(object):
 
         setup_dict = params.copy() if params else {}
         setup_dict.update({"nets": test_object.suffix})
-        config = test_object.config.get_copy()
-        config.parse_next_batch(base_file="sets.cfg",
+        recipe = test_object.recipe.get_copy()
+        recipe.parse_next_batch(base_file="sets.cfg",
                                 ovrwrt_file=param.tests_ovrwrt_file(),
                                 ovrwrt_str=restriction,
                                 ovrwrt_dict=setup_dict)
-        test_node = TestNode(prefix, config)
+        test_node = TestNode(prefix, recipe)
         test_node.set_objects_from_net(test_object)
         test_node.regenerate_params()
         for vm_name in test_node.params.objects("vms"):
@@ -824,9 +823,9 @@ class TestGraph(object):
             if len(get_vms[vm_name]) == 0:
                 logging.debug(f"Parsing a new vm {vm_name} for the test {node_name}")
                 parse_vms[vm_name] = TestGraph.parse_composite_objects(vm_name, "vms", "", params=params)
-                self.objects += parse_vms[vm_name]
+                self.new_objects(parse_vms[vm_name])
                 for vm in parse_vms[vm_name]:
-                    self.objects += TestGraph.parse_components_for_object(vm, "vms", params=params)
+                    self.new_objects(TestGraph.parse_components_for_object(vm, "vms", params=params))
                 get_vms[vm_name] = parse_vms[vm_name]
             # restrict down to compatible variants
             filtered_vms = get_vms[vm_name]
@@ -871,7 +870,7 @@ class TestGraph(object):
                 net = TestGraph.parse_object_from_objects(test_object.long_suffix, test_object.key, combination,
                                                           params=setup_dict, verbose=False)
                 parse_nets[test_object.long_suffix] += [net]
-                self.objects += [net]
+                self.new_objects(net)
             else:
                 raise ValueError("Multiple nets reusable for the same vm variant combination:\n{reused_nets}")
         get_nets[test_object.long_suffix] = sorted(get_nets[test_object.long_suffix], key=lambda x: x.id)
@@ -1160,11 +1159,11 @@ class TestGraph(object):
 
         # handle empty product of node and object variants
         if len(test_nodes) == 0:
-            config = param.Reparsable()
-            config.parse_next_str(param.join_str(object_restrs, "vms"))
-            config.parse_next_str(param.re_str(restriction))
-            config.parse_next_dict(params)
-            raise param.EmptyCartesianProduct(config.print_parsed())
+            recipe = param.Reparsable()
+            recipe.parse_next_str(param.join_str(object_restrs, "vms"))
+            recipe.parse_next_str(param.re_str(restriction))
+            recipe.parse_next_dict(params)
+            raise param.EmptyCartesianProduct(str(recipe))
         if verbose:
             print("%s selected test variant(s)" % len(test_nodes))
             print("%s selected vm variant(s)" % len([t for t in test_objects if t.key == "vms"]))
@@ -1416,9 +1415,9 @@ class TestGraph(object):
             graph.new_nodes(leaves)
             # TODO: to make such changes more gradual at least for now reuse vms and image (<net) objects
             if i == 0:
-                graph.objects.extend(stubs)
+                graph.new_objects(stubs)
             else:
-                graph.objects.extend(s for s in stubs if s.key == "nets")
+                graph.new_objects([s for s in stubs if s.key == "nets"])
             leaves = sorted(leaves, key=lambda x: int(re.match("^(\d+)", x.prefix).group(1)))
 
             if log.getLogger('graph').level <= log.DEBUG:

@@ -65,7 +65,7 @@ def develop(config, tag=""):
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
     for vm_name in selected_vms:
-        graph.objects += TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name])
+        graph.new_objects(TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name]))
 
     vms = " ".join(selected_vms)
     setup_dict = config["param_dict"].copy()

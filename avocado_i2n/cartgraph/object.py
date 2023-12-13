@@ -56,17 +56,17 @@ class TestObject(object):
         return self.long_suffix + "-" + self.params["name"]
     id = property(fget=id)
 
-    def __init__(self, suffix, config):
+    def __init__(self, suffix, recipe):
         """
         Construct a test object (vm) for any test nodes (tests).
 
         :param str suffix: name of the test object
-        :param config: variant configuration for the test object
-        :type config: :py:class:`param.Reparsable`
+        :param recipe: variant configuration for the test object
+        :type recipe: :py:class:`param.Reparsable`
         """
         self.suffix = suffix.split("_")[0]
         self._long_suffix = suffix
-        self.config = config
+        self.recipe = recipe
         self._params_cache = None
         self.restrs = {}
         # TODO: Cartesian parser needs support for restrictions after join operations
@@ -126,11 +126,11 @@ class TestObject(object):
 
     def regenerate_params(self, verbose: bool = False) -> None:
         """
-        Regenerate all parameters from the current reparsable config.
+        Regenerate all parameters from the current reparsable recipe.
 
         :param verbose: whether to show generated parameter dictionaries
         """
-        generic_params = self.config.get_params(dict_index=self.dict_index,
+        generic_params = self.recipe.get_params(dict_index=self.dict_index,
                                                 show_dictionaries=verbose)
         self._params_cache = self.object_typed_params(generic_params)
         for key, value in list(self._params_cache.items()):
@@ -149,13 +149,13 @@ class NetObject(TestObject):
         return self.params["name"]
     component_form = property(fget=component_form)
 
-    def __init__(self, name, config):
+    def __init__(self, name, recipe):
         """
         Construct a test object (vm) for any test nodes (tests).
 
         All arguments are inherited from the base class.
         """
-        super().__init__(name, config)
+        super().__init__(name, recipe)
         self.key = "nets"
         self.components = []
 
@@ -163,13 +163,13 @@ class NetObject(TestObject):
 class VMObject(TestObject):
     """A VM wrapper for a test object used in one or more test nodes."""
 
-    def __init__(self, name, config):
+    def __init__(self, name, recipe):
         """
         Construct a test object (vm) for any test nodes (tests).
 
         All arguments are inherited from the base class.
         """
-        super().__init__(name, config)
+        super().__init__(name, recipe)
         self.key = "vms"
         self.components = []
 
@@ -187,12 +187,12 @@ class ImageObject(TestObject):
         return self.composites[0].component_form
     component_form = property(fget=component_form)
 
-    def __init__(self, name, config):
+    def __init__(self, name, recipe):
         """
         Construct a test object (vm) for any test nodes (tests).
 
         All arguments are inherited from the base class.
         """
-        super().__init__(name, config)
+        super().__init__(name, recipe)
         self.key = "images"
         self.params["main_vm"] = "none"

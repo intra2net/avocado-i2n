@@ -56,7 +56,7 @@ def permubuntu(config, tag=""):
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
     for vm_name in selected_vms:
-        graph.objects += TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name])
+        graph.new_objects(TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name]))
 
     for test_worker in graph.workers.values():
         test_worker.net.update_restrs(config["vm_strs"])

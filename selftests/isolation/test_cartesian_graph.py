@@ -371,7 +371,7 @@ class CartesianObjectTest(Test):
         test_objects = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"], params=self.config["param_dict"])
         self.assertEqual(len(test_objects), 1)
         test_object = test_objects[0]
-        regenerated_params = test_object.object_typed_params(test_object.config.get_params())
+        regenerated_params = test_object.object_typed_params(test_object.recipe.get_params())
         self.assertEqual(len(regenerated_params.keys()), len(test_object.params.keys()),
                         "The parameters of a test object must be the same as its only parser dictionary")
         for key in regenerated_params.keys():
@@ -409,8 +409,8 @@ class CartesianObjectTest(Test):
             else:
                 self.assertNotIn("else", test_object.restrs)
 
-            test_object.config.parse_next_dict({"only_vm1": "qcow2"})
-            test_object.config.parse_next_dict({"no_vm1": "qcow1"})
+            test_object.recipe.parse_next_dict({"only_vm1": "qcow2"})
+            test_object.recipe.parse_next_dict({"no_vm1": "qcow1"})
             test_object.regenerate_params()
             self.assertNotIn("only_vm1", test_object.params)
             self.assertNotIn("only_vm2", test_object.params)
@@ -451,11 +451,10 @@ class CartesianObjectTest(Test):
 
         test_objects = graph.get_objects_by(param_val="vm1", subset=graph.get_objects_by(param_val="net1"))
         for test_object in test_objects:
-            self.assertIn(test_object.long_suffix, graph.suffixes.keys())
             self.assertIn(test_object.long_suffix, ["vm1", "net1"])
-            object_num = len(graph.suffixes)
+            object_num = len(graph.objects_index)
             graph.new_objects(test_object)
-            self.assertEqual(len(graph.suffixes), object_num)
+            self.assertEqual(len(graph.objects_index), object_num)
 
 
 class CartesianNodeTest(Test):
@@ -737,7 +736,7 @@ class CartesianNodeTest(Test):
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 2)
         graph = TestGraph()
-        graph.objects = test_objects
+        graph.new_objects(test_objects)
 
         flat_nodes = graph.parse_flat_nodes("normal..tutorial1,normal..tutorial2")
         self.assertEqual(len(flat_nodes), 2)
@@ -852,7 +851,7 @@ class CartesianNodeTest(Test):
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 2)
         graph = TestGraph()
-        graph.objects = test_objects
+        graph.new_objects(test_objects)
 
         nodes = graph.parse_composite_nodes("normal..tutorial1,normal..tutorial2", flat_object)
         self.assertEqual(len(nodes), 4)
@@ -897,7 +896,7 @@ class CartesianNodeTest(Test):
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 4)
         graph = TestGraph()
-        graph.objects = test_objects
+        graph.new_objects(test_objects)
 
         self.assertEqual(nets, [o for o in test_objects if o.key == "nets" if "vm1." in o.params["name"] and "vm2." in o.params["name"]])
         nets = list(reversed([o for o in test_objects if o.key == "nets"]))
@@ -933,7 +932,7 @@ class CartesianNodeTest(Test):
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 4)
         graph = TestGraph()
-        graph.objects = test_objects
+        graph.new_objects(test_objects)
 
         self.assertEqual(nets, [o for o in test_objects if o.key == "nets" if "vm1." in o.params["name"] and "vm2." in o.params["name"]])
         nets = list(reversed([o for o in test_objects if o.key == "nets"]))
@@ -968,7 +967,7 @@ class CartesianNodeTest(Test):
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 2)
         graph = TestGraph()
-        graph.objects = test_objects
+        graph.new_objects(test_objects)
 
         get_nodes, parse_nodes = graph.parse_and_get_composite_nodes(self.config["tests_str"], flat_object,
                                                                      params=self.config["param_dict"])
@@ -2327,7 +2326,7 @@ class CartesianGraphTest(Test):
     def test_get_objects_by(self):
         """Test object retrieval with various arguments and thus calls."""
         graph = TestGraph()
-        graph.objects = [n for n in TestGraph.parse_suffix_objects("vms")]
+        graph.new_objects([n for n in TestGraph.parse_suffix_objects("vms")])
         self.assertEqual(len(graph.objects), 6)
         get_objects = graph.get_objects_by(param_val="vm\d")
         self.assertEqual(len(get_objects), len(graph.objects))
@@ -2492,7 +2491,7 @@ class CartesianGraphTest(Test):
         parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
         self.assertEqual(len(parents), 0)
         self.assertEqual(len(children), 0)
-        graph.nodes = []
+        graph._nodes = []
         graph.nodes_index = PrefixTree()
         graph.new_nodes([reused_parent, reused_child])
         parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)

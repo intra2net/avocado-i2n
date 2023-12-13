@@ -221,9 +221,9 @@ def update(config, tag=""):
     graph.new_workers(l.parse_workers(config["param_dict"]))
     for vm_name in selected_vms:
         new_vms = TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name])
-        graph.objects += new_vms
+        graph.new_objects(new_vms)
         for new_vm in new_vms:
-            graph.objects += TestGraph.parse_components_for_object(new_vm, "vms")
+            graph.new_objects(TestGraph.parse_components_for_object(new_vm, "vms"))
 
     for i, vm_name in enumerate(selected_vms):
         vm_params = config["vms_params"].object_params(vm_name)
@@ -295,7 +295,7 @@ def update(config, tag=""):
                 install_nodes = run_graph.get_nodes_by_name("all.original")
                 # produce a terminal node only run graph
                 run_graph = TestGraph()
-                run_graph.objects = clean_graph.objects
+                run_graph.new_objects(clean_graph.objects)
                 run_graph.new_nodes(install_nodes)
             else:
                 run_graph = l.parse_object_trees(
@@ -336,7 +336,7 @@ def update(config, tag=""):
                         raise ValueError(f"Could not identify a test node from {vm_name}'s from_state='{from_state}', "
                                          f"is it compatible with the default or specified remove_set?")
 
-            graph.objects += [o for o in clean_graph.objects if o.key == "nets"]
+            graph.new_objects([o for o in clean_graph.objects if o.key == "nets"])
             graph.new_nodes(clean_graph.nodes)
 
     logging.info(f"Bridging worker subgraphs across workers")
@@ -777,7 +777,7 @@ def _parse_one_node_for_all_objects_per_worker(config, tag, verb):
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
     for vm_name in selected_vms:
-        graph.objects += TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name])
+        graph.new_objects(TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name]))
 
     vms = " ".join(selected_vms)
     setup_dict = config["param_dict"].copy()
@@ -824,7 +824,7 @@ def _parse_and_iterate_for_objects_and_workers(config, tag, param_dict, operatio
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
     for vm_name in selected_vms:
-        graph.objects += TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name])
+        graph.new_objects(TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name]))
 
     for test_worker in graph.workers.values():
         test_worker.net.update_restrs(config["vm_strs"])
