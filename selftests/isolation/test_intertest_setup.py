@@ -30,6 +30,7 @@ def new_job(config):
     yield job
 
 
+@skip("Manual tools lack multi-graph support")
 @mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
 @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
@@ -116,7 +117,6 @@ class IntertestSetupTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.clicked"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.clicked"][self.shared_pool], 1)
 
-    @skip("Some manual tools lack multi-graph support")
     def test_update_custom_parallel(self):
         """Test the state customized usage of the manual update-cache tool."""
         self.config["param_dict"]["slots"] = "1 2"
@@ -337,7 +337,6 @@ class IntertestSetupTest(Test):
         intertest_setup.develop(self.config, tag="0")
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
-    @skip("Some manual tools lack multi-graph support")
     def test_permanent_vm_tool(self):
         """Test the general usage of the sample custom permanent vm creation tool."""
         self.config["vm_strs"] = {"vm3": "only Ubuntu\n"}

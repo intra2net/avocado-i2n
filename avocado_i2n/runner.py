@@ -195,7 +195,7 @@ class CartesianRunner(RunnerInterface):
 
         original_prefix = node.prefix
         # appending a suffix to retries so we can tell them apart
-        run_times = len(node.results)
+        run_times = len(node.shared_results)
         if run_times > 0:
             node.prefix = original_prefix + f"r{run_times}"
         uid = node.id_test.uid

@@ -119,6 +119,46 @@ class PrefixTree(object):
         return test_nodes
 
 
+class EdgeRegister():
+
+    def __init__(self):
+        self._registry = {}
+
+    def __repr__(self):
+        return f"[edge] registry='{self._registry}'"
+
+    def get(self, node: "TestNode") -> set[TestWorker]:
+        """
+        Get all worker visits for the given (possibly bridged) test node.
+
+        :param node: possibly registered test node to get visits for
+        :returns: all visits by all workers as worker references (allowing repetitions)
+        """
+        return self._registry.get(node.bridged_form, set())
+
+    def get_all_workers(self) -> set[TestWorker]:
+        """
+        Get all workers in the current register.
+
+        :returns: all workers that visited the edges so far
+        """
+        workers = set()
+        for setup_worker_set in self._registry.values():
+            workers |= setup_worker_set
+        return workers
+
+    def register(self, node: "TestNode", worker: TestWorker) -> None:
+        """
+        Register a worker visit for the given (possibly bridged) test node.
+
+        :param node: possibly registered test node to register visits for
+        :param worker: worker that visited the test node
+        """
+        visits = self.get(node)
+        visits.add(worker)
+        self._registry[node.bridged_form] = visits
+
+
 class TestNode(Runnable):
     """
     A wrapper for all test relevant parts like parameters, parser, used
@@ -131,6 +171,32 @@ class TestNode(Runnable):
             self.regenerate_params()
         return self._params_cache
     params = property(fget=params)
+
+    def started_setup_workers(self):
+        """Workers that have previously started traversing this node as setup."""
+        return self._picked_by_cleanup_nodes.get_all_workers()
+    started_setup_workers = property(fget=started_setup_workers)
+
+    def started_cleanup_workers(self):
+        """Workers that have previously started traversing this node as cleanup."""
+        return self._picked_by_setup_nodes.get_all_workers()
+    started_cleanup_workers = property(fget=started_cleanup_workers)
+
+    def shared_workers(self):
+        """Workers that have previously finished traversing this node (incl. leaves and others)."""
+        workers = {*self.workers}
+        for bridged_node in self._bridged_nodes:
+            workers |= bridged_node.workers
+        return workers
+    shared_workers = property(fget=shared_workers)
+
+    def shared_results(self):
+        """Test results shared across all bridged nodes."""
+        results = list(self.results)
+        for bridged_node in self._bridged_nodes:
+            results += bridged_node.results
+        return results
+    shared_results = property(fget=shared_results)
 
     def final_restr(self):
         """Final restriction to make the object parsing variant unique."""
@@ -145,6 +211,18 @@ class TestNode(Runnable):
                 max_restr = main_restr if len(main_restr) > len(max_restr) else max_restr
         return self.params["name"].replace(max_restr + ".", "", 1)
     setless_form = property(fget=setless_form)
+
+    def bridged_form(self):
+        """Test worker invariant form of the test node name."""
+        # TODO: the order of parsing nets and vms has to be improved
+        if len(self.objects) == 0:
+            return self.setless_form
+        # TODO: the long suffix does not contain anything reasonable
+        #suffix = self.objects[0].long_suffix
+        suffix = self.params["_name_map_file"].get("nets.cfg", "")
+        # since this doesn't use the prefix tree a regex could match part of a variant
+        return  "\." + self.setless_form.replace(suffix, ".+") + "$"
+    bridged_form = property(fget=bridged_form)
 
     def long_prefix(self):
         """Sufficiently unique prefix to identify a diagram test node."""
@@ -190,14 +268,17 @@ class TestNode(Runnable):
         self.workers = set()
         self.worker = None
         self.results = []
+        self._bridged_nodes = []
 
         self.objects = []
 
         # lists of parent and children test nodes
         self.setup_nodes = []
         self.cleanup_nodes = []
-        self.visited_setup_nodes = {}
-        self.visited_cleanup_nodes = {}
+        self._picked_by_setup_nodes = EdgeRegister()
+        self._picked_by_cleanup_nodes = EdgeRegister()
+        self._dropped_setup_nodes = EdgeRegister()
+        self._dropped_cleanup_nodes = EdgeRegister()
 
     def __repr__(self):
         shortname = self.params.get("shortname", "<unknown>")
@@ -246,6 +327,9 @@ class TestNode(Runnable):
                     self.objects += [image]
 
     def is_occupied(self):
+        for bridged_node in self._bridged_nodes:
+            if bridged_node.worker is not None:
+                return True
         return self.worker is not None
 
     def is_flat(self):
@@ -293,7 +377,7 @@ class TestNode(Runnable):
         :param worker: relative setup readiness with respect to a worker ID
         """
         for node in self.setup_nodes:
-            if worker not in self.visited_setup_nodes.get(node, set()):
+            if worker not in self._dropped_setup_nodes.get(node):
                 return False
         return True
 
@@ -304,7 +388,7 @@ class TestNode(Runnable):
         :param str worker: relative setup readiness with respect to a worker ID
         """
         for node in self.cleanup_nodes:
-            if worker not in self.visited_cleanup_nodes.get(node, set()):
+            if worker not in self._dropped_cleanup_nodes.get(node):
                 return False
         return True
 
@@ -322,13 +406,13 @@ class TestNode(Runnable):
         """
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
             # is finished separately by each worker
-            return worker in self.workers
+            return worker in self.shared_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             # is finished for an entire swarm by at least one of its workers
-            return worker.params["runtime_str"].split("/")[0] in set(worker.params["runtime_str"].split("/")[0] for worker in self.workers)
+            return worker.params["runtime_str"].split("/")[0] in set(worker.params["runtime_str"].split("/")[0] for worker in self.shared_workers)
         else:
             # is finished globally by at least one worker
-            return len(self.workers) > 0
+            return len(self.shared_workers) > 0
 
     def is_fully_finished(self, worker: TestWorker = None) -> bool:
         """
@@ -342,16 +426,16 @@ class TestNode(Runnable):
         """
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
             # is finished separately by each worker and for all workers
-            return worker in self.workers
+            return worker in self.shared_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             # is finished for an entire swarm by all of its workers
             slot_cluster = worker.params["runtime_str"].split("/")[0]
             all_cluster_hosts = set(host for host in TestWorker.run_slots[slot_cluster])
-            node_cluster_hosts = set(worker.params["runtime_str"].split("/")[1] for worker in self.workers if worker.params["runtime_str"].split("/")[0] == slot_cluster)
+            node_cluster_hosts = set(worker.params["runtime_str"].split("/")[1] for worker in self.shared_workers if worker.params["runtime_str"].split("/")[0] == slot_cluster)
             return all_cluster_hosts == node_cluster_hosts
         else:
             # is finished globally by all workers
-            return len(self.workers) == sum([len([w for w in TestWorker.run_slots[s]]) for s in TestWorker.run_slots])
+            return len(self.shared_workers) == sum([len([w for w in TestWorker.run_slots[s]]) for s in TestWorker.run_slots])
 
     def is_terminal_node_for(self):
         """
@@ -424,7 +508,7 @@ class TestNode(Runnable):
             logging.debug(f"Should not rerun the shared root")
             return False
         elif worker and worker.id not in self.params["name"]:
-            return False
+            raise RuntimeError(f"Worker {worker.id} should not consider rerunning {self}")
 
         all_statuses = ["fail", "error", "pass", "warn", "skip", "cancel", "interrupted"]
         if self.params.get("replay"):
@@ -450,7 +534,7 @@ class TestNode(Runnable):
            raise ValueError("Number of max_tries cannot be less than zero")
 
         # analyzing rerun and stop status conditions
-        test_statuses = [r["status"].lower() for r in self.results]
+        test_statuses = [r["status"].lower() for r in self.shared_results]
         rerun_statuses_violated = {*test_statuses} - {*rerun_status}
         if len(rerun_statuses_violated) > 0:
             logging.debug(f"Stopping test tries due to violated rerun test statuses: {rerun_status}")
@@ -477,13 +561,13 @@ class TestNode(Runnable):
         """
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
             # is scanned separately by each worker
-            return worker not in self.workers
+            return worker not in self.shared_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             # is scanned for an entire swarm by just one of its workers
-            return worker.params["runtime_str"].split("/")[0] not in set(worker.params["runtime_str"].split("/")[0] for worker in self.workers)
+            return worker.params["runtime_str"].split("/")[0] not in set(worker.params["runtime_str"].split("/")[0] for worker in self.shared_workers)
         else:
             # should scan globally by just one worker
-            return len(self.workers) == 0
+            return len(self.shared_workers) == 0
 
     def default_run_decision(self, worker: TestWorker) -> bool:
         """
@@ -492,12 +576,12 @@ class TestNode(Runnable):
         :param worker: worker which makes the run decision
         :returns: whether the worker should run the test node
         """
-        if worker.id not in self.params["name"]:
-            return False
+        if not self.is_flat() and worker.id not in self.params["name"]:
+            raise RuntimeError(f"Worker {worker.id} should not try to run {self}")
 
         if not self.produces_setup():
             # most standard stateless behavior is to run each test node once then rerun if needed
-            should_run = len(self.results) == 0 or self.should_rerun(worker)
+            should_run = len(self.shared_results) == 0 or self.should_rerun(worker)
 
         else:
             should_run_from_scan = False
@@ -506,7 +590,7 @@ class TestNode(Runnable):
                 should_run_from_scan = self.scan_states()
                 logging.debug(f"Should{' ' if should_run_from_scan else ' not '}run from scan {self}")
             # rerunning of test from previous jobs is never intended
-            if len(self.results) == 0 and not should_run_from_scan:
+            if len(self.shared_results) == 0 and not should_run_from_scan:
                 self.should_rerun = lambda _: False
 
             should_run = should_run_from_scan if should_scan else False
@@ -521,8 +605,8 @@ class TestNode(Runnable):
         :param worker: worker which makes the clean decision
         :returns: whether the worker should clean the test node
         """
-        if worker.id not in self.params["name"]:
-            return False
+        if not self.is_flat() and worker.id not in self.params["name"]:
+            raise RuntimeError(f"Worker {worker.id} should not try to clean {self}")
 
         # no support for parallelism within reversible nodes since we might hit a race condition
         # whereby a node will be run for missing setup but its parent will be reversed before it
@@ -548,6 +632,7 @@ class TestNode(Runnable):
 
         :param str prefix1: first prefix to use for the priority comparison
         :param str prefix2: second prefix to use for the priority comparison
+        :returns: -1 if prefix1 < prefix2, 1 if prefix1 > prefix2, 0 otherwise
 
         This function also does recursive calls of sub-prefixes.
         """
@@ -581,54 +666,6 @@ class TestNode(Runnable):
             assert else2 is not None, f"could not match test prefix part {prefix2} to choose priority"
             return cls.prefix_priority(else1, else2)
 
-    @classmethod
-    def setup_priority(cls, node1, node2):
-        """
-        Class method for setup traversal scheduling and prioritization.
-
-        :param node1: first node to use for the priority comparison
-        :type node1: :py:class:`TestNode`
-        :param node2: first node to use for the priority comparison
-        :type node2: :py:class:`TestNode`
-        :returns: -1 if node1 < node2, 1 if node1 > node2, 0 otherwise
-
-        By default (if not externally set), it implements the divergent paths
-        policy whereby workers will spread and explore the test space or
-        equidistribute if confined within overlapping paths.
-        """
-        if len(node1.visited_setup_nodes) != len(node2.visited_setup_nodes):
-            return len(node1.visited_setup_nodes) - len(node2.visited_setup_nodes)
-        if len(node1.visited_cleanup_nodes) != len(node2.visited_cleanup_nodes):
-            return len(node1.visited_cleanup_nodes) - len(node2.visited_cleanup_nodes)
-        if len(node1.workers) != len(node2.workers):
-            return len(node1.workers) - len(node2.workers)
-
-        return cls.prefix_priority(node1.long_prefix, node2.long_prefix)
-
-    @classmethod
-    def cleanup_priority(cls, node1, node2):
-        """
-        Class method for cleanup traversal scheduling and prioritization.
-
-        :param node1: first node to use for the priority comparison
-        :type node1: :py:class:`TestNode`
-        :param node2: first node to use for the priority comparison
-        :type node2: :py:class:`TestNode`
-        :returns: -1 if node1 < node2, 1 if node1 > node2, 0 otherwise
-
-        By default (if not externally set), it implements the divergent paths
-        policy whereby workers will spread and explore the test space or
-        equidistribute if confined within overlapping paths.
-        """
-        if len(node1.visited_cleanup_nodes) != len(node2.visited_cleanup_nodes):
-            return len(node1.visited_cleanup_nodes) - len(node2.visited_cleanup_nodes)
-        if len(node1.visited_setup_nodes) != len(node2.visited_setup_nodes):
-            return len(node1.visited_setup_nodes) - len(node2.visited_setup_nodes)
-        if len(node1.workers) != len(node2.workers):
-            return len(node1.workers) - len(node2.workers)
-
-        return cls.prefix_priority(node1.long_prefix, node2.long_prefix)
-
     def pick_parent(self, worker: TestWorker) -> "TestNode":
         """
         Pick the next available parent based on some priority.
@@ -639,11 +676,17 @@ class TestNode(Runnable):
 
         The current order will prioritize less traversed test paths.
         """
-        available_nodes = [n for n in self.setup_nodes if worker not in self.visited_setup_nodes.get(n, set())]
-        nodes = sorted(available_nodes, key=cmp_to_key(TestNode.setup_priority))
-        if len(nodes) == 0:
-            raise RuntimeError("Picked a parent of a node without remaining parents")
-        return nodes[0]
+        available_nodes = [n for n in self.setup_nodes if worker.id in n.params["name"] or n.is_flat() or n.is_shared_root()]
+        available_nodes = [n for n in available_nodes if worker not in self._dropped_setup_nodes.get(n)]
+        if len(available_nodes) == 0:
+            raise RuntimeError(f"Picked a parent of a node without remaining parents for {self}")
+        sorted_nodes = sorted(available_nodes, key=cmp_to_key(lambda x, y: TestNode.prefix_priority(x.long_prefix, y.long_prefix)))
+        sorted_nodes = sorted(sorted_nodes, key=lambda n: len(n.started_setup_workers))
+        sorted_nodes = sorted(sorted_nodes, key=lambda n: int(not n.is_flat()))
+
+        test_node = sorted_nodes[0]
+        test_node._picked_by_cleanup_nodes.register(self, worker)
+        return test_node
 
     def pick_child(self, worker: TestWorker) -> "TestNode":
         """
@@ -655,13 +698,19 @@ class TestNode(Runnable):
 
         The current order will prioritize less traversed test paths.
         """
-        available_nodes = [n for n in self.cleanup_nodes if worker not in self.visited_cleanup_nodes.get(n, set())]
-        nodes = sorted(available_nodes, key=cmp_to_key(TestNode.cleanup_priority))
-        if len(nodes) == 0:
-            raise RuntimeError("Picked a child of a node without remaining children")
-        return nodes[0]
+        available_nodes = [n for n in self.cleanup_nodes if worker.id in n.params["name"] or n.is_flat() or n.is_shared_root()]
+        available_nodes = [n for n in available_nodes if worker not in self._dropped_cleanup_nodes.get(n)]
+        if len(available_nodes) == 0:
+            raise RuntimeError(f"Picked a child of a node without remaining children for {self}")
+        sorted_nodes = sorted(available_nodes, key=cmp_to_key(lambda x, y: TestNode.prefix_priority(x.long_prefix, y.long_prefix)))
+        sorted_nodes = sorted(sorted_nodes, key=lambda n: len(n.started_cleanup_workers))
+        sorted_nodes = sorted(sorted_nodes, key=lambda n: int(not n.is_flat()))
 
-    def visit_parent(self, test_node: "TestNode", worker: TestWorker) -> None:
+        test_node = sorted_nodes[0]
+        test_node._picked_by_setup_nodes.register(self, worker)
+        return test_node
+
+    def drop_parent(self, test_node: "TestNode", worker: TestWorker) -> None:
         """
         Add a parent node to the set of visited nodes for this test.
 
@@ -670,12 +719,10 @@ class TestNode(Runnable):
         :raises: :py:class:`ValueError` if visited node is not directly dependent
         """
         if test_node not in self.setup_nodes:
-            raise ValueError(f"Invalid parent to visit: {test_node} not a parent of {self}")
-        visitors = self.visited_setup_nodes.get(test_node, set())
-        visitors.add(worker)
-        self.visited_setup_nodes[test_node] = visitors
+            raise ValueError(f"Invalid parent to drop: {test_node} not a parent of {self}")
+        self._dropped_setup_nodes.register(test_node, worker)
 
-    def visit_child(self, test_node: "TestNode", worker: TestWorker) -> None:
+    def drop_child(self, test_node: "TestNode", worker: TestWorker) -> None:
         """
         Add a child node to the set of visited nodes for this test.
 
@@ -684,10 +731,30 @@ class TestNode(Runnable):
         :raises: :py:class:`ValueError` if visited node is not directly dependent
         """
         if test_node not in self.cleanup_nodes:
-            raise ValueError(f"Invalid child to visit: {test_node} not a child of {self}")
-        visitors = self.visited_cleanup_nodes.get(test_node, set())
-        visitors.add(worker)
-        self.visited_cleanup_nodes[test_node] = visitors
+            raise ValueError(f"Invalid child to drop: {test_node} not a child of {self}")
+        self._dropped_cleanup_nodes.register(test_node, worker)
+
+    def bridge_node(self, test_node: "TestNode") -> None:
+        """
+        Bridge current node with equivalent node for a different worker.
+
+        :param test_node: equivalent node for a different worker
+        :raises: :py:class:`ValueError` if bridged node is not equivalent
+        """
+        if test_node == self:
+            return
+        # TODO: cannot do simpler comparison due to current limitations in the bridged form
+        elif not re.search(test_node.bridged_form, self.params["name"]):
+            raise ValueError(f"Cannot bridge {self} with non-equivalent {test_node}")
+        if test_node not in self._bridged_nodes:
+            logging.info(f"Bridging {self.params['shortname']} to {test_node.params['shortname']}")
+            self._bridged_nodes.append(test_node)
+            test_node._bridged_nodes.append(self)
+
+            self._picked_by_setup_nodes = test_node._picked_by_setup_nodes
+            self._dropped_setup_nodes = test_node._dropped_setup_nodes
+            self._picked_by_cleanup_nodes = test_node._picked_by_cleanup_nodes
+            self._dropped_cleanup_nodes = test_node._dropped_cleanup_nodes
 
     def add_location(self, location: str) -> None:
         """

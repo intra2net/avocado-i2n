@@ -85,8 +85,7 @@ class TestGraph(object):
         return objects
     suffixes = property(fget=suffixes)
 
-    @staticmethod
-    def clone_branch(copy_node, copy_object, copy_parents):
+    def _clone_branch(self, copy_node, copy_object, copy_parents):
         """
         Clone a test node and all of its descendants as a branch path within the graph.
 
@@ -103,6 +102,7 @@ class TestGraph(object):
                           "\n".join([p.params["shortname"] for p in parents]))
             for i, parent in enumerate(parents):
                 if i == 0:
+                    # in-place changes of the clone source
                     child = clone_source
                 else:
                     clone_name = clone_source.prefix + "d" + str(i)
@@ -128,8 +128,14 @@ class TestGraph(object):
 
                 parent_object_params = copy_object.object_typed_params(parent.params)
                 parent_state = parent_object_params.get("set_state", "")
-                child.params["shortname"] += "." + parent_state
-                child.params["name"] += "." + parent_state
+                variants = child.params["name"].split(".")
+                delimiter = variants[variants.index("vms")-1]
+                child.params["shortname"] = child.params["shortname"].replace(delimiter, delimiter + "." + parent_state, 1)
+                child.params["name"] = child.params["name"].replace(delimiter, delimiter + "." + parent_state, 1)
+                # child has been modified for cloning and needs re-bridging with other such nodes
+                bridges = self.get_nodes_by("name", child.bridged_form)
+                for bridge in bridges:
+                    child.bridge_node(bridge)
                 child.params["get_state" + state_suffixes] = parent_state
                 child_object_params = copy_object.object_typed_params(child.params)
                 child_state = child_object_params.get("set_state", "")
@@ -516,6 +522,7 @@ class TestGraph(object):
             config.parse_next_batch(base_file="nets.cfg",
                                     base_str=param.join_str(top_restriction, params_str),
                                     base_dict={})
+        # TODO: even the new order is not good enough for multi-vm test nodes
         config.parse_next_batch(base_file="vms.cfg",
                                 base_str=param.join_str(vm_restrs, params_str),
                                 # make sure we have the final word on parameters we use to identify objects
@@ -1089,6 +1096,10 @@ class TestGraph(object):
                 children = self.parse_composite_nodes(test_node.params["name"],
                                                       test_object, test_node.prefix, params=params)
         else:
+            # TODO: cannot get nodes by (prefix tree index) name due to current limitations in the bridged form
+            old_bridges = self.get_nodes_by("name", test_node.bridged_form)
+            for bridge in old_bridges:
+                test_node.bridge_node(bridge)
             children = [test_node]
 
         parents = []
@@ -1110,7 +1121,7 @@ class TestGraph(object):
                     child.setup_nodes.append(more_parents[0])
                     more_parents[0].cleanup_nodes.append(child)
                 if len(more_parents) > 1:
-                    children += TestGraph.clone_branch(child, component, more_parents)
+                    children += self._clone_branch(child, component, more_parents)
 
         self.new_nodes(children if test_node.is_flat() else [c for c in children if c != test_node])
         return parents, children
@@ -1381,7 +1392,8 @@ class TestGraph(object):
         else:
             logging.debug(f"Worker {worker.id} skipping test {test_node}")
 
-        # free the node for traversal by other workers
+        # register workers that have traversed (and not necessarily run which uses results) both leaf
+        # and internal nodes (and not necessarily setup from above cases which could use picked children)
         test_node.workers.add(worker)
         test_node.worker = None
 
@@ -1504,7 +1516,7 @@ class TestGraph(object):
                 if next.is_setup_ready(worker):
                     await self.traverse_node(next, worker, params)
                     if next == root or not next.should_rerun(worker):
-                        previous.visit_parent(next, worker)
+                        previous.drop_parent(next, worker)
                     traverse_path.pop()
                 else:
                     # inverse DFS
@@ -1524,7 +1536,7 @@ class TestGraph(object):
 
                 if next.is_cleanup_ready(worker):
                     for setup in next.setup_nodes:
-                        setup.visit_child(next, worker)
+                        setup.drop_child(next, worker)
                     self.report_progress()
 
                     unexplored_nodes = [node for node in self.nodes if node.is_flat() and not node.is_unrolled(worker)]

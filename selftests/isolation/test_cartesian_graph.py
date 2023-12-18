@@ -439,6 +439,33 @@ class CartesianNodeTest(Test):
         self.assertEqual(len(tree.get("aaa.ddd")), 0)
         self.assertEqual(len(tree.get("aaa.fff")), 0)
 
+    def test_edge_register(self):
+        """Test the right test nodes are retrieved when from node's edge registers."""
+        register = EdgeRegister()
+        node1 = mock.MagicMock(id="1", bridged_form="key1")
+        node2 = mock.MagicMock(id="2", bridged_form="key1")
+        node3 = mock.MagicMock(id="3", bridged_form="key2")
+        worker1 = mock.MagicMock(id="net1")
+        worker2 = mock.MagicMock(id="net2")
+
+        self.assertEqual(register.get(node1), set())
+        self.assertEqual(register.get(node2), set())
+        self.assertEqual(register.get(node3), set())
+
+        register.register(node1, worker1)
+        self.assertEqual(register.get(node1), {worker1})
+        self.assertEqual(register.get(node2), {worker1})
+        self.assertEqual(register.get(node3), set())
+        self.assertEqual(register.get_all_workers(), {worker1})
+
+        register.register(node1, worker2)
+        register.register(node2, worker2)
+        register.register(node3, worker2)
+        self.assertEqual(register.get(node1), {worker1, worker2})
+        self.assertEqual(register.get(node2), {worker1, worker2})
+        self.assertEqual(register.get(node3), {worker2})
+        self.assertEqual(register.get_all_workers(), {worker1, worker2})
+
     def test_parse_node_from_object(self):
         """Test for a correctly parsed node from an already parsed net object."""
         flat_net = TestGraph.parse_net_from_object_strs("net1", self.config["vm_strs"])
@@ -603,6 +630,38 @@ class CartesianNodeTest(Test):
         with self.assertRaises(RuntimeError):
             composite_nodes[0].is_unrolled(TestWorker(flat_object))
 
+    def test_is_ready(self):
+        """Test that a test node is setup/cleanup ready under the right circumstances."""
+        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_nets), 1)
+        flat_net = flat_nets[0]
+        full_nets = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
+        self.assertEqual(len(full_nets), 1)
+        net = full_nets[0]
+
+        node = TestGraph.parse_node_from_object(net, "normal..tutorial1")
+        node1 = TestGraph.parse_node_from_object(net, "normal..tutorial1", prefix="1")
+        node2 = TestGraph.parse_node_from_object(net, "normal..tutorial2", prefix="2")
+        node.setup_nodes = [node1, node2]
+        node.cleanup_nodes = [node1, node2]
+        worker = TestWorker(flat_net)
+
+        # not ready by default
+        self.assertFalse(node.is_setup_ready(worker))
+        self.assertFalse(node.is_cleanup_ready(worker))
+
+        # not ready if more setup/cleanup is not provided (nodes dropped)
+        node.drop_parent(node1, worker)
+        node.drop_child(node2, worker)
+        self.assertFalse(node.is_setup_ready(worker))
+        self.assertFalse(node.is_cleanup_ready(worker))
+
+        # ready if all setup/cleanup is provided (nodes dropped)
+        node.drop_parent(node2, worker)
+        node.drop_child(node1, worker)
+        self.assertTrue(node.is_setup_ready(worker))
+        self.assertTrue(node.is_cleanup_ready(worker))
+
     def test_params(self):
         """Test for correctly parsed test node parameters."""
         flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
@@ -622,6 +681,118 @@ class CartesianNodeTest(Test):
             self.assertEqual(dict1[key], test_node.params[key], "The values of key %s %s=%s must be the same" % (key, dict1[key], test_node.params[key]))
         # all VT attributes must be initialized
         self.assertEqual(test_node.uri, test_node.params["name"])
+
+    def test_shared_workers(self):
+        """Test for correctly shared workers across bridged nodes."""
+        flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
+        self.assertEqual(len(flat_nets), 1)
+        flat_net1 = flat_nets[0]
+        flat_nets = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"})
+        self.assertEqual(len(flat_nets), 1)
+        flat_net2 = flat_nets[0]
+        graph = TestGraph()
+        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net1)
+        self.assertEqual(len(nodes), 1)
+        test_node1 = nodes[0]
+        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net2)
+        self.assertEqual(len(nodes), 1)
+        test_node2 = nodes[0]
+        test_node1.bridge_node(test_node2)
+
+        self.assertEqual(test_node1.workers, set())
+        self.assertEqual(test_node1.workers, test_node2.workers)
+        self.assertEqual(test_node1.shared_workers, set())
+        self.assertEqual(test_node1.shared_workers, test_node2.shared_workers)
+
+        worker1 = mock.MagicMock(id="net1", params={"runtime_str": "1"})
+        test_node1.workers.add(worker1)
+        self.assertEqual(test_node1.workers, {worker1})
+        self.assertEqual(test_node2.workers, set())
+        self.assertEqual(test_node1.shared_workers, {worker1})
+        self.assertEqual(test_node1.shared_workers, test_node2.shared_workers)
+        worker2 = mock.MagicMock(id="net2", params={"runtime_str": "2"})
+        test_node2.workers.add(worker2)
+        self.assertEqual(test_node1.workers, {worker1})
+        self.assertEqual(test_node2.workers, {worker2})
+        self.assertEqual(test_node1.shared_workers, {worker1, worker2})
+        self.assertEqual(test_node2.shared_workers, {worker1, worker2})
+
+        nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        self.assertEqual(len(nodes), 1)
+        test_node3 = nodes[0]
+        self.assertEqual(test_node3.workers, set())
+        self.assertEqual(test_node3.shared_workers, set())
+        test_node3.workers.add(worker1)
+        self.assertEqual(test_node3.workers, {worker1})
+        self.assertEqual(test_node3.shared_workers, test_node3.workers)
+        test_node3.workers.add(worker2)
+        self.assertEqual(test_node3.workers, {worker1, worker2})
+        self.assertEqual(test_node3.shared_workers, test_node3.workers)
+
+    def test_shared_results(self):
+        """Test for correctly shared results across bridged nodes."""
+        flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
+        self.assertEqual(len(flat_nets), 1)
+        flat_net1 = flat_nets[0]
+        flat_nets = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"})
+        self.assertEqual(len(flat_nets), 1)
+        flat_net2 = flat_nets[0]
+        graph = TestGraph()
+        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net1)
+        self.assertEqual(len(nodes), 1)
+        test_node1 = nodes[0]
+        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net2)
+        self.assertEqual(len(nodes), 1)
+        test_node2 = nodes[0]
+        test_node1.bridge_node(test_node2)
+
+        self.assertEqual(test_node1.results, [])
+        self.assertEqual(test_node1.results, test_node2.results)
+        self.assertEqual(test_node1.shared_results, [])
+        self.assertEqual(test_node1.shared_results, test_node2.shared_results)
+
+        node2_results = [{"status": "PASS"}]
+        test_node2.results += node2_results
+        self.assertEqual(test_node1.results, [])
+        self.assertEqual(test_node1.shared_results, node2_results)
+        self.assertEqual(test_node2.shared_results, node2_results)
+
+        node1_results = [{"status": "FAIL"}, {"status": "PASS"}]
+        test_node1.results += node1_results
+        self.assertEqual(test_node2.results, node2_results)
+        self.assertEqual(test_node1.shared_results, node1_results + node2_results)
+        self.assertEqual(test_node2.shared_results, node2_results + node1_results)
+
+    def test_setless_form(self):
+        """Test the general use and purpose of the node setless form."""
+        flat_nets = TestGraph.parse_flat_objects("net1", "nets",
+                                                 params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
+        self.assertEqual(len(flat_nets), 1)
+        flat_net = flat_nets[0]
+
+        graph = TestGraph()
+        nodes = [*graph.parse_composite_nodes("leaves..tutorial_get.explicit_clicked", flat_net),
+                 *graph.parse_composite_nodes("all..tutorial_get.explicit_clicked", flat_net)]
+        self.assertEqual(len(nodes), 2)
+        self.assertNotEqual(nodes[0].params["name"], nodes[1].params["name"])
+        self.assertEqual(nodes[0].setless_form, nodes[1].setless_form)
+
+    def test_bridged_form(self):
+        """Test the general use and purpose of the node bridged form."""
+        restriction_params = {"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"}
+        flat_nets = TestGraph.parse_flat_objects("net1", "nets", params=restriction_params)
+        self.assertEqual(len(flat_nets), 1)
+        flat_net1 = flat_nets[0]
+        flat_nets = TestGraph.parse_flat_objects("net2", "nets", params=restriction_params)
+        self.assertEqual(len(flat_nets), 1)
+        flat_net2 = flat_nets[0]
+
+        graph = TestGraph()
+        nodes = [*graph.parse_composite_nodes("all..tutorial_get.explicit_clicked", flat_net1),
+                 *graph.parse_composite_nodes("all..tutorial_get.explicit_clicked", flat_net2)]
+        self.assertEqual(len(nodes), 2)
+        self.assertNotEqual(nodes[0].params["name"], nodes[1].params["name"])
+        self.assertEqual(nodes[0].bridged_form, nodes[1].bridged_form)
 
     def test_sanity_in_graph(self):
         """Test generic usage and composition."""
@@ -755,12 +926,19 @@ class CartesianNodeTest(Test):
         # should run a leaf test node visited for the first time
         self.assertTrue(test_node1.default_run_decision(worker1))
         self.assertTrue(test_node2.default_run_decision(worker2))
-        # should not run a leaf test node meant for other worker
-        self.assertFalse(test_node1.default_run_decision(worker2))
-        self.assertFalse(test_node2.default_run_decision(worker1))
+        # should never run a leaf test node meant for other worker
+        with self.assertRaises(RuntimeError):
+            test_node1.default_run_decision(worker2)
+        with self.assertRaises(RuntimeError):
+            test_node2.default_run_decision(worker1)
         # should not run already visited leaf test node
-        test_node1.workers.add(worker1)
         test_node1.results += [{"status": "PASS"}]
+        self.assertFalse(test_node1.default_run_decision(worker1))
+        # should not run already visited bridged test node
+        test_node1.results = []
+        test_node2.results += [{"status": "PASS"}]
+        self.assertIn(test_node2, test_node1._bridged_nodes)
+        self.assertEqual(test_node1.shared_results, test_node2.results)
         self.assertFalse(test_node1.default_run_decision(worker1))
         # should run leaf if more reruns are needed
         test_node1.should_rerun = lambda _: True
@@ -768,9 +946,11 @@ class CartesianNodeTest(Test):
 
         test_node1 = graph.get_node_by(param_val="install.+net1")
         test_node2 = graph.get_node_by(param_val="install.+net2")
-        # should not run an internal test node meant for other worker
-        self.assertFalse(test_node1.default_run_decision(worker2))
-        self.assertFalse(test_node2.default_run_decision(worker1))
+        # should never run an internal test node meant for other worker
+        with self.assertRaises(RuntimeError):
+            test_node1.default_run_decision(worker2)
+        with self.assertRaises(RuntimeError):
+            test_node2.default_run_decision(worker1)
         # should run an internal test node without available setup
         DummyStateControl.asserted_states["check"] = {"install": {self.shared_pool: False}}
         test_node1.params["nets_host"], test_node1.params["nets_gateway"] = "1", ""
@@ -795,7 +975,6 @@ class CartesianNodeTest(Test):
         test_node1.results = [{"status": "PASS"}]
         self.assertTrue(test_node1.default_run_decision(worker1))
 
-    @skip("Needs node bridging")
     @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
     def test_default_clean_decision(self):
         """Test expectations on the default decision policy of whether to clean or not a test node."""
@@ -816,32 +995,33 @@ class CartesianNodeTest(Test):
         test_node2 = graph.get_node_by(param_val="explicit_clicked.+net2")
         self.assertTrue(test_node1.default_clean_decision(worker1))
         self.assertTrue(test_node2.default_clean_decision(worker2))
-        # should not clean an internal test node meant for other worker
-        self.assertFalse(test_node1.default_clean_decision(worker2))
-        self.assertFalse(test_node2.default_clean_decision(worker1))
+        # should never clean an internal test node meant for other worker
+        with self.assertRaises(RuntimeError):
+            test_node1.default_clean_decision(worker2)
+        with self.assertRaises(RuntimeError):
+            test_node2.default_clean_decision(worker1)
 
         # should not clean a reversible test node that is not globally cleanup ready
         test_node1 = graph.get_node_by(param_val="explicit_noop.+net1")
         test_node2 = graph.get_node_by(param_val="explicit_noop.+net2")
         TestWorker.run_slots = {"": {"1": "lxc", "2": "lxc"}}
         self.assertFalse(test_node1.default_clean_decision(worker1))
-        self.assertFalse(test_node2.default_clean_decision(worker1))
-        test_node1.workers.add(worker1)
-        self.assertFalse(test_node1.default_clean_decision(worker1))
         self.assertFalse(test_node2.default_clean_decision(worker2))
-        test_node1.workers.add(worker2)
+        test_node1.workers.add(worker1)
         self.assertFalse(test_node1.default_clean_decision(worker1))
         self.assertFalse(test_node2.default_clean_decision(worker2))
         # should clean a reversible test node that is globally cleanup ready
         test_node2.workers.add(worker2)
         self.assertTrue(test_node1.default_clean_decision(worker1))
         self.assertTrue(test_node2.default_clean_decision(worker2))
-        # should not clean an internal test node meant for other worker despite the above
-        self.assertFalse(test_node1.default_clean_decision(worker2))
-        self.assertFalse(test_node2.default_clean_decision(worker1))
+        # should never clean an internal test node meant for other worker despite the above
+        with self.assertRaises(RuntimeError):
+            test_node1.default_clean_decision(worker2)
+        with self.assertRaises(RuntimeError):
+            test_node2.default_clean_decision(worker1)
 
-    def test_cleanup_priority(self):
-        """Test that cleanup priority prioritizes workers and then secondary criteria."""
+    def test_pick_priority_prefix(self):
+        """Test that pick priority prioritizes workers and then secondary criteria."""
         flat_nets = TestGraph.parse_flat_objects("net1", "nets")
         self.assertEqual(len(flat_nets), 1)
         flat_net = flat_nets[0]
@@ -849,25 +1029,69 @@ class CartesianNodeTest(Test):
         self.assertEqual(len(full_nets), 1)
         net = full_nets[0]
 
+        node = TestGraph.parse_node_from_object(net, "normal..tutorial1")
         node1 = TestGraph.parse_node_from_object(net, "normal..tutorial1", prefix="1")
-        node2 = TestGraph.parse_node_from_object(net, "normal..tutorial1", prefix="2")
+        node2 = TestGraph.parse_node_from_object(net, "normal..tutorial2", prefix="2")
+        node.setup_nodes = [node1, node2]
+        node.cleanup_nodes = [node1, node2]
+        node1.setup_nodes = node2.setup_nodes = [node]
+        node1.cleanup_nodes = node2.cleanup_nodes = [node]
         worker = TestWorker(flat_net)
 
-        # must return -1 (choose lesser node1) since node1 < node2 at prefix
-        self.assertEqual(TestNode.cleanup_priority(node1, node2), -1)
-        node1.workers = [worker]
-        # lesser node2 has 1 worker less
-        self.assertEqual(TestNode.cleanup_priority(node1, node2), 1)
-        # resort to prefix again
-        node2.workers = [worker]
-        self.assertEqual(TestNode.cleanup_priority(node1, node2), -1)
-        # lesser node 2 has fewer visited children
-        child_node = TestGraph.parse_node_from_object(net, "normal..tutorial1")
-        node1.visited_cleanup_nodes[child_node] = set([worker])
-        self.assertEqual(TestNode.cleanup_priority(node1, node2), 1)
+        # prefix based lesser node1 since node1 < node2 at prefix
+        picked_child = node.pick_child(worker)
+        self.assertEqual(picked_child, node1)
+        picked_parent = node.pick_parent(worker)
+        self.assertEqual(picked_parent, node1)
 
-    def test_pick_and_visit_child(self):
-        """Test that children are picked according to previous visits."""
+        # lesser node2 has 1 worker less now
+        self.assertEqual(node1.started_setup_workers, {worker})
+        picked_parent = node.pick_parent(worker)
+        self.assertEqual(picked_parent, node2)
+        self.assertEqual(node1.started_cleanup_workers, {worker})
+        picked_child = node.pick_child(worker)
+        self.assertEqual(picked_child, node2)
+
+        # resort to prefix again now that both nodes have been picked
+        picked_child = node.pick_child(worker)
+        self.assertEqual(picked_child, node1)
+        picked_parent = node.pick_parent(worker)
+        self.assertEqual(picked_parent, node1)
+
+    def test_pick_priority_bridged(self):
+        """Test that pick priority prioritizes workers and then secondary criteria."""
+        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_nets), 1)
+        flat_net = flat_nets[0]
+        full_nets = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
+        self.assertEqual(len(full_nets), 1)
+        net = full_nets[0]
+
+        node = TestGraph.parse_node_from_object(net, "normal..tutorial1")
+        node1 = TestGraph.parse_node_from_object(net, "normal..tutorial1", prefix="1")
+        node2 = TestGraph.parse_node_from_object(net, "normal..tutorial1", prefix="2")
+        node3 = TestGraph.parse_node_from_object(net, "normal..tutorial2", prefix="3")
+        node.setup_nodes = [node1, node2, node3]
+        node.cleanup_nodes = [node1, node2, node3]
+        node1.setup_nodes = node2.setup_nodes = node3.setup_nodes = [node]
+        node1.cleanup_nodes = node2.cleanup_nodes = node3.cleanup_nodes = [node]
+        worker = TestWorker(flat_net)
+        node1.bridge_node(node2)
+
+        # lesser node1 by prefix to begin with
+        picked_child = node.pick_child(worker)
+        self.assertEqual(picked_child, node1)
+        picked_parent = node.pick_parent(worker)
+        self.assertEqual(picked_parent, node1)
+
+        # lesser node3 has fewer picked nodes in comparison to the bridged node1 and node2
+        picked_child = node.pick_child(worker)
+        self.assertEqual(picked_child, node3)
+        picked_parent = node.pick_parent(worker)
+        self.assertEqual(picked_parent, node3)
+
+    def test_pick_and_drop_node(self):
+        """Test that parents and children are picked according to previous visits and cached."""
         flat_nets = TestGraph.parse_flat_objects("net1", "nets")
         self.assertEqual(len(flat_nets), 1)
         flat_net = flat_nets[0]
@@ -877,16 +1101,69 @@ class CartesianNodeTest(Test):
 
         node = TestGraph.parse_node_from_object(net, "normal..tutorial1")
         child_node1 = TestGraph.parse_node_from_object(net, "normal..tutorial1", prefix="1")
-        child_node2 = TestGraph.parse_node_from_object(net, "normal..tutorial1", prefix="2")
+        child_node2 = TestGraph.parse_node_from_object(net, "normal..tutorial2", prefix="2")
         node.cleanup_nodes = [child_node1, child_node2]
+        child_node1.setup_nodes = [node]
+        child_node2.setup_nodes = [node]
         worker = TestWorker(flat_net)
 
         picked_child = node.pick_child(worker)
         self.assertEqual(picked_child, child_node1)
-        node.visit_child(picked_child, worker)
+        self.assertIn(worker, picked_child._picked_by_setup_nodes.get(node))
+        node.drop_child(picked_child, worker)
+        self.assertIn(worker, node._dropped_cleanup_nodes.get(picked_child))
         picked_child = node.pick_child(worker)
         self.assertEqual(picked_child, child_node2)
-        node.visit_child(picked_child, worker)
+        self.assertIn(worker, picked_child._picked_by_setup_nodes.get(node))
+        node.drop_child(picked_child, worker)
+        self.assertIn(worker, node._dropped_cleanup_nodes.get(picked_child))
+
+        picked_parent = picked_child.pick_parent(worker)
+        self.assertEqual(picked_parent, node)
+        self.assertIn(worker, picked_parent._picked_by_cleanup_nodes.get(picked_child))
+        picked_child.drop_parent(picked_parent, worker)
+        self.assertIn(worker, picked_parent._dropped_cleanup_nodes.get(picked_child))
+
+    def test_pick_and_drop_bridged(self):
+        """Test for correctly shared picked and dropped nodes across bridged nodes."""
+        flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
+        self.assertEqual(len(flat_nets), 1)
+        flat_net1 = flat_nets[0]
+        worker1 = TestWorker(flat_net1)
+        flat_nets = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"})
+        self.assertEqual(len(flat_nets), 1)
+        flat_net2 = flat_nets[0]
+        worker2 = TestWorker(flat_net2)
+
+        graph = TestGraph()
+        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net1)
+        self.assertEqual(len(nodes), 1)
+        node1 = nodes[0]
+        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net2)
+        self.assertEqual(len(nodes), 1)
+        node2 = nodes[0]
+        nodes = graph.parse_composite_nodes("normal..tutorial2", flat_net1)
+        self.assertEqual(len(nodes), 1)
+        node13 = nodes[0]
+        nodes = graph.parse_composite_nodes("normal..tutorial2", flat_net2)
+        self.assertEqual(len(nodes), 1)
+        node23 = nodes[0]
+
+        # not picking or dropping any parent results in empty but equal registers
+        node1.setup_nodes = [node13]
+        node2.setup_nodes = [node23]
+        node1.bridge_node(node2)
+        node13.bridge_node(node23)
+        self.assertEqual(node23._picked_by_cleanup_nodes, node13._picked_by_cleanup_nodes)
+        self.assertEqual(node2._dropped_setup_nodes, node1._dropped_setup_nodes)
+
+        # picking parent of node1 and dropping parent of node2 has shared effect
+        self.assertEqual(node1.pick_parent(worker1), node13)
+        self.assertEqual(node13._picked_by_cleanup_nodes.get(node1), {worker1})
+        self.assertEqual(node23._picked_by_cleanup_nodes.get(node2), {worker1})
+        node2.drop_parent(node23, worker2)
+        self.assertEqual(node1._dropped_setup_nodes.get(node13), {worker2})
+        self.assertEqual(node2._dropped_setup_nodes.get(node23), {worker2})
 
 
 @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
@@ -1314,15 +1591,45 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(parents), 0)
         self.assertEqual(len(children), 0)
 
+    def test_parse_branches_for_node_and_object_with_bridging(self):
+        """Test that parsing and retrieval of branches also bridges worker-related nodes."""
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
+        self.assertEqual(len(flat_objects), 1)
+        flat_object1 = flat_objects[0]
+        flat_objects = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
+        self.assertEqual(len(flat_objects), 1)
+        flat_object2 = flat_objects[0]
+
+        graph = TestGraph()
+
+        graph.new_nodes(graph.parse_composite_nodes("normal..tutorial1", flat_object1))
+        self.assertEqual(len(graph.nodes), 1)
+        full_node1 = graph.get_node_by(param_val="tutorial1.+net1")
+        _, children = graph.parse_branches_for_node_and_object(full_node1, flat_object1)
+        self.assertEqual(len(children), 1)
+        self.assertIn(full_node1, children)
+        self.assertEqual(len(full_node1._bridged_nodes), 0)
+
+        graph.new_nodes(graph.parse_composite_nodes("normal..tutorial1", flat_object2))
+        full_node2 = graph.get_node_by(param_val="tutorial1.+net2")
+        _, children = graph.parse_branches_for_node_and_object(full_node2, flat_object2)
+        self.assertEqual(len(children), 1)
+        self.assertIn(full_node2, children)
+        self.assertEqual(len(full_node2._bridged_nodes), 1)
+        self.assertEqual(len(full_node1._bridged_nodes), 1)
+        self.assertIn(full_node1, full_node2._bridged_nodes)
+        self.assertIn(full_node2, full_node1._bridged_nodes)
+
     def test_parse_branches_for_node_and_object_with_cloning(self):
         """Test default parsing and retrieval of branches for a pair of cloned test node and object."""
-        graph = TestGraph()
-        flat_nodes = [n for n in TestGraph.parse_flat_nodes("leaves..tutorial_get..implicit_both")]
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
         flat_objects = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
         self.assertEqual(len(flat_objects), 1)
         flat_object = flat_objects[0]
+        flat_nodes = [n for n in TestGraph.parse_flat_nodes("leaves..tutorial_get..implicit_both")]
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
+
+        graph = TestGraph()
 
         parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
         self.assertEqual(len([p for p in parents if "tutorial_gui" in p.id]), 2)
@@ -1393,6 +1700,54 @@ class CartesianGraphTest(Test):
             parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
             self.assertEqual(len(parents), 0)
 
+    def test_parse_branches_for_node_and_object_with_cloning_bridging(self):
+        """Test parsing and retrieval of branches for bridged cloned test node and object."""
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
+        self.assertEqual(len(flat_objects), 1)
+        flat_object1 = flat_objects[0]
+        flat_objects = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
+        self.assertEqual(len(flat_objects), 1)
+        flat_object2 = flat_objects[0]
+        flat_nodes = TestGraph.parse_flat_nodes("leaves..tutorial_get..implicit_both")
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
+
+        graph = TestGraph()
+
+        parents1, children1 = graph.parse_branches_for_node_and_object(flat_node, flat_object1)
+        self.assertEqual(len([p for p in parents1 if "tutorial_gui" in p.id]), 2)
+        self.assertEqual(len(children1), 2)
+        parents2, children2 = graph.parse_branches_for_node_and_object(flat_node, flat_object2)
+        self.assertEqual(len([p for p in parents2 if "tutorial_gui" in p.id]), 2)
+        self.assertEqual(len(children2), 2)
+        for child1, child2 in zip(children1, children2):
+            graph.parse_branches_for_node_and_object(child1, flat_object1)
+            self.assertEqual(len(child1._bridged_nodes), 1)
+            self.assertEqual(child1._bridged_nodes[0], child2)
+            self.assertEqual(len(child2._bridged_nodes), 1)
+            self.assertEqual(child2._bridged_nodes[0], child1)
+
+        graph = TestGraph()
+
+        # deeper cloning must also restore bridging among grandchildren
+        composite_nodes = graph.parse_composite_nodes("leaves..tutorial_get..implicit_both", flat_object1)
+        composite_nodes += graph.parse_composite_nodes("leaves..tutorial_get..implicit_both", flat_object2)
+        self.assertEqual(len(composite_nodes), 2)
+        graph.new_nodes(composite_nodes)
+        grandchildren = graph.parse_composite_nodes("leaves..tutorial_finale", flat_object1)
+        grandchildren += graph.parse_composite_nodes("leaves..tutorial_finale", flat_object2)
+        graph.new_nodes(grandchildren)
+        self.assertEqual(len(grandchildren), 2)
+        for i in (0, 1):
+            grandchildren[i].setup_nodes = [composite_nodes[i]]
+            composite_nodes[i].cleanup_nodes = [grandchildren[i]]
+        graph.parse_branches_for_node_and_object(composite_nodes[0], flat_object1)
+        graph.parse_branches_for_node_and_object(composite_nodes[1], flat_object1)
+        self.assertEqual(composite_nodes[0]._bridged_nodes, [composite_nodes[1]])
+        self.assertEqual(composite_nodes[1]._bridged_nodes, [composite_nodes[0]])
+        self.assertEqual(grandchildren[0]._bridged_nodes, [grandchildren[1]])
+        self.assertEqual(grandchildren[1]._bridged_nodes, [grandchildren[0]])
+
     def test_parse_paths_to_object_roots(self):
         """Test correct expectation of parsing graph dependency paths from a leaf to all their object roots."""
         graph = TestGraph()
@@ -1408,7 +1763,11 @@ class CartesianGraphTest(Test):
         self.assertEqual(flat_node, flat_node2)
         self.assertNotIn(flat_node, flat_children)
         self.assertEqual(len(flat_children), 2)
+        for child in flat_children:
+            self.assertFalse(child.is_flat())
         self.assertEqual(len(flat_parents), 2)
+        for parent in flat_parents:
+            self.assertFalse(parent.is_flat())
         leaf_parents1, leaf_children1, leaf_node1 = next(generator)
         self.assertIn(leaf_node1, flat_children)
         self.assertEqual(len(leaf_children1), 0)
@@ -1536,7 +1895,6 @@ class CartesianGraphTest(Test):
         self.assertIn("[object]", repr)
         self.assertIn("[node]", repr)
 
-    @skip("Needs node bridging")
     def test_traverse_one_leaf_parallel(self):
         """Test traversal path of one test without any reusable setup."""
         graph = TestGraph()
@@ -1572,7 +1930,6 @@ class CartesianGraphTest(Test):
 
         self._run_traversal(graph)
 
-    @skip("Needs node bridging")
     def test_traverse_one_leaf_with_setup(self):
         """Test traversal path of one test with a reusable setup."""
         graph = TestGraph()
@@ -1591,7 +1948,6 @@ class CartesianGraphTest(Test):
 
         self._run_traversal(graph)
 
-    @skip("Needs node bridging")
     def test_traverse_one_leaf_with_step_setup(self):
         """Test traversal path of one test with a single reusable setup test node."""
         graph = TestGraph()
@@ -1610,7 +1966,6 @@ class CartesianGraphTest(Test):
 
         self._run_traversal(graph)
 
-    @skip("Needs node bridging")
     def test_traverse_one_leaf_with_failed_setup(self):
         """Test traversal path of one test with a failed reusable setup test node."""
         graph = TestGraph()
@@ -1628,7 +1983,6 @@ class CartesianGraphTest(Test):
 
         self._run_traversal(graph)
 
-    @skip("Needs node bridging")
     def test_traverse_one_leaf_with_retried_setup(self):
         """Test traversal path of one test with a failed but retried setup test node."""
         graph = TestGraph()
@@ -1670,7 +2024,6 @@ class CartesianGraphTest(Test):
         with self.assertRaisesRegex(RuntimeError, r"^Worker .+ spent [\d\.]+ seconds waiting for occupied node"):
             self._run_traversal(graph, self.config["param_dict"])
 
-    @skip("Needs node bridging")
     def test_traverse_two_objects_without_setup(self):
         """Test a two-object test traversal without a reusable setup."""
         graph = TestGraph()
@@ -1702,7 +2055,6 @@ class CartesianGraphTest(Test):
         # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
         self.assertEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 3)
 
-    @skip("Needs node bridging")
     def test_traverse_two_objects_with_setup(self):
         """Test a two-object test traversal with reusable setup."""
         graph = TestGraph()
@@ -1725,7 +2077,45 @@ class CartesianGraphTest(Test):
         # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
         self.assertEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 3)
 
-    @skip("Needs node bridging")
+    def test_traverse_two_objects_with_shared_setup(self):
+        """Test a two-object test traversal with shared setup among two nodes."""
+        graph = TestGraph()
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial_gui"))
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)]),
+                                                   "only_vm1": "CentOS", "only_vm2": "Win10"}))
+
+        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
+        DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
+        DummyStateControl.asserted_states["check"]["guisetup.noop"] = {self.shared_pool: False}
+        DummyStateControl.asserted_states["check"]["guisetup.clicked"] = {self.shared_pool: False}
+        DummyStateControl.asserted_states["get"]["guisetup.noop"] = {self.shared_pool: 0}
+        DummyStateControl.asserted_states["get"]["guisetup.clicked"] = {self.shared_pool: 0}
+        DummyStateControl.asserted_states["unset"] = {"guisetup.noop": {self.shared_pool: 0}}
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
+            {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
+        ]
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
+            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "nets_host": "^c2$"},
+            # c3 waits for c1 and c4 waits for c2, c1 then waits for c2 and c2 moves on
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets_host": "^c2$"},
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets_host": "^c3$"},
+        ]
+
+        self._run_traversal(graph)
+        for action in ["get"]:
+            for state in ["install", "customize"]:
+                # called once by worker for for each of two vms (no self-sync as setup is from previous run or shared pool)
+                # NOTE: any such use cases assume the previous setup is fully synced across all workers, if this is not the case
+                # it must be due to interrupted run in which case the setup is not guaranteed to be reusable on the first place
+                self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 8)
+        for action in ["set"]:
+            for state in DummyStateControl.asserted_states[action]:
+                self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
+
     def test_diverging_paths_external(self):
         """Test a multi-object test run with reusable setup of diverging workers and shared pool or previous runs."""
         graph = TestGraph()
@@ -1763,7 +2153,7 @@ class CartesianGraphTest(Test):
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
 
-    @skip("Needs node bridging")
+    @skip("Needs setup location generalization to bridged nodes")
     def test_diverging_paths_swarm(self):
         """Test a multi-object test run where the workers will run multiple tests reusing their own local swarm setup."""
         graph = TestGraph()
@@ -1819,7 +2209,7 @@ class CartesianGraphTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
 
-    @skip("Needs node bridging")
+    @skip("Needs setup location generalization to bridged nodes")
     def test_diverging_paths_remote(self):
         """Test a multi-object test run where the workers will run multiple tests reusing also remote swarm setup."""
         graph = TestGraph()
@@ -1880,7 +2270,7 @@ class CartesianGraphTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
 
-    @skip("Needs node bridging")
+    @skip("Needs setup location generalization to bridged nodes")
     def test_diverging_paths_preparsed(self):
         """Test a multi-object parsed in advance test run where the workers will run multiple tests reusing their setup."""
         self.config["param_dict"]["nets"] = "net1 net2 net3 net4"
@@ -1908,11 +2298,11 @@ class CartesianGraphTest(Test):
             # c4 would step back from already occupied on_customize (by c1) for the time being
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets_host": "^c1$",
              "get_location_vm1": "[\w:/]+ /c1:/mnt/local/images/swarm"},
-            # c2 would step back from already occupied linux_virtuser (by c3) and c3 proceeds instead
-            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets_host": "^c3$",
+            # c2 would step back from already occupied linux_virtuser (by c3) and c3 proceeds from most distant path
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets_host": "^c3$",
              "get_location_image1_vm1": "[\w:/]+ /c3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ /c2:/mnt/local/images/swarm"},
             # c4 now picks up available setup and tests from its own reentered branch
-            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets_host": "^c4$",
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets_host": "^c4$",
              "get_location_image1_vm1": "[\w:/]+ /c3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ /c2:/mnt/local/images/swarm"},
             # c1 would now pick its second local tutorial2.names
             {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets_host": "^c1$",
@@ -1975,9 +2365,9 @@ class CartesianGraphTest(Test):
             # second (clicked) explicit actual test
             {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.clicked"},
             # first (noop) duplicated actual test (child priority to reuse setup)
-            {"shortname": "^leaves.tutorial_get.implicit_both.vm1", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
+            {"shortname": "^leaves.tutorial_get.implicit_both.guisetup.noop.vm1", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
             # second (clicked) duplicated actual test
-            {"shortname": "^leaves.tutorial_get.implicit_both.vm1", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
+            {"shortname": "^leaves.tutorial_get.implicit_both.guisetup.clicked.vm1", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
         ]
 
         self._run_traversal(graph, self.config["param_dict"])
@@ -2015,25 +2405,15 @@ class CartesianGraphTest(Test):
                                                       "getsetup.noop": {self.shared_pool: 0},
                                                       "ready": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
-            # setup and first setup related leaves
             # automated setup of vm1 of CentOS variant
             {"shortname": "^internal.automated.linux_virtuser.vm1.+CentOS", "vms": "^vm1$"},
             # automated setup of vm2 of Win10 variant
             {"shortname": "^internal.automated.windows_virtuser.vm2.+Win10", "vms": "^vm2$"},
             # first (noop) parent GUI setup dependency through vm2 of Win10 variant
             {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
-            # automated setup of vm2 of Win7 variant
-            {"shortname": "^internal.automated.windows_virtuser.vm2.+Win7", "vms": "^vm2$"},
-            # first (noop) parent GUI setup dependency through vm2 of Win7 variant
-            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
-            # automated setup of vm1 of Fedora variant, required via extra "tutorial_gui" restriction
-            {"shortname": "^internal.automated.linux_virtuser.vm1.+Fedora", "vms": "^vm1$"},
-            # GUI test for vm1 of Fedora variant which is not first (noop) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
-            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
-
-            # pure exploration diverging from own previous paths
             # second (clicked) parent GUI setup dependency through vm2 of Win10 variant
             {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+
             # automated setup of vm1 of CentOS variant from tutorial_get
             {"shortname": "^internal.automated.connect.vm1.+CentOS", "vms": "^vm1$"},
             # first (noop) explicit actual test of CentOS+Win10
@@ -2041,25 +2421,38 @@ class CartesianGraphTest(Test):
             # second (clicked) explicit actual test of CentOS+Win10
             {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.clicked"},
             # first (noop) duplicated actual test of CentOS+Win10
-            {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
+            {"shortname": "^leaves.tutorial_get.implicit_both.guisetup.noop.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
 
-            # gradual return to previously discontinued paths
+            # TODO: prefix order would change the vm variants on implicit_both flat node
+
+            # automated setup of vm2 of Win7 variant
+            {"shortname": "^internal.automated.windows_virtuser.vm2.+Win7", "vms": "^vm2$"},
             # second (clicked) parent GUI setup dependency through vm2 of Win7 variant
             {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
             # second (clicked) duplicated actual test of CentOS+Win7
-            {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
+            {"shortname": "^leaves.tutorial_get.implicit_both.guisetup.clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
+            # first (noop) parent GUI setup dependency through vm2 of Win7 variant
+            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
             # first (noop) duplicated actual test of CentOS+Win7
-            {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
+            {"shortname": "^leaves.tutorial_get.implicit_both.guisetup.noop.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
+
+            # TODO: prefix order would change the vm variants on implicit_both flat node
+
             # second (clicked) duplicated actual test of CentOS+Win10
-            {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
+            {"shortname": "^leaves.tutorial_get.implicit_both.guisetup.clicked.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
             # second (clicked) explicit actual test of CentOS+Win7
             {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.clicked"},
             # first (noop) explicit actual test of CentOS+Win7
             {"shortname": "^leaves.tutorial_get.explicit_noop..+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.noop"},
+
+            # automated setup of vm1 of Fedora variant, required via extra "tutorial_gui" restriction
+            {"shortname": "^internal.automated.linux_virtuser.vm1.+Fedora", "vms": "^vm1$"},
             # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
             {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
             # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
             {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+            # GUI test for vm1 of Fedora variant which is not first (noop) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
             # GUI test for vm1 of Fedora variant which is not first (noop) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
             {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
         ]
@@ -2097,13 +2490,13 @@ class CartesianGraphTest(Test):
             # first (noop) parent GUI setup dependency through vm2
             {"shortname": "^tutorial_gui.client_noop", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
             # first (noop) duplicated actual test
-            {"shortname": "^tutorial_get.implicit_both.+guisetup.noop", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop", "set_state_images_image1_vm2": "getsetup.guisetup.noop"},
-            {"shortname": "^leaves.tutorial_finale.+getsetup.guisetup.noop", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "getsetup.guisetup.noop"},
+            {"shortname": "^tutorial_get.implicit_both.guisetup.noop", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop", "set_state_images_image1_vm2": "getsetup.guisetup.noop"},
+            {"shortname": "^leaves.tutorial_finale.getsetup.guisetup.noop", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "getsetup.guisetup.noop"},
             # second (clicked) parent GUI setup dependency through vm2
             {"shortname": "^tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
             # second (clicked) duplicated actual test
-            {"shortname": "^tutorial_get.implicit_both.+guisetup.clicked", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked", "set_state_images_image1_vm2": "getsetup.guisetup.clicked"},
-            {"shortname": "^leaves.tutorial_finale.+getsetup.guisetup.clicked", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "getsetup.guisetup.clicked"},
+            {"shortname": "^tutorial_get.implicit_both.guisetup.clicked", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked", "set_state_images_image1_vm2": "getsetup.guisetup.clicked"},
+            {"shortname": "^leaves.tutorial_finale.getsetup.guisetup.clicked", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "getsetup.guisetup.clicked"},
         ]
 
         self._run_traversal(graph, self.config["param_dict"])
@@ -2130,7 +2523,6 @@ class CartesianGraphTest(Test):
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
 
-    @skip("Needs node bridging")
     def test_abort_run(self):
         """Test that traversal is aborted through explicit configuration."""
         graph = TestGraph()
