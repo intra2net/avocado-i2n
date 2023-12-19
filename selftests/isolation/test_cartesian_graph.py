@@ -2031,7 +2031,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
 
-        self._run_traversal(graph, {"max_tries": "3", "stop_status": "pass"})
+        self._run_traversal(graph, {"max_concurrent_tries": "1", "max_tries": "3", "stop_status": "pass"})
 
     def test_traverse_one_leaf_with_occupation_timeout(self):
         """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
@@ -2732,7 +2732,7 @@ class CartesianGraphTest(Test):
                 graph.traverse_node.assert_any_call(root, worker, mock.ANY)
                 self.assertNotIn(mock.call(root, worker, mock.ANY), reverse_calls)
 
-    def test_rerun_max_times(self):
+    def test_rerun_max_times_serial(self):
         """Test that the test is tried `max_tries` times if no status is not specified."""
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_dict"]["max_tries"] = "3"
@@ -2757,6 +2757,26 @@ class CartesianGraphTest(Test):
             {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$"},
             {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
             {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
+        ]
+        self._run_traversal(graph)
+
+    def test_rerun_max_times_parallel(self):
+        """Test that the test is tried `max_tries` times if no status is not specified."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_dict"]["max_tries"] = "3"
+        self.config["param_dict"]["slots"] = "1 2"
+        self.config["param_dict"]["nets"] = "net1 net2"
+        graph = TestGraph.parse_object_trees(
+            None, self.config["tests_str"],
+            "", self.config["vm_strs"],
+            self.config["param_dict"],
+        )
+        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+        DummyTestRun.asserted_tests = [
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "nets_host": "^c1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$", "nets_host": "^c2$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$", "nets_host": "^c1$"},
         ]
         self._run_traversal(graph)
 

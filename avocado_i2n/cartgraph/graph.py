@@ -1483,7 +1483,7 @@ class TestGraph(object):
                             parent.setup_nodes.append(root)
                             root.cleanup_nodes.append(parent)
 
-            if next.is_occupied() and next.params.get_boolean("wait_for_occupied", True):
+            if next.is_occupied():
                 # ending with an occupied node would mean we wait for a permill of its duration
                 test_duration = next.params.get_numeric("test_timeout", 3600) * next.params.get_numeric("max_tries", 1)
                 occupied_timeout = round(max(test_duration/1000, 0.1), 2)

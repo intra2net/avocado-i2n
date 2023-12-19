@@ -183,6 +183,17 @@ class TestNode(Runnable):
         return self._params_cache
     params = property(fget=params)
 
+    def shared_started_workers(self):
+        """Workers that have previously started traversing this node (incl. leaves and others)."""
+        workers = set()
+        if self.started_worker is not None:
+            workers.add(self.started_worker)
+        for bridged_node in self._bridged_nodes:
+            if bridged_node.started_worker is not None:
+                workers.add(bridged_node.started_worker)
+        return workers
+    shared_started_workers = property(fget=shared_started_workers)
+
     def shared_finished_workers(self):
         """Workers that have previously finished traversing this node (incl. leaves and others)."""
         workers = set()
@@ -331,10 +342,11 @@ class TestNode(Runnable):
                     self.objects += [image]
 
     def is_occupied(self):
-        for bridged_node in self._bridged_nodes:
-            if bridged_node.started_worker is not None:
-                return True
-        return self.started_worker is not None
+        occupied_count = len(self.shared_started_workers)
+        # by default only reentrancy of 1 is allowed independently of previous results
+        max_concurrent_tries = self.params.get_numeric("max_concurrent_tries",
+                                                       self.params.get_numeric("max_tries", 1))
+        return occupied_count >= max(max_concurrent_tries, 1)
 
     def is_flat(self):
         """Check if the test node is flat and does not yet have objects and dependencies to evaluate."""
@@ -550,8 +562,10 @@ class TestNode(Runnable):
             logging.info(f"Stopping test tries due to obtained stop test statuses: {', '.join(stop_statuses_found)}")
             return False
 
+        # the runs total also considers UNKNOWN statuses from currently occupied test nodes minus currently traversed/evaluated case
+        total_runs = len(test_statuses) + len(self.shared_started_workers) - (1 if self.started_worker else 0)
         # implicitly this means that setting >1 retries will be done on tests actually collecting results (no flat nodes, dry runs, etc.)
-        reruns_left = 0 if max_tries == 1 else max_tries - len(test_statuses)
+        reruns_left = 0 if max_tries == 1 else max_tries - total_runs
         if reruns_left > 0:
             logging.debug(f"Still have {reruns_left} allowed reruns left and should rerun {self}")
             return True
