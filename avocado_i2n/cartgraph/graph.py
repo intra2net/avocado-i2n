@@ -1394,8 +1394,8 @@ class TestGraph(object):
 
         # register workers that have traversed (and not necessarily run which uses results) both leaf
         # and internal nodes (and not necessarily setup from above cases which could use picked children)
-        test_node.workers.add(worker)
-        test_node.worker = None
+        test_node.finished_worker = worker
+        test_node.started_worker = None
 
     async def reverse_node(self, test_node: TestNode, worker: TestWorker, params: dict[str, str]) -> None:
         """
@@ -1426,7 +1426,7 @@ class TestGraph(object):
 
         else:
             logging.debug(f"Worker {worker.id} should not clean up {test_node}")
-        test_node.worker = None
+        test_node.started_worker = None
 
     async def traverse_object_trees(self, worker: TestWorker, params: dict[str, str]) -> None:
         """

@@ -297,7 +297,7 @@ def update(config, tag=""):
                 object_strs={vm_name: config["vm_strs"][vm_name]},
                 params=setup_dict,
             )
-        vm_graph.flag_intersection(update_graph, flag_type="run", flag=lambda self, slot: len(self.workers) == 0,
+        vm_graph.flag_intersection(update_graph, flag_type="run", flag=lambda self, slot: len(self.shared_finished_workers) == 0,
                                    skip_shared_root=True)
 
         if from_state != "install":
@@ -311,7 +311,7 @@ def update(config, tag=""):
             )
             vm_graph.flag_intersection(reuse_graph, flag_type="run", flag=lambda self, slot: False)
             try:
-                vm_graph.flag_children(from_state, flag_type="run", flag=lambda self, slot: len(self.workers) == 0,
+                vm_graph.flag_children(from_state, flag_type="run", flag=lambda self, slot: len(self.shared_finished_workers) == 0,
                                     skip_children=True)
             except AssertionError as error:
                 logging.error(error)

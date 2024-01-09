@@ -726,35 +726,36 @@ class CartesianNodeTest(Test):
         test_node2 = nodes[0]
         test_node1.bridge_node(test_node2)
 
-        self.assertEqual(test_node1.workers, set())
-        self.assertEqual(test_node1.workers, test_node2.workers)
-        self.assertEqual(test_node1.shared_workers, set())
-        self.assertEqual(test_node1.shared_workers, test_node2.shared_workers)
+        self.assertEqual(test_node1.finished_worker, None)
+        self.assertEqual(test_node1.finished_worker, test_node2.finished_worker)
+        self.assertEqual(test_node1.shared_finished_workers, set())
+        self.assertEqual(test_node1.shared_finished_workers, test_node2.shared_finished_workers)
 
         worker1 = mock.MagicMock(id="net1", params={"runtime_str": "1"})
-        test_node1.workers.add(worker1)
-        self.assertEqual(test_node1.workers, {worker1})
-        self.assertEqual(test_node2.workers, set())
-        self.assertEqual(test_node1.shared_workers, {worker1})
-        self.assertEqual(test_node1.shared_workers, test_node2.shared_workers)
+        test_node1.finished_worker = worker1
+        self.assertEqual(test_node1.finished_worker, worker1)
+        self.assertEqual(test_node2.finished_worker, None)
+        self.assertEqual(test_node1.shared_finished_workers, {worker1})
+        self.assertEqual(test_node1.shared_finished_workers, test_node2.shared_finished_workers)
         worker2 = mock.MagicMock(id="net2", params={"runtime_str": "2"})
-        test_node2.workers.add(worker2)
-        self.assertEqual(test_node1.workers, {worker1})
-        self.assertEqual(test_node2.workers, {worker2})
-        self.assertEqual(test_node1.shared_workers, {worker1, worker2})
-        self.assertEqual(test_node2.shared_workers, {worker1, worker2})
+        test_node2.finished_worker = worker2
+        self.assertEqual(test_node1.finished_worker, worker1)
+        self.assertEqual(test_node2.finished_worker, worker2)
+        self.assertEqual(test_node1.shared_finished_workers, {worker1, worker2})
+        self.assertEqual(test_node2.shared_finished_workers, {worker1, worker2})
 
+        # validate trivial behavior for flat nodes
         nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
         self.assertEqual(len(nodes), 1)
         test_node3 = nodes[0]
-        self.assertEqual(test_node3.workers, set())
-        self.assertEqual(test_node3.shared_workers, set())
-        test_node3.workers.add(worker1)
-        self.assertEqual(test_node3.workers, {worker1})
-        self.assertEqual(test_node3.shared_workers, test_node3.workers)
-        test_node3.workers.add(worker2)
-        self.assertEqual(test_node3.workers, {worker1, worker2})
-        self.assertEqual(test_node3.shared_workers, test_node3.workers)
+        self.assertEqual(test_node3.finished_worker, None)
+        self.assertEqual(test_node3.shared_finished_workers, set())
+        test_node3.finished_worker = worker1
+        self.assertEqual(test_node3.finished_worker, worker1)
+        self.assertEqual(test_node3.shared_finished_workers, {test_node3.finished_worker})
+        test_node3.finished_worker = worker2
+        self.assertEqual(test_node3.finished_worker, worker2)
+        self.assertEqual(test_node3.shared_finished_workers, {test_node3.finished_worker})
 
     def test_shared_results(self):
         """Test for correctly shared results across bridged nodes."""
@@ -987,18 +988,18 @@ class CartesianNodeTest(Test):
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         self.assertFalse(test_node1.default_run_decision(worker1))
         # should not run already visited internal test node by the same worker
-        test_node1.workers.add(worker1)
+        test_node1.finished_worker = worker1
         test_node1.results += [{"status": "PASS"}]
         self.assertFalse(test_node1.default_run_decision(worker1))
         # should not run an internal test node if needed reruns and setup from past runs
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         test_node1.should_rerun = lambda _: True
-        test_node1.workers = set()
+        test_node1.finished_worker = None
         test_node1.results = []
         self.assertFalse(test_node1.default_run_decision(worker1))
         # should run an internal test node if needed reruns and setup from current runs
         test_node1.should_rerun = lambda _: True
-        test_node1.workers = set()
+        test_node1.finished_worker = None
         test_node1.results = [{"status": "PASS"}]
         self.assertTrue(test_node1.default_run_decision(worker1))
 
@@ -1034,11 +1035,11 @@ class CartesianNodeTest(Test):
         TestWorker.run_slots = {"": {"1": "lxc", "2": "lxc"}}
         self.assertFalse(test_node1.default_clean_decision(worker1))
         self.assertFalse(test_node2.default_clean_decision(worker2))
-        test_node1.workers.add(worker1)
+        test_node1.finished_worker = worker1
         self.assertFalse(test_node1.default_clean_decision(worker1))
         self.assertFalse(test_node2.default_clean_decision(worker2))
         # should clean a reversible test node that is globally cleanup ready
-        test_node2.workers.add(worker2)
+        test_node2.finished_worker = worker2
         self.assertTrue(test_node1.default_clean_decision(worker1))
         self.assertTrue(test_node2.default_clean_decision(worker2))
         # should never clean an internal test node meant for other worker despite the above
@@ -1276,7 +1277,7 @@ class CartesianGraphTest(Test):
         )
 
         graph.flag_children(flag_type="run", flag=lambda self, slot: False)
-        graph.flag_children(node_name="customize", flag_type="run", flag=lambda self, slot: slot not in self.workers)
+        graph.flag_children(node_name="customize", flag_type="run", flag=lambda self, slot: slot not in self.shared_finished_workers)
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^nonleaves.internal.automated.connect.vm1", "vms": "^vm1$"},

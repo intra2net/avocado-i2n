@@ -183,13 +183,16 @@ class TestNode(Runnable):
         return self._params_cache
     params = property(fget=params)
 
-    def shared_workers(self):
+    def shared_finished_workers(self):
         """Workers that have previously finished traversing this node (incl. leaves and others)."""
-        workers = {*self.workers}
+        workers = set()
+        if self.finished_worker is not None:
+            workers.add(self.finished_worker)
         for bridged_node in self._bridged_nodes:
-            workers |= bridged_node.workers
+            if bridged_node.finished_worker is not None:
+                workers.add(bridged_node.finished_worker)
         return workers
-    shared_workers = property(fget=shared_workers)
+    shared_finished_workers = property(fget=shared_finished_workers)
 
     def shared_results(self):
         """Test results shared across all bridged nodes."""
@@ -266,8 +269,8 @@ class TestNode(Runnable):
         self.should_run = self.default_run_decision
         self.should_clean = self.default_clean_decision
 
-        self.workers = set()
-        self.worker = None
+        self.finished_worker = None
+        self.started_worker = None
         self.results = []
         self._bridged_nodes = []
 
@@ -298,7 +301,7 @@ class TestNode(Runnable):
         self.params["nets_gateway"] = worker.params["nets_gateway"]
         self.params["nets_host"] = worker.params["nets_host"]
         self.params["nets_spawner"] = worker.params["nets_spawner"]
-        self.worker = worker
+        self.started_worker = worker
 
     def set_objects_from_net(self, net: NetObject) -> None:
         """
@@ -329,9 +332,9 @@ class TestNode(Runnable):
 
     def is_occupied(self):
         for bridged_node in self._bridged_nodes:
-            if bridged_node.worker is not None:
+            if bridged_node.started_worker is not None:
                 return True
-        return self.worker is not None
+        return self.started_worker is not None
 
     def is_flat(self):
         """Check if the test node is flat and does not yet have objects and dependencies to evaluate."""
@@ -407,13 +410,13 @@ class TestNode(Runnable):
         """
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
             # is finished separately by each worker
-            return worker in self.shared_workers
+            return worker in self.shared_finished_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             # is finished for an entire swarm by at least one of its workers
-            return worker.params["runtime_str"].split("/")[0] in set(worker.params["runtime_str"].split("/")[0] for worker in self.shared_workers)
+            return worker.params["runtime_str"].split("/")[0] in set(worker.params["runtime_str"].split("/")[0] for worker in self.shared_finished_workers)
         else:
             # is finished globally by at least one worker
-            return len(self.shared_workers) > 0
+            return len(self.shared_finished_workers) > 0
 
     def is_fully_finished(self, worker: TestWorker = None) -> bool:
         """
@@ -425,18 +428,20 @@ class TestNode(Runnable):
         The consideration here is for fully traversed node by all workers
         unless restricted within some scope of setup reuse.
         """
+        if self.is_flat():
+            return True
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
             # is finished separately by each worker and for all workers
-            return worker in self.shared_workers
+            return worker in self.shared_finished_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             # is finished for an entire swarm by all of its workers
             slot_cluster = worker.params["runtime_str"].split("/")[0]
             all_cluster_hosts = set(host for host in TestWorker.run_slots[slot_cluster])
-            node_cluster_hosts = set(worker.params["runtime_str"].split("/")[1] for worker in self.shared_workers if worker.params["runtime_str"].split("/")[0] == slot_cluster)
+            node_cluster_hosts = set(worker.params["runtime_str"].split("/")[1] for worker in self.shared_finished_workers if worker.params["runtime_str"].split("/")[0] == slot_cluster)
             return all_cluster_hosts == node_cluster_hosts
         else:
             # is finished globally by all workers
-            return len(self.shared_workers) == sum([len([w for w in TestWorker.run_slots[s]]) for s in TestWorker.run_slots])
+            return len(self.shared_finished_workers) == sum([len([w for w in TestWorker.run_slots[s]]) for s in TestWorker.run_slots])
 
     def is_terminal_node_for(self):
         """
@@ -562,13 +567,13 @@ class TestNode(Runnable):
         """
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
             # is scanned separately by each worker
-            return worker not in self.shared_workers
+            return worker not in self.shared_finished_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             # is scanned for an entire swarm by just one of its workers
-            return worker.params["runtime_str"].split("/")[0] not in set(worker.params["runtime_str"].split("/")[0] for worker in self.shared_workers)
+            return worker.params["runtime_str"].split("/")[0] not in set(worker.params["runtime_str"].split("/")[0] for worker in self.shared_finished_workers)
         else:
             # should scan globally by just one worker
-            return len(self.shared_workers) == 0
+            return len(self.shared_finished_workers) == 0
 
     def default_run_decision(self, worker: TestWorker) -> bool:
         """
