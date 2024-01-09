@@ -249,7 +249,7 @@ class TestGraph(object):
         total, finished = len(self.nodes), 0
         for tnode in self.nodes:
             # we count with additional eagerness for at least one worker
-            if tnode.is_eagerly_finished():
+            if tnode.is_finished():
                 finished += 1
         logging.info("Finished %i\%i tests, %0.2f%% complete", finished, total, 100.0*finished/total)
 
@@ -270,7 +270,7 @@ class TestGraph(object):
 
         def get_display_id(node):
             node_id = node.long_prefix
-            node_id += f"[{node.params['nets_host']}/{node.params['nets_host']}]" if node.is_occupied() else ""
+            node_id += f"[{node.params['nets_host']}/{node.params['nets_host']}]" if node.is_occupied(node.started_worker) else ""
             return node_id
 
         graph = Digraph('cartesian_graph', format='svg')
@@ -1326,7 +1326,7 @@ class TestGraph(object):
         :param worker: worker traversing the terminal node
         :param params: runtime parameters used for extra customization
         """
-        if not test_node.is_occupied():
+        if not test_node.is_occupied(worker):
             test_node.set_environment(worker)
         else:
             return
@@ -1408,7 +1408,7 @@ class TestGraph(object):
         The reversal consists of cleanup or sync of any states that could be created by this node
         instead of running via the test runner which is done for the traversal.
         """
-        if not test_node.is_occupied():
+        if not test_node.is_occupied(worker):
             test_node.set_environment(worker)
         else:
             return
@@ -1483,7 +1483,7 @@ class TestGraph(object):
                             parent.setup_nodes.append(root)
                             root.cleanup_nodes.append(parent)
 
-            if next.is_occupied():
+            if next.is_occupied(worker):
                 # ending with an occupied node would mean we wait for a permill of its duration
                 test_duration = next.params.get_numeric("test_timeout", 3600) * next.params.get_numeric("max_tries", 1)
                 occupied_timeout = round(max(test_duration/1000, 0.1), 2)

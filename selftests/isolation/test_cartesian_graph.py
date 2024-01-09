@@ -689,6 +689,78 @@ class CartesianNodeTest(Test):
         self.assertTrue(node.is_setup_ready(worker))
         self.assertTrue(node.is_cleanup_ready(worker))
 
+    def test_is_started_or_finished(self):
+        """Test that a test node is eagerly to fully started or finished in different scopes."""
+        test_workers = TestGraph.parse_workers({"slots": "a/1 a/2 a/3 b/1 b/2",
+                                                "pool_scope": "own swarm cluster shared"})
+
+        # flat node is always started and finished with any threshold
+        nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        self.assertEqual(len(nodes), 1)
+        flat_node = nodes[0]
+        for worker in test_workers:
+            flat_node.started_worker = worker
+            self.assertTrue(flat_node.is_flat())
+            self.assertFalse(flat_node.is_started(worker, 1))
+            self.assertFalse(flat_node.is_started(worker, 2))
+            self.assertFalse(flat_node.is_started(worker, -1))
+            flat_node.finished_worker = worker
+            self.assertTrue(flat_node.is_flat())
+            self.assertTrue(flat_node.is_finished(worker, 1))
+            self.assertTrue(flat_node.is_finished(worker, 2))
+            self.assertTrue(flat_node.is_finished(worker, -1))
+
+        full_nodes = []
+        for worker in test_workers:
+            new_node = TestGraph.parse_node_from_object(worker.net, "normal..tutorial1", prefix="1")
+            for bridge in full_nodes:
+                new_node.bridge_node(bridge)
+            full_nodes += [new_node]
+
+        # most eager threshold is satisfied with at least one worker
+        full_nodes[0].started_worker = test_workers[0]
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_started(worker, 1))
+                self.assertFalse(node.is_started(worker, 2))
+                self.assertFalse(node.is_started(worker, -1))
+        full_nodes[1].finished_worker = test_workers[1]
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_finished(worker, 1))
+                self.assertFalse(node.is_finished(worker, 2))
+                self.assertFalse(node.is_finished(worker, -1))
+
+        # less eager threshold is satisfied with at more workers
+        full_nodes[1].started_worker = test_workers[1]
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_started(worker, 1))
+                self.assertTrue(node.is_started(worker, 2))
+                self.assertFalse(node.is_started(worker, -1))
+        full_nodes[0].finished_worker = test_workers[0]
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_finished(worker, 1))
+                self.assertTrue(node.is_finished(worker, 2))
+                self.assertFalse(node.is_finished(worker, -1))
+
+        # fullest threshold is satisfied only with all workers
+        for node, worker in zip(full_nodes, test_workers):
+            node.started_worker = worker
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_started(worker, 1))
+                self.assertTrue(node.is_started(worker, 2))
+                self.assertTrue(node.is_started(worker, -1))
+        for node, worker in zip(full_nodes, test_workers):
+            node.finished_worker = worker
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_finished(worker, 1))
+                self.assertTrue(node.is_finished(worker, 2))
+                self.assertTrue(node.is_finished(worker, -1))
+
     def test_params(self):
         """Test for correctly parsed test node parameters."""
         flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
@@ -1277,7 +1349,8 @@ class CartesianGraphTest(Test):
         )
 
         graph.flag_children(flag_type="run", flag=lambda self, slot: False)
-        graph.flag_children(node_name="customize", flag_type="run", flag=lambda self, slot: slot not in self.shared_finished_workers)
+        graph.flag_children(node_name="customize", flag_type="run",
+                            flag=lambda self, slot: not self.is_finished(slot))
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^nonleaves.internal.automated.connect.vm1", "vms": "^vm1$"},
@@ -2036,13 +2109,15 @@ class CartesianGraphTest(Test):
     def test_traverse_one_leaf_with_occupation_timeout(self):
         """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
         graph = TestGraph()
-        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1", {"test_timeout": "1"}))
-        graph.parse_shared_root_from_object_roots()
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1"))
         graph.new_workers(TestGraph.parse_workers({"slots": "1 dead",
                                                    "only_vm1": "CentOS"}))
+        graph.new_nodes(graph.parse_composite_nodes("normal..tutorial1", graph.workers["net2"].net))
+        graph.parse_shared_root_from_object_roots()
 
-        test_node = graph.get_node_by(param_val="tutorial1")
+        test_node = graph.get_node_by(param_val="tutorial1.+net2")
         test_node.set_environment(graph.workers["net2"])
+        del graph.workers["net2"]
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
@@ -2050,7 +2125,7 @@ class CartesianGraphTest(Test):
         ]
 
         with self.assertRaisesRegex(RuntimeError, r"^Worker .+ spent [\d\.]+ seconds waiting for occupied node"):
-            self._run_traversal(graph, self.config["param_dict"])
+            self._run_traversal(graph, {"test_timeout": "1"})
 
     def test_traverse_two_objects_without_setup(self):
         """Test a two-object test traversal without a reusable setup."""
