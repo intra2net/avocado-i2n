@@ -86,16 +86,6 @@ class TestWorker(TestEnvironment):
         self.net = id_net
         self.spawner = None
 
-        # TODO: slots is runtime parameter to deprecate for the sake of overwritable configuration
-        slots = id_net.params.get("slots", "").split(" ")
-        index = int(id_net.params["nets"].replace("net", "")) - 1
-        env_id = slots[index] if index < len(slots) else ""
-        # env_net = cluster name, env_name = worker name, env_type = worker spawner
-        env_net, env_name, env_type = TestWorker.slot_attributes(env_id)
-        self.params["nets_gateway"] = env_net
-        self.params["nets_host"] = env_name
-        self.params["nets_spawner"] = env_type
-
     def __repr__(self):
         return f"[worker] id='{self.id}', spawner='{self.params['nets_spawner']}'"
 
@@ -124,21 +114,18 @@ class TestWorker(TestEnvironment):
         :raises: :py:class:`ValueError` when environment ID could not be parsed
         """
         logging.info(f"Setting up worker {self.id} environment")
-        env_tuple = tuple(self.params["runtime_str"].split("/"))
-        if len(env_tuple) == 1:
-            if env_tuple[0] == "":
+        if self.params["nets_gateway"] == "":
+            if self.params["nets_host"] == "":
                 logging.debug("Serial runs do not have any bootable environment")
                 return True
             import lxc
-            cid = "c" + env_tuple[0]
+            cid = self.params["nets_host"]
             container = lxc.Container(cid)
             if not container.running:
                 logging.info(f"Starting bootable environment {cid}")
                 return container.start()
             return container.running
-        elif len(env_tuple) == 2:
+        else:
             # TODO: send wake-on-lan package to start remote host (assuming routable)
             logging.warning("Assuming the remote host is running for now")
             return True
-        else:
-            raise ValueError(f"Environment ID {self.id} could not be parsed")

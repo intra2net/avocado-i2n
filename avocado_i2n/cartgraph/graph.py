@@ -1186,25 +1186,38 @@ class TestGraph(object):
         """
         params = params or {}
 
-        test_workers = []
-        nets = params.get("nets", "").split(" ") if params.get("nets") else param.all_objects("nets")
-        for suffix in nets:
-            for flat_net in TestGraph.parse_flat_objects(suffix, "nets", params=params):
-                test_workers += [TestWorker(flat_net)]
-        slot_workers = sorted(test_workers, key=lambda x: x.params["name"])
+        suffixes = params.get("nets", "").split(" ") if params.get("nets") else param.all_objects("nets")
+        # providing slots can overwrite the initial selection of nets
+        slots = params.get("slots", "").split(" ")
+        if params.get("slots") is not None:
+            suffixes = suffixes[:len(slots)]
+        else:
+            slots = [None for s in suffixes]
 
         TestWorker.run_slots = {}
+        test_workers = []
+        for suffix, slot in zip(suffixes, slots):
+            # TODO: currently we truly support only one flat net per suffix
+            for flat_net in TestGraph.parse_flat_objects(suffix, "nets", params=params):
+                test_worker = TestWorker(flat_net)
+                test_workers += [test_worker]
 
-        # TODO: slots is runtime parameter to deprecate for the sake of overwritable configuration
-        slots = params.get("slots", "").split(" ")
-        for i in range(min(len(slots), len(slot_workers))):
-            env_net, env_name, env_type = TestWorker.slot_attributes(slots[i])
+            # env_net = cluster name, env_name = worker name, env_type = worker spawner
+            if slot is not None:
+                env_net, env_name, env_type = TestWorker.slot_attributes(slot)
+                test_worker.params["nets_gateway"] = env_net
+                test_worker.params["nets_host"] = env_name
+                test_worker.params["nets_spawner"] = env_type
+            else:
+                env_net = test_worker.params["nets_gateway"]
+                env_name = test_worker.params["nets_host"]
+                env_type = test_worker.params["nets_spawner"]
+
             if env_net not in TestWorker.run_slots:
                 TestWorker.run_slots[env_net] = {}
             TestWorker.run_slots[env_net][env_name] = env_type
-            slot_workers[i].params["runtime_str"] = slots[i]
 
-        return slot_workers
+        return test_workers
 
     @staticmethod
     def parse_object_trees(worker: TestWorker = None, restriction: str = "", prefix: str = "", object_strs: dict[str, str] = None,

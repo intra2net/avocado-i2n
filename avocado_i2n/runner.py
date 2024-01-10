@@ -269,10 +269,10 @@ class CartesianRunner(RunnerInterface):
         for worker in graph.workers.values():
             if not worker.spawner:
                 worker.spawner = SpawnerDispatcher(self.job.config, self.job)[worker.params["nets_spawner"]].obj
-            if "runtime_str" in worker.params and not worker.set_up():
+            if not worker.set_up():
                 raise RuntimeError(f"Failed to start environment {worker.id}")
         slot_workers = sorted([*graph.workers.values()], key=lambda x: x.params["name"])
-        to_traverse = [graph.traverse_object_trees(s, params) for s in slot_workers if "runtime_str" in s.params]
+        to_traverse = [graph.traverse_object_trees(s, params) for s in slot_workers]
         asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
                                                                      self.job.timeout or None))
 
