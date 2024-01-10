@@ -859,7 +859,10 @@ class TestGraph(object):
                 get_nets[test_object.suffix] += [reused_nets[0]]
             elif len(reused_nets) == 0:
                 logging.debug(f"Parsing a new net from vms {', '.join(vms)} for {node_name}")
-                net = TestGraph.parse_object_from_objects(test_object.suffix, test_object.key, combination, params=params, verbose=False)
+                setup_dict = {} if params is None else params.copy()
+                setup_dict.update({key: value for key, value in test_object.params.items() if key.startswith("nets_")})
+                net = TestGraph.parse_object_from_objects(test_object.suffix, test_object.key, combination,
+                                                          params=setup_dict, verbose=False)
                 parse_nets[test_object.suffix] += [net]
                 self.objects += [net]
             else:
@@ -878,7 +881,7 @@ class TestGraph(object):
         and possibly restricting to a single test object for the singleton tests.
 
         :param restriction: block of node-specific variant restrictions
-        :param test_object: flat test object to compose the node on top of, typically a test net
+        :param test_object: possibly flat test object to compose the node on top of, typically a test net
         :param prefix: extra name identifier for the test to be run
         :param params: runtime parameters used for extra customization
         :param verbose: whether to print extra messages or not
@@ -1308,7 +1311,7 @@ class TestGraph(object):
         pre_node = TestNode("0t", install_config)
         pre_node.results = list(test_node.results)
         pre_node.set_objects_from_net(test_node.objects[0])
-        pre_node.set_environment(worker)
+        pre_node.started_worker = worker
         status = await self.runner.run_test_node(pre_node)
         if not status:
             logging.error("Could not configure the installation for %s on %s", object_vm, object_image)
@@ -1326,10 +1329,9 @@ class TestGraph(object):
         :param worker: worker traversing the terminal node
         :param params: runtime parameters used for extra customization
         """
-        if not test_node.is_occupied(worker):
-            test_node.set_environment(worker)
-        else:
+        if test_node.is_occupied(worker):
             return
+        test_node.started_worker = worker
 
         # add pre-existing shared pool locations
         if not test_node.is_shared_root() and not test_node.is_flat():
@@ -1408,10 +1410,9 @@ class TestGraph(object):
         The reversal consists of cleanup or sync of any states that could be created by this node
         instead of running via the test runner which is done for the traversal.
         """
-        if not test_node.is_occupied(worker):
-            test_node.set_environment(worker)
-        else:
+        if test_node.is_occupied(worker):
             return
+        test_node.started_worker = worker
         if test_node.should_clean(worker):
 
             if params.get("dry_run", "no") == "yes":

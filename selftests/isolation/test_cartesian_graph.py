@@ -118,10 +118,12 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_objects[1].params["vms"], "vm1")
         self.assertEqual(test_objects[1].params["main_vm"], "vm1")
         self.assertEqual(test_objects[1].params["os_variant"], "el8")
+        self.assertEqual(test_objects[1].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertRegex(test_objects[0].params["name"], r"vm1\.qemu_kvm_fedora.*Fedora.*")
         self.assertEqual(test_objects[0].params["vms"], "vm1")
         self.assertEqual(test_objects[0].params["main_vm"], "vm1")
         self.assertEqual(test_objects[0].params["os_variant"], "f33")
+        self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertNotIn("only", test_objects[0].params)
 
     def test_parse_composite_objects_net1(self):
@@ -139,6 +141,7 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object.params["os_variant_vm1"], "el8")
         self.assertEqual(test_object.params["os_variant_vm2"], "win10")
         self.assertEqual(test_object.params["os_variant_vm3"], "ubuntutrusty")
+        self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertNotIn("only", test_object.params)
         self.assertNotIn("only_vm1", test_object.params)
         self.assertNotIn("only_vm2", test_object.params)
@@ -225,6 +228,7 @@ class CartesianObjectTest(Test):
             self.assertEqual(test_object.params["os_variant_vm1"], vm1_os)
             self.assertEqual(test_object.params["os_variant_vm2"], vm2_os)
             self.assertEqual(test_object.params["os_variant_vm3"], vm3_os)
+            self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         assertVariant(nets[0], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "f33", "win7", "ubuntutrusty")
         assertVariant(nets[1], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_kali.*Kali.*", "f33", "win7", "kl")
         assertVariant(nets[2], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "f33", "win10", "ubuntutrusty")
@@ -513,6 +517,7 @@ class CartesianNodeTest(Test):
         self.assertEqual(node.params["os_variant_vm1"], net.params["os_variant_vm1"])
         self.assertEqual(node.params["os_variant_vm2"], net.params["os_variant_vm2"])
         self.assertEqual(node.params["os_variant_vm3"], net.params["os_variant_vm3"])
+        self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
 
     def test_parse_node_from_object_invalid_object_type(self):
         """Test correctly parsed node is not possible from an already parsed vm object."""
@@ -536,8 +541,6 @@ class CartesianNodeTest(Test):
 
     def test_parse_composite_nodes(self):
         """Test for correctly parsed composite nodes from graph retrievable test objects."""
-        self.config["tests_str"] += "only tutorial1,tutorial2\n"
-
         flat_objects = TestGraph.parse_flat_objects("net1", "nets")
         self.assertEqual(len(flat_objects), 1)
         flat_object = flat_objects[0]
@@ -549,18 +552,23 @@ class CartesianNodeTest(Test):
         graph = TestGraph()
         graph.objects = test_objects
 
-        nodes = graph.parse_composite_nodes(self.config["tests_str"], flat_object, params=self.config["param_dict"])
+        nodes = graph.parse_composite_nodes("normal..tutorial1,normal..tutorial2", flat_object)
         self.assertEqual(len(nodes), 4)
         self.assertIn(nodes[0].objects[0], nets)
-        self.assertEqual(nodes[0].params["nets"], "net1")
         self.assertEqual(len(nodes[0].objects[0].components), 1)
         self.assertEqual(len(nodes[0].objects[0].components[0].components), 1)
         self.assertIn(nodes[1].objects[0], nets)
-        self.assertEqual(nodes[1].params["nets"], "net1")
         self.assertIn(nodes[2].objects[0], nets)
-        self.assertEqual(nodes[2].params["nets"], "net1")
         self.assertIn(nodes[3].objects[0], nets)
-        self.assertEqual(nodes[3].params["nets"], "net1")
+        for node in nodes:
+            self.assertEqual(node.params["nets"], "net1")
+            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+
+        nodes = graph.parse_composite_nodes("normal..tutorial3", flat_object)
+        self.assertEqual(len(nodes), 4)
+        for node in nodes:
+            self.assertEqual(node.params["nets"], "net1")
+            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
 
     def test_parse_composite_nodes_compatibility_complete(self):
         """Test for correctly parsed test nodes from compatible graph retrievable test objects."""
@@ -1465,6 +1473,7 @@ class CartesianGraphTest(Test):
         flat_object = flat_objects[0]
         self.assertNotIn("only_vm1", flat_object.params)
         flat_object.params["only_vm1"] = "CentOS"
+        flat_object.params["nets_some_key"] = "some_value"
         get_objects, parse_objects = graph.parse_and_get_objects_for_node_and_object(flat_node, flat_object)
         self.assertEqual(len(get_objects), 0)
         test_objects = parse_objects
@@ -1477,6 +1486,8 @@ class CartesianGraphTest(Test):
         self.assertIn("CentOS", test_objects[0].components[0].id)
         self.assertEqual(len(test_objects[0].components[0].components), 1)
         self.assertEqual(test_objects[0].components[0].components[0].long_suffix, "image1_vm1")
+        self.assertEqual(test_objects[0].params["nets_some_key"], flat_object.params["nets_some_key"])
+        self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
 
     def test_parse_and_get_objects_for_node_and_object_full(self):
         """Test default parsing and retrieval of objects for a flat test node and full test object."""
@@ -1490,6 +1501,7 @@ class CartesianGraphTest(Test):
         # TODO: limitation in the Cartesian config
         self.assertNotIn("object_only_vm1", full_object.params)
         full_object.params["object_only_vm1"] = "CentOS"
+        full_object.params["nets_some_key"] = "some_value"
         get_objects, parse_objects = graph.parse_and_get_objects_for_node_and_object(flat_node, full_object)
         self.assertEqual(len(get_objects), 0)
         test_objects = parse_objects
@@ -1502,6 +1514,8 @@ class CartesianGraphTest(Test):
         self.assertIn("CentOS", test_objects[0].components[0].id)
         self.assertEqual(len(test_objects[0].components[0].components), 1)
         self.assertEqual(test_objects[0].components[0].components[0].long_suffix, "image1_vm1")
+        self.assertEqual(test_objects[0].params["nets_some_key"], full_object.params["nets_some_key"])
+        self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
 
     def test_object_node_incompatible(self):
         """Test incompatibility of parsed tests and pre-parsed available objects."""
@@ -1552,13 +1566,18 @@ class CartesianGraphTest(Test):
 
         self.assertEqual(len([o for o in objects if o.key == "vms"]), 1)
         full_vm = [o for o in objects if o.key == "vms"][0]
+        self.assertEqual(full_vm.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_vm)
         self.assertEqual(len(get_nodes), 0)
         self.assertEqual(len(parse_nodes), 1)
+        new_node = parse_nodes[0]
+        self.assertEqual(new_node.params["nets"], "net1")
+        self.assertEqual(new_node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         graph.new_nodes(parse_nodes)
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_vm)
         self.assertEqual(len(get_nodes), 1)
         self.assertEqual(len(parse_nodes), 0)
+        self.assertEqual(get_nodes[0], new_node)
 
         self.assertEqual(len([o for o in objects if o.key == "images"]), 1)
         full_image = [o for o in objects if o.key == "images"][0]
@@ -2116,7 +2135,7 @@ class CartesianGraphTest(Test):
         graph.parse_shared_root_from_object_roots()
 
         test_node = graph.get_node_by(param_val="tutorial1.+net2")
-        test_node.set_environment(graph.workers["net2"])
+        test_node.started_worker = graph.workers["net2"]
         del graph.workers["net2"]
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
@@ -3110,6 +3129,7 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status": "PASS", "_time": "10"},
         ]
+        test_node.started_worker = "some-worker-since-only-traversal-allowed"
         to_run = self.runner.run_test_node(test_node)
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         self.assertTrue(status)
@@ -3129,6 +3149,7 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
         ]
+        test_node.started_worker = "some-worker-since-only-traversal-allowed"
         to_run = self.runner.run_test_node(test_node)
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         # all runs succeed - status must be True

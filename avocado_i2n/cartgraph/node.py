@@ -299,21 +299,6 @@ class TestNode(Runnable):
         shortname = self.params.get("shortname", "<unknown>")
         return f"[node] longprefix='{self.long_prefix}', shortname='{shortname}'"
 
-    def set_environment(self, worker: TestWorker) -> None:
-        """
-        Set the environment for executing the test node.
-
-        :param worker: set an optional worker or run serially if none given
-                       for unisolated process spawners
-
-        This isolating environment could be a container, a virtual machine, or
-        a less-isolated process and is managed by a specialized spawner.
-        """
-        self.params["nets_gateway"] = worker.params["nets_gateway"]
-        self.params["nets_host"] = worker.params["nets_host"]
-        self.params["nets_spawner"] = worker.params["nets_spawner"]
-        self.started_worker = worker
-
     def set_objects_from_net(self, net: NetObject) -> None:
         """
         Set all node's objects from a provided test net.

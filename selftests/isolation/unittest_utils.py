@@ -59,6 +59,7 @@ class DummyTestRun(object):
         # provide ID-s and other node attributes as meta-parameters for assertion
         node.params["_long_prefix"] = node.long_prefix
         node.params["_uid"] = node.id_test.uid
+        assert node.started_worker is not None, f"{node} was not properly started by any worker"
         # small enough not to slow down our tests too much for a test timeout of 300 but
         # large enough to surpass the minimal occupation waiting timeout for more realism
         await asyncio.sleep(0.1)
