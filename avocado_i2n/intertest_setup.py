@@ -409,7 +409,7 @@ def boot(config, tag=""):
     The boot test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
-    _parse_one_node_for_all_objects(config, tag, ("Booting", "start", "boot", "Boot"))
+    _parse_one_node_for_all_objects_per_worker(config, tag, ("Booting", "start", "boot", "Boot"))
 
 
 @with_cartesian_graph
@@ -426,7 +426,7 @@ def download(config, tag=""):
     The download test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
-    _parse_one_node_for_all_objects(config, tag, ("Downloading from", "download", "download", "Download"))
+    _parse_one_node_for_all_objects_per_worker(config, tag, ("Downloading from", "download", "download", "Download"))
 
 
 @with_cartesian_graph
@@ -440,7 +440,7 @@ def control(config, tag=""):
 
     The control file is specified using a "control_file" parameter.
     """
-    _parse_one_node_for_all_objects(config, tag, ("Running on", "run", "run", "Run"))
+    _parse_one_node_for_all_objects_per_worker(config, tag, ("Running on", "run", "run", "Run"))
 
 
 @with_cartesian_graph
@@ -457,7 +457,7 @@ def upload(config, tag=""):
     The upload test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
-    _parse_one_node_for_all_objects(config, tag, ("Uploading to", "upload", "upload", "Upload"))
+    _parse_one_node_for_all_objects_per_worker(config, tag, ("Uploading to", "upload", "upload", "Upload"))
 
 
 @with_cartesian_graph
@@ -472,7 +472,7 @@ def shutdown(config, tag=""):
     The shutdown test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
     """
-    _parse_one_node_for_all_objects(config, tag, ("Shutting down", "stop", "shutdown", "Shutdown"))
+    _parse_one_node_for_all_objects_per_worker(config, tag, ("Shutting down", "stop", "shutdown", "Shutdown"))
 
 
 ############################################################
@@ -490,10 +490,14 @@ def check(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     operation = "check"
-    _parse_all_objects_then_iterate_for_nodes(config, tag,
-                                              {"vm_action": operation,
-                                               "skip_image_processing": "yes"},
-                                              "state " + operation)
+    _parse_and_iterate_for_objects_and_workers(
+        config, tag,
+        {
+            "vm_action": operation,
+            "skip_image_processing": "yes",
+        },
+        "state " + operation,
+    )
 
 
 @with_cartesian_graph
@@ -507,10 +511,14 @@ def pop(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     operation = "pop"
-    _parse_all_objects_then_iterate_for_nodes(config, tag,
-                                              {"vm_action": operation,
-                                               "skip_image_processing": "yes"},
-                                              "state " + operation)
+    _parse_and_iterate_for_objects_and_workers(
+        config, tag,
+        {
+            "vm_action": operation,
+            "skip_image_processing": "yes",
+        },
+        "state " + operation,
+    )
 
 
 @with_cartesian_graph
@@ -523,10 +531,14 @@ def push(config, tag=""):
     :param str tag: extra name identifier for the test to be run
     """
     operation = "push"
-    _parse_all_objects_then_iterate_for_nodes(config, tag,
-                                              {"vm_action": operation,
-                                               "skip_image_processing": "yes"},
-                                              "state " + operation)
+    _parse_and_iterate_for_objects_and_workers(
+        config, tag,
+        {
+            "vm_action": operation,
+            "skip_image_processing": "yes",
+        },
+        "state " + operation,
+    )
 
 
 @with_cartesian_graph
@@ -542,10 +554,14 @@ def get(config, tag=""):
     methods but we use different approach for illustration.
     """
     operation = "get"
-    _parse_all_objects_then_iterate_for_nodes(config, tag,
-                                              {"vm_action": operation,
-                                               "skip_image_processing": "yes"},
-                                              "state " + operation)
+    _parse_and_iterate_for_objects_and_workers(
+        config, tag,
+        {
+            "vm_action": operation,
+            "skip_image_processing": "yes",
+        },
+        "state " + operation,
+    )
 
 
 @with_cartesian_graph
@@ -561,10 +577,14 @@ def set(config, tag=""):
     methods but we use different approach for illustration.
     """
     operation = "set"
-    _parse_all_objects_then_iterate_for_nodes(config, tag,
-                                              {"vm_action": operation,
-                                               "skip_image_processing": "yes"},
-                                              "state " + operation)
+    _parse_and_iterate_for_objects_and_workers(
+        config, tag,
+        {
+            "vm_action": operation,
+            "skip_image_processing": "yes",
+        },
+        "state " + operation,
+    )
 
 
 @with_cartesian_graph
@@ -599,8 +619,11 @@ def unset(config, tag=""):
 
     setup_dict.update({"vm_action": operation, "skip_image_processing": "yes"})
 
-    _parse_all_objects_then_iterate_for_nodes(config, tag,
-                                              setup_dict, "state " + operation)
+    _parse_and_iterate_for_objects_and_workers(
+        config, tag,
+        setup_dict,
+        "state " + operation,
+    )
 
 
 def collect(config, tag=""):
@@ -665,72 +688,93 @@ def clean(config, tag=""):
 ############################################################
 
 
-def _parse_one_node_for_all_objects(config, tag, verb):
+def _parse_one_node_for_all_objects_per_worker(config, tag, verb):
     """
-    Wrapper for setting state/snapshot, same as :py:func:`set`.
+    Parse a single node for all test objects and a given worker.
 
     :param verb: verb forms in a tuple (gerund form, variant, test name, present)
     :type verb: (str, str, str, str)
 
     The rest of the arguments match the public functions.
+
+    ..todo:: Currently only vm objects are supported.
     """
     l, r = config["graph"].l, config["graph"].r
     selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("%s virtual machines %s (%s)", verb[0],
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
+
+    graph = TestGraph()
+    graph.new_workers(l.parse_workers(config["param_dict"]))
+    for vm_name in selected_vms:
+        graph.objects += TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name])
+
     vms = " ".join(selected_vms)
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
-    tests, objects = l.parse_object_nodes(None, "all..internal..manage.%s" % verb[1], tag, config["vm_strs"], params=setup_dict)
-    assert len(tests) == 1, "There must be exactly one %s test variant from %s" % (verb[2], tests)
-    graph = TestGraph()
-    graph.new_workers(l.parse_workers(config["param_dict"]))
-    graph.objects = objects
-    test_node = TestNode(tag, tests[0].recipe)
-    test_node.set_objects_from_net(objects[-1])
-    graph.new_nodes(test_node)
+    for test_worker in graph.workers.values():
+        test_worker.net.update_restrs(config["vm_strs"])
+        nodes = graph.parse_composite_nodes("all..internal..manage.%s" % verb[1], test_worker.net,
+                                            tag, params=setup_dict)
+        if len(nodes) == 0:
+            logging.warning(f"Skipped incompatible worker {test_worker.id}")
+            continue
+        elif len(nodes) > 1:
+            raise RuntimeError(f"There must be exactly one {verb[2]} test variant "
+                               f"for {test_worker.id} from {nodes}")
+        graph.new_nodes(nodes[0])
+
     graph.parse_shared_root_from_object_roots(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: True)
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("%s complete", verb[3])
 
 
-def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation):
+def _parse_and_iterate_for_objects_and_workers(config, tag, param_dict, operation):
     """
-    Wrapper for getting/setting/unsetting/... state/snapshot.
+    Parse a single node for each test object and test worker.
 
     :param param_dict: additional parameters to overwrite the previous dictionary with
     :type param_dict: {str, str}
     :param str operation: operation description to use when logging
 
     The rest of the arguments match the public functions.
+
+    ..todo:: Currently only vm objects are supported.
     """
     l, r = config["graph"].l, config["graph"].r
     selected_vms = sorted(config["vm_strs"].keys())
     LOG_UI.info("Starting %s for %s with job %s and params:\n%s", operation,
                 ", ".join(selected_vms), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form().rstrip("\n"))
+
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
-    flat_net = l.parse_net_from_object_restrs("net1", config["vm_strs"])
-    graph.objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
-    for test_object in graph.objects:
-        if test_object.key != "vms":
-            continue
-        vm = test_object
-        # parse individual net only for the current vm
-        net = l.parse_object_from_objects("net1", "nets", [vm], params=config["param_dict"])
+    for vm_name in selected_vms:
+        graph.objects += TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name])
 
-        setup_dict = config["param_dict"].copy()
-        setup_dict.update(param_dict)
-        test_node = l.parse_node_from_object(net, "all..internal..manage.unchanged", prefix=tag, params=setup_dict)
-        # TODO: traversal relies explicitly on object_suffix which only indicates
-        # where a parent node was parsed from, i.e. which test object of the child node
-        test_node.params["object_suffix"] = test_object.long_suffix
-        graph.new_nodes(test_node)
+    for test_worker in graph.workers.values():
+        test_worker.net.update_restrs(config["vm_strs"])
+        for test_object in [o for o in graph.objects if o.key == "vms"]:
+            setup_dict = config["param_dict"].copy()
+            setup_dict.update(param_dict)
+            setup_dict["vms"] = test_object.suffix
+
+            nodes = graph.parse_composite_nodes("all..internal..manage.unchanged", test_worker.net,
+                                                tag, params=setup_dict)
+            if len(nodes) == 0:
+                logging.warning(f"Skipped incompatible worker {test_worker.id}")
+                continue
+            graph.new_nodes(nodes)
+
+            # TODO: traversal relies explicitly on object_suffix which only indicates
+            # where a parent node was parsed from, i.e. which test object of the child node
+            for node in nodes:
+                node.params["object_suffix"] = test_object.long_suffix
 
     graph.parse_shared_root_from_object_roots(config["param_dict"])
-    graph.flag_children(flag_type="run", flag=lambda self, slot: slot not in self.workers)
+    # as each worker's traversal will be restricted only to its nodes the run policy is also simpler
+    graph.flag_children(flag_type="run", flag=lambda self, slot: True)
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished %s", operation)
 
