@@ -1535,10 +1535,9 @@ class TestGraph(object):
                         continue
 
                 if next.is_cleanup_ready(worker):
-                    for setup in next.setup_nodes:
-                        setup.drop_child(next, worker)
                     self.report_progress()
 
+                    # capture premature cleanup ready cases (only cleanup ready due to unparsed nodes)
                     unexplored_nodes = [node for node in self.nodes if node.is_flat() and not node.is_unrolled(worker)]
                     if len(unexplored_nodes) > 0:
                         # postpone cleaning up current node since it might have newly added children
@@ -1546,6 +1545,8 @@ class TestGraph(object):
                         traverse_path.append(root.pick_child(worker))
                         continue
 
+                    for setup in next.setup_nodes:
+                        setup.drop_child(next, worker)
                     await self.reverse_node(next, worker, params)
                     traverse_path.pop()
                 else:
@@ -1559,3 +1560,6 @@ class TestGraph(object):
 
             if log.getLogger('graph').level <= log.DEBUG:
                 self.visualize(traverse_dir, f"{time.time():.4f}_{worker.id}")
+
+        assert traverse_path == [root], f"Unfinished traverse path detected {traverse_path}"
+        traverse_path.pop()

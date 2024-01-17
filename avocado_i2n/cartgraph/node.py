@@ -127,25 +127,34 @@ class EdgeRegister():
     def __repr__(self):
         return f"[edge] registry='{self._registry}'"
 
-    def get(self, node: "TestNode") -> set[TestWorker]:
+    def get_workers(self, node: "TestNode" = None) -> set[str]:
         """
-        Get all worker visits for the given (possibly bridged) test node.
+        Get all worker visits for the given (possibly bridged) test node are all nodes.
 
         :param node: possibly registered test node to get visits for
         :returns: all visits by all workers as worker references (allowing repetitions)
         """
-        return self._registry.get(node.bridged_form, set())
+        worker_keys = set()
+        node_keys = [node.bridged_form] if node else self._registry.keys()
+        for node_key in node_keys:
+            worker_keys |= {*self._registry.get(node_key, {}).keys()}
+        return worker_keys
 
-    def get_all_workers(self) -> set[TestWorker]:
+    def get_counters(self, node: "TestNode" = None, worker: TestWorker = None) -> int:
         """
         Get all workers in the current register.
 
-        :returns: all workers that visited the edges so far
+        :param node: optional test node to get counters for
+        :param worker: optional worker to get counters for
+        :returns: counter for a given node or worker (typically both)
         """
-        workers = set()
-        for setup_worker_set in self._registry.values():
-            workers |= setup_worker_set
-        return workers
+        counter = 0
+        node_keys = [node.bridged_form] if node else self._registry.keys()
+        for node_key in node_keys:
+            worker_keys = [worker.id] if worker else self._registry.get(node_key, {}).keys()
+            for worker_key in worker_keys:
+                counter += self._registry.get(node_key, {}).get(worker_key, 0)
+        return counter
 
     def register(self, node: "TestNode", worker: TestWorker) -> None:
         """
@@ -154,9 +163,11 @@ class EdgeRegister():
         :param node: possibly registered test node to register visits for
         :param worker: worker that visited the test node
         """
-        visits = self.get(node)
-        visits.add(worker)
-        self._registry[node.bridged_form] = visits
+        if node.bridged_form not in self._registry:
+            self._registry[node.bridged_form] = {}
+        if worker.id not in self._registry[node.bridged_form]:
+            self._registry[node.bridged_form][worker.id] = 0
+        self._registry[node.bridged_form][worker.id] += 1
 
 
 class TestNode(Runnable):
@@ -171,16 +182,6 @@ class TestNode(Runnable):
             self.regenerate_params()
         return self._params_cache
     params = property(fget=params)
-
-    def started_setup_workers(self):
-        """Workers that have previously started traversing this node as setup."""
-        return self._picked_by_cleanup_nodes.get_all_workers()
-    started_setup_workers = property(fget=started_setup_workers)
-
-    def started_cleanup_workers(self):
-        """Workers that have previously started traversing this node as cleanup."""
-        return self._picked_by_setup_nodes.get_all_workers()
-    started_cleanup_workers = property(fget=started_cleanup_workers)
 
     def shared_workers(self):
         """Workers that have previously finished traversing this node (incl. leaves and others)."""
@@ -377,7 +378,7 @@ class TestNode(Runnable):
         :param worker: relative setup readiness with respect to a worker ID
         """
         for node in self.setup_nodes:
-            if worker not in self._dropped_setup_nodes.get(node):
+            if worker.id not in self._dropped_setup_nodes.get_workers(node):
                 return False
         return True
 
@@ -388,7 +389,7 @@ class TestNode(Runnable):
         :param str worker: relative setup readiness with respect to a worker ID
         """
         for node in self.cleanup_nodes:
-            if worker not in self._dropped_cleanup_nodes.get(node):
+            if worker.id not in self._dropped_cleanup_nodes.get_workers(node):
                 return False
         return True
 
@@ -677,11 +678,11 @@ class TestNode(Runnable):
         The current order will prioritize less traversed test paths.
         """
         available_nodes = [n for n in self.setup_nodes if worker.id in n.params["name"] or n.is_flat() or n.is_shared_root()]
-        available_nodes = [n for n in available_nodes if worker not in self._dropped_setup_nodes.get(n)]
+        available_nodes = [n for n in available_nodes if worker.id not in self._dropped_setup_nodes.get_workers(n)]
         if len(available_nodes) == 0:
             raise RuntimeError(f"Picked a parent of a node without remaining parents for {self}")
         sorted_nodes = sorted(available_nodes, key=cmp_to_key(lambda x, y: TestNode.prefix_priority(x.long_prefix, y.long_prefix)))
-        sorted_nodes = sorted(sorted_nodes, key=lambda n: len(n.started_setup_workers))
+        sorted_nodes = sorted(sorted_nodes, key=lambda n: n._picked_by_cleanup_nodes.get_counters())
         sorted_nodes = sorted(sorted_nodes, key=lambda n: int(not n.is_flat()))
 
         test_node = sorted_nodes[0]
@@ -699,11 +700,11 @@ class TestNode(Runnable):
         The current order will prioritize less traversed test paths.
         """
         available_nodes = [n for n in self.cleanup_nodes if worker.id in n.params["name"] or n.is_flat() or n.is_shared_root()]
-        available_nodes = [n for n in available_nodes if worker not in self._dropped_cleanup_nodes.get(n)]
+        available_nodes = [n for n in available_nodes if worker.id not in self._dropped_cleanup_nodes.get_workers(n)]
         if len(available_nodes) == 0:
             raise RuntimeError(f"Picked a child of a node without remaining children for {self}")
         sorted_nodes = sorted(available_nodes, key=cmp_to_key(lambda x, y: TestNode.prefix_priority(x.long_prefix, y.long_prefix)))
-        sorted_nodes = sorted(sorted_nodes, key=lambda n: len(n.started_cleanup_workers))
+        sorted_nodes = sorted(sorted_nodes, key=lambda n: n._picked_by_setup_nodes.get_counters())
         sorted_nodes = sorted(sorted_nodes, key=lambda n: int(not n.is_flat()))
 
         test_node = sorted_nodes[0]

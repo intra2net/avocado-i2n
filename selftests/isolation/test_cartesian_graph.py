@@ -448,23 +448,50 @@ class CartesianNodeTest(Test):
         worker1 = mock.MagicMock(id="net1")
         worker2 = mock.MagicMock(id="net2")
 
-        self.assertEqual(register.get(node1), set())
-        self.assertEqual(register.get(node2), set())
-        self.assertEqual(register.get(node3), set())
+        self.assertEqual(register.get_workers(node1), set())
+        self.assertEqual(register.get_workers(node2), set())
+        self.assertEqual(register.get_workers(node3), set())
+        self.assertEqual(register.get_counters(node1), 0)
+        self.assertEqual(register.get_counters(node2), 0)
+        self.assertEqual(register.get_counters(node3), 0)
 
         register.register(node1, worker1)
-        self.assertEqual(register.get(node1), {worker1})
-        self.assertEqual(register.get(node2), {worker1})
-        self.assertEqual(register.get(node3), set())
-        self.assertEqual(register.get_all_workers(), {worker1})
+        self.assertEqual(register.get_workers(node1), {worker1.id})
+        self.assertEqual(register.get_counters(node1), 1)
+        self.assertEqual(register.get_counters(node1, worker1), 1)
+        self.assertEqual(register.get_counters(node1, worker2), 0)
+        self.assertEqual(register.get_workers(node2), {worker1.id})
+        self.assertEqual(register.get_counters(node2), 1)
+        self.assertEqual(register.get_counters(node2, worker1), 1)
+        self.assertEqual(register.get_counters(node2, worker2), 0)
+        self.assertEqual(register.get_workers(node3), set())
+        self.assertEqual(register.get_counters(node3), 0)
+        self.assertEqual(register.get_counters(node3, worker1), 0)
+        self.assertEqual(register.get_counters(node3, worker2), 0)
+        self.assertEqual(register.get_workers(), {worker1.id})
+        self.assertEqual(register.get_counters(worker=worker1), 1)
+        self.assertEqual(register.get_counters(worker=worker2), 0)
+        self.assertEqual(register.get_counters(), 1)
 
         register.register(node1, worker2)
         register.register(node2, worker2)
         register.register(node3, worker2)
-        self.assertEqual(register.get(node1), {worker1, worker2})
-        self.assertEqual(register.get(node2), {worker1, worker2})
-        self.assertEqual(register.get(node3), {worker2})
-        self.assertEqual(register.get_all_workers(), {worker1, worker2})
+        self.assertEqual(register.get_workers(node1), {worker1.id, worker2.id})
+        self.assertEqual(register.get_counters(node1), 3)
+        self.assertEqual(register.get_counters(node1, worker1), 1)
+        self.assertEqual(register.get_counters(node1, worker2), 2)
+        self.assertEqual(register.get_workers(node2), {worker1.id, worker2.id})
+        self.assertEqual(register.get_counters(node2), 3)
+        self.assertEqual(register.get_counters(node2, worker1), 1)
+        self.assertEqual(register.get_counters(node2, worker2), 2)
+        self.assertEqual(register.get_workers(node3), {worker2.id})
+        self.assertEqual(register.get_counters(node3), 1)
+        self.assertEqual(register.get_counters(node3, worker1), 0)
+        self.assertEqual(register.get_counters(node3, worker2), 1)
+        self.assertEqual(register.get_workers(), {worker1.id, worker2.id})
+        self.assertEqual(register.get_counters(worker=worker1), 1)
+        self.assertEqual(register.get_counters(worker=worker2), 3)
+        self.assertEqual(register.get_counters(), 4)
 
     def test_parse_node_from_object(self):
         """Test for a correctly parsed node from an already parsed net object."""
@@ -1045,10 +1072,10 @@ class CartesianNodeTest(Test):
         self.assertEqual(picked_parent, node1)
 
         # lesser node2 has 1 worker less now
-        self.assertEqual(node1.started_setup_workers, {worker})
+        self.assertEqual(node1._picked_by_cleanup_nodes.get_counters(), 1)
         picked_parent = node.pick_parent(worker)
         self.assertEqual(picked_parent, node2)
-        self.assertEqual(node1.started_cleanup_workers, {worker})
+        self.assertEqual(node1._picked_by_setup_nodes.get_counters(), 1)
         picked_child = node.pick_child(worker)
         self.assertEqual(picked_child, node2)
 
@@ -1109,20 +1136,20 @@ class CartesianNodeTest(Test):
 
         picked_child = node.pick_child(worker)
         self.assertEqual(picked_child, child_node1)
-        self.assertIn(worker, picked_child._picked_by_setup_nodes.get(node))
+        self.assertIn(worker.id, picked_child._picked_by_setup_nodes.get_workers(node))
         node.drop_child(picked_child, worker)
-        self.assertIn(worker, node._dropped_cleanup_nodes.get(picked_child))
+        self.assertIn(worker.id, node._dropped_cleanup_nodes.get_workers(picked_child))
         picked_child = node.pick_child(worker)
         self.assertEqual(picked_child, child_node2)
-        self.assertIn(worker, picked_child._picked_by_setup_nodes.get(node))
+        self.assertIn(worker.id, picked_child._picked_by_setup_nodes.get_workers(node))
         node.drop_child(picked_child, worker)
-        self.assertIn(worker, node._dropped_cleanup_nodes.get(picked_child))
+        self.assertIn(worker.id, node._dropped_cleanup_nodes.get_workers(picked_child))
 
         picked_parent = picked_child.pick_parent(worker)
         self.assertEqual(picked_parent, node)
-        self.assertIn(worker, picked_parent._picked_by_cleanup_nodes.get(picked_child))
+        self.assertIn(worker.id, picked_parent._picked_by_cleanup_nodes.get_workers(picked_child))
         picked_child.drop_parent(picked_parent, worker)
-        self.assertIn(worker, picked_parent._dropped_cleanup_nodes.get(picked_child))
+        self.assertIn(worker.id, picked_parent._dropped_cleanup_nodes.get_workers(picked_child))
 
     def test_pick_and_drop_bridged(self):
         """Test for correctly shared picked and dropped nodes across bridged nodes."""
@@ -1159,11 +1186,11 @@ class CartesianNodeTest(Test):
 
         # picking parent of node1 and dropping parent of node2 has shared effect
         self.assertEqual(node1.pick_parent(worker1), node13)
-        self.assertEqual(node13._picked_by_cleanup_nodes.get(node1), {worker1})
-        self.assertEqual(node23._picked_by_cleanup_nodes.get(node2), {worker1})
+        self.assertEqual(node13._picked_by_cleanup_nodes.get_workers(node1), {worker1.id})
+        self.assertEqual(node23._picked_by_cleanup_nodes.get_workers(node2), {worker1.id})
         node2.drop_parent(node23, worker2)
-        self.assertEqual(node1._dropped_setup_nodes.get(node13), {worker2})
-        self.assertEqual(node2._dropped_setup_nodes.get(node23), {worker2})
+        self.assertEqual(node1._dropped_setup_nodes.get_workers(node13), {worker2.id})
+        self.assertEqual(node2._dropped_setup_nodes.get_workers(node23), {worker2.id})
 
 
 @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
@@ -2599,6 +2626,110 @@ class CartesianGraphTest(Test):
         for node in graph.nodes:
             if node in root.cleanup_nodes:
                 self.assertTrue(node.is_flat() or node.is_object_root())
+
+    def test_traversing_in_isolation(self):
+        """Test that actual traversing (not just test running) works as expected."""
+        graph = TestGraph()
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves"))
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(3)])}))
+
+        # wrap within a mock as a spy option
+        actual_traversing = graph.traverse_node
+        actual_reversing = graph.reverse_node
+        graph.traverse_node = mock.MagicMock()
+        graph.traverse_node.side_effect = actual_traversing
+        graph.reverse_node = mock.MagicMock()
+        graph.reverse_node.side_effect = actual_reversing
+
+        DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
+                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
+        DummyTestRun.asserted_tests = [
+        ]
+
+        self._run_traversal(graph, {"dry_run": "yes"})
+
+        traverse_calls = graph.traverse_node.call_args_list
+        reverse_calls = graph.reverse_node.call_args_list
+        for node in graph.nodes:
+            # shared root will be checked in the end with separate expectations
+            if node.is_shared_root():
+                continue
+            picked_by_setup = node._picked_by_setup_nodes
+            picked_by_cleanup = node._picked_by_cleanup_nodes
+            dropped_setup = node._dropped_setup_nodes
+            dropped_cleanup = node._dropped_cleanup_nodes
+            # the three workers comprise all possible visits of the node in the four registers
+            self.assertEqual(picked_by_setup.get_counters(),
+                             sum(picked_by_setup.get_counters(worker=w) for w in graph.workers.values()))
+            self.assertEqual(picked_by_cleanup.get_counters(),
+                             sum(picked_by_cleanup.get_counters(worker=w) for w in graph.workers.values()))
+            self.assertEqual(dropped_setup.get_counters(),
+                             sum(dropped_setup.get_counters(worker=w) for w in graph.workers.values()))
+            self.assertEqual(dropped_cleanup.get_counters(),
+                             sum(dropped_cleanup.get_counters(worker=w) for w in graph.workers.values()))
+            for worker in graph.workers.values():
+                if worker.id not in ["net1", "net2", "net3"]:
+                    continue
+                # consider only workers relevant to the current checked node
+                if not node.is_flat() and worker.id not in node.params["name"]:
+                    continue
+                # the worker relevant nodes comprise all possible visits by that worker
+                worker_setup = [n for n in node.setup_nodes if n.is_flat() or n.is_shared_root() or worker.id in n.params["name"]]
+                worker_cleanup = [n for n in node.cleanup_nodes if n.is_flat() or n.is_shared_root() or worker.id in n.params["name"]]
+                self.assertEqual(picked_by_setup.get_counters(worker=worker),
+                                sum(picked_by_setup.get_counters(n, worker=worker) for n in worker_setup))
+                self.assertEqual(picked_by_cleanup.get_counters(worker=worker),
+                                sum(picked_by_cleanup.get_counters(n, worker=worker) for n in worker_cleanup))
+                self.assertEqual(dropped_setup.get_counters(worker=worker),
+                                sum(dropped_setup.get_counters(n, worker=worker) for n in worker_setup))
+                self.assertEqual(dropped_cleanup.get_counters(worker=worker),
+                                sum(dropped_cleanup.get_counters(n, worker=worker) for n in worker_cleanup))
+
+                picked_counter = {s: s._picked_by_cleanup_nodes.get_counters(node=node, worker=worker) for s in worker_setup}
+                average_picked_counter = sum(picked_counter.values()) / len(picked_counter) if picked_counter else 0.0
+                for setup_node in worker_setup:
+                    # validate ergodicity of setup picking from this node
+                    self.assertLessEqual(int(abs(picked_counter[setup_node] - average_picked_counter)), 1)
+                    # may not be picked by some setup that was needed for it to be setup ready
+                    self.assertGreaterEqual(max(picked_counter[setup_node],
+                                                picked_by_setup.get_counters(node=setup_node, worker=worker)), 1)
+                    # each setup/cleanup node dropped exactly once per worker
+                    self.assertEqual(dropped_setup.get_counters(node=setup_node, worker=worker), 1)
+                picked_counter = {c: c._picked_by_setup_nodes.get_counters(node=node, worker=worker) for c in worker_cleanup}
+                average_picked_counter = sum(picked_counter.values()) / len(picked_counter) if picked_counter else 0.0
+                for cleanup_node in worker_cleanup:
+                    # validate ergodicity of cleanup picking from this node
+                    self.assertLessEqual(int(abs(picked_counter[cleanup_node] - average_picked_counter)), 1)
+                    # picked at least once from each cleanup node (for one or all workers if flat)
+                    self.assertGreaterEqual(picked_by_cleanup.get_counters(node=cleanup_node, worker=worker), 1)
+                    # each cleanup node dropped exactly once per worker
+                    self.assertEqual(dropped_cleanup.get_counters(node=cleanup_node, worker=worker), 1)
+
+                # whether picked as a parent or child, a node has to be traversed at least once
+                graph.traverse_node.assert_any_call(node, worker, {"dry_run": "yes"})
+                self.assertGreaterEqual(len([c for c in traverse_calls if c.args[0] == node and c.args[1] == worker]), 1)
+                # node should have been reversed by this worker and done so exactly once
+                graph.reverse_node.assert_any_call(node, worker, {"dry_run": "yes"})
+                self.assertEqual(len([r for r in reverse_calls if r == mock.call(node, worker, mock.ANY)]), 1)
+                # setup should always be reversed after reversed in the right order
+                for setup_node in worker_setup:
+                    if setup_node.is_shared_root():
+                        continue
+                    self.assertGreater(reverse_calls.index(mock.call(setup_node, worker, mock.ANY)),
+                                       reverse_calls.index(mock.call(node, worker, mock.ANY)))
+                for cleanup_node in worker_cleanup:
+                    self.assertLess(reverse_calls.index(mock.call(cleanup_node, worker, mock.ANY)),
+                                    reverse_calls.index(mock.call(node, worker, mock.ANY)))
+
+                # the shared root can be traversed many times but never reversed
+                shared_roots = graph.get_nodes_by("shared_root", "yes")
+                assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
+                root = shared_roots[0]
+                graph.traverse_node.assert_any_call(root, worker, mock.ANY)
+                self.assertNotIn(mock.call(root, worker, mock.ANY), reverse_calls)
 
     def test_rerun_max_times(self):
         """Test that the test is tried `max_tries` times if no status is not specified."""
