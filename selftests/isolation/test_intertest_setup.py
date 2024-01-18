@@ -5,7 +5,7 @@ import unittest.mock as mock
 import contextlib
 import re
 
-from avocado import Test, skip
+from avocado import Test
 from virttest import utils_params
 
 import unittest_importer
@@ -51,7 +51,6 @@ class IntertestSetupTest(Test):
         self.config["tests_params"] = utils_params.Params()
         self.config["vms_params"] = utils_params.Params()
 
-    @skip("Manual tool has to be redesigned")
     def test_update_default(self):
         """Test the general usage of the manual update-cache tool."""
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
@@ -81,7 +80,6 @@ class IntertestSetupTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.clicked"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.clicked"][self.shared_pool], 1)
 
-    @skip("Manual tool has to be redesigned")
     def test_update_custom(self):
         """Test the state customized usage of the manual update-cache tool."""
         self.config["vms_params"]["from_state_vm1"] = "customize"
@@ -116,7 +114,6 @@ class IntertestSetupTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.clicked"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.clicked"][self.shared_pool], 1)
 
-    @skip("Manual tool has to be redesigned")
     def test_update_custom_parallel(self):
         """Test the state customized usage of the manual update-cache tool."""
         self.config["param_dict"]["nets"] = "net1 net2"
@@ -152,7 +149,6 @@ class IntertestSetupTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.clicked"][self.shared_pool], 2)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.clicked"][self.shared_pool], 2)
 
-    @skip("Manual tool has to be redesigned")
     def test_update_install(self):
         """Test the install-only state customized usage of the manual update-cache tool."""
         self.config["vms_params"]["from_state"] = "install"
@@ -179,7 +175,6 @@ class IntertestSetupTest(Test):
             else:
                 self.assertGreater(DummyStateControl.asserted_states["unset"][unset_state][self.shared_pool], 0)
 
-    @skip("Manual tool has to be redesigned")
     def test_update_remove_set(self):
         """Test the remove set usage of the manual update-cache tool."""
         self.config["vms_params"]["remove_set"] = "minimal"

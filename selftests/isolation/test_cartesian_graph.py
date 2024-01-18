@@ -2257,6 +2257,32 @@ class CartesianGraphTest(Test):
         ]
         self._run_traversal(graph, self.config["param_dict"])
 
+    def test_flag_children_worker(self):
+        """Test for correct node children flagging for a given node."""
+        self.config["param_dict"]["nets"] = "net1 net2"
+        self.config["tests_str"] = "only nonleaves\n"
+        self.config["tests_str"] += "only connect\n"
+        self.config["param_dict"]["vms"] = "vm1"
+        graph = TestGraph.parse_object_trees(
+            None, self.config["tests_str"],
+            self.prefix, self.config["vm_strs"],
+            self.config["param_dict"],
+        )
+
+        # disable running the entire multi-graph by default
+        graph.flag_children(flag_type="run", flag=lambda self, slot: False)
+        # net1 will run as in simpler cases
+        graph.flag_children(node_name="customize", worker_name="net1", flag_type="run",
+                            flag=lambda self, slot: not self.is_finished(slot))
+        # net2 will run from connect to connect, thus running zero nodes
+        graph.flag_children(node_name="connect", worker_name="net2", flag_type="run",
+                            flag=lambda self, slot: not self.is_finished(slot))
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^nonleaves.internal.automated.connect.vm1", "vms": "^vm1$"},
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+
     def test_flag_intersection_all(self):
         """Test for correct node flagging of a Cartesian graph with itself."""
         self.config["param_dict"]["nets"] = "net1"

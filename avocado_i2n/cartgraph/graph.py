@@ -228,7 +228,7 @@ class TestGraph(object):
         graph.render(f"{dump_dir}/cg_{id(self)}_{tag}")
 
     """run/clean switching functionality"""
-    def flag_children(self, node_name=None, object_name=None,
+    def flag_children(self, node_name=None, object_name=None, worker_name=None,
                       flag_type="run", flag=lambda self, slot: slot not in self.workers,
                       skip_parents=False, skip_children=False):
         """
@@ -238,6 +238,8 @@ class TestGraph(object):
         :type node_name: str or None
         :param object_name: test object whose state is set or shared root if None
         :type object_name: str or None
+        :param worker_name: test worker whose's run/clean policy will be modified
+        :type worker_name: str or None
         :param str flag_type: 'run' or 'clean' categorization of the children
         :param function flag: whether and when the run/clean action should be executed
         :param bool skip_parents: whether the parents should not be flagged (just children)
@@ -259,6 +261,10 @@ class TestGraph(object):
                 root_tests = self.get_nodes_by(param_key="vms",
                                                param_val="(?:^|\s)"+object_name+"(?:$|\s)",
                                                subset=root_tests)
+        if worker_name:
+            root_tests = self.get_nodes_by(param_key="name",
+                                           param_val="(?:^|\.)"+worker_name+"(?:$|\.)",
+                                           subset=root_tests)
         if len(root_tests) < 1:
             raise AssertionError(f"Could not retrieve node with name {node_name} and flag all its children tests")
         elif len(root_tests) > 1:
@@ -299,10 +305,9 @@ class TestGraph(object):
         activity = "running" if flag_type == "run" else "cleanup"
         logging.debug(f"Flagging test nodes for {activity}")
         for test_node in self.nodes:
-            name = ".".join(test_node.params["name"].split(".")[1:])
-            matching_nodes = graph.get_nodes_by(param_key="name", param_val=name+"$")
+            matching_nodes = graph.get_nodes_by(param_key="name", param_val=test_node.setless_form+"$")
             if len(matching_nodes) == 0:
-                logging.debug(f"Skip flag for non-overlaping {test_node}")
+                logging.debug(f"Skip flag for non-overlapping {test_node}")
                 continue
             elif len(matching_nodes) > 1:
                 raise ValueError(f"Cannot map {test_node} into a unique test node from {graph}")
@@ -1131,7 +1136,7 @@ class TestGraph(object):
         objects = TestGraph.parse_components_for_object(flat_net, "nets",
                                                         params=params, verbose=False, unflatten=False)
         # the parsed test nodes are already fully restricted by the available test objects
-        nodes = TestGraph().parse_composite_nodes(restriction, flat_net, prefix, params=params, verbose=True)
+        nodes = TestGraph().parse_composite_nodes(restriction, flat_net, prefix, params=params, verbose=verbose)
         logging.info(f"Intersecting {len(nodes)} initially parsed nodes with {len(objects)} initially parsed objects")
         object_ids = [o.id for o in objects]
         for test_node in nodes:
