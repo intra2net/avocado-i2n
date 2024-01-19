@@ -673,6 +673,34 @@ class CartesianNodeTest(Test):
             self.assertNotIn("only_vm2", nodes[i].params)
             self.assertIn(nets[i-1].params["name"], nodes[i].params["name"])
 
+    def test_parse_and_get_composite_nodes(self):
+        """Test for correctly parsed and reused graph retrievable composite nodes."""
+        self.config["tests_str"] += "only tutorial1,tutorial2\n"
+
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_objects), 1)
+        flat_object = flat_objects[0]
+
+        flat_object.params["vms"] = "vm1"
+        test_objects = TestGraph.parse_components_for_object(flat_object, "nets", unflatten=True)
+        nets = [o for o in test_objects if o.key == "nets"]
+        self.assertEqual(len(nets), 2)
+        graph = TestGraph()
+        graph.objects = test_objects
+
+        get_nodes, parse_nodes = graph.parse_and_get_composite_nodes(self.config["tests_str"], flat_object,
+                                                                     params=self.config["param_dict"])
+        self.assertEqual(len(parse_nodes), 4)
+        self.assertEqual(len(get_nodes), 0)
+
+        reused_nodes = parse_nodes[:2]
+        graph.new_nodes(reused_nodes)
+        get_nodes, parse_nodes = graph.parse_and_get_composite_nodes(self.config["tests_str"], flat_object,
+                                                                     params=self.config["param_dict"])
+        self.assertEqual(len(parse_nodes), 2)
+        self.assertEqual(len(get_nodes), 2)
+        self.assertEqual(get_nodes, reused_nodes)
+
     def test_is_unrolled(self):
         """Test that a flat test node is considered unrolled under the right circumstances."""
         graph = TestGraph()
@@ -1907,9 +1935,20 @@ class CartesianGraphTest(Test):
             self.assertEqual(children[i].objects[0], full_nets[i])
             self.assertEqual(children[i].objects[0].components[0], full_vms[i])
 
+        # any parents and children are now reused
+        reused_parent, reused_child = parents[0], children[0]
+        reparsed_parent, reparsed_child = parents[1], children[1]
         parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
         self.assertEqual(len(parents), 0)
         self.assertEqual(len(children), 0)
+        graph.nodes = []
+        graph.nodes_index = PrefixTree()
+        graph.new_nodes([reused_parent, reused_child])
+        parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
+        self.assertEqual(len(parents), 1)
+        self.assertEqual(len(children), 1)
+        self.assertEqual(parents[0].params["name"], reparsed_parent.params["name"])
+        self.assertEqual(children[0].params["name"], reparsed_child.params["name"])
 
         # make sure the node reuse does not depend on test set restrictions
         flat_nodes = [n for n in TestGraph.parse_flat_nodes("all..tutorial1")]
@@ -2447,6 +2486,41 @@ class CartesianGraphTest(Test):
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
+
+    def test_traverse_motif_with_flat_reuse(self):
+        """Test that traversing a graph motif with flat node reused as setup works."""
+        graph = TestGraph()
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..client_clicked,leaves..explicit_clicked"))
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"nets": " ".join([f"net{i+1}" for i in range(2)]),
+                                                   "only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"}))
+
+        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
+        DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
+        DummyStateControl.asserted_states["check"]["guisetup.clicked"] = {self.shared_pool: False}
+        DummyStateControl.asserted_states["check"]["getsetup.clicked"] = {self.shared_pool: False}
+        DummyStateControl.asserted_states["get"]["guisetup.clicked"] = {self.shared_pool: 0}
+        DummyStateControl.asserted_states["get"]["getsetup.clicked"] = {self.shared_pool: 0}
+        DummyStateControl.asserted_states["unset"] = {"guisetup.clicked": {self.shared_pool: 0}}
+        DummyStateControl.asserted_states["unset"] = {"getsetup.clicked": {self.shared_pool: 0}}
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets": "^net1$"},
+            {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "nets": "^net2$"},
+            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "nets": "^net1$"},
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^net1$"},
+            {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1", "vms": "^vm1 vm2 vm3$", "nets": "^net1$"},
+        ]
+
+        self._run_traversal(graph)
+        for action in ["get"]:
+            for state in ["install", "customize"]:
+                # called once by worker for for each of two vms (no self-sync skip as setup is from previous run or shared pool)
+                # NOTE: any such use cases assume the previous setup is fully synced across all workers, if this is not the case
+                # it must be due to interrupted run in which case the setup is not guaranteed to be reusable on the first place
+                self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 4)
+        for action in ["set", "unset"]:
+            for state in DummyStateControl.asserted_states[action]:
+                self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
 
     def test_trace_work_external(self):
         """Test a multi-object test run with reusable setup of diverging workers and shared pool or previous runs."""

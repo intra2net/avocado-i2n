@@ -933,6 +933,32 @@ class TestGraph(object):
 
         return test_nodes
 
+    def parse_and_get_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
+                                      params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestNode]]:
+        """
+        Parse new composite nodes and reuse already cached ones instead of overlapping new ones.
+
+        :param restriction: block of node-specific variant restrictions
+        :param test_object: possibly flat test object to compose the node on top of, typically a test net
+        :param prefix: extra name identifier for the test to be run
+        :param params: runtime parameters used for extra customization
+        :param verbose: whether to print extra messages or not
+        :returns: a tuple of all reused and newly parsed test nodes
+        """
+        get_nodes, parse_nodes = [], []
+        for new_node in self.parse_composite_nodes(restriction, test_object, prefix, params=params, verbose=verbose):
+            old_nodes = self.get_nodes_by_name(new_node.setless_form)
+            for old_node in old_nodes:
+                logging.debug(f"Found old parsed node {old_node.params['shortname']} for "
+                              f"{restriction} through object {test_object.suffix}")
+                if old_node not in get_nodes:
+                    get_nodes.append(old_node)
+            if len(old_nodes) == 0:
+                logging.debug(f"Found new node {new_node.params['shortname']} for "
+                              f"{restriction} through object {test_object.suffix}")
+                parse_nodes.append(new_node)
+        return get_nodes, parse_nodes
+
     @staticmethod
     def parse_object_nodes(worker: TestWorker = None, restriction: str = "", prefix: str = "", object_strs: dict[str, str] = None,
                            params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestObject]]:
@@ -1056,26 +1082,9 @@ class TestGraph(object):
                            "object_id": test_object.id,
                            "require_existence": "yes"})
         name = test_node.prefix + "a"
-        new_parents = self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], name, params=setup_dict)
         if len(filtered_parents) == 0:
-            return [], new_parents
-
-        get_parents, parse_parents = [], []
-        for new_parent in new_parents:
-            old_parents = self.get_nodes_by_name(new_parent.setless_form)
-            old_parents = self.get_nodes_by("name", f"(\.|^){setup_obj_restr}(\.|$)",
-                                            subset=old_parents)
-            if len(old_parents) > 0:
-                for old_parent in old_parents:
-                    logging.debug(f"Found parsed dependency {old_parent.params['shortname']} for "
-                                  f"{test_node.params['shortname']} through object {test_object.suffix}")
-                    if old_parent not in get_parents:
-                        get_parents.append(old_parent)
-            else:
-                logging.debug(f"Found new dependency {new_parent.params['shortname']} for "
-                              f"{test_node.params['shortname']} through object {test_object.suffix}")
-                parse_parents.append(new_parent)
-        return get_parents, parse_parents
+            return [], self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], name, params=setup_dict)
+        return self.parse_and_get_composite_nodes("all.." + setup_restr, test_node.objects[0], name, params=setup_dict)
 
     def parse_branches_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
                                            params: dict[str, str] = None) -> tuple[list[TestNode], list[TestNode], list[TestNode]]:
@@ -1088,18 +1097,13 @@ class TestGraph(object):
         :returns: a tuple of all reused and newly parsed parent test nodes as well as final child test nodes
         """
         if test_node.is_flat():
-            old_children = self.get_nodes_by_name(test_node.setless_form)
-            old_children = self.get_nodes_by("name", f"(\.|^){test_object.component_form}(\.|$)",
-                                             subset=old_children)
-            if len(old_children) > 0:
-                for old_child in old_children:
-                    logging.debug(f"Found parsed expansion {old_child.params['shortname']} for flat node "
-                                  f"{test_node.params['shortname']} through object {test_object.long_suffix}")
-                children = []
-            else:
-                logging.debug(f"Will newly expand flat {test_node.params['shortname']} for {test_object.long_suffix}")
-                children = self.parse_composite_nodes(test_node.params["name"],
-                                                      test_object, test_node.prefix, params=params)
+            logging.debug(f"Will newly expand flat {test_node.params['shortname']} for {test_object.long_suffix}")
+            get_children, parse_children = self.parse_and_get_composite_nodes(test_node.params["name"], test_object, test_node.prefix, params=params)
+            # both parsed and reused leaf composite nodes should be traversed as children of the leaf flat node
+            for child in get_children + parse_children:
+                child.setup_nodes.append(test_node)
+                test_node.cleanup_nodes.append(child)
+            children = parse_children
         else:
             # TODO: cannot get nodes by (prefix tree index) name due to current limitations in the bridged form
             old_bridges = self.get_nodes_by("name", test_node.bridged_form)
@@ -1456,10 +1460,6 @@ class TestGraph(object):
                         if len(siblings) == 0:
                             logging.warning(f"Could not compose flat node {next} due to test object incompatibility")
                             next.is_unrolled = lambda x: True
-                        # the parsed leaf composite nodes should be traversed as children of the leaf flat node
-                        for child in siblings:
-                            child.setup_nodes.append(next)
-                            next.cleanup_nodes.append(child)
                     for parent in parents:
                         if parent.is_object_root():
                             parent.setup_nodes.append(root)

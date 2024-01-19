@@ -382,7 +382,7 @@ class TestNode(Runnable):
         if not self.is_flat():
             raise RuntimeError(f"Only flat nodes can be unrolled, {self} is not flat")
         for node in self.cleanup_nodes:
-            if self.params["name"] in node.id and worker.id in node.id:
+            if self.setless_form in node.id and worker.id in node.id:
                 return True
         return False
 
