@@ -734,6 +734,8 @@ class CartesianNodeTest(Test):
         flat_nets = TestGraph.parse_flat_objects("net1", "nets")
         self.assertEqual(len(flat_nets), 1)
         flat_net = flat_nets[0]
+        worker = TestWorker(flat_net)
+
         full_nets = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
         self.assertEqual(len(full_nets), 1)
         net = full_nets[0]
@@ -743,7 +745,6 @@ class CartesianNodeTest(Test):
         node2 = TestGraph.parse_node_from_object(net, "normal..tutorial2", prefix="2")
         node.setup_nodes = [node1, node2]
         node.cleanup_nodes = [node1, node2]
-        worker = TestWorker(flat_net)
 
         # not ready by default
         self.assertFalse(node.is_setup_ready(worker))
@@ -760,6 +761,35 @@ class CartesianNodeTest(Test):
         node.drop_child(node1, worker)
         self.assertTrue(node.is_setup_ready(worker))
         self.assertTrue(node.is_cleanup_ready(worker))
+
+        # nodes might not yet be parsed for another worker (independent decision)
+        flat_nets = TestGraph.parse_flat_objects("net2", "nets")
+        self.assertEqual(len(flat_nets), 1)
+        flat_net = flat_nets[0]
+        worker2 = TestWorker(flat_net)
+        self.assertTrue(node.is_setup_ready(worker2))
+        self.assertTrue(node.is_cleanup_ready(worker2))
+
+        # a flat setup/cleanup node can affect the second worker
+        node3 = TestGraph.parse_flat_nodes("normal..tutorial2")[0]
+        node.setup_nodes += [node3]
+        node.cleanup_nodes += [node3]
+        self.assertFalse(node.is_setup_ready(worker))
+        self.assertFalse(node.is_cleanup_ready(worker))
+        self.assertFalse(node.is_setup_ready(worker2))
+        self.assertFalse(node.is_cleanup_ready(worker2))
+        node.drop_parent(node3, worker)
+        node.drop_child(node3, worker)
+        self.assertTrue(node.is_setup_ready(worker))
+        self.assertTrue(node.is_cleanup_ready(worker))
+        self.assertFalse(node.is_setup_ready(worker2))
+        self.assertFalse(node.is_cleanup_ready(worker2))
+        node.drop_parent(node3, worker2)
+        node.drop_child(node3, worker2)
+        self.assertTrue(node.is_setup_ready(worker))
+        self.assertTrue(node.is_cleanup_ready(worker))
+        self.assertTrue(node.is_setup_ready(worker2))
+        self.assertTrue(node.is_cleanup_ready(worker2))
 
     def test_is_started_or_finished(self):
         """Test that a test node is eagerly to fully started or finished in different scopes."""

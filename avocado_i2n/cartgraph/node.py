@@ -393,6 +393,8 @@ class TestNode(Runnable):
         :param worker: relative setup readiness with respect to a worker ID
         """
         for node in self.setup_nodes:
+            if not (node.is_flat() or node.is_shared_root()) and worker.id not in node.params["name"]:
+                continue
             if worker.id not in self._dropped_setup_nodes.get_workers(node):
                 return False
         return True
@@ -404,6 +406,8 @@ class TestNode(Runnable):
         :param str worker: relative setup readiness with respect to a worker ID
         """
         for node in self.cleanup_nodes:
+            if not (node.is_flat() or node.is_shared_root()) and worker.id not in node.params["name"]:
+                continue
             if worker.id not in self._dropped_cleanup_nodes.get_workers(node):
                 return False
         return True
