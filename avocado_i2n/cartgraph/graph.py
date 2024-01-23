@@ -1168,13 +1168,17 @@ class TestGraph(object):
                 if not test_node.is_object_root():
                     logging.warning(f"{test_node} is not an object root but will be treated as such")
                 object_roots.append(test_node)
+
         setup_dict = {} if params is None else params.copy()
         setup_dict.update({"shared_root" : "yes",
+                           # TODO: vms are part of the prefix at present
                            "vms": " ".join(sorted(list(set(o.suffix for o in self.objects if o.key == "vms"))))})
-        root_for_all = TestGraph.parse_node_from_object(NetObject("net0", param.Reparsable()),
-                                                        "all..internal..noop", prefix="0s", params=setup_dict)
+        root_for_all = TestGraph.parse_flat_nodes("all..internal..noop", setup_dict)
+        assert len(root_for_all) == 1, "A unique shared root must be parsable"
+        root_for_all = root_for_all[0]
         logging.debug(f"Parsed shared root {root_for_all.params['shortname']}")
         self.new_nodes(root_for_all)
+
         for root_for_object in object_roots:
             root_for_object.setup_nodes = [root_for_all]
             root_for_all.cleanup_nodes.append(root_for_object)
@@ -1350,13 +1354,10 @@ class TestGraph(object):
 
         if test_node.should_run(worker):
 
-            # the primary setup nodes need special treatment
-            if params.get("dry_run", "no") == "yes":
-                logging.info(f"Worker {worker.id} skipping via dry test run {test_node}")
-            elif test_node.is_flat():
+            if test_node.is_flat():
                 logging.debug(f"Worker {worker.id} skipping a flat node {test_node}")
-            elif test_node.is_shared_root():
-                logging.debug(f"Worker {worker.id} starting from the shared root")
+            elif params.get("dry_run", "no") == "yes":
+                logging.info(f"Worker {worker.id} skipping via dry test run {test_node}")
             elif test_node.is_object_root():
                 status = await self.traverse_terminal_node(test_node.params["object_root"], worker, params)
                 if not status:
@@ -1400,12 +1401,10 @@ class TestGraph(object):
         test_node.started_worker = worker
         if test_node.should_clean(worker):
 
-            if params.get("dry_run", "no") == "yes":
-                logging.info(f"Worker {worker.id} not cleaning via dry test run {test_node}")
-            elif test_node.is_flat():
+            if test_node.is_flat():
                 logging.debug(f"Worker {worker.id} not cleaning a flat node {test_node}")
-            elif test_node.is_shared_root():
-                logging.debug(f"Worker {worker.id} ending at the shared root")
+            elif params.get("dry_run", "no") == "yes":
+                logging.info(f"Worker {worker.id} not cleaning via dry test run {test_node}")
 
             elif test_node.produces_setup():
                 test_node.sync_states(params)
@@ -1442,6 +1441,7 @@ class TestGraph(object):
             if not os.path.exists(traverse_dir):
                 os.makedirs(traverse_dir)
 
+        logging.debug(f"Worker {worker.id} starting from the shared root")
         traverse_path = [root]
         occupied_at, occupied_wait = None, 0.0
         while not root.is_cleanup_ready(worker):
@@ -1497,7 +1497,7 @@ class TestGraph(object):
 
                 if next.is_setup_ready(worker):
                     await self.traverse_node(next, worker, params)
-                    if next == root or not next.should_rerun(worker):
+                    if not next.should_rerun(worker):
                         previous.drop_parent(next, worker)
                     traverse_path.pop()
                 else:
@@ -1544,4 +1544,5 @@ class TestGraph(object):
                 self.visualize(traverse_dir, f"{time.time():.4f}_{worker.id}")
 
         assert traverse_path == [root], f"Unfinished traverse path detected {traverse_path}"
+        logging.debug(f"Worker {worker.id} ending at the shared root")
         traverse_path.pop()

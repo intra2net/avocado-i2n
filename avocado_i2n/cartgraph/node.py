@@ -348,29 +348,17 @@ class TestNode(Runnable):
                                                        self.params.get_numeric("max_tries", 1))
         return self.is_started(worker, max(max_concurrent_tries, 1))
 
-    def is_flat(self):
+    def is_flat(self) -> bool:
         """Check if the test node is flat and does not yet have objects and dependencies to evaluate."""
         return len(self.objects) == 0
 
-    def is_scan_node(self):
-        """Check if the test node is the root of all test nodes for all test objects."""
-        return self.prefix.endswith("0s1")
-
-    def is_terminal_node(self):
-        """Check if the test node is the root of all test nodes for some test object."""
-        return self.prefix.endswith("t")
-
-    def is_shared_root(self):
+    def is_shared_root(self) -> bool:
         """Check if the test node is the root of all test nodes for all test objects."""
         return self.params.get_boolean("shared_root", False)
 
-    def is_object_root(self):
+    def is_object_root(self) -> bool:
         """Check if the test node is the root of all test nodes for some test object."""
         return "object_root" in self.params
-
-    def is_objectless(self):
-        """Check if the test node is not defined with any test object."""
-        return len(self.objects) == 0 or self.params["vms"] == ""
 
     def is_unrolled(self, worker: TestWorker) -> bool:
         """
@@ -379,7 +367,9 @@ class TestNode(Runnable):
         :param worker: worker a flat node is unrolled for
         :raises: :py:class:`RuntimeError` if the current node is not flat (cannot be unrolled)
         """
-        if not self.is_flat():
+        if self.is_shared_root():
+            return True
+        elif not self.is_flat():
             raise RuntimeError(f"Only flat nodes can be unrolled, {self} is not flat")
         for node in self.cleanup_nodes:
             if self.setless_form in node.id and worker.id in node.id:
@@ -393,7 +383,7 @@ class TestNode(Runnable):
         :param worker: relative setup readiness with respect to a worker ID
         """
         for node in self.setup_nodes:
-            if not (node.is_flat() or node.is_shared_root()) and worker.id not in node.params["name"]:
+            if not node.is_flat() and worker.id not in node.params["name"]:
                 continue
             if worker.id not in self._dropped_setup_nodes.get_workers(node):
                 return False
@@ -406,7 +396,7 @@ class TestNode(Runnable):
         :param str worker: relative setup readiness with respect to a worker ID
         """
         for node in self.cleanup_nodes:
-            if not (node.is_flat() or node.is_shared_root()) and worker.id not in node.params["name"]:
+            if not node.is_flat() and worker.id not in node.params["name"]:
                 continue
             if worker.id not in self._dropped_cleanup_nodes.get_workers(node):
                 return False
@@ -545,9 +535,6 @@ class TestNode(Runnable):
             return False
         elif self.is_flat():
             logging.debug(f"Should not rerun a flat node {self}")
-            return False
-        elif self.is_shared_root():
-            logging.debug(f"Should not rerun the shared root")
             return False
         elif worker and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not consider rerunning {self}")
@@ -702,7 +689,7 @@ class TestNode(Runnable):
 
         The current order will prioritize less traversed test paths.
         """
-        available_nodes = [n for n in self.setup_nodes if worker.id in n.params["name"] or n.is_flat() or n.is_shared_root()]
+        available_nodes = [n for n in self.setup_nodes if worker.id in n.params["name"] or n.is_flat()]
         available_nodes = [n for n in available_nodes if worker.id not in self._dropped_setup_nodes.get_workers(n)]
         if len(available_nodes) == 0:
             raise RuntimeError(f"Picked a parent of a node without remaining parents for {self}")
@@ -724,7 +711,7 @@ class TestNode(Runnable):
 
         The current order will prioritize less traversed test paths.
         """
-        available_nodes = [n for n in self.cleanup_nodes if worker.id in n.params["name"] or n.is_flat() or n.is_shared_root()]
+        available_nodes = [n for n in self.cleanup_nodes if worker.id in n.params["name"] or n.is_flat()]
         available_nodes = [n for n in available_nodes if worker.id not in self._dropped_cleanup_nodes.get_workers(n)]
         if len(available_nodes) == 0:
             raise RuntimeError(f"Picked a child of a node without remaining children for {self}")
@@ -784,7 +771,7 @@ class TestNode(Runnable):
 
     def pull_locations(self) -> None:
         """Update all setup locations for the current node."""
-        if self.is_shared_root() or self.is_flat():
+        if self.is_flat():
             return
         setup_path = self.params.get("swarm_pool", self.params["vms_base_dir"])
         for node in self.setup_nodes:

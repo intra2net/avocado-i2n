@@ -728,6 +728,8 @@ class CartesianNodeTest(Test):
 
         with self.assertRaises(RuntimeError):
             composite_nodes[0].is_unrolled(TestWorker(flat_object))
+        flat_node.params["shared_root"] = "yes"
+        self.assertTrue(flat_node.is_unrolled(TestWorker(flat_object)))
 
     def test_is_ready(self):
         """Test that a test node is setup/cleanup ready under the right circumstances."""
@@ -2991,7 +2993,7 @@ class CartesianGraphTest(Test):
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
 
-    def test_abort_run(self):
+    def test_aborted_run(self):
         """Test that traversal is aborted through explicit configuration."""
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("tutorial1"))
@@ -3007,26 +3009,6 @@ class CartesianGraphTest(Test):
 
         with self.assertRaisesRegex(exceptions.TestSkipError, r"^God wanted this test to abort$"):
             self._run_traversal(graph, {"abort_on_error": "yes"})
-
-    def test_abort_objectless_node(self):
-        """Test that traversal is aborted on objectless node detection."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["nets"] = "net1"
-        graph = TestGraph.parse_object_trees(
-            None, self.config["tests_str"],
-            self.prefix, self.config["vm_strs"],
-            self.config["param_dict"],
-        )
-        test_node = graph.get_node_by(param_val="tutorial1")
-        # assume we are parsing invalid configuration
-        test_node.params["vms"] = ""
-        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$"},
-        ]
-        with self.assertRaisesRegex(AssertionError, r"^Cannot run test nodes not using any test objects"):
-            self._run_traversal(graph, self.config["param_dict"])
 
     def test_parsing_on_demand(self):
         """Test that parsing on demand works as expected."""
@@ -3052,14 +3034,6 @@ class CartesianGraphTest(Test):
 
         self._run_traversal(graph, {"dry_run": "yes"})
 
-        # all flat nodes must be unrolled once and must have parsed paths
-        flat_nodes = [node for node in graph.nodes if node.is_flat()]
-        self.assertEqual(graph.parse_paths_to_object_roots.call_count, len(flat_nodes) * 3)
-        for node in flat_nodes:
-            for i in range(3):
-                worker = graph.workers[f"net{i+1}"]
-                self.assertTrue(node.is_unrolled(worker))
-                graph.parse_paths_to_object_roots.assert_any_call(node, worker.net, mock.ANY)
         # the graph has a specific connectedness with the shared root
         shared_roots = graph.get_nodes_by("shared_root", "yes")
         assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
@@ -3067,6 +3041,19 @@ class CartesianGraphTest(Test):
         for node in graph.nodes:
             if node in root.cleanup_nodes:
                 self.assertTrue(node.is_flat() or node.is_object_root())
+        # all flat nodes but the shared root must be unrolled once and must have parsed paths
+        flat_nodes = [node for node in graph.nodes if node.is_flat()]
+        self.assertEqual(graph.parse_paths_to_object_roots.call_count, (len(flat_nodes) - 1) * 3)
+        for node in flat_nodes:
+            for i in range(3):
+                worker = graph.workers[f"net{i+1}"]
+                self.assertTrue(node.is_unrolled(worker))
+                if node == root:
+                    self.assertNotIn(mock.call(node, worker.net, mock.ANY),
+                                     graph.parse_paths_to_object_roots.call_args_list)
+                else:
+                    self.assertFalse(node.is_shared_root())
+                    graph.parse_paths_to_object_roots.assert_any_call(node, worker.net, mock.ANY)
 
     def test_traversing_in_isolation(self):
         """Test that actual traversing (not just test running) works as expected."""
@@ -3118,8 +3105,8 @@ class CartesianGraphTest(Test):
                 if not node.is_flat() and worker.id not in node.params["name"]:
                     continue
                 # the worker relevant nodes comprise all possible visits by that worker
-                worker_setup = [n for n in node.setup_nodes if n.is_flat() or n.is_shared_root() or worker.id in n.params["name"]]
-                worker_cleanup = [n for n in node.cleanup_nodes if n.is_flat() or n.is_shared_root() or worker.id in n.params["name"]]
+                worker_setup = [n for n in node.setup_nodes if n.is_flat() or worker.id in n.params["name"]]
+                worker_cleanup = [n for n in node.cleanup_nodes if n.is_flat() or worker.id in n.params["name"]]
                 self.assertEqual(picked_by_setup.get_counters(worker=worker),
                                 sum(picked_by_setup.get_counters(n, worker=worker) for n in worker_setup))
                 self.assertEqual(picked_by_cleanup.get_counters(worker=worker),

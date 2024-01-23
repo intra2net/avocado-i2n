@@ -192,7 +192,7 @@ class CartesianRunner(RunnerInterface):
         :returns: whether the test succeeded as a simple boolean test result status
         :raises: :py:class:`AssertionError` if the ran test node contains no objects
         """
-        if node.is_objectless():
+        if node.is_flat():
             raise AssertionError("Cannot run test nodes not using any test objects, here %s" % node)
 
         original_prefix = node.prefix
