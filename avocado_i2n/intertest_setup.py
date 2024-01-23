@@ -227,7 +227,7 @@ def update(config, tag=""):
 
     for i, vm_name in enumerate(selected_vms):
         vm_params = config["vms_params"].object_params(vm_name)
-        vm_objects = graph.get_objects_by(param_val=vm_name)
+        vm_objects = graph.get_objects(param_val=vm_name)
         from_state = vm_params.get("from_state", "install")
         to_state = vm_params.get("to_state", "customize")
         logging.info("Updating state '%s' of %s", to_state, vm_name)

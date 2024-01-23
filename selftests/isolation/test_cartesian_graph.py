@@ -39,29 +39,24 @@ class CartesianWorkerTest(Test):
         self.assertEqual(test_objects[0].params["vms"], "vm1")
         self.assertEqual(test_objects[0].params["os_variant"], "f33")
 
-        test_objects = TestGraph.parse_flat_objects("vm1", "vms", "CentOS")
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"vms.vm1\.qemu_kvm_centos.*CentOS.*")
+        test_object = TestGraph.parse_flat_objects("vm1", "vms", "CentOS", unique=True)
+        self.assertRegex(test_object.params["name"], r"vms.vm1\.qemu_kvm_centos.*CentOS.*")
 
-        test_objects = TestGraph.parse_flat_objects("vm1", "vms", "no CentOS\nonly qcow2\n")
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"vms.vm1\.qemu_kvm_fedora.*qcow2.*Fedora.*")
+        test_object = TestGraph.parse_flat_objects("vm1", "vms", "no CentOS\nonly qcow2\n", unique=True)
+        self.assertRegex(test_object.params["name"], r"vms.vm1\.qemu_kvm_fedora.*qcow2.*Fedora.*")
 
     def test_parse_flat_objects_net(self):
         """Test for correctly parsed objects of different object variants from a restriction."""
-        test_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"nets\.localhost\.net1")
-        self.assertEqual(test_objects[0].params["nets"], "net1")
-        self.assertEqual(test_objects[0].params["nets_id"], "101")
+        test_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
+        self.assertRegex(test_object.params["name"], r"nets\.localhost\.net1")
+        self.assertEqual(test_object.params["nets"], "net1")
+        self.assertEqual(test_object.params["nets_id"], "101")
 
-        test_objects = TestGraph.parse_flat_objects("net1", "nets", "localhost")
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"nets\.localhost\.net1")
+        test_object = TestGraph.parse_flat_objects("net1", "nets", "localhost", unique=True)
+        self.assertRegex(test_object.params["name"], r"nets\.localhost\.net1")
 
-        test_objects = TestGraph.parse_flat_objects("net1", "nets", "no remotehost\nonly localhost\n")
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"nets\.localhost\.net1")
+        test_object = TestGraph.parse_flat_objects("net1", "nets", "no remotehost\nonly localhost\n", unique=True)
+        self.assertRegex(test_object.params["name"], r"nets\.localhost\.net1")
 
     def test_parse_flat_objects_net_and_cluster(self):
         """Test for correctly parsed objects of different object variants from a restriction."""
@@ -77,13 +72,11 @@ class CartesianWorkerTest(Test):
         self.assertEqual(test_objects[2].params["nets"], "net6")
         self.assertEqual(test_objects[2].params["nets_id"], "1")
 
-        test_objects = TestGraph.parse_flat_objects("net6", "nets", "cluster1")
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"nets\.cluster1\.net6")
+        test_object = TestGraph.parse_flat_objects("net6", "nets", "cluster1", unique=True)
+        self.assertRegex(test_object.params["name"], r"nets\.cluster1\.net6")
 
-        test_objects = TestGraph.parse_flat_objects("net6", "nets", "no cluster1\nonly cluster2\n")
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"nets\.cluster2\.net6")
+        test_object = TestGraph.parse_flat_objects("net6", "nets", "no cluster1\nonly cluster2\n", unique=True)
+        self.assertRegex(test_object.params["name"], r"nets\.cluster2\.net6")
 
     def test_params(self):
         """Test for correctly parsed and regenerated test worker parameters."""
@@ -173,19 +166,15 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertNotIn("only", test_objects[0].params)
 
-        test_objects = TestGraph.parse_composite_objects("vm1", "vms", "CentOS")
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*")
+        test_object = TestGraph.parse_composite_objects("vm1", "vms", "CentOS", unique=True)
+        self.assertRegex(test_object.params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*")
 
-        test_objects = TestGraph.parse_composite_objects("vm1", "vms", "no CentOS\nonly qcow2\n")
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"vms.vm1\.qemu_kvm_fedora.*qcow2.*Fedora.*")
+        test_object = TestGraph.parse_composite_objects("vm1", "vms", "no CentOS\nonly qcow2\n", unique=True)
+        self.assertRegex(test_object.params["name"], r"vms.vm1\.qemu_kvm_fedora.*qcow2.*Fedora.*")
 
     def test_parse_composite_objects_net(self):
         """Test for a correctly parsed net object from joined vm string restrictions."""
-        test_objects = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
-        self.assertEqual(len(test_objects), 1)
-        test_object = test_objects[0]
+        test_object = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"], unique=True)
         self.assertRegex(test_object.params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*")
         self.assertEqual(test_object.params["vms_vm1"], "vm1")
         self.assertEqual(test_object.params["vms_vm2"], "vm2")
@@ -199,13 +188,13 @@ class CartesianObjectTest(Test):
         self.assertNotIn("only_vm2", test_object.params)
         self.assertNotIn("only_vm3", test_object.params)
 
-        test_objects = TestGraph.parse_composite_objects("net1", "nets", "localhost", self.config["vm_strs"])
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"nets\.localhost\.net1")
+        test_object = TestGraph.parse_composite_objects("net1", "nets", "localhost",
+                                                        self.config["vm_strs"], unique=True)
+        self.assertRegex(test_object.params["name"], r"nets\.localhost\.net1")
 
-        test_objects = TestGraph.parse_composite_objects("net1", "nets", "no remotehost\nonly localhost\n", self.config["vm_strs"])
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"nets\.localhost\.net1")
+        test_object = TestGraph.parse_composite_objects("net1", "nets", "no remotehost\nonly localhost\n",
+                                                        self.config["vm_strs"], unique=True)
+        self.assertRegex(test_object.params["name"], r"nets\.localhost\.net1")
 
         # some workers only support certain vm variants
         with self.assertRaises(param.EmptyCartesianProduct):
@@ -219,9 +208,7 @@ class CartesianObjectTest(Test):
 
     def test_parse_composite_objects_net_and_cluster(self):
         """Test for a correctly parsed cluster net object from empty joined vm string restrictions."""
-        test_objects = TestGraph.parse_composite_objects("cluster1.net6", "nets", "", self.config["vm_strs"])
-        self.assertEqual(len(test_objects), 1)
-        test_object = test_objects[0]
+        test_object = TestGraph.parse_composite_objects("cluster1.net6", "nets", "", self.config["vm_strs"], unique=True)
         self.assertRegex(test_object.params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*")
         self.assertEqual(test_object.params["vms_vm1"], "vm1")
         self.assertEqual(test_object.params["vms_vm2"], "vm2")
@@ -236,13 +223,13 @@ class CartesianObjectTest(Test):
         self.assertNotIn("only_vm3", test_object.params)
         # some workers only support certain vm variants
 
-        test_objects = TestGraph.parse_composite_objects("net6", "nets", "cluster1", self.config["vm_strs"])
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"nets\.cluster1\.net6")
+        test_object = TestGraph.parse_composite_objects("net6", "nets", "cluster1",
+                                                        self.config["vm_strs"], unique=True)
+        self.assertRegex(test_object.params["name"], r"nets\.cluster1\.net6")
 
-        test_objects = TestGraph.parse_composite_objects("net6", "nets", "no cluster1\nonly cluster2\n", self.config["vm_strs"])
-        self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"nets\.cluster2\.net6")
+        test_object = TestGraph.parse_composite_objects("net6", "nets", "no cluster1\nonly cluster2\n",
+                                                        self.config["vm_strs"], unique=True)
+        self.assertRegex(test_object.params["name"], r"nets\.cluster2\.net6")
 
         with self.assertRaises(param.EmptyCartesianProduct):
             TestGraph.parse_composite_objects("net9", "nets", "cluster2", {"vm1": "only Fedora\n"})
@@ -307,7 +294,7 @@ class CartesianObjectTest(Test):
 
     def test_parse_components_for_vm(self):
         """Test for correctly parsed image components with unflattened vm."""
-        flat_vm = TestGraph.parse_flat_objects("vm1", "vms")[0]
+        flat_vm = TestGraph.parse_flat_objects("vm1", "vms", "CentOS", unique=True)
         test_objects = TestGraph.parse_components_for_object(flat_vm, "vms", unflatten=True)
         vms = [o for o in test_objects if o.key == "vms"]
         images = [o for o in test_objects if o.key == "images"]
@@ -322,7 +309,7 @@ class CartesianObjectTest(Test):
 
     def test_parse_components_for_net(self):
         """Test for correctly parsed vm components with unflattened net."""
-        flat_net = TestGraph.parse_flat_objects("net1", "nets")[0]
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", unique=True)
         test_objects = TestGraph.parse_components_for_object(flat_net, "nets", unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 8)
@@ -347,7 +334,7 @@ class CartesianObjectTest(Test):
 
     def test_parse_components_for_net_restricted(self):
         """Test for correctly parsed restricted vm components with unflattened net."""
-        flat_net = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})[0]
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
         test_objects = TestGraph.parse_components_for_object(flat_net, "nets", restriction="qcow2", unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 4)
@@ -368,9 +355,8 @@ class CartesianObjectTest(Test):
 
     def test_params(self):
         """Test for correctly parsed and regenerated test object parameters."""
-        test_objects = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"], params=self.config["param_dict"])
-        self.assertEqual(len(test_objects), 1)
-        test_object = test_objects[0]
+        test_object = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"],
+                                                        params=self.config["param_dict"], unique=True)
         regenerated_params = test_object.object_typed_params(test_object.recipe.get_params())
         self.assertEqual(len(regenerated_params.keys()), len(test_object.params.keys()),
                         "The parameters of a test object must be the same as its only parser dictionary")
@@ -449,7 +435,7 @@ class CartesianObjectTest(Test):
             self.config["param_dict"],
         )
 
-        test_objects = graph.get_objects_by(param_val="vm1", subset=graph.get_objects_by(param_val="net1"))
+        test_objects = graph.get_objects(param_val="vm1", subset=graph.get_objects(param_val="net1"))
         for test_object in test_objects:
             self.assertIn(test_object.long_suffix, ["vm1", "net1"])
             object_num = len(graph.objects_index)
@@ -609,20 +595,17 @@ class CartesianNodeTest(Test):
 
     def test_parse_flat_nodes(self):
         """Test for a correctly parsed flat nodes."""
-        test_nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
-        self.assertEqual(len(test_nodes), 1)
-        self.assertRegex(test_nodes[0].params["name"], r"normal.*tutorial1.*")
-        self.assertEqual(test_nodes[0].params["vms"], "vm1")
+        test_node = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
+        self.assertRegex(test_node.params["name"], r"normal.*tutorial1.*")
+        self.assertEqual(test_node.params["vms"], "vm1")
 
-        test_nodes = TestGraph.parse_flat_nodes("only normal\nonly tutorial1")
-        self.assertEqual(len(test_nodes), 1)
-        self.assertRegex(test_nodes[0].params["name"], r"normal.*tutorial1.*")
-        self.assertEqual(test_nodes[0].params["vms"], "vm1")
+        test_node = TestGraph.parse_flat_nodes("only normal\nonly tutorial1", unique=True)
+        self.assertRegex(test_node.params["name"], r"normal.*tutorial1.*")
+        self.assertEqual(test_node.params["vms"], "vm1")
 
-        test_nodes = TestGraph.parse_flat_nodes("only leaves..tutorial2\nno files\n")
-        self.assertEqual(len(test_nodes), 1)
-        self.assertRegex(test_nodes[0].params["name"], r"leaves.*tutorial2.names.*")
-        self.assertEqual(test_nodes[0].params["vms"], "vm1")
+        test_node = TestGraph.parse_flat_nodes("only leaves..tutorial2\nno files\n", unique=True)
+        self.assertRegex(test_node.params["name"], r"leaves.*tutorial2.names.*")
+        self.assertEqual(test_node.params["vms"], "vm1")
 
     def test_parse_node_from_object(self):
         """Test for a correctly parsed node from an already parsed net object."""
@@ -674,12 +657,8 @@ class CartesianNodeTest(Test):
     def test_get_and_parse_objects_for_node_and_object_flat(self):
         """Test parsing and retrieval of objects for a flat pair of test node and object."""
         graph = TestGraph()
-        flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
+        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
+        flat_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
         self.assertNotIn("only_vm1", flat_object.params)
         flat_object.restrs["vm1"] = "only CentOS\n"
         flat_object.params["nets_some_key"] = "some_value"
@@ -701,12 +680,8 @@ class CartesianNodeTest(Test):
     def test_get_and_parse_objects_for_node_and_object_full(self):
         """Test default parsing and retrieval of objects for a flat test node and full test object."""
         graph = TestGraph()
-        flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
-        full_objects = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
-        self.assertEqual(len(full_objects), 1)
-        full_object = full_objects[0]
+        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
+        full_object = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"], unique=True)
         # TODO: limitation in the Cartesian config
         self.assertIn("CentOS", full_object.restrs["vm1"])
         full_object.params["nets_some_key"] = "some_value"
@@ -727,9 +702,7 @@ class CartesianNodeTest(Test):
 
     def test_parse_nodes_from_flat_node_and_object(self):
         """Test for correctly parsed composite nodes from a flat node and object."""
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
 
         flat_object.params["vms"] = "vm1"
         test_objects = TestGraph.parse_components_for_object(flat_object, "nets", unflatten=True)
@@ -750,9 +723,7 @@ class CartesianNodeTest(Test):
                 self.assertEqual(node.params["nets"], "net1")
                 self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
 
-        flat_nodes = graph.parse_flat_nodes("normal..tutorial3")
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
+        flat_node = graph.parse_flat_nodes("normal..tutorial3", unique=True)
         nodes = graph.parse_nodes_from_flat_node_and_object(flat_node, flat_object)
         self.assertEqual(len(nodes), 4)
         for node in nodes:
@@ -765,9 +736,7 @@ class CartesianNodeTest(Test):
         graph = TestGraph()
         graph.restrs.update(self.config["vm_strs"])
 
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
 
         flat_nodes = TestGraph.parse_flat_nodes(self.config["tests_str"])
         self.assertEqual(len(flat_nodes), 2)
@@ -810,9 +779,7 @@ class CartesianNodeTest(Test):
         self.config["tests_str"] += "only tutorial1,tutorial2\n"
         graph = TestGraph()
 
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
 
         flat_nodes = TestGraph.parse_flat_nodes(self.config["tests_str"])
         self.assertEqual(len(flat_nodes), 2)
@@ -842,9 +809,7 @@ class CartesianNodeTest(Test):
 
     def test_parse_composite_nodes(self):
         """Test for correctly parsed composite nodes from graph retrievable test objects."""
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
 
         flat_object.params["vms"] = "vm1"
         test_objects = TestGraph.parse_components_for_object(flat_object, "nets", unflatten=True)
@@ -887,9 +852,7 @@ class CartesianNodeTest(Test):
         """Test for correctly parsed test nodes from compatible graph retrievable test objects."""
         self.config["tests_str"] = "only all\nonly tutorial3\n"
 
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
 
         flat_object.params["vms"] = "vm1 vm2"
         test_objects = TestGraph.parse_components_for_object(flat_object, "nets", unflatten=True)
@@ -923,9 +886,7 @@ class CartesianNodeTest(Test):
         """Test that no restriction leaks across separately restricted variants."""
         self.config["tests_str"] = "only all\nonly tutorial3.remote.object.control.decorator.util,tutorial_gui.client_noop\n"
 
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
 
         flat_object.params["vms"] = "vm1 vm2"
         test_objects = TestGraph.parse_components_for_object(flat_object, "nets", unflatten=True)
@@ -958,9 +919,7 @@ class CartesianNodeTest(Test):
         """Test for correctly parsed and reused graph retrievable composite nodes."""
         self.config["tests_str"] += "only tutorial1,tutorial2\n"
 
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
 
         flat_object.params["vms"] = "vm1"
         test_objects = TestGraph.parse_components_for_object(flat_object, "nets", unflatten=True)
@@ -1070,9 +1029,7 @@ class CartesianNodeTest(Test):
         self.assertEqual(len(objects), 7, "We need 3 images, 3 vms, and 1 net")
         full_image = [o for o in objects if o.key == "images" and o.long_suffix == "image1_vm2"][0]
 
-        final_nodes = graph.parse_composite_nodes("leaves..tutorial_finale", full_node.objects[0])
-        self.assertEqual(len(final_nodes), 1)
-        final_node = final_nodes[0]
+        final_node = graph.parse_composite_nodes("leaves..tutorial_finale", full_node.objects[0], unique=True)
 
         # if unique dependency is cloned at some later point preserve default unique node reuse
         get_nodes, parse_nodes = graph.get_and_parse_nodes_from_composite_node_and_object(final_node, full_image)
@@ -1149,12 +1106,8 @@ class CartesianNodeTest(Test):
     def test_is_unrolled(self):
         """Test that a flat test node is considered unrolled under the right circumstances."""
         graph = TestGraph()
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
-        flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
+        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
         self.assertFalse(flat_node.is_unrolled(TestWorker(flat_object)))
 
         composite_nodes = graph.parse_composite_nodes("normal..tutorial1", flat_object)
@@ -1169,9 +1122,7 @@ class CartesianNodeTest(Test):
         # flat node should be unrolled for any (at least one arbitrary) worker
         self.assertTrue(flat_node.is_unrolled())
 
-        flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
+        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
         more_composite_nodes = graph.parse_composite_nodes("normal..tutorial2", flat_object)
         self.assertGreater(len(more_composite_nodes), 0)
         more_composite_nodes[0].descend_from_node(flat_node, flat_object)
@@ -1180,20 +1131,18 @@ class CartesianNodeTest(Test):
         with self.assertRaises(RuntimeError):
             composite_nodes[0].is_unrolled(TestWorker(flat_object))
 
-        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1")[0]
+        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
         flat_node.params["shared_root"] = "yes"
         self.assertTrue(flat_node.is_unrolled(TestWorker(flat_object)))
 
-        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1")[0]
+        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
         incompatible_worker = TestWorker(flat_object)
         flat_node.incompatible_workers.add(flat_object.long_suffix)
         self.assertTrue(flat_node.is_unrolled(incompatible_worker))
 
     def test_is_ready(self):
         """Test that a test node is setup/cleanup ready under the right circumstances."""
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_nets), 1)
-        flat_net = flat_nets[0]
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", unique=True)
         flat_net.update_restrs(self.config["vm_strs"])
         worker = TestWorker(flat_net)
         full_components = TestGraph.parse_components_for_object(flat_net, "nets", "", unflatten=True)
@@ -1224,15 +1173,13 @@ class CartesianNodeTest(Test):
         self.assertTrue(node.is_cleanup_ready(worker))
 
         # nodes might not yet be parsed for another worker (independent decision)
-        flat_nets = TestGraph.parse_flat_objects("net2", "nets")
-        self.assertEqual(len(flat_nets), 1)
-        flat_net = flat_nets[0]
+        flat_net = TestGraph.parse_flat_objects("net2", "nets", unique=True)
         worker2 = TestWorker(flat_net)
         self.assertTrue(node.is_setup_ready(worker2))
         self.assertTrue(node.is_cleanup_ready(worker2))
 
         # a flat setup/cleanup node can affect the second worker
-        node3 = TestGraph.parse_flat_nodes("normal..tutorial2")[0]
+        node3 = TestGraph.parse_flat_nodes("normal..tutorial2", unique=True)
         node.descend_from_node(node3, flat_net)
         node3.descend_from_node(node, flat_net)
         self.assertFalse(node.is_setup_ready(worker))
@@ -1255,10 +1202,10 @@ class CartesianNodeTest(Test):
     def test_is_started_or_finished(self):
         """Test that a test node is eagerly to fully started or finished in different scopes."""
         nets = " ".join(param.all_suffixes_by_restriction("only cluster1,cluster2\nno cluster2.net8,net9\n"))
-        test_workers = TestGraph.parse_workers({"nets": nets})
+        test_workers = TestGraph.parse_workers({"nets": nets, "only_vm1": "CentOS"})
         full_nodes = []
         for worker in test_workers:
-            new_node = TestGraph().parse_composite_nodes("normal..tutorial1", worker.net, prefix="1")[0]
+            new_node = TestGraph().parse_composite_nodes("normal..tutorial1", worker.net, prefix="1", unique=True)
             for bridge in full_nodes:
                 new_node.bridge_with_node(bridge)
             # cluster1.net8 will not participate (not an involved worker)
@@ -1315,11 +1262,12 @@ class CartesianNodeTest(Test):
     def test_is_started_or_finished_filter(self):
         """Test that a test node is eagerly to fully started or finished in filtered scopes."""
         nets = " ".join(param.all_suffixes_by_restriction("only cluster1,cluster2.net6,cluster2.net7\n"))
-        test_workers = TestGraph.parse_workers({"nets": nets})
+        test_workers = TestGraph.parse_workers({"nets": nets, "only_vm1": "CentOS"})
         full_nodes = []
         for worker in test_workers:
             new_node = TestGraph().parse_composite_nodes("normal..tutorial1", worker.net,
-                                                         prefix="1", params={"pool_scope": "own swarm shared"})[0]
+                                                         prefix="1", params={"pool_scope": "own swarm shared"},
+                                                         unique=True)
             for bridge in full_nodes:
                 new_node.bridge_with_node(bridge)
             # cluster1.net8 will not participate (not an involved worker)
@@ -1381,9 +1329,7 @@ class CartesianNodeTest(Test):
         """Test that a flat node is always started and finished with any threshold."""
         nets = " ".join(param.all_suffixes_by_restriction("only cluster1,cluster2\nno cluster2.net8,net9\n"))
         test_workers = TestGraph.parse_workers({"nets": nets})
-        nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
-        self.assertEqual(len(nodes), 1)
-        flat_node = nodes[0]
+        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
         for worker in test_workers:
             flat_node.started_worker = worker
             self.assertTrue(flat_node.is_flat())
@@ -1398,13 +1344,9 @@ class CartesianNodeTest(Test):
 
     def test_params(self):
         """Test for correctly parsed test node parameters."""
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net = flat_nets[0]
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
         graph = TestGraph()
-        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net)
-        self.assertEqual(len(nodes), 1)
-        test_node = nodes[0]
+        test_node = graph.parse_composite_nodes("normal..tutorial1", flat_net, unique=True)
 
         dict_generator = test_node.recipe.get_parser().get_dicts()
         dict1 = dict_generator.__next__()
@@ -1421,9 +1363,7 @@ class CartesianNodeTest(Test):
         restr_params = {"only_vm1": "CentOS", "only_vm2": "Win10,Win7", "only_vm3": ""}
         restr_strs = self.config["vm_strs"]
         restr_strs.update({"vm2": "only Win10,Win7\n", "vm3": ""})
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets", params=restr_params)
-        self.assertEqual(len(flat_nets), 1)
-        flat_net = flat_nets[0]
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", params=restr_params, unique=True)
         graph = TestGraph()
 
         test_nodes = TestGraph.parse_flat_nodes("all..explicit_clicked", params=restr_params)
@@ -1469,19 +1409,11 @@ class CartesianNodeTest(Test):
 
     def test_shared_workers(self):
         """Test for correctly shared workers across bridged nodes."""
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net1 = flat_nets[0]
-        flat_nets = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net2 = flat_nets[0]
+        flat_net1 = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
+        flat_net2 = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"}, unique=True)
         graph = TestGraph()
-        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net1)
-        self.assertEqual(len(nodes), 1)
-        test_node1 = nodes[0]
-        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net2)
-        self.assertEqual(len(nodes), 1)
-        test_node2 = nodes[0]
+        test_node1 = graph.parse_composite_nodes("normal..tutorial1", flat_net1, unique=True)
+        test_node2 = graph.parse_composite_nodes("normal..tutorial1", flat_net2, unique=True)
         test_node1.bridge_with_node(test_node2)
 
         self.assertEqual(test_node1.finished_worker, None)
@@ -1503,9 +1435,7 @@ class CartesianNodeTest(Test):
         self.assertEqual(test_node2.shared_finished_workers, {worker1, worker2})
 
         # validate trivial behavior for flat nodes
-        nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
-        self.assertEqual(len(nodes), 1)
-        test_node3 = nodes[0]
+        test_node3 = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
         self.assertEqual(test_node3.finished_worker, None)
         self.assertEqual(test_node3.shared_finished_workers, set())
         test_node3.finished_worker = worker1
@@ -1517,25 +1447,17 @@ class CartesianNodeTest(Test):
 
     def test_shared_involved_workers(self):
         """Test for correctly shared incompatible workers across flat parent node."""
-        flat_nodes = TestGraph.parse_flat_nodes("leaves..explicit_noop")
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
+        flat_node = TestGraph.parse_flat_nodes("leaves..explicit_noop", unique=True)
 
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets",
-                                                 params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net1 = flat_nets[0]
-        flat_nets = TestGraph.parse_flat_objects("net2", "nets",
-                                                 params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net2 = flat_nets[0]
+        flat_net1 = TestGraph.parse_flat_objects("net1", "nets",
+                                                 params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                 unique=True)
+        flat_net2 = TestGraph.parse_flat_objects("net2", "nets",
+                                                 params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                 unique=True)
         graph = TestGraph()
-        nodes = graph.parse_composite_nodes("leaves..explicit_noop", flat_net1)
-        self.assertEqual(len(nodes), 1)
-        test_node1 = nodes[0]
-        nodes = graph.parse_composite_nodes("leaves..explicit_noop", flat_net2)
-        self.assertEqual(len(nodes), 1)
-        test_node2 = nodes[0]
+        test_node1 = graph.parse_composite_nodes("leaves..explicit_noop", flat_net1, unique=True)
+        test_node2 = graph.parse_composite_nodes("leaves..explicit_noop", flat_net2, unique=True)
         test_node1.bridge_with_node(test_node2)
 
         test_node1.descend_from_node(flat_node, flat_net1)
@@ -1569,21 +1491,13 @@ class CartesianNodeTest(Test):
 
     def test_shared_results_and_worker_ids(self):
         """Test for correctly shared results and result-based worker ID-s across bridged nodes."""
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net1 = flat_nets[0]
-        flat_nets = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net2 = flat_nets[0]
+        flat_net1 = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
+        flat_net2 = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"}, unique=True)
         swarm = TestSwarm("localhost", [TestWorker(flat_net1), TestWorker(flat_net2)])
         TestSwarm.run_swarms = {swarm.id: swarm}
         graph = TestGraph()
-        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net1)
-        self.assertEqual(len(nodes), 1)
-        test_node1 = nodes[0]
-        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net2)
-        self.assertEqual(len(nodes), 1)
-        test_node2 = nodes[0]
+        test_node1 = graph.parse_composite_nodes("normal..tutorial1", flat_net1, unique=True)
+        test_node2 = graph.parse_composite_nodes("normal..tutorial1", flat_net2, unique=True)
         test_node1.bridge_with_node(test_node2)
 
         self.assertEqual(test_node1.results, [])
@@ -1619,10 +1533,9 @@ class CartesianNodeTest(Test):
 
     def test_setless_form(self):
         """Test the general use and purpose of the node setless form."""
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets",
-                                                 params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net = flat_nets[0]
+        flat_net = TestGraph.parse_flat_objects("net1", "nets",
+                                                params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                unique=True)
 
         graph = TestGraph()
         nodes = [*graph.parse_composite_nodes("leaves..tutorial_get.explicit_clicked", flat_net),
@@ -1634,12 +1547,8 @@ class CartesianNodeTest(Test):
     def test_bridged_form(self):
         """Test the general use and purpose of the node bridged form."""
         restriction_params = {"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"}
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets", params=restriction_params)
-        self.assertEqual(len(flat_nets), 1)
-        flat_net1 = flat_nets[0]
-        flat_nets = TestGraph.parse_flat_objects("net2", "nets", params=restriction_params)
-        self.assertEqual(len(flat_nets), 1)
-        flat_net2 = flat_nets[0]
+        flat_net1 = TestGraph.parse_flat_objects("net1", "nets", params=restriction_params, unique=True)
+        flat_net2 = TestGraph.parse_flat_objects("net2", "nets", params=restriction_params, unique=True)
 
         graph = TestGraph()
         nodes = [*graph.parse_composite_nodes("all..tutorial_get.explicit_clicked", flat_net1),
@@ -1657,19 +1566,16 @@ class CartesianNodeTest(Test):
             self.config["param_dict"],
         )
 
-        test_node = graph.get_node_by(param_val="tutorial1", subset=graph.get_nodes_by(param_val="net1"))
+        test_node = graph.get_nodes(param_val="tutorial1",
+                                       subset=graph.get_nodes(param_val="net1"), unique=True)
         self.assertIn("1", test_node.prefix)
         self.assertIn("1-net1.vm1", test_node.long_prefix)
 
     def test_validation(self):
         """Test graph (and component) retrieval and validation methods."""
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net = flat_nets[0]
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
         graph = TestGraph()
-        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net)
-        self.assertEqual(len(nodes), 1)
-        test_node = nodes[0]
+        test_node = graph.parse_composite_nodes("normal..tutorial1", flat_net, unique=True)
 
         self.assertEqual(len([o for o in test_node.objects if o.suffix == "vm1"]), 1)
         test_object = [o for o in test_node.objects if o.suffix == "vm1"][0]
@@ -1685,9 +1591,7 @@ class CartesianNodeTest(Test):
             test_node.validate()
 
         # detect reflexive dependencies in the graph
-        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net)
-        self.assertEqual(len(nodes), 1)
-        test_node = nodes[0]
+        test_node = graph.parse_composite_nodes("normal..tutorial1", flat_net, unique=True)
         test_node.descend_from_node(test_node, flat_net)
         with self.assertRaisesRegex(ValueError, r"^Detected reflexive dependency of"):
             test_node.validate()
@@ -1719,17 +1623,11 @@ class CartesianNodeTest(Test):
 
     def test_should_parse(self):
         """Test expectations on the default decision policy of whether to parse or skip a test node."""
-        nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
-        self.assertEqual(len(nodes), 1)
-        flat_node = nodes[0]
+        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
 
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_nets), 1)
-        flat_net1 = flat_nets[0]
+        flat_net1 = TestGraph.parse_flat_objects("net1", "nets", unique=True)
         worker1 = TestWorker(flat_net1)
-        flat_nets = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": ""})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net2 = flat_nets[0]
+        flat_net2 = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": ""}, unique=True)
         worker2 = TestWorker(flat_net2)
         swarm = TestSwarm("localhost", [worker1, worker2])
         TestSwarm.run_swarms = {swarm.id: swarm}
@@ -1762,9 +1660,7 @@ class CartesianNodeTest(Test):
         self.assertTrue(flat_node.should_parse(worker2))
 
         # parse if checked for worker that wasn't previously involved
-        flat_nets = TestGraph.parse_flat_objects("net3", "nets", params={"only_vm1": ""})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net3 = flat_nets[0]
+        flat_net3 = TestGraph.parse_flat_objects("net3", "nets", params={"only_vm1": ""}, unique=True)
         worker3 = TestWorker(flat_net3)
         TestSwarm.run_swarms["localhost"].workers += [worker3]
         self.assertTrue(flat_node.should_parse(worker3))
@@ -1784,8 +1680,8 @@ class CartesianNodeTest(Test):
         worker1 = graph.workers["net1"]
         worker2 = graph.workers["net2"]
 
-        test_node1 = graph.get_node_by(param_val="tutorial1.+net1")
-        test_node2 = graph.get_node_by(param_val="tutorial1.+net2")
+        test_node1 = graph.get_nodes(param_val="tutorial1.+net1", unique=True)
+        test_node2 = graph.get_nodes(param_val="tutorial1.+net2", unique=True)
         # should run a leaf test node visited for the first time
         self.assertTrue(test_node1.default_run_decision(worker1))
         self.assertTrue(test_node2.default_run_decision(worker2))
@@ -1807,8 +1703,8 @@ class CartesianNodeTest(Test):
         test_node1.should_rerun = lambda _: True
         self.assertTrue(test_node1.default_run_decision(worker1))
 
-        test_node1 = graph.get_node_by(param_val="install.+net1")
-        test_node2 = graph.get_node_by(param_val="install.+net2")
+        test_node1 = graph.get_nodes(param_val="install.+net1", unique=True)
+        test_node2 = graph.get_nodes(param_val="install.+net2", unique=True)
         # run decisions involving scans require a started worker which is typically assumed
         test_node1.started_worker = worker1
         # should never run an internal test node meant for other worker
@@ -1855,8 +1751,8 @@ class CartesianNodeTest(Test):
         worker2 = graph.workers["net2"]
 
         # should clean a test node that is not reversible
-        test_node1 = graph.get_node_by(param_val="explicit_clicked.+net1")
-        test_node2 = graph.get_node_by(param_val="explicit_clicked.+net2")
+        test_node1 = graph.get_nodes(param_val="explicit_clicked.+net1", unique=True)
+        test_node2 = graph.get_nodes(param_val="explicit_clicked.+net2", unique=True)
         self.assertTrue(test_node1.default_clean_decision(worker1))
         self.assertTrue(test_node2.default_clean_decision(worker2))
         # should never clean an internal test node meant for other worker
@@ -1866,8 +1762,8 @@ class CartesianNodeTest(Test):
             test_node2.default_clean_decision(worker1)
 
         # should only clean a reversible leaf node if it globally finished
-        test_node1 = graph.get_node_by(param_val="explicit_noop.+net1")
-        test_node2 = graph.get_node_by(param_val="explicit_noop.+net2")
+        test_node1 = graph.get_nodes(param_val="explicit_noop.+net1", unique=True)
+        test_node2 = graph.get_nodes(param_val="explicit_noop.+net2", unique=True)
         swarm = TestSwarm("localhost", [worker1, worker2])
         TestSwarm.run_swarms = {swarm.id: swarm}
         node1_setup = list(test_node1.setup_nodes.keys())
@@ -1894,8 +1790,8 @@ class CartesianNodeTest(Test):
         self.assertFalse(test_node2.default_clean_decision(worker2))
 
         # should only clean a reversible setup node if it is globally cleanup ready
-        test_node1 = graph.get_node_by(param_val="client_noop.+net1")
-        test_node2 = graph.get_node_by(param_val="client_noop.+net2")
+        test_node1 = graph.get_nodes(param_val="client_noop.+net1", unique=True)
+        test_node2 = graph.get_nodes(param_val="client_noop.+net2", unique=True)
         test_node1.finished_worker = worker1
         test_node2.finished_worker = worker2
         node1_setup = list(test_node1.setup_nodes.keys())
@@ -1917,9 +1813,7 @@ class CartesianNodeTest(Test):
 
     def test_pick_priority_prefix(self):
         """Test that pick priority prioritizes workers and then secondary criteria."""
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_nets), 1)
-        flat_net = flat_nets[0]
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", unique=True)
         flat_net.update_restrs(self.config["vm_strs"])
         worker = TestWorker(flat_net)
         full_components = TestGraph.parse_components_for_object(flat_net, "nets", "", unflatten=True)
@@ -1956,9 +1850,7 @@ class CartesianNodeTest(Test):
 
     def test_pick_priority_bridged(self):
         """Test that pick priority prioritizes workers and then secondary criteria."""
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_nets), 1)
-        flat_net = flat_nets[0]
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", unique=True)
         flat_net.update_restrs(self.config["vm_strs"])
         worker = TestWorker(flat_net)
         full_components = TestGraph.parse_components_for_object(flat_net, "nets", "", unflatten=True)
@@ -1991,9 +1883,7 @@ class CartesianNodeTest(Test):
 
     def test_pick_and_drop_node(self):
         """Test that parents and children are picked according to previous visits and cached."""
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_nets), 1)
-        flat_net = flat_nets[0]
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", unique=True)
         flat_net.update_restrs(self.config["vm_strs"])
         worker = TestWorker(flat_net)
         full_components = TestGraph.parse_components_for_object(flat_net, "nets", "", unflatten=True)
@@ -2025,28 +1915,16 @@ class CartesianNodeTest(Test):
 
     def test_pick_and_drop_bridged(self):
         """Test for correctly shared picked and dropped nodes across bridged nodes."""
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net1 = flat_nets[0]
+        flat_net1 = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
         worker1 = TestWorker(flat_net1)
-        flat_nets = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"})
-        self.assertEqual(len(flat_nets), 1)
-        flat_net2 = flat_nets[0]
+        flat_net2 = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"}, unique=True)
         worker2 = TestWorker(flat_net2)
 
         graph = TestGraph()
-        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net1)
-        self.assertEqual(len(nodes), 1)
-        node1 = nodes[0]
-        nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net2)
-        self.assertEqual(len(nodes), 1)
-        node2 = nodes[0]
-        nodes = graph.parse_composite_nodes("normal..tutorial2", flat_net1)
-        self.assertEqual(len(nodes), 1)
-        node13 = nodes[0]
-        nodes = graph.parse_composite_nodes("normal..tutorial2", flat_net2)
-        self.assertEqual(len(nodes), 1)
-        node23 = nodes[0]
+        node1 = graph.parse_composite_nodes("normal..tutorial1", flat_net1, unique=True)
+        node2 = graph.parse_composite_nodes("normal..tutorial1", flat_net2, unique=True)
+        node13 = graph.parse_composite_nodes("normal..tutorial2", flat_net1, unique=True)
+        node23 = graph.parse_composite_nodes("normal..tutorial2", flat_net2, unique=True)
 
         # not picking or dropping any parent results in empty but equal registers
         node1.descend_from_node(node13, flat_net1)
@@ -2066,9 +1944,7 @@ class CartesianNodeTest(Test):
 
     def test_pull_locations(self):
         """Test that all setup get locations for a node are properly updated."""
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_nets), 1)
-        flat_net = flat_nets[0]
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", unique=True)
         flat_net.update_restrs(self.config["vm_strs"])
         worker = TestWorker(flat_net)
         full_components = TestGraph.parse_components_for_object(flat_net, "nets", "", unflatten=True)
@@ -2103,12 +1979,8 @@ class CartesianNodeTest(Test):
 
     def test_pull_locations_bridged(self):
         """Test that all setup get locations for a node are properly updated."""
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_nets), 1)
-        flat_net1 = flat_nets[0]
-        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_nets), 1)
-        flat_net2 = flat_nets[0]
+        flat_net1 = TestGraph.parse_flat_objects("net1", "nets", unique=True)
+        flat_net2 = TestGraph.parse_flat_objects("net1", "nets", unique=True)
         worker = TestWorker(flat_net1)
 
         flat_net1.update_restrs(self.config["vm_strs"])
@@ -2323,24 +2195,25 @@ class CartesianGraphTest(Test):
         ]
         self._run_traversal(graph, self.config["param_dict"])
 
-    def test_get_objects_by(self):
+    def test_get_objects(self):
         """Test object retrieval with various arguments and thus calls."""
         graph = TestGraph()
         graph.new_objects([n for n in TestGraph.parse_suffix_objects("vms")])
         self.assertEqual(len(graph.objects), 6)
-        get_objects = graph.get_objects_by(param_val="vm\d")
+        get_objects = graph.get_objects(param_val="vm\d")
         self.assertEqual(len(get_objects), len(graph.objects))
-        get_objects = graph.get_objects_by(param_val="vm1")
+        get_objects = graph.get_objects(param_val="vm1")
         self.assertEqual(len(get_objects), 2)
-        get_objects = graph.get_objects_by(param_val="\.CentOS", subset=get_objects)
+        get_objects = graph.get_objects(param_val="\.CentOS", subset=get_objects)
         self.assertEqual(len(get_objects), 1)
-        get_objects = graph.get_objects_by("os_type", param_val="linux", subset=get_objects)
+        get_objects = graph.get_objects("os_type", param_val="linux", subset=get_objects)
         self.assertEqual(len(get_objects), 1)
-        get_objects = graph.get_objects_by(param_key="os_variant", param_val="el8", subset=get_objects)
+        get_objects = graph.get_objects(param_key="os_variant", param_val="el8", subset=get_objects)
         self.assertEqual(len(get_objects), 1)
-        get_node = graph.get_node_by(param_key="os_type", param_val="linux", subset=get_objects)
+        get_node = graph.get_nodes(param_key="os_type", param_val="linux",
+                                      subset=get_objects, unique=True)
         self.assertIn(get_node, get_objects)
-        get_nodes = graph.get_nodes_by(param_val="vm1", subset=[])
+        get_nodes = graph.get_nodes(param_val="vm1", subset=[])
         self.assertEqual(len(get_nodes), 0)
 
     def test_get_nodes_by_name(self):
@@ -2359,24 +2232,25 @@ class CartesianGraphTest(Test):
         get_nodes = graph.get_nodes_by_name("tutorial3.remote.object.control.decorator")
         self.assertEqual(len(get_nodes), 2)
 
-    def test_get_nodes_by(self):
+    def test_get_nodes(self):
         """Test node retrieval with various arguments and thus calls."""
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("all..tutorial3"))
         self.assertEqual(len(graph.nodes), 17)
-        get_nodes = graph.get_nodes_by(param_val="tutorial3")
+        get_nodes = graph.get_nodes(param_val="tutorial3")
         self.assertEqual(len(get_nodes), len(graph.nodes))
-        get_nodes = graph.get_nodes_by(param_val="tutorial3.remote")
+        get_nodes = graph.get_nodes(param_val="tutorial3.remote")
         self.assertEqual(len(get_nodes), 16)
-        get_nodes = graph.get_nodes_by(param_val="\.object", subset=get_nodes)
+        get_nodes = graph.get_nodes(param_val="\.object", subset=get_nodes)
         self.assertEqual(len(get_nodes), 8)
-        get_nodes = graph.get_nodes_by("remote_control_check", param_val="yes", subset=get_nodes)
+        get_nodes = graph.get_nodes("remote_control_check", param_val="yes", subset=get_nodes)
         self.assertEqual(len(get_nodes), 4)
-        get_nodes = graph.get_nodes_by(param_key="remote_decorator_check", param_val="yes", subset=get_nodes)
+        get_nodes = graph.get_nodes(param_key="remote_decorator_check", param_val="yes", subset=get_nodes)
         self.assertEqual(len(get_nodes), 2)
-        get_node = graph.get_node_by(param_key="remote_util_check", param_val="yes", subset=get_nodes)
+        get_node = graph.get_nodes(param_key="remote_util_check", param_val="yes",
+                                      subset=get_nodes, unique=True)
         self.assertIn(get_node, get_nodes)
-        get_nodes = graph.get_nodes_by(param_val="tutorial3", subset=[])
+        get_nodes = graph.get_nodes(param_val="tutorial3", subset=[])
         self.assertEqual(len(get_nodes), 0)
 
     def test_object_node_incompatible(self):
@@ -2413,14 +2287,12 @@ class CartesianGraphTest(Test):
     def test_parse_cloned_branches_for_node_and_object(self):
         """Test default parsing and retrieval of cloned branches for a set of parent test nodes."""
         graph = TestGraph()
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets",
+                                                   params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                   unique=True)
         full_parents = graph.parse_composite_nodes("normal..tutorial_gui", flat_object)
         self.assertEqual(len(full_parents), 2)
-        full_nodes = graph.parse_composite_nodes("leaves..tutorial_get..implicit_both", flat_object)
-        self.assertEqual(len(full_nodes), 1)
-        full_node = full_nodes[0]
+        full_node = graph.parse_composite_nodes("leaves..tutorial_get..implicit_both", flat_object, unique=True)
         # the clone source setup has to be fully defined to clone it as setup for the clones
         full_node.descend_from_node(full_parents[0], flat_object)
 
@@ -2457,12 +2329,8 @@ class CartesianGraphTest(Test):
     def test_parse_branches_for_node_and_object(self):
         """Test default parsing and retrieval of branches for a pair of test node and object."""
         graph = TestGraph()
-        flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
+        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
+        flat_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
 
         parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
         self.assertEqual(len(parents), 2)
@@ -2501,34 +2369,31 @@ class CartesianGraphTest(Test):
         self.assertEqual(children[0].params["name"], reparsed_child.params["name"])
 
         # make sure the node reuse does not depend on test set restrictions
-        flat_nodes = [n for n in TestGraph.parse_flat_nodes("all..tutorial1")]
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
+        flat_node = TestGraph.parse_flat_nodes("all..tutorial1", unique=True)
         parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
         self.assertEqual(len(parents), 0)
         self.assertEqual(len(children), 0)
 
     def test_parse_branches_for_node_and_object_with_bridging(self):
         """Test that parsing and retrieval of branches also bridges worker-related nodes."""
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
-        self.assertEqual(len(flat_objects), 1)
-        flat_object1 = flat_objects[0]
-        flat_objects = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
-        self.assertEqual(len(flat_objects), 1)
-        flat_object2 = flat_objects[0]
+        flat_object1 = TestGraph.parse_flat_objects("net1", "nets",
+                                                    params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                    unique=True)
+        flat_object2 = TestGraph.parse_flat_objects("net2", "nets",
+                                                    params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                    unique=True)
 
         graph = TestGraph()
 
         graph.new_nodes(graph.parse_composite_nodes("normal..tutorial1", flat_object1))
-        self.assertEqual(len(graph.nodes), 1)
-        full_node1 = graph.get_node_by(param_val="tutorial1.+net1")
+        full_node1 = graph.get_nodes(param_val="tutorial1.+net1", unique=True)
         _, children = graph.parse_branches_for_node_and_object(full_node1, flat_object1)
         self.assertEqual(len(children), 1)
         self.assertIn(full_node1, children)
         self.assertEqual(len(full_node1.bridged_nodes), 0)
 
         graph.new_nodes(graph.parse_composite_nodes("normal..tutorial1", flat_object2))
-        full_node2 = graph.get_node_by(param_val="tutorial1.+net2")
+        full_node2 = graph.get_nodes(param_val="tutorial1.+net2", unique=True)
         _, children = graph.parse_branches_for_node_and_object(full_node2, flat_object2)
         self.assertEqual(len(children), 1)
         self.assertIn(full_node2, children)
@@ -2539,12 +2404,10 @@ class CartesianGraphTest(Test):
 
     def test_parse_branches_for_node_and_object_with_cloning(self):
         """Test default parsing and retrieval of branches for a pair of cloned test node and object."""
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
-        flat_nodes = [n for n in TestGraph.parse_flat_nodes("leaves..tutorial_get..implicit_both")]
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets",
+                                                   params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                   unique=True)
+        flat_node = TestGraph.parse_flat_nodes("leaves..tutorial_get..implicit_both", unique=True)
 
         graph = TestGraph()
 
@@ -2581,13 +2444,10 @@ class CartesianGraphTest(Test):
         graph = TestGraph()
         # the test node restricts vm1 to CentOS in the config and it is not something that can be
         # overwritten as the user choices could only restrict further already restricted variants
-        flat_nodes = [n for n in TestGraph.parse_flat_nodes("leaves..tutorial_get..implicit_both",
-                                                            params={"only_vm2": "", "only_vm3": ""})]
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
+        flat_node = TestGraph.parse_flat_nodes("leaves..tutorial_get..implicit_both",
+                                               params={"only_vm2": "", "only_vm3": ""},
+                                               unique=True)
+        flat_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
 
         # use params to overwrite the full node parameters and remove its default restriction on vm1
         parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
@@ -2632,15 +2492,13 @@ class CartesianGraphTest(Test):
 
     def test_parse_branches_for_node_and_object_with_cloning_bridging(self):
         """Test parsing and retrieval of branches for bridged cloned test node and object."""
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
-        self.assertEqual(len(flat_objects), 1)
-        flat_object1 = flat_objects[0]
-        flat_objects = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
-        self.assertEqual(len(flat_objects), 1)
-        flat_object2 = flat_objects[0]
-        flat_nodes = TestGraph.parse_flat_nodes("leaves..tutorial_get..implicit_both")
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
+        flat_object1 = TestGraph.parse_flat_objects("net1", "nets",
+                                                    params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                    unique=True)
+        flat_object2 = TestGraph.parse_flat_objects("net2", "nets",
+                                                    params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                    unique=True)
+        flat_node = TestGraph.parse_flat_nodes("leaves..tutorial_get..implicit_both", unique=True)
 
         graph = TestGraph()
 
@@ -2674,7 +2532,7 @@ class CartesianGraphTest(Test):
         graph.parse_branches_for_node_and_object(composite_nodes[1], flat_object1)
         self.assertEqual(composite_nodes[0].bridged_nodes, (composite_nodes[1], ))
         self.assertEqual(composite_nodes[1].bridged_nodes, (composite_nodes[0], ))
-        cloned_grandchildren = graph.get_nodes_by(param_val="tutorial_finale.getsetup")
+        cloned_grandchildren = graph.get_nodes(param_val="tutorial_finale.getsetup")
         self.assertEqual(len(cloned_grandchildren), 4)
         self.assertEqual(grandchildren[0].cloned_nodes, (cloned_grandchildren[0], cloned_grandchildren[1]))
         self.assertEqual(grandchildren[1].cloned_nodes, (cloned_grandchildren[2], cloned_grandchildren[3]))
@@ -2694,12 +2552,8 @@ class CartesianGraphTest(Test):
     def test_parse_paths_to_object_roots(self):
         """Test correct expectation of parsing graph dependency paths from a leaf to all their object roots."""
         graph = TestGraph()
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
-        flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets", unique=True)
+        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
 
         generator = graph.parse_paths_to_object_roots(flat_node, flat_object)
         flat_parents, flat_children, flat_node2 = next(generator)
@@ -2723,12 +2577,10 @@ class CartesianGraphTest(Test):
     def test_parse_paths_to_object_roots_with_cloning_shallow(self):
         """Test parsing of complete paths to object roots with shallow cloning."""
         graph = TestGraph()
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
-        flat_nodes = [n for n in TestGraph.parse_flat_nodes("leaves..tutorial_get..implicit_both")]
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets",
+                                                   params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                   unique=True)
+        flat_node = TestGraph.parse_flat_nodes("leaves..tutorial_get..implicit_both", unique=True)
 
         generator = graph.parse_paths_to_object_roots(flat_node, flat_object)
         flat_parents, flat_children, _ = next(generator)
@@ -2756,12 +2608,10 @@ class CartesianGraphTest(Test):
     def test_parse_paths_to_object_roots_with_cloning_deep(self):
         """Test parsing of complete paths to object roots with deep cloning."""
         graph = TestGraph()
-        flat_objects = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
-        self.assertEqual(len(flat_objects), 1)
-        flat_object = flat_objects[0]
-        flat_nodes = [n for n in TestGraph.parse_flat_nodes("leaves..tutorial_finale")]
-        self.assertEqual(len(flat_nodes), 1)
-        flat_node = flat_nodes[0]
+        flat_object = TestGraph.parse_flat_objects("net1", "nets",
+                                                   params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                   unique=True)
+        flat_node = TestGraph.parse_flat_nodes("leaves..tutorial_finale", unique=True)
 
         generator = graph.parse_paths_to_object_roots(flat_node, flat_object)
         flat_parents, flat_children, _ = next(generator)
@@ -2947,10 +2797,10 @@ class CartesianGraphTest(Test):
         graph.new_nodes(graph.parse_composite_nodes("normal..tutorial2", graph.workers["net4"].net))
         graph.parse_shared_root_from_object_roots()
 
-        test_node = graph.get_node_by(param_val="tutorial1.+net2")
+        test_node = graph.get_nodes(param_val="tutorial1.+net2", unique=True)
         test_node.started_worker = graph.workers["net2"]
         del graph.workers["net2"]
-        test_node = graph.get_node_by(param_val="tutorial2.+net4")
+        test_node = graph.get_nodes(param_val="tutorial2.+net4", unique=True)
         test_node.started_worker = graph.workers["net4"]
         del graph.workers["net4"]
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
@@ -3528,7 +3378,7 @@ class CartesianGraphTest(Test):
         self._run_traversal(graph)
 
         # the graph has a specific connectedness with the shared root
-        shared_roots = graph.get_nodes_by("shared_root", "yes")
+        shared_roots = graph.get_nodes("shared_root", "yes")
         assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
         root = shared_roots[0]
         for node in graph.nodes:
@@ -3651,7 +3501,7 @@ class CartesianGraphTest(Test):
                                     reverse_calls.index(mock.call(node, worker, mock.ANY)))
 
                 # the shared root can be traversed many times but never reversed
-                shared_roots = graph.get_nodes_by("shared_root", "yes")
+                shared_roots = graph.get_nodes("shared_root", "yes")
                 assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
                 root = shared_roots[0]
                 graph.traverse_node.assert_any_call(root, worker, mock.ANY)
@@ -3666,8 +3516,8 @@ class CartesianGraphTest(Test):
             self.prefix, self.config["vm_strs"],
             self.config["param_dict"],
         )
-        default_object_param = graph.get_node_by(param_val="explicit_clicked").params["images"]
-        default_node_param = graph.get_node_by(param_val="explicit_clicked").params["shared_pool"]
+        default_object_param = graph.get_nodes(param_val="explicit_clicked", unique=True).params["images"]
+        default_node_param = graph.get_nodes(param_val="explicit_clicked", unique=True).params["shared_pool"]
         custom_object_param1 = default_object_param + "01"
         custom_object_param2 = default_object_param + "02"
         custom_node_param = "remote:" + default_node_param
@@ -3705,7 +3555,7 @@ class CartesianGraphTest(Test):
         ]
         self._run_traversal(graph, params=self.config["param_dict"])
 
-        test_node = graph.get_node_by(param_val="explicit_clicked.*net1")
+        test_node = graph.get_nodes(param_val="explicit_clicked.*net1", unique=True)
         self.assertNotEqual(test_node.params["shared_pool"], default_node_param,
                             "The default %s of %s wasn't overwritten" % (default_node_param, test_node.prefix))
         self.assertEqual(test_node.params["shared_pool"], custom_node_param,
@@ -3726,7 +3576,7 @@ class CartesianGraphTest(Test):
         self.assertNotIn("images_vm3", test_node.params,
                          "The third vm of %s should use default images" % (test_node.prefix))
 
-        test_objects = graph.get_objects_by(param_val="vm1.*CentOS")
+        test_objects = graph.get_objects(param_val="vm1.*CentOS")
         vm_objects = [o for o in test_objects if o.key == "vms"]
         self.assertEqual(len(vm_objects), 1, "There must be exactly one vm1 object")
         test_object1 = vm_objects[0]
@@ -3738,7 +3588,7 @@ class CartesianGraphTest(Test):
         self.assertEqual(test_object_params1["images"], custom_object_param1,
                          "The new %s of %s must be %s" % (default_object_param, test_object1.suffix, custom_object_param1))
 
-        test_objects = graph.get_objects_by(param_val="vm2.*Win10")
+        test_objects = graph.get_objects(param_val="vm2.*Win10")
         vm_objects = [o for o in test_objects if o.key == "vms"]
         self.assertEqual(len(vm_objects), 1, "There must be exactly one vm object for tutorial1")
         test_object2 = vm_objects[0]
@@ -3759,8 +3609,8 @@ class CartesianGraphTest(Test):
             self.prefix, self.config["vm_strs"],
             self.config["param_dict"],
         )
-        default_object_param = graph.get_node_by(param_val="explicit_clicked").params["images"]
-        default_node_param = graph.get_node_by(param_val="explicit_clicked").params["shared_pool"]
+        default_object_param = graph.get_nodes(param_val="explicit_clicked", unique=True).params["images"]
+        default_node_param = graph.get_nodes(param_val="explicit_clicked", unique=True).params["shared_pool"]
         custom_object_param1 = default_object_param + "01"
         custom_object_param2 = default_object_param + "02"
         custom_node_param = "remote:" + default_node_param
@@ -3775,7 +3625,7 @@ class CartesianGraphTest(Test):
             self.config["param_dict"],
         )
 
-        test_node = graph.get_node_by(param_val="explicit_clicked")
+        test_node = graph.get_nodes(param_val="explicit_clicked", unique=True)
         self.assertNotEqual(test_node.params["shared_pool"], default_node_param,
                             "The default %s of %s wasn't overwritten" % (default_node_param, test_node.prefix))
         self.assertEqual(test_node.params["shared_pool"], custom_node_param,
@@ -3796,7 +3646,7 @@ class CartesianGraphTest(Test):
         self.assertNotIn("images_vm3", test_node.params,
                          "The third vm of %s should use default images" % (test_node.prefix))
 
-        test_objects = graph.get_objects_by(param_val="vm1")
+        test_objects = graph.get_objects(param_val="vm1")
         vm_objects = [o for o in test_objects if o.key == "vms"]
         self.assertEqual(len(vm_objects), 1, "There must be exactly one vm1 object")
         test_object1 = vm_objects[0]
@@ -3808,7 +3658,7 @@ class CartesianGraphTest(Test):
         self.assertEqual(test_object_params1["images"], custom_object_param1,
                          "The new %s of %s must be %s" % (default_object_param, test_object1.suffix, custom_object_param1))
 
-        test_objects = graph.get_objects_by(param_val="vm2")
+        test_objects = graph.get_objects(param_val="vm2")
         vm_objects = [o for o in test_objects if o.key == "vms"]
         self.assertEqual(len(vm_objects), 1, "There must be exactly one vm object for tutorial1")
         test_object2 = vm_objects[0]
@@ -3894,14 +3744,14 @@ class CartesianGraphTest(Test):
 
                 # assert that tests were repeated
                 self.assertEqual(len(self.runner.job.result.tests), 4)
-                self.assertEqual(len(graph.get_node_by(param_val="tutorial1").results), 4)
+                self.assertEqual(len(graph.get_nodes(param_val="tutorial1", unique=True).results), 4)
                 # also assert the correct results were registered
                 self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status] * 4)
                 registered_results = []
                 for result in self.runner.job.result.tests:
                     result["name"] = result["name"].name
                     registered_results.append(result)
-                self.assertEqual(registered_results, graph.get_node_by(param_val="tutorial1").results)
+                self.assertEqual(registered_results, graph.get_nodes(param_val="tutorial1", unique=True).results)
                 # the test graph and thus the test node is recreated
                 self.runner.job.result.tests.clear()
 
@@ -3930,14 +3780,14 @@ class CartesianGraphTest(Test):
 
                 # assert that tests were not repeated
                 self.assertEqual(len(self.runner.job.result.tests), 1)
-                self.assertEqual(len(graph.get_node_by(param_val="tutorial1").results), 1)
+                self.assertEqual(len(graph.get_nodes(param_val="tutorial1", unique=True).results), 1)
                 # also assert the correct results were registered
                 self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status])
                 registered_results = []
                 for result in self.runner.job.result.tests:
                     result["name"] = result["name"].name
                     registered_results.append(result)
-                self.assertEqual(registered_results, graph.get_node_by(param_val="tutorial1").results)
+                self.assertEqual(registered_results, graph.get_nodes(param_val="tutorial1", unique=True).results)
                 # the test graph and thus the test node is recreated
                 self.runner.job.result.tests.clear()
 
@@ -3967,14 +3817,14 @@ class CartesianGraphTest(Test):
 
                 # assert that tests were not repeated
                 self.assertEqual(len(self.runner.job.result.tests), 2)
-                self.assertEqual(len(graph.get_node_by(param_val="tutorial1").results), 2)
+                self.assertEqual(len(graph.get_nodes(param_val="tutorial1", unique=True).results), 2)
                 # also assert the correct results were registered
                 self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status, "INTERRUPTED"])
                 registered_results = []
                 for result in self.runner.job.result.tests:
                     result["name"] = result["name"].name
                     registered_results.append(result)
-                self.assertEqual(registered_results, graph.get_node_by(param_val="tutorial1").results)
+                self.assertEqual(registered_results, graph.get_nodes(param_val="tutorial1", unique=True).results)
                 # the test graph and thus the test node is recreated
                 self.runner.job.result.tests.clear()
 
@@ -3989,9 +3839,9 @@ class CartesianGraphTest(Test):
             self.prefix, self.config["vm_strs"],
             self.config["param_dict"],
         )
-        node11, node12, node21, node22 = graph.get_nodes_by(param_val="tutorial2")
+        node11, node12, node21, node22 = graph.get_nodes(param_val="tutorial2")
         # results from the previous job (inclusive of setup that should now be skipped)
-        on_customize_tests = [n.params["name"] for n in graph.get_nodes_by(param_val="on_customize")]
+        on_customize_tests = [n.params["name"] for n in graph.get_nodes(param_val="on_customize")]
         self.assertEqual(len(on_customize_tests), 2)
         self.runner.previous_results += [{"name": on_customize_tests[0], "status": "PASS", "time": 1}]
         self.runner.previous_results += [{"name": on_customize_tests[1], "status": "PASS", "time": 1}]
@@ -4015,7 +3865,7 @@ class CartesianGraphTest(Test):
         ]
         self._run_traversal(graph, {"replay": "previous_job"})
 
-        node11, node12, node21, node22 = graph.get_nodes_by(param_val="tutorial2.+vm1")
+        node11, node12, node21, node22 = graph.get_nodes(param_val="tutorial2.+vm1")
         # assert that tests were repeated only when needed
         self.assertEqual(len(self.runner.job.result.tests), 2)
         self.assertEqual(len(node11.results), 1)
@@ -4044,9 +3894,9 @@ class CartesianGraphTest(Test):
             self.prefix, self.config["vm_strs"],
             self.config["param_dict"],
         )
-        node1, node2 = graph.get_nodes_by(param_val="tutorial2")
+        node1, node2 = graph.get_nodes(param_val="tutorial2")
         # results from the previous job (inclusive of setup that should now be skipped)
-        self.runner.previous_results += [{"name": graph.get_node_by(param_val="on_customize").params["name"], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": graph.get_nodes(param_val="on_customize", unique=True).params["name"], "status": "PASS", "time": 1}]
         self.runner.previous_results += [{"name": node1.params["name"], "status": "PASS", "time": 1}]
         self.runner.previous_results += [{"name": node2.params["name"], "status": "FAIL", "time": 0.2}]
 
@@ -4065,7 +3915,7 @@ class CartesianGraphTest(Test):
         ]
         self._run_traversal(graph, {"replay": "previous_job", "rerun_status": "pass"})
 
-        node1, node2 = graph.get_nodes_by(param_val="tutorial2.+vm1")
+        node1, node2 = graph.get_nodes(param_val="tutorial2.+vm1")
         # assert that tests were repeated only when needed
         self.assertEqual(len(self.runner.job.result.tests), 2)
         self.assertEqual(len(node1.results), 2)

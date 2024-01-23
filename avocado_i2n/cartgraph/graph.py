@@ -250,18 +250,18 @@ class TestGraph(object):
         activity = "running" if flag_type == "run" else "cleanup"
         logging.debug(f"Flagging test nodes for {activity}")
         if object_name is None and node_name is None:
-            root_tests = self.get_nodes_by(param_key="shared_root", param_val="yes")
+            root_tests = self.get_nodes(param_key="shared_root", param_val="yes")
         elif node_name is None:
-            root_tests = self.get_nodes_by(param_key="object_root", param_val="(?:-|\.|^)"+object_name+"(?:-|\.|$)")
+            root_tests = self.get_nodes(param_key="object_root", param_val="(?:-|\.|^)"+object_name+"(?:-|\.|$)")
         else:
             root_tests = self.get_nodes_by_name(node_name)
             if object_name:
                 # TODO: we only support vm objects at the moment
-                root_tests = self.get_nodes_by(param_key="vms",
+                root_tests = self.get_nodes(param_key="vms",
                                                param_val="(?:^|\s)"+object_name+"(?:$|\s)",
                                                subset=root_tests)
         if worker_name:
-            root_tests = self.get_nodes_by(param_key="name",
+            root_tests = self.get_nodes(param_key="name",
                                            param_val="(?:^|\.)"+worker_name+"(?:$|\.)",
                                            subset=root_tests)
         if len(root_tests) < 1:
@@ -304,7 +304,7 @@ class TestGraph(object):
         activity = "running" if flag_type == "run" else "cleanup"
         logging.debug(f"Flagging test nodes for {activity}")
         for test_node in self.nodes:
-            matching_nodes = graph.get_nodes_by(param_key="name", param_val=test_node.setless_form+"$")
+            matching_nodes = graph.get_nodes(param_key="name", param_val=test_node.setless_form+"$")
             if len(matching_nodes) == 0:
                 logging.debug(f"Skip flag for non-overlapping {test_node}")
                 continue
@@ -323,12 +323,31 @@ class TestGraph(object):
                 test_node.should_clean = flag.__get__(test_node)
 
     """parse and get functionality"""
-    def get_objects_by_restr(self, restriction: str = "", subset: list[TestObject] = None) -> list[TestObject]:
+    @staticmethod
+    def _unique_filter(items):
+        """
+        Query all test objects by a value in a parameter, returning a unique object.
+
+        :returns: a unique object satisfying ``key=val`` criterion
+
+        The rest of the arguments are analogical to the plural version.
+        """
+        if len(items) == 0:
+            raise RuntimeError("Retrieved test node or object does not exist")
+        if len(items) > 1:
+            raise RuntimeError(f"Retrieved test node or object is not unique among {items}")
+        return items[0]
+
+    def get_objects_by_restr(self,
+                             restriction: str = "",
+                             subset: list[TestObject] = None,
+                             unique: bool = False) -> list[TestObject]|TestObject:
         """
         Query all test objects by a multi-line restriction of "only" and "no" filters.
 
         :param restriction: single or multi-line restriction to use
         :param subset: a subset of test objects possibly within the graph to search in
+        :param unique: whether to expect, validate, and return a unique object
         :returns: a selection of objects satisfying all filter criteria
 
         ..todo:: No support is available for the ".." operator yet, consider simpler restriction syntax only
@@ -342,55 +361,50 @@ class TestGraph(object):
             elif restr_line.startswith("no "):
                 or_restriction = restr_line.replace("no ", "").replace(" ", "").strip()
                 regex = r"^(?!.*(\.|^)(" + or_restriction.replace(",", "|") + r")(\.|$))"
-            filtered_objects = self.get_objects_by(param_val=regex,
+            filtered_objects = self.get_objects(param_val=regex,
                                                    subset=filtered_objects)
-        return filtered_objects
+        return TestGraph._unique_filter(filtered_objects) if unique else filtered_objects
 
-    def get_objects_by(self, param_key: str = "name", param_val: str = "", subset: list[TestObject] = None) -> list[TestObject]:
+    def get_objects(self,
+                       param_key: str = "name", param_val: str = "",
+                       subset: list[TestObject] = None,
+                       unique: bool = False) -> list[TestObject]|TestObject:
         """
         Query all test objects by a value in a parameter, returning a list of objects.
 
         :param param_key: exact key to use for the search
         :param param_val: regex to match the object parameter values
         :param subset: a subset of test objects possibly within the graph to search in
+        :param unique: whether to expect, validate, and return a unique object
         :returns: a selection of objects satisfying ``key=val`` criterion
         """
         regex = re.compile(param_val)
         subset = self.objects if subset is None else subset
         objects = [o for o in subset if param_key in o.params and regex.search(o.params[param_key])]
         logging.debug(f"Retrieved {len(objects)}/{len(subset)} test objects with {param_key} = {param_val}")
-        return objects
+        return TestGraph._unique_filter(objects) if unique else objects
 
-    def get_object_by(self, param_key: str = "name", param_val: str = "", subset: list[TestObject] = None) -> TestObject:
-        """
-        Query all test objects by a value in a parameter, returning a unique object.
-
-        :returns: a unique object satisfying ``key=val`` criterion
-
-        The rest of the arguments are analogical to the plural version.
-        """
-        objects = self.get_objects_by(param_key, param_val, subset)
-        assert len(objects) == 1, f"Test object with {param_key}={param_val} not existing"\
-               f" or unique in: {objects}"
-        return objects[0]
-
-    def get_nodes_by_name(self, name: str = "") -> list[TestNode]:
+    def get_nodes_by_name(self, name: str = "", unique: bool = False) -> list[TestNode]|TestNode:
         """
         Query all test nodes by their name, returning a list of matching nodes.
 
         :param name: variant-composition name as part of the complete node name
+        :param unique: whether to expect, validate, and return a unique node
         :returns: a selection of objects satisfying name inclusion criterion
         """
         nodes = self.nodes_index.get(name)
         logging.debug(f"Retrieved {len(nodes)}/{len(self.nodes)} test nodes with name like {name}")
-        return nodes
+        return TestGraph._unique_filter(nodes) if unique else nodes
 
-    def get_nodes_by_restr(self, restriction: str = "", subset: list[TestNode] = None) -> list[TestNode]:
+    def get_nodes_by_restr(self,
+                           restriction: str = "", subset: list[TestNode] = None,
+                           unique: bool = False) -> list[TestNode]|TestNode:
         """
         Query all test nodes by a multi-line restriction of "only" and "no" filters.
 
         :param restriction: single or multi-line restriction to use
         :param subset: a subset of test nodes possibly within the graph to search in
+        :param unique: whether to expect, validate, and return a unique node
         :returns: a selection of nodes satisfying all filter criteria
 
         ..todo:: No support is available for the ".." operator yet, consider simpler restriction syntax only
@@ -404,48 +418,40 @@ class TestGraph(object):
             elif restr_line.startswith("no "):
                 or_restriction = restr_line.replace("no ", "").replace(" ", "").strip()
                 regex = r"^(?!.*(\.|^)(" + or_restriction.replace(",", "|") + r")(\.|$))"
-            filtered_nodes = self.get_nodes_by(param_val=regex,
+            filtered_nodes = self.get_nodes(param_val=regex,
                                                subset=filtered_nodes)
-        return filtered_nodes
+        return TestGraph._unique_filter(filtered_nodes) if unique else filtered_nodes
 
-    def get_nodes_by(self, param_key: str = "name", param_val: str = "", subset: list[TestNode] = None) -> list[TestNode]:
+    def get_nodes(self,
+                     param_key: str = "name", param_val: str = "",
+                     subset: list[TestNode] = None,
+                     unique: bool = False) -> list[TestNode]|TestNode:
         """
         Query all test nodes by a value in a parameter, returning a list of nodes.
 
         :param param_key: exact key to use for the search
         :param param_val: regex to match the object parameter values
         :param subset: a subset of test nodes possibly within the graph to search in
+        :param unique: whether to expect, validate, and return a unique node
         :returns: a selection of nodes satisfying ``key=val`` criterion
         """
         regex = re.compile(param_val)
         subset = self.nodes if subset is None else subset
         nodes = [n for n in subset if param_key in n.params and regex.search(n.params[param_key])]
         logging.debug(f"Retrieved {len(nodes)}/{len(subset)} test nodes with {param_key} = {param_val}")
-        return nodes
-
-    def get_node_by(self, param_key: str = "name", param_val: str = "", subset: list[TestNode] = None) -> TestNode:
-        """
-        Query all test nodes by a value in a parameter, returning a unique node.
-
-        :returns: a unique node satisfying ``key=val`` criterion
-
-        The rest of the arguments are analogical to the plural version.
-        """
-        nodes = self.get_nodes_by(param_key, param_val, subset)
-        assert len(nodes) == 1, f"Test node with {param_key}={param_val} not existing"\
-               f" or unique in: {nodes}"
-        return nodes[0]
+        return TestGraph._unique_filter(nodes) if unique else nodes
 
     @staticmethod
     def parse_flat_objects(suffix: str, category: str, restriction: str = "",
-                           params: dict[str, str] = None) -> list[TestObject]:
+                           params: dict[str, str] = None, unique: bool = False) -> list[TestObject]|TestObject:
         """
-        Parse a flat object for each variant of a suffix satisfying a restriction.
+        Parse flat objects for each variant of a suffix satisfying a restriction.
 
         :param suffix: suffix to expand into variant objects
         :param category: category of the suffix that will determine the type of the objects
         :param restriction: single or multi-line restriction to use
         :param params: additional parameters to add to or overwrite all objects' parameters
+        :param unique: whether to expect, validate, and return a unique object
         :returns: a list of parsed flat test objects
         """
         params = params or {}
@@ -477,12 +483,13 @@ class TestGraph(object):
             # TODO: consider generator as performance option also for flat and composite objects
             test_objects += [test_object]
 
-        return test_objects
+        return TestGraph._unique_filter(test_objects) if unique else test_objects
 
     @staticmethod
     def parse_composite_objects(suffix: str, category: str, restriction: str = "",
                                 component_restrs: dict[str, str] = None,
-                                params: dict[str, str] = None, verbose: bool = False) -> list[TestObject]:
+                                params: dict[str, str] = None,
+                                verbose: bool = False, unique: bool = False) -> list[TestObject]|TestObject:
         """
         Parse a composite object for each variant from joined component variants.
 
@@ -492,6 +499,7 @@ class TestGraph(object):
         :param component_restrs: object-specific suffixes (keys) and variant restrictions (values) for the components
         :param params: runtime parameters used for extra customization
         :param verbose: whether to print extra messages or not
+        :param unique: whether to expect, validate, and return a unique object
         :returns: parsed test objects
         """
         params = params or {}
@@ -554,7 +562,7 @@ class TestGraph(object):
                 print(f"{test_object.key.rstrip('s')}    {test_object.suffix}:  {test_object.params['shortname']}")
             test_objects += [test_object]
 
-        return test_objects
+        return TestGraph._unique_filter(test_objects) if unique else test_objects
 
     @staticmethod
     def parse_suffix_objects(category: str, suffix_restrs: dict[str, str] = None,
@@ -698,12 +706,14 @@ class TestGraph(object):
         return flat_object
 
     @staticmethod
-    def parse_flat_nodes(restriction: str = "", params: dict[str, str] = None) -> list[TestNode]:
+    def parse_flat_nodes(restriction: str = "", params: dict[str, str] = None,
+                         unique: bool = False) -> list[TestNode]|TestNode:
         """
         Parse a flat node for each variant of satisfying a restriction.
 
         :param restriction: single or multi-line restriction to use
         :param params: runtime parameters used for extra customization
+        :param unique: whether to expect, validate, and return a unique node
         :returns: a list of parsed flat test nodes
         """
         params = params or {}
@@ -726,7 +736,7 @@ class TestGraph(object):
             # TODO: consider generator as performance option also for flat and composite nodes
             test_nodes += [test_node]
 
-        return test_nodes
+        return TestGraph._unique_filter(test_nodes) if unique else test_nodes
 
     @staticmethod
     def parse_node_from_object(test_object: TestObject, restriction: str = "",
@@ -841,7 +851,7 @@ class TestGraph(object):
             get_vms[vm_name] = filtered_vms
             # dependency filter for child node object has to be applied too
             if vm_name == object_name or (object_type == "images" and object_name.endswith(f"_{vm_name}")):
-                get_vms[vm_name] = self.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=get_vms[vm_name])
+                get_vms[vm_name] = self.get_objects(param_val="(\.|^)" + object_variant + "(\.|$)", subset=get_vms[vm_name])
             if len(get_vms[vm_name]) == 0:
                 raise ValueError(f"Could not fetch any objects for suffix {vm_name} "
                                  f"in the test {node_name}")
@@ -849,7 +859,7 @@ class TestGraph(object):
         previous_nets = [o for o in self.objects if o.key == "nets" and o.long_suffix == test_object.long_suffix]
         # dependency filter for child node object has to be applied too
         if object_variant and object_type == "nets":
-            previous_nets = self.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=previous_nets)
+            previous_nets = self.get_objects(param_val="(\.|^)" + object_variant + "(\.|$)", subset=previous_nets)
         get_nets, parse_nets = {test_object.long_suffix: []}, {test_object.long_suffix: []}
         # all possible vm combinations as variants of the same net slot
         for combination in itertools.product(*get_vms.values()):
@@ -857,10 +867,10 @@ class TestGraph(object):
             filtered_nets = list(previous_nets)
             for vm_object in combination:
                 vm_restr = "(\.|^)" + vm_object.component_form + "(\.|$)"
-                filtered_nets = self.get_objects_by(param_val=vm_restr, subset=filtered_nets)
+                filtered_nets = self.get_objects(param_val=vm_restr, subset=filtered_nets)
             # additional filtering for nets based on dropped vm suffixes
             regex = r"^(?!.*(\.|^)(" + "|".join(dropped_vms) + r")(\.|$))"
-            filtered_nets = self.get_objects_by(param_val=regex, subset=filtered_nets)
+            filtered_nets = self.get_objects(param_val=regex, subset=filtered_nets)
             reused_nets = filtered_nets
             if len(reused_nets) == 1:
                 get_nets[test_object.long_suffix] += [reused_nets[0]]
@@ -952,7 +962,7 @@ class TestGraph(object):
         setup_restr = test_node.setless_form
         setup_obj_restr = test_object.component_form
         filtered_children = self.get_nodes_by_name(setup_restr)
-        filtered_children = self.get_nodes_by("name", f"(\.|^){setup_obj_restr}(\.|$)",
+        filtered_children = self.get_nodes("name", f"(\.|^){setup_obj_restr}(\.|$)",
                                               subset=filtered_children)
         # prevent reflexive retrieval and consider only composite nodes
         filtered_children = [n for n in filtered_children if not n.is_flat()]
@@ -989,7 +999,8 @@ class TestGraph(object):
         return get_nodes, parse_nodes
 
     def parse_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
-                              params: dict[str, str] = None, verbose: bool = False) -> list[TestNode]:
+                              params: dict[str, str] = None,
+                              verbose: bool = False, unique: bool = False) -> list[TestNode]|TestNode:
         """
         Parse all user defined tests (leaf nodes) using the nodes restriction string
         and possibly restricting to a single test object for the singleton tests.
@@ -999,6 +1010,7 @@ class TestGraph(object):
         :param prefix: extra name identifier for the test to be run
         :param params: runtime parameters used for extra customization
         :param verbose: whether to print extra messages or not
+        :param unique: whether to expect, validate, and return a unique node
         :returns: parsed test nodes
         :raises: :py:class:`param.EmptyCartesianProduct` if no result on preselected vm
 
@@ -1009,7 +1021,7 @@ class TestGraph(object):
         # prepare initial parser as starting configuration and get through tests
         for i, node in enumerate(self.parse_flat_nodes(restriction, params=params)):
             test_nodes += self.parse_nodes_from_flat_node_and_object(node, test_object, prefix + str(i+1), params, verbose)
-        return test_nodes
+        return TestGraph._unique_filter(test_nodes) if unique else test_nodes
 
     def get_and_parse_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
                                       params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestNode]]:
@@ -1073,15 +1085,15 @@ class TestGraph(object):
                       f"for dependency for {test_node}")
         # speedup for handling already parsed unique parent cases
         filtered_parents = self.get_nodes_by_name(setup_restr)
-        filtered_parents = self.get_nodes_by("name", f"(\.|^){setup_obj_restr}(\.|$)",
+        filtered_parents = self.get_nodes("name", f"(\.|^){setup_obj_restr}(\.|$)",
                                              subset=filtered_parents)
-        filtered_parents = self.get_nodes_by("name", f"(\.|^){setup_net_restr}(\.|$)",
+        filtered_parents = self.get_nodes("name", f"(\.|^){setup_net_restr}(\.|$)",
                                              subset=filtered_parents)
         # the vm whose dependency we are parsing may not be restrictive enough so reuse optional other
         # objects variants of the current test node - cloning is only supported in the node restriction
         if len(filtered_parents) > 1:
             for test_object in test_node.objects:
-                object_parents = self.get_nodes_by("name", f"(\.|^){test_object.component_form}(\.|$)",
+                object_parents = self.get_nodes("name", f"(\.|^){test_object.component_form}(\.|$)",
                                                    subset=filtered_parents)
                 filtered_parents = object_parents if len(object_parents) > 0 else filtered_parents
         if len(filtered_parents) == 1:
@@ -1225,7 +1237,7 @@ class TestGraph(object):
                         for clone_component in clone_components:
                             child.descend_from_node(descend_source, clone_component)
                     # new clone needs re-bridging with other such nodes
-                    old_bridges = self.get_nodes_by("name", child.bridged_form)
+                    old_bridges = self.get_nodes("name", child.bridged_form)
                     for old_bridge in old_bridges:
                         child.bridge_with_node(old_bridge)
 
@@ -1269,7 +1281,7 @@ class TestGraph(object):
             children = parse_children
         else:
             # TODO: cannot get nodes by (prefix tree index) name due to current limitations in the bridged form
-            old_bridges = self.get_nodes_by("name", test_node.bridged_form)
+            old_bridges = self.get_nodes("name", test_node.bridged_form)
             for bridge in old_bridges:
                 test_node.bridge_with_node(bridge)
             children = [test_node]
@@ -1333,9 +1345,10 @@ class TestGraph(object):
 
         setup_dict = {} if params is None else params.copy()
         setup_dict.update({"shared_root" : "yes"})
-        root_for_all = TestGraph.parse_flat_nodes("all..internal..noop", setup_dict)
-        assert len(root_for_all) == 1, "A unique shared root must be parsable"
-        root_for_all = root_for_all[0]
+        try:
+            root_for_all = TestGraph.parse_flat_nodes("all..internal..noop", setup_dict, unique=True)
+        except RuntimeError as error:
+            raise RuntimeError(f"A unique shared root must be parsable: {error}")
         logging.debug(f"Parsed shared root {root_for_all.params['shortname']}")
         self.new_nodes(root_for_all)
 
@@ -1455,13 +1468,13 @@ class TestGraph(object):
         """
         object_suffix, object_variant = object_name.split("-")[:1][0], "-".join(object_name.split("-")[1:])
         object_image, object_vm = object_suffix.split("_")
-        objects = self.get_objects_by(param_val="^"+object_variant+"$",
-                                      subset=self.get_objects_by("images", object_suffix.split("_")[0]))
+        objects = self.get_objects(param_val="^"+object_variant+"$",
+                                      subset=self.get_objects("images", object_suffix.split("_")[0]))
         vms = [o for o in objects if o.key == "vms"]
         assert len(vms) == 1, "Test object %s's vm not existing or unique in: %s" % (object_name, objects)
         test_object = objects[0]
 
-        nodes = self.get_nodes_by("object_root", object_name, subset=self.get_nodes_by_name(worker.id))
+        nodes = self.get_nodes("object_root", object_name, subset=self.get_nodes_by_name(worker.id))
         assert len(nodes) == 1, "There should exist one unique root for %s" % object_name
         test_node = nodes[0]
 
@@ -1581,7 +1594,7 @@ class TestGraph(object):
         """
         params = params or {}
         logging.debug(f"Worker {worker.id} starting complete graph traversal with parameters {params}")
-        shared_roots = self.get_nodes_by("shared_root", "yes")
+        shared_roots = self.get_nodes("shared_root", "yes")
         assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
         root = shared_roots[0]
 
