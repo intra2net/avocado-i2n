@@ -457,6 +457,8 @@ class CartesianNodeTest(Test):
 
         self.shared_pool = ":" + self.config["param_dict"]["shared_pool"]
 
+        self.maxDiff = None
+
     def test_prefix_tree_contains(self):
         """Test that a prefix tree contains the right variants."""
         tree = PrefixTree()
@@ -1103,6 +1105,235 @@ class CartesianNodeTest(Test):
         self.assertEqual(len(get_nodes), 0)
         self.assertEqual(len(parse_nodes), 0)
 
+    def test_params(self):
+        """Test for correctly parsed test node parameters."""
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
+        graph = TestGraph()
+        test_node = graph.parse_composite_nodes("normal..tutorial1", flat_net, unique=True)
+
+        dict_generator = test_node.recipe.get_parser().get_dicts()
+        dict1 = dict_generator.__next__()
+        # parser of test objects must contain exactly one dictionary
+        self.assertRaises(StopIteration, dict_generator.__next__)
+        self.assertEqual(len(dict1.keys()), len(test_node.params.keys()), "The parameters of a test node must be the same as its only parser dictionary")
+        for key in dict1.keys():
+            self.assertEqual(dict1[key], test_node.params[key], "The values of key %s %s=%s must be the same" % (key, dict1[key], test_node.params[key]))
+        # all VT attributes must be initialized
+        self.assertEqual(test_node.uri, test_node.params["name"])
+
+    def test_restrs(self):
+        """Test for correctly parsed and regenerated test node restrictions."""
+        restr_params = {"only_vm1": "CentOS", "only_vm2": "Win10,Win7", "only_vm3": ""}
+        restr_strs = self.config["vm_strs"]
+        restr_strs.update({"vm2": "only Win10,Win7\n", "vm3": ""})
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", params=restr_params, unique=True)
+        graph = TestGraph()
+
+        test_nodes = TestGraph.parse_flat_nodes("all..explicit_clicked", params=restr_params)
+        test_nodes += graph.parse_composite_nodes("all..explicit_clicked", flat_net)
+        for test_node in test_nodes:
+            self.assertNotIn("only_vm1", test_node.params)
+            self.assertNotIn("only_vm2", test_node.params)
+            self.assertNotIn("only_vm3", test_node.params)
+            if test_nodes.index(test_node) == 0:
+                # restricted vms apply to the flat node during its own parsing
+                self.assertIn("vm1", test_node.restrs)
+                self.assertEqual(test_node.restrs["vm1"], "only CentOS\n")
+                self.assertIn("vm2", test_node.restrs)
+                self.assertEqual(test_node.restrs["vm2"], "only Win10,Win7\n")
+                self.assertIn("vm3", test_node.restrs)
+                self.assertEqual(test_node.restrs["vm3"], "")
+            else:
+                # supported vms don't affect needed vms of the full node
+                self.assertIn("vm1", test_node.restrs)
+                self.assertEqual(test_node.restrs["vm1"], "only qemu_kvm_centos\n")
+                self.assertNotIn("vm2", test_node.restrs)
+                self.assertNotIn("vm3", test_node.restrs)
+
+            test_node.recipe.parse_next_dict({"only_vm1": "qcow2"})
+            test_node.recipe.parse_next_dict({"no_vm1": "qcow1"})
+            test_node.regenerate_params()
+            self.assertNotIn("only_vm1", test_node.params)
+            self.assertNotIn("only_vm2", test_node.params)
+            self.assertNotIn("only_vm3", test_node.params)
+            self.assertIn("vm1", test_node.restrs)
+            if test_nodes.index(test_node) == 0:
+                # new filter parameter overwrites the old only so CentOS is now repeated
+                self.assertEqual(test_node.restrs["vm1"], "only CentOS\nonly qcow2\nno qcow1\n")
+                self.assertIn("vm2", test_node.restrs)
+                self.assertEqual(test_node.restrs["vm2"], "only Win10,Win7\n")
+                self.assertIn("vm3", test_node.restrs)
+                self.assertEqual(test_node.restrs["vm3"], "")
+            else:
+                # overwriting the only_vm1 parameter adds the restrictions as extra
+                self.assertEqual(test_node.restrs["vm1"], "only qemu_kvm_centos\nonly qcow2\nno qcow1\n")
+                self.assertNotIn("vm2", test_node.restrs)
+                self.assertNotIn("vm3", test_node.restrs)
+
+    def test_shared_workers(self):
+        """Test for correctly shared workers across bridged nodes."""
+        flat_net1 = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
+        flat_net2 = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"}, unique=True)
+        graph = TestGraph()
+        test_node1 = graph.parse_composite_nodes("normal..tutorial1", flat_net1, unique=True)
+        test_node2 = graph.parse_composite_nodes("normal..tutorial1", flat_net2, unique=True)
+        test_node1.bridge_with_node(test_node2)
+
+        self.assertEqual(test_node1.finished_worker, None)
+        self.assertEqual(test_node1.finished_worker, test_node2.finished_worker)
+        self.assertEqual(test_node1.shared_finished_workers, set())
+        self.assertEqual(test_node1.shared_finished_workers, test_node2.shared_finished_workers)
+
+        worker1 = mock.MagicMock(id="net1", params={"nets_host": "1"})
+        test_node1.finished_worker = worker1
+        self.assertEqual(test_node1.finished_worker, worker1)
+        self.assertEqual(test_node2.finished_worker, None)
+        self.assertEqual(test_node1.shared_finished_workers, {worker1})
+        self.assertEqual(test_node1.shared_finished_workers, test_node2.shared_finished_workers)
+        worker2 = mock.MagicMock(id="net2", params={"nets_host": "2"})
+        test_node2.finished_worker = worker2
+        self.assertEqual(test_node1.finished_worker, worker1)
+        self.assertEqual(test_node2.finished_worker, worker2)
+        self.assertEqual(test_node1.shared_finished_workers, {worker1, worker2})
+        self.assertEqual(test_node2.shared_finished_workers, {worker1, worker2})
+
+        # validate trivial behavior for flat nodes
+        test_node3 = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
+        self.assertEqual(test_node3.finished_worker, None)
+        self.assertEqual(test_node3.shared_finished_workers, set())
+        test_node3.finished_worker = worker1
+        self.assertEqual(test_node3.finished_worker, worker1)
+        self.assertEqual(test_node3.shared_finished_workers, {test_node3.finished_worker})
+        test_node3.finished_worker = worker2
+        self.assertEqual(test_node3.finished_worker, worker2)
+        self.assertEqual(test_node3.shared_finished_workers, {test_node3.finished_worker})
+
+    def test_shared_involved_workers(self):
+        """Test for correctly shared incompatible workers across flat parent node."""
+        flat_node = TestGraph.parse_flat_nodes("leaves..explicit_noop", unique=True)
+
+        flat_net1 = TestGraph.parse_flat_objects("net1", "nets",
+                                                 params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                 unique=True)
+        flat_net2 = TestGraph.parse_flat_objects("net2", "nets",
+                                                 params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                 unique=True)
+        graph = TestGraph()
+        test_node1 = graph.parse_composite_nodes("leaves..explicit_noop", flat_net1, unique=True)
+        test_node2 = graph.parse_composite_nodes("leaves..explicit_noop", flat_net2, unique=True)
+        test_node1.bridge_with_node(test_node2)
+
+        test_node1.descend_from_node(flat_node, flat_net1)
+        test_node2.descend_from_node(flat_node, flat_net2)
+
+        self.assertEqual(flat_node.shared_involved_workers, set())
+        self.assertEqual(test_node1.shared_involved_workers, set())
+        self.assertEqual(test_node2.shared_involved_workers, set())
+
+        worker1 = TestWorker(flat_net1)
+        worker2 = TestWorker(flat_net2)
+        swarm = TestSwarm("localhost", [worker1, worker2])
+        TestSwarm.run_swarms = {swarm.id: swarm}
+
+        picked_node1 = flat_node.pick_child(worker1)
+        self.assertEqual(flat_node.shared_involved_workers, set())
+        self.assertEqual(test_node1.shared_involved_workers, {worker1})
+        self.assertEqual(test_node2.shared_involved_workers, {worker1})
+        picked_node2 = flat_node.pick_child(worker2)
+        self.assertEqual(flat_node.shared_involved_workers, set())
+        self.assertEqual(test_node1.shared_involved_workers, {worker1, worker2})
+        self.assertEqual(test_node2.shared_involved_workers, {worker1, worker2})
+        self.assertEqual({picked_node1, picked_node2}, {test_node1, test_node2})
+
+        picked_parent1 = test_node1.pick_parent(worker1)
+        self.assertEqual(flat_node.shared_involved_workers, {worker1})
+        picked_parent2 = test_node2.pick_parent(worker2)
+        self.assertEqual(flat_node.shared_involved_workers, {worker1, worker2})
+        self.assertEqual(picked_parent1, picked_parent2)
+        self.assertEqual(picked_parent1, flat_node)
+
+    def test_shared_results_and_worker_ids(self):
+        """Test for correctly shared results and result-based worker ID-s across bridged nodes."""
+        flat_net1 = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
+        flat_net2 = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"}, unique=True)
+        swarm = TestSwarm("localhost", [TestWorker(flat_net1), TestWorker(flat_net2)])
+        TestSwarm.run_swarms = {swarm.id: swarm}
+        graph = TestGraph()
+        test_node1 = graph.parse_composite_nodes("normal..tutorial1", flat_net1, unique=True)
+        test_node2 = graph.parse_composite_nodes("normal..tutorial1", flat_net2, unique=True)
+        test_node1.bridge_with_node(test_node2)
+
+        self.assertEqual(test_node1.results, [])
+        self.assertEqual(test_node1.results, test_node2.results)
+        self.assertEqual(test_node1.shared_results, [])
+        self.assertEqual(test_node1.shared_results, test_node2.shared_results)
+
+        node2_results = [{"name": "tutorial1.net2", "status": "PASS"}]
+        test_node2.results += node2_results
+        self.assertEqual(test_node1.results, [])
+        self.assertEqual(test_node1.shared_results, node2_results)
+        self.assertEqual(test_node2.shared_results, node2_results)
+        self.assertEqual(test_node1.shared_result_worker_ids, {"net2"})
+        self.assertEqual(test_node2.shared_result_worker_ids, test_node1.shared_result_worker_ids)
+
+        node1_results = [{"name": "tutorial1.net1", "status": "FAIL"}]
+        test_node1.results += node1_results
+        self.assertEqual(test_node2.results, node2_results)
+        self.assertEqual(test_node1.shared_results, node1_results + node2_results)
+        self.assertEqual(test_node2.shared_results, node2_results + node1_results)
+        # only net2 succeeded and can provide any tutorial1 setup
+        self.assertEqual(test_node1.shared_result_worker_ids, {"net2"})
+        self.assertEqual(test_node2.shared_result_worker_ids, test_node1.shared_result_worker_ids)
+
+        node1_extra_results = [{"name": "tutorial1.net1", "status": "PASS"}]
+        test_node1.results += node1_extra_results
+        self.assertEqual(test_node2.results, node2_results)
+        self.assertEqual(test_node1.shared_results, node1_results + node1_extra_results + node2_results)
+        self.assertEqual(test_node2.shared_results, node2_results + node1_results + node1_extra_results)
+        # now net1 succeeded too and can provide any tutorial1 setup
+        self.assertEqual(test_node1.shared_result_worker_ids, {"net1", "net2"})
+        self.assertEqual(test_node2.shared_result_worker_ids, test_node1.shared_result_worker_ids)
+
+    def test_setless_form(self):
+        """Test the general use and purpose of the node setless form."""
+        flat_net = TestGraph.parse_flat_objects("net1", "nets",
+                                                params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
+                                                unique=True)
+
+        graph = TestGraph()
+        nodes = [*graph.parse_composite_nodes("leaves..tutorial_get.explicit_clicked", flat_net),
+                 *graph.parse_composite_nodes("all..tutorial_get.explicit_clicked", flat_net)]
+        self.assertEqual(len(nodes), 2)
+        self.assertNotEqual(nodes[0].params["name"], nodes[1].params["name"])
+        self.assertEqual(nodes[0].setless_form, nodes[1].setless_form)
+
+    def test_bridged_form(self):
+        """Test the general use and purpose of the node bridged form."""
+        restriction_params = {"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"}
+        flat_net1 = TestGraph.parse_flat_objects("net1", "nets", params=restriction_params, unique=True)
+        flat_net2 = TestGraph.parse_flat_objects("net2", "nets", params=restriction_params, unique=True)
+
+        graph = TestGraph()
+        nodes = [*graph.parse_composite_nodes("all..tutorial_get.explicit_clicked", flat_net1),
+                 *graph.parse_composite_nodes("all..tutorial_get.explicit_clicked", flat_net2)]
+        self.assertEqual(len(nodes), 2)
+        self.assertNotEqual(nodes[0].params["name"], nodes[1].params["name"])
+        self.assertEqual(nodes[0].bridged_form, nodes[1].bridged_form)
+
+    def test_sanity_in_graph(self):
+        """Test generic usage and composition."""
+        self.config["tests_str"] += "only tutorial1\n"
+        graph = TestGraph.parse_object_trees(
+            None, self.config["tests_str"],
+            self.prefix, self.config["vm_strs"],
+            self.config["param_dict"],
+        )
+
+        test_node = graph.get_nodes(param_val="tutorial1",
+                                       subset=graph.get_nodes(param_val="net1"), unique=True)
+        self.assertIn("1", test_node.prefix)
+        self.assertIn("1-net1.vm1", test_node.long_prefix)
+
     def test_is_unrolled(self):
         """Test that a flat test node is considered unrolled under the right circumstances."""
         graph = TestGraph()
@@ -1342,285 +1573,6 @@ class CartesianNodeTest(Test):
             self.assertTrue(flat_node.is_finished(worker, 2))
             self.assertTrue(flat_node.is_finished(worker, -1))
 
-    def test_params(self):
-        """Test for correctly parsed test node parameters."""
-        flat_net = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
-        graph = TestGraph()
-        test_node = graph.parse_composite_nodes("normal..tutorial1", flat_net, unique=True)
-
-        dict_generator = test_node.recipe.get_parser().get_dicts()
-        dict1 = dict_generator.__next__()
-        # parser of test objects must contain exactly one dictionary
-        self.assertRaises(StopIteration, dict_generator.__next__)
-        self.assertEqual(len(dict1.keys()), len(test_node.params.keys()), "The parameters of a test node must be the same as its only parser dictionary")
-        for key in dict1.keys():
-            self.assertEqual(dict1[key], test_node.params[key], "The values of key %s %s=%s must be the same" % (key, dict1[key], test_node.params[key]))
-        # all VT attributes must be initialized
-        self.assertEqual(test_node.uri, test_node.params["name"])
-
-    def test_restrs(self):
-        """Test for correctly parsed and regenerated test node restrictions."""
-        restr_params = {"only_vm1": "CentOS", "only_vm2": "Win10,Win7", "only_vm3": ""}
-        restr_strs = self.config["vm_strs"]
-        restr_strs.update({"vm2": "only Win10,Win7\n", "vm3": ""})
-        flat_net = TestGraph.parse_flat_objects("net1", "nets", params=restr_params, unique=True)
-        graph = TestGraph()
-
-        test_nodes = TestGraph.parse_flat_nodes("all..explicit_clicked", params=restr_params)
-        test_nodes += graph.parse_composite_nodes("all..explicit_clicked", flat_net)
-        for test_node in test_nodes:
-            self.assertNotIn("only_vm1", test_node.params)
-            self.assertNotIn("only_vm2", test_node.params)
-            self.assertNotIn("only_vm3", test_node.params)
-            if test_nodes.index(test_node) == 0:
-                # restricted vms apply to the flat node during its own parsing
-                self.assertIn("vm1", test_node.restrs)
-                self.assertEqual(test_node.restrs["vm1"], "only CentOS\n")
-                self.assertIn("vm2", test_node.restrs)
-                self.assertEqual(test_node.restrs["vm2"], "only Win10,Win7\n")
-                self.assertIn("vm3", test_node.restrs)
-                self.assertEqual(test_node.restrs["vm3"], "")
-            else:
-                # supported vms don't affect needed vms of the full node
-                self.assertIn("vm1", test_node.restrs)
-                self.assertEqual(test_node.restrs["vm1"], "only qemu_kvm_centos\n")
-                self.assertNotIn("vm2", test_node.restrs)
-                self.assertNotIn("vm3", test_node.restrs)
-
-            test_node.recipe.parse_next_dict({"only_vm1": "qcow2"})
-            test_node.recipe.parse_next_dict({"no_vm1": "qcow1"})
-            test_node.regenerate_params()
-            self.assertNotIn("only_vm1", test_node.params)
-            self.assertNotIn("only_vm2", test_node.params)
-            self.assertNotIn("only_vm3", test_node.params)
-            self.assertIn("vm1", test_node.restrs)
-            if test_nodes.index(test_node) == 0:
-                # new filter parameter overwrites the old only so CentOS is now repeated
-                self.assertEqual(test_node.restrs["vm1"], "only CentOS\nonly qcow2\nno qcow1\n")
-                self.assertIn("vm2", test_node.restrs)
-                self.assertEqual(test_node.restrs["vm2"], "only Win10,Win7\n")
-                self.assertIn("vm3", test_node.restrs)
-                self.assertEqual(test_node.restrs["vm3"], "")
-            else:
-                # overwriting the only_vm1 parameter adds the restrictions as extra
-                self.assertEqual(test_node.restrs["vm1"], "only qemu_kvm_centos\nonly qcow2\nno qcow1\n")
-                self.assertNotIn("vm2", test_node.restrs)
-                self.assertNotIn("vm3", test_node.restrs)
-
-    def test_shared_workers(self):
-        """Test for correctly shared workers across bridged nodes."""
-        flat_net1 = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
-        flat_net2 = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"}, unique=True)
-        graph = TestGraph()
-        test_node1 = graph.parse_composite_nodes("normal..tutorial1", flat_net1, unique=True)
-        test_node2 = graph.parse_composite_nodes("normal..tutorial1", flat_net2, unique=True)
-        test_node1.bridge_with_node(test_node2)
-
-        self.assertEqual(test_node1.finished_worker, None)
-        self.assertEqual(test_node1.finished_worker, test_node2.finished_worker)
-        self.assertEqual(test_node1.shared_finished_workers, set())
-        self.assertEqual(test_node1.shared_finished_workers, test_node2.shared_finished_workers)
-
-        worker1 = mock.MagicMock(id="net1", params={"nets_host": "1"})
-        test_node1.finished_worker = worker1
-        self.assertEqual(test_node1.finished_worker, worker1)
-        self.assertEqual(test_node2.finished_worker, None)
-        self.assertEqual(test_node1.shared_finished_workers, {worker1})
-        self.assertEqual(test_node1.shared_finished_workers, test_node2.shared_finished_workers)
-        worker2 = mock.MagicMock(id="net2", params={"nets_host": "2"})
-        test_node2.finished_worker = worker2
-        self.assertEqual(test_node1.finished_worker, worker1)
-        self.assertEqual(test_node2.finished_worker, worker2)
-        self.assertEqual(test_node1.shared_finished_workers, {worker1, worker2})
-        self.assertEqual(test_node2.shared_finished_workers, {worker1, worker2})
-
-        # validate trivial behavior for flat nodes
-        test_node3 = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
-        self.assertEqual(test_node3.finished_worker, None)
-        self.assertEqual(test_node3.shared_finished_workers, set())
-        test_node3.finished_worker = worker1
-        self.assertEqual(test_node3.finished_worker, worker1)
-        self.assertEqual(test_node3.shared_finished_workers, {test_node3.finished_worker})
-        test_node3.finished_worker = worker2
-        self.assertEqual(test_node3.finished_worker, worker2)
-        self.assertEqual(test_node3.shared_finished_workers, {test_node3.finished_worker})
-
-    def test_shared_involved_workers(self):
-        """Test for correctly shared incompatible workers across flat parent node."""
-        flat_node = TestGraph.parse_flat_nodes("leaves..explicit_noop", unique=True)
-
-        flat_net1 = TestGraph.parse_flat_objects("net1", "nets",
-                                                 params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
-                                                 unique=True)
-        flat_net2 = TestGraph.parse_flat_objects("net2", "nets",
-                                                 params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
-                                                 unique=True)
-        graph = TestGraph()
-        test_node1 = graph.parse_composite_nodes("leaves..explicit_noop", flat_net1, unique=True)
-        test_node2 = graph.parse_composite_nodes("leaves..explicit_noop", flat_net2, unique=True)
-        test_node1.bridge_with_node(test_node2)
-
-        test_node1.descend_from_node(flat_node, flat_net1)
-        test_node2.descend_from_node(flat_node, flat_net2)
-
-        self.assertEqual(flat_node.shared_involved_workers, set())
-        self.assertEqual(test_node1.shared_involved_workers, set())
-        self.assertEqual(test_node2.shared_involved_workers, set())
-
-        worker1 = TestWorker(flat_net1)
-        worker2 = TestWorker(flat_net2)
-        swarm = TestSwarm("localhost", [worker1, worker2])
-        TestSwarm.run_swarms = {swarm.id: swarm}
-
-        picked_node1 = flat_node.pick_child(worker1)
-        self.assertEqual(flat_node.shared_involved_workers, set())
-        self.assertEqual(test_node1.shared_involved_workers, {worker1})
-        self.assertEqual(test_node2.shared_involved_workers, {worker1})
-        picked_node2 = flat_node.pick_child(worker2)
-        self.assertEqual(flat_node.shared_involved_workers, set())
-        self.assertEqual(test_node1.shared_involved_workers, {worker1, worker2})
-        self.assertEqual(test_node2.shared_involved_workers, {worker1, worker2})
-        self.assertEqual({picked_node1, picked_node2}, {test_node1, test_node2})
-
-        picked_parent1 = test_node1.pick_parent(worker1)
-        self.assertEqual(flat_node.shared_involved_workers, {worker1})
-        picked_parent2 = test_node2.pick_parent(worker2)
-        self.assertEqual(flat_node.shared_involved_workers, {worker1, worker2})
-        self.assertEqual(picked_parent1, picked_parent2)
-        self.assertEqual(picked_parent1, flat_node)
-
-    def test_shared_results_and_worker_ids(self):
-        """Test for correctly shared results and result-based worker ID-s across bridged nodes."""
-        flat_net1 = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
-        flat_net2 = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"}, unique=True)
-        swarm = TestSwarm("localhost", [TestWorker(flat_net1), TestWorker(flat_net2)])
-        TestSwarm.run_swarms = {swarm.id: swarm}
-        graph = TestGraph()
-        test_node1 = graph.parse_composite_nodes("normal..tutorial1", flat_net1, unique=True)
-        test_node2 = graph.parse_composite_nodes("normal..tutorial1", flat_net2, unique=True)
-        test_node1.bridge_with_node(test_node2)
-
-        self.assertEqual(test_node1.results, [])
-        self.assertEqual(test_node1.results, test_node2.results)
-        self.assertEqual(test_node1.shared_results, [])
-        self.assertEqual(test_node1.shared_results, test_node2.shared_results)
-
-        node2_results = [{"name": "tutorial1.net2", "status": "PASS"}]
-        test_node2.results += node2_results
-        self.assertEqual(test_node1.results, [])
-        self.assertEqual(test_node1.shared_results, node2_results)
-        self.assertEqual(test_node2.shared_results, node2_results)
-        self.assertEqual(test_node1.shared_result_worker_ids, {"net2"})
-        self.assertEqual(test_node2.shared_result_worker_ids, test_node1.shared_result_worker_ids)
-
-        node1_results = [{"name": "tutorial1.net1", "status": "FAIL"}]
-        test_node1.results += node1_results
-        self.assertEqual(test_node2.results, node2_results)
-        self.assertEqual(test_node1.shared_results, node1_results + node2_results)
-        self.assertEqual(test_node2.shared_results, node2_results + node1_results)
-        # only net2 succeeded and can provide any tutorial1 setup
-        self.assertEqual(test_node1.shared_result_worker_ids, {"net2"})
-        self.assertEqual(test_node2.shared_result_worker_ids, test_node1.shared_result_worker_ids)
-
-        node1_extra_results = [{"name": "tutorial1.net1", "status": "PASS"}]
-        test_node1.results += node1_extra_results
-        self.assertEqual(test_node2.results, node2_results)
-        self.assertEqual(test_node1.shared_results, node1_results + node1_extra_results + node2_results)
-        self.assertEqual(test_node2.shared_results, node2_results + node1_results + node1_extra_results)
-        # now net1 succeeded too and can provide any tutorial1 setup
-        self.assertEqual(test_node1.shared_result_worker_ids, {"net1", "net2"})
-        self.assertEqual(test_node2.shared_result_worker_ids, test_node1.shared_result_worker_ids)
-
-    def test_setless_form(self):
-        """Test the general use and purpose of the node setless form."""
-        flat_net = TestGraph.parse_flat_objects("net1", "nets",
-                                                params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"},
-                                                unique=True)
-
-        graph = TestGraph()
-        nodes = [*graph.parse_composite_nodes("leaves..tutorial_get.explicit_clicked", flat_net),
-                 *graph.parse_composite_nodes("all..tutorial_get.explicit_clicked", flat_net)]
-        self.assertEqual(len(nodes), 2)
-        self.assertNotEqual(nodes[0].params["name"], nodes[1].params["name"])
-        self.assertEqual(nodes[0].setless_form, nodes[1].setless_form)
-
-    def test_bridged_form(self):
-        """Test the general use and purpose of the node bridged form."""
-        restriction_params = {"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"}
-        flat_net1 = TestGraph.parse_flat_objects("net1", "nets", params=restriction_params, unique=True)
-        flat_net2 = TestGraph.parse_flat_objects("net2", "nets", params=restriction_params, unique=True)
-
-        graph = TestGraph()
-        nodes = [*graph.parse_composite_nodes("all..tutorial_get.explicit_clicked", flat_net1),
-                 *graph.parse_composite_nodes("all..tutorial_get.explicit_clicked", flat_net2)]
-        self.assertEqual(len(nodes), 2)
-        self.assertNotEqual(nodes[0].params["name"], nodes[1].params["name"])
-        self.assertEqual(nodes[0].bridged_form, nodes[1].bridged_form)
-
-    def test_sanity_in_graph(self):
-        """Test generic usage and composition."""
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = TestGraph.parse_object_trees(
-            None, self.config["tests_str"],
-            self.prefix, self.config["vm_strs"],
-            self.config["param_dict"],
-        )
-
-        test_node = graph.get_nodes(param_val="tutorial1",
-                                       subset=graph.get_nodes(param_val="net1"), unique=True)
-        self.assertIn("1", test_node.prefix)
-        self.assertIn("1-net1.vm1", test_node.long_prefix)
-
-    def test_validation(self):
-        """Test graph (and component) retrieval and validation methods."""
-        flat_net = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
-        graph = TestGraph()
-        test_node = graph.parse_composite_nodes("normal..tutorial1", flat_net, unique=True)
-
-        self.assertEqual(len([o for o in test_node.objects if o.suffix == "vm1"]), 1)
-        test_object = [o for o in test_node.objects if o.suffix == "vm1"][0]
-        self.assertIn(test_object, test_node.objects)
-        test_node.validate()
-        test_node.objects.remove(test_object)
-        with self.assertRaisesRegex(ValueError, r"^Additional parametric objects .+ not in .+$"):
-            test_node.validate()
-        test_node.objects.append(test_object)
-        test_node.validate()
-        test_node.params["vms"] = ""
-        with self.assertRaisesRegex(ValueError, r"^Missing parametric objects .+ from .+$"):
-            test_node.validate()
-
-        # detect reflexive dependencies in the graph
-        test_node = graph.parse_composite_nodes("normal..tutorial1", flat_net, unique=True)
-        test_node.descend_from_node(test_node, flat_net)
-        with self.assertRaisesRegex(ValueError, r"^Detected reflexive dependency of"):
-            test_node.validate()
-
-    def test_prefix_priority(self):
-        """Test the default priority policy for test node prefixes."""
-        self.assertEqual(TestNode.prefix_priority("3-net1vm1", "3-net1vm1"), 0)
-        # simple comparison for leaf nodes
-        self.assertEqual(TestNode.prefix_priority("3-net1vm1", "5-net1vm1"), -2)
-        self.assertEqual(TestNode.prefix_priority("6-net1vm1", "3-net1vm1"), 3)
-        # prioritize leaf node from derivative node
-        self.assertEqual(TestNode.prefix_priority("3-net1vm1vm2", "3a1-net1vm1vm2"), -1)
-        self.assertEqual(TestNode.prefix_priority("3-net1vm1vm2", "3b1-net1vm1vm2"), -1)
-        self.assertEqual(TestNode.prefix_priority("3-net1vm1vm2", "3c1-net1vm1vm2"), -1)
-        self.assertEqual(TestNode.prefix_priority("3-net1vm1vm2", "3d1-net1vm1vm2"), -1)
-        # prioritize alpha category
-        self.assertEqual(TestNode.prefix_priority("3b1-net1vm1vm2vm3", "3a1-net1vm1vm2vm3"), 1)
-        self.assertEqual(TestNode.prefix_priority("3c1-net1vm1vm2vm3", "3b1-net1vm1vm2vm3"), 1)
-        self.assertEqual(TestNode.prefix_priority("3d1-net1vm1vm2vm3", "3c1-net1vm1vm2vm3"), 1)
-        # nested matching
-        self.assertEqual(TestNode.prefix_priority("3b2-net1vm1vm2vm3", "3b1-net1vm1vm2vm3"), 1)
-        self.assertEqual(TestNode.prefix_priority("3b2a1-net1vm1vm2vm3", "3b2-net1vm1vm2vm3"), 1)
-        self.assertEqual(TestNode.prefix_priority("3b2c1-net1vm1vm2vm3", "3b2a1-net1vm1vm2vm3"), 1)
-        # error handling for unterminated equal prefixes
-        with self.assertRaises(ValueError):
-            TestNode.prefix_priority("5d2", "5d2-net1vm2")
-        with self.assertRaises(ValueError):
-            TestNode.prefix_priority("5d2-net1vm2", "5d2")
-
     def test_should_parse(self):
         """Test expectations on the default decision policy of whether to parse or skip a test node."""
         flat_node = TestGraph.parse_flat_nodes("normal..tutorial1", unique=True)
@@ -1810,6 +1762,31 @@ class CartesianNodeTest(Test):
             test_node2.drop_child(node, worker2)
         self.assertTrue(test_node1.default_clean_decision(worker1))
         self.assertTrue(test_node2.default_clean_decision(worker2))
+
+    def test_prefix_priority(self):
+        """Test the default priority policy for test node prefixes."""
+        self.assertEqual(TestNode.prefix_priority("3-net1vm1", "3-net1vm1"), 0)
+        # simple comparison for leaf nodes
+        self.assertEqual(TestNode.prefix_priority("3-net1vm1", "5-net1vm1"), -2)
+        self.assertEqual(TestNode.prefix_priority("6-net1vm1", "3-net1vm1"), 3)
+        # prioritize leaf node from derivative node
+        self.assertEqual(TestNode.prefix_priority("3-net1vm1vm2", "3a1-net1vm1vm2"), -1)
+        self.assertEqual(TestNode.prefix_priority("3-net1vm1vm2", "3b1-net1vm1vm2"), -1)
+        self.assertEqual(TestNode.prefix_priority("3-net1vm1vm2", "3c1-net1vm1vm2"), -1)
+        self.assertEqual(TestNode.prefix_priority("3-net1vm1vm2", "3d1-net1vm1vm2"), -1)
+        # prioritize alpha category
+        self.assertEqual(TestNode.prefix_priority("3b1-net1vm1vm2vm3", "3a1-net1vm1vm2vm3"), 1)
+        self.assertEqual(TestNode.prefix_priority("3c1-net1vm1vm2vm3", "3b1-net1vm1vm2vm3"), 1)
+        self.assertEqual(TestNode.prefix_priority("3d1-net1vm1vm2vm3", "3c1-net1vm1vm2vm3"), 1)
+        # nested matching
+        self.assertEqual(TestNode.prefix_priority("3b2-net1vm1vm2vm3", "3b1-net1vm1vm2vm3"), 1)
+        self.assertEqual(TestNode.prefix_priority("3b2a1-net1vm1vm2vm3", "3b2-net1vm1vm2vm3"), 1)
+        self.assertEqual(TestNode.prefix_priority("3b2c1-net1vm1vm2vm3", "3b2a1-net1vm1vm2vm3"), 1)
+        # error handling for unterminated equal prefixes
+        with self.assertRaises(ValueError):
+            TestNode.prefix_priority("5d2", "5d2-net1vm2")
+        with self.assertRaises(ValueError):
+            TestNode.prefix_priority("5d2-net1vm2", "5d2")
 
     def test_pick_priority_prefix(self):
         """Test that pick priority prioritizes workers and then secondary criteria."""
@@ -2025,6 +2002,31 @@ class CartesianNodeTest(Test):
         self.assertEqual(get_locations[1], worker1.id + ":" + node1.params["swarm_pool"])
         # parameters to access the worker location should also be provided for the test
         self.assertEqual(node2.params[f"nets_host_{worker1.id}"], worker1.params[f"nets_host"])
+
+    def test_validation(self):
+        """Test graph (and component) retrieval and validation methods."""
+        flat_net = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"}, unique=True)
+        graph = TestGraph()
+        test_node = graph.parse_composite_nodes("normal..tutorial1", flat_net, unique=True)
+
+        self.assertEqual(len([o for o in test_node.objects if o.suffix == "vm1"]), 1)
+        test_object = [o for o in test_node.objects if o.suffix == "vm1"][0]
+        self.assertIn(test_object, test_node.objects)
+        test_node.validate()
+        test_node.objects.remove(test_object)
+        with self.assertRaisesRegex(ValueError, r"^Additional parametric objects .+ not in .+$"):
+            test_node.validate()
+        test_node.objects.append(test_object)
+        test_node.validate()
+        test_node.params["vms"] = ""
+        with self.assertRaisesRegex(ValueError, r"^Missing parametric objects .+ from .+$"):
+            test_node.validate()
+
+        # detect reflexive dependencies in the graph
+        test_node = graph.parse_composite_nodes("normal..tutorial1", flat_net, unique=True)
+        test_node.descend_from_node(test_node, flat_net)
+        with self.assertRaisesRegex(ValueError, r"^Detected reflexive dependency of"):
+            test_node.validate()
 
 
 @mock.patch('avocado_i2n.cartgraph.worker.remote.wait_for_login', mock.MagicMock())
@@ -2668,7 +2670,6 @@ class CartesianGraphTest(Test):
 
     def test_graph_sanity(self):
         """Test generic usage of the complete test graph."""
-        self.config["tests_str"] += "only tutorial1\n"
         nodes, objects = TestGraph.parse_object_nodes(
             None, self.config["tests_str"],
             prefix=self.prefix,
@@ -2682,10 +2683,23 @@ class CartesianGraphTest(Test):
             params=self.config["param_dict"],
             with_shared_root=False,
         )
-        self.assertEqual({o.suffix for o in graph.objects if o.suffix not in ["net2", "net3", "net4", "net5"]},
-                         {o.suffix for o in objects})
-        self.assertEqual({n.prefix for n in graph.nodes if len(n.get_stateful_objects()) == 0},
-                         {n.prefix for n in nodes})
+        comparable_objects = [o for o in graph.objects if o.suffix not in ["net2", "net3", "net4", "net5"]]
+        comparable_nodes = [n for n in graph.nodes if "a" not in n.prefix]
+
+        # check prefixes and suffixes match
+        self.assertEqual({o.suffix for o in comparable_objects}, {o.suffix for o in objects})
+        self.assertEqual({n.prefix for n in comparable_nodes}, {n.prefix for n in nodes})
+
+        # check all objects and nodes within the graph are unique
+        for test_object in graph.objects:
+            compare = lambda x, y: x.long_suffix == y.long_suffix if x.key == "images" else x.params["name"] == y.params["name"]
+            self.assertEqual([test_object], [o for o in graph.objects if compare(o, test_object)])
+            if test_object in comparable_objects:
+                self.assertEqual([test_object.id], [o.id for o in comparable_objects if compare(o, test_object)])
+        for test_node in graph.nodes:
+            self.assertEqual([test_node], [n for n in graph.nodes if n.params["name"] == test_node.params["name"]])
+            if test_node in comparable_nodes:
+                self.assertEqual([test_node.id], [n.id for n in comparable_nodes if n.params["name"] == test_node.params["name"]])
 
         repr = str(graph)
         self.assertIn("[cartgraph]", repr)
@@ -2926,6 +2940,783 @@ class CartesianGraphTest(Test):
         for action in ["set", "unset"]:
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
+
+    def test_traverse_motif_all(self):
+        """Test that parsing and traversing works as expected with the largest possible sample graph."""
+        self.job.config["vm_strs"] = {"only_vm1": "", "only_vm2": "", "only_vm3": ""}
+        graph = self._load_for_parsing("leaves",
+                                       {"nets": " ".join([f"net{i+1}" for i in range(2)])})
+
+        # wrap within a mock to introduce delays
+        graph.traverse_node = mock.MagicMock()
+        graph.reverse_node = mock.MagicMock()
+        # need to wait long enough to diversify picked nodes
+        async def delayed_traverse_wrapper(*args, **kwards):
+            test_node, worker = args[0], args[1]
+            test_node.finished_worker = worker
+            test_node.results = [{"status": "PASS", "time": 3}]
+            await asyncio.sleep(0.01)
+        async def reverse_wrapper(*args, **kwards):
+            pass
+        graph.traverse_node.side_effect = delayed_traverse_wrapper
+        graph.reverse_node.side_effect = reverse_wrapper
+
+        DummyStateControl.asserted_states["check"].update({"getsetup": {self.shared_pool: False},
+                                                           "guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
+                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
+        DummyStateControl.asserted_states["get"].update({"getsetup": {self.shared_pool: 0},
+                                                         "guisetup.noop": {self.shared_pool: 0}, "guisetup.clicked": {self.shared_pool: 0},
+                                                         "getsetup.noop": {self.shared_pool: 0}, "getsetup.clicked": {self.shared_pool: 0},
+                                                         "getsetup.guisetup.noop": {self.shared_pool: 0},
+                                                         "getsetup.guisetup.clicked": {self.shared_pool: 0}})
+        DummyStateControl.asserted_states["unset"] = {"guisetup.noop": {self.shared_pool: 0},
+                                                      "getsetup.noop": {self.shared_pool: 0}}
+        DummyTestRun.asserted_tests = [
+        ]
+
+        # need to wait long enough to diversify picked nodes
+        self._run_traversal(graph)
+
+    def test_overwrite_params_and_restrs(self):
+        """Test for correct overwriting of default parameters and restrictions."""
+        self.config["param_dict"]["nets"] = "net1"
+        self.config["tests_str"] = "only leaves..explicit_clicked\n"
+        graph = TestGraph.parse_object_trees(
+            None, self.config["tests_str"],
+            self.prefix, self.config["vm_strs"],
+            self.config["param_dict"],
+        )
+        default_object_param = graph.get_nodes(param_val="explicit_clicked", unique=True).params["images"]
+        default_node_param = graph.get_nodes(param_val="explicit_clicked", unique=True).params["shared_pool"]
+        custom_object_param1 = default_object_param + "01"
+        custom_object_param2 = default_object_param + "02"
+        custom_node_param = "remote:" + default_node_param
+
+        self.config["param_dict"]["shared_pool"] = custom_node_param
+        self.config["param_dict"]["new_key"] = "123"
+        self.config["param_dict"]["images_vm1"] = custom_object_param1
+        self.config["param_dict"]["images_vm2"] = custom_object_param2
+        graph = self._load_for_parsing("leaves..explicit_clicked", {"nets": "net1"})
+
+        # wrap within a mock to introduce delays
+        graph.traverse_node = mock.MagicMock()
+        graph.reverse_node = mock.MagicMock()
+        async def traverse_wrapper(*args, **kwards):
+            test_node, worker = args[0], args[1]
+            test_node.finished_worker = worker
+            test_node.results = [{"status": "PASS", "time": 3}]
+        async def reverse_wrapper(*args, **kwards):
+            pass
+        graph.traverse_node.side_effect = traverse_wrapper
+        graph.reverse_node.side_effect = reverse_wrapper
+
+        async def interrupted_wrapper(*args, **kwards):
+            args[0].finished_worker = args[1]
+            await asyncio.sleep(0.01)
+        graph.traverse_node = mock.MagicMock()
+        graph.traverse_node.side_effect = interrupted_wrapper
+        graph.reverse_node = mock.MagicMock()
+        graph.reverse_node.side_effect = interrupted_wrapper
+        DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
+                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
+        DummyTestRun.asserted_tests = [
+        ]
+        self._run_traversal(graph, params=self.config["param_dict"])
+
+        test_node = graph.get_nodes(param_val="explicit_clicked.*net1", unique=True)
+        self.assertNotEqual(test_node.params["shared_pool"], default_node_param,
+                            "The default %s of %s wasn't overwritten" % (default_node_param, test_node.prefix))
+        self.assertEqual(test_node.params["shared_pool"], custom_node_param,
+                         "The new %s of %s must be %s" % (default_node_param, test_node.prefix, custom_node_param))
+        self.assertEqual(test_node.params["new_key"], "123",
+                         "A new parameter=%s of %s must be 123" % (test_node.params["new_key"], test_node.prefix))
+        # TODO: the current suffix operators don't allow overwriting the suffix-free parameter default
+        self.assertEqual(test_node.params["images"], default_object_param,
+                         "The object-general default %s of %s must be overwritten" % (default_object_param, test_node.prefix))
+        self.assertNotEqual(test_node.params["images_vm1"], default_object_param,
+                            "The default %s of %s wasn't overwritten" % (default_object_param, test_node.prefix))
+        self.assertEqual(test_node.params["images_vm1"], custom_object_param1,
+                         "The new %s of %s must be %s" % (default_object_param, test_node.prefix, custom_object_param2))
+        self.assertNotEqual(test_node.params["images_vm2"], default_object_param,
+                            "The default %s of %s wasn't overwritten" % (default_object_param, test_node.prefix))
+        self.assertEqual(test_node.params["images_vm2"], custom_object_param2,
+                         "The new %s of %s must be %s" % (default_object_param, test_node.prefix, custom_object_param2))
+        self.assertNotIn("images_vm3", test_node.params,
+                         "The third vm of %s should use default images" % (test_node.prefix))
+
+        test_objects = graph.get_objects(param_val="vm1.*CentOS")
+        vm_objects = [o for o in test_objects if o.key == "vms"]
+        self.assertEqual(len(vm_objects), 1, "There must be exactly one vm1 object")
+        test_object1 = vm_objects[0]
+        test_object_params1 = test_object1.params.object_params(test_object1.suffix)
+        self.assertEqual(test_object_params1["new_key"], "123",
+                         "A new parameter=%s of %s must be 123" % (test_object_params1["new_key"], test_object1.suffix))
+        self.assertNotEqual(test_object_params1["images"], default_object_param,
+                            "The default %s of %s wasn't overwritten" % (default_object_param, test_object1.suffix))
+        self.assertEqual(test_object_params1["images"], custom_object_param1,
+                         "The new %s of %s must be %s" % (default_object_param, test_object1.suffix, custom_object_param1))
+
+        test_objects = graph.get_objects(param_val="vm2.*Win10")
+        vm_objects = [o for o in test_objects if o.key == "vms"]
+        self.assertEqual(len(vm_objects), 1, "There must be exactly one vm object for tutorial1")
+        test_object2 = vm_objects[0]
+        test_object_params2 = test_object2.params.object_params(test_object2.suffix)
+        self.assertEqual(test_object_params1["new_key"], "123",
+                         "A new parameter=%s of %s must be 123" % (test_object_params1["new_key"], test_object1.suffix))
+        self.assertNotEqual(test_object_params2["images"], default_object_param,
+                            "The default %s of %s wasn't overwritten" % (default_object_param, test_object2.suffix))
+        self.assertEqual(test_object_params2["images"], custom_object_param2,
+                         "The new %s of %s must be %s" % (default_object_param, test_object2.suffix, custom_object_param2))
+
+    def test_overwrite_params_and_restrs_preparsed(self):
+        """Test for correct overwriting of default parameters and restrictions in a preparsed graph."""
+        self.config["param_dict"]["nets"] = "net1"
+        self.config["tests_str"] = "only leaves..explicit_clicked\n"
+        graph = TestGraph.parse_object_trees(
+            None, self.config["tests_str"],
+            self.prefix, self.config["vm_strs"],
+            self.config["param_dict"],
+        )
+        default_object_param = graph.get_nodes(param_val="explicit_clicked", unique=True).params["images"]
+        default_node_param = graph.get_nodes(param_val="explicit_clicked", unique=True).params["shared_pool"]
+        custom_object_param1 = default_object_param + "01"
+        custom_object_param2 = default_object_param + "02"
+        custom_node_param = "remote:" + default_node_param
+
+        self.config["param_dict"]["shared_pool"] = custom_node_param
+        self.config["param_dict"]["new_key"] = "123"
+        self.config["param_dict"]["images_vm1"] = custom_object_param1
+        self.config["param_dict"]["images_vm2"] = custom_object_param2
+        graph = TestGraph.parse_object_trees(
+            None, self.config["tests_str"],
+            self.prefix, self.config["vm_strs"],
+            self.config["param_dict"],
+        )
+
+        test_node = graph.get_nodes(param_val="explicit_clicked", unique=True)
+        self.assertNotEqual(test_node.params["shared_pool"], default_node_param,
+                            "The default %s of %s wasn't overwritten" % (default_node_param, test_node.prefix))
+        self.assertEqual(test_node.params["shared_pool"], custom_node_param,
+                         "The new %s of %s must be %s" % (default_node_param, test_node.prefix, custom_node_param))
+        self.assertEqual(test_node.params["new_key"], "123",
+                         "A new parameter=%s of %s must be 123" % (test_node.params["new_key"], test_node.prefix))
+        # TODO: the current suffix operators don't allow overwriting the suffix-free parameter default
+        self.assertEqual(test_node.params["images"], default_object_param,
+                         "The object-general default %s of %s must be overwritten" % (default_object_param, test_node.prefix))
+        self.assertNotEqual(test_node.params["images_vm1"], default_object_param,
+                            "The default %s of %s wasn't overwritten" % (default_object_param, test_node.prefix))
+        self.assertEqual(test_node.params["images_vm1"], custom_object_param1,
+                         "The new %s of %s must be %s" % (default_object_param, test_node.prefix, custom_object_param2))
+        self.assertNotEqual(test_node.params["images_vm2"], default_object_param,
+                            "The default %s of %s wasn't overwritten" % (default_object_param, test_node.prefix))
+        self.assertEqual(test_node.params["images_vm2"], custom_object_param2,
+                         "The new %s of %s must be %s" % (default_object_param, test_node.prefix, custom_object_param2))
+        self.assertNotIn("images_vm3", test_node.params,
+                         "The third vm of %s should use default images" % (test_node.prefix))
+
+        test_objects = graph.get_objects(param_val="vm1")
+        vm_objects = [o for o in test_objects if o.key == "vms"]
+        self.assertEqual(len(vm_objects), 1, "There must be exactly one vm1 object")
+        test_object1 = vm_objects[0]
+        test_object_params1 = test_object1.params.object_params(test_object1.suffix)
+        self.assertEqual(test_object_params1["new_key"], "123",
+                         "A new parameter=%s of %s must be 123" % (test_object_params1["new_key"], test_object1.suffix))
+        self.assertNotEqual(test_object_params1["images"], default_object_param,
+                            "The default %s of %s wasn't overwritten" % (default_object_param, test_object1.suffix))
+        self.assertEqual(test_object_params1["images"], custom_object_param1,
+                         "The new %s of %s must be %s" % (default_object_param, test_object1.suffix, custom_object_param1))
+
+        test_objects = graph.get_objects(param_val="vm2")
+        vm_objects = [o for o in test_objects if o.key == "vms"]
+        self.assertEqual(len(vm_objects), 1, "There must be exactly one vm object for tutorial1")
+        test_object2 = vm_objects[0]
+        test_object_params2 = test_object2.params.object_params(test_object2.suffix)
+        self.assertEqual(test_object_params1["new_key"], "123",
+                         "A new parameter=%s of %s must be 123" % (test_object_params1["new_key"], test_object1.suffix))
+        self.assertNotEqual(test_object_params2["images"], default_object_param,
+                            "The default %s of %s wasn't overwritten" % (default_object_param, test_object2.suffix))
+        self.assertEqual(test_object_params2["images"], custom_object_param2,
+                         "The new %s of %s must be %s" % (default_object_param, test_object2.suffix, custom_object_param2))
+
+    def test_run_warn_duration(self):
+        """Test that a good test status is converted to warning if test takes too long."""
+        self.config["tests_str"] += "only tutorial1\n"
+
+        flat_net = TestGraph.parse_net_from_object_restrs("net1", self.config["vm_strs"])
+        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
+        net = test_objects[-1]
+        test_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"].copy())
+
+        test_node.results = [{"status": "PASS", "time": 3}]
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status": "PASS", "_time": "10"},
+        ]
+        test_node.started_worker = "some-worker-since-only-traversal-allowed"
+        to_run = self.runner.run_test_node(test_node)
+        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
+        self.assertTrue(status)
+        # the test succeed but too long so its status must be changed to WARN
+        self.assertEqual(test_node.results[-1]["status"], "WARN")
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+
+    def test_run_exit_code(self):
+        """Test that the test status is properly converted to a simple exit status."""
+        self.config["tests_str"] += "only tutorial1\n"
+
+        flat_net = TestGraph.parse_net_from_object_restrs("net1", self.config["vm_strs"])
+        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
+        net = test_objects[-1]
+        test_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"].copy())
+
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
+        ]
+        test_node.started_worker = "some-worker-since-only-traversal-allowed"
+        to_run = self.runner.run_test_node(test_node)
+        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
+        # all runs succeed - status must be True
+        self.assertTrue(status)
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        self.runner.job.result.tests.clear()
+        test_node.results.clear()
+
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
+        ]
+        to_run = self.runner.run_test_node(test_node)
+        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
+        # last run fails - status must be False
+        self.assertFalse(status, "Runner did not preserve last run fail status")
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        self.runner.job.result.tests.clear()
+        test_node.results.clear()
+
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
+        ]
+        to_run = self.runner.run_test_node(test_node)
+        _ = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
+        to_run = self.runner.run_test_node(test_node)
+        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
+        # only previous run fails - status must be True
+        self.assertTrue(status, "Runner did not preserve last run fail status")
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        self.runner.job.result.tests.clear()
+        test_node.results.clear()
+
+    def test_rerun_max_times_serial(self):
+        """Test that the test is tried `max_tries` times if no status is not specified."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_dict"]["max_tries"] = "3"
+        graph = TestGraph.parse_object_trees(
+            None, self.config["tests_str"],
+            "", self.config["vm_strs"],
+            self.config["param_dict"],
+        )
+        DummyTestRun.asserted_tests = [
+            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
+            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
+            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
+            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
+        ]
+        self._run_traversal(graph)
+
+    def test_rerun_max_times_parallel(self):
+        """Test that the test is tried `max_tries` times if no status is not specified."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_dict"]["max_tries"] = "3"
+        self.config["param_dict"]["nets"] = "net1 net2"
+        graph = TestGraph.parse_object_trees(
+            None, self.config["tests_str"],
+            "", self.config["vm_strs"],
+            self.config["param_dict"],
+        )
+        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+        DummyTestRun.asserted_tests = [
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "nets": "^net1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$", "nets": "^net2$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$", "nets": "^net1$"},
+        ]
+        self._run_traversal(graph)
+
+    def test_rerun_status_times(self):
+        """Test that valid statuses are considered when retrying a test."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_dict"]["nets"] = "net1"
+        self.config["param_dict"]["max_tries"] = "4"
+        self.config["param_dict"]["stop_status"] = ""
+
+        # test should be re-run on these statuses
+        for status in ["PASS", "WARN", "FAIL", "ERROR", "SKIP", "INTERRUPTED", "CANCEL"]:
+            with self.subTest(f"Test rerun on status {status}"):
+                graph = TestGraph.parse_object_trees(
+                    None, self.config["tests_str"],
+                    self.prefix, self.config["vm_strs"],
+                    self.config["param_dict"],
+                )
+                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                              "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+                DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                ]
+                self._run_traversal(graph)
+
+                # assert that tests were repeated
+                self.assertEqual(len(self.runner.job.result.tests), 4)
+                self.assertEqual(len(graph.get_nodes(param_val="tutorial1", unique=True).results), 4)
+                # also assert the correct results were registered
+                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status] * 4)
+                registered_results = []
+                for result in self.runner.job.result.tests:
+                    result["name"] = result["name"].name
+                    registered_results.append(result)
+                self.assertEqual(registered_results, graph.get_nodes(param_val="tutorial1", unique=True).results)
+                # the test graph and thus the test node is recreated
+                self.runner.job.result.tests.clear()
+
+    def test_rerun_status_stop(self):
+        """Test that the `stop_status` parameter lets the traversal continue as usual."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_dict"]["nets"] = "net1"
+        self.config["param_dict"]["max_tries"] = "3"
+
+        # expect success and get success -> should run only once
+        for stop_status in ["pass", "warn", "fail", "error"]:
+            with self.subTest(f"Test rerun stop on status {stop_status}"):
+                self.config["param_dict"]["stop_status"] = stop_status
+                status = stop_status.upper()
+                graph = TestGraph.parse_object_trees(
+                    None, self.config["tests_str"],
+                    self.prefix, self.config["vm_strs"],
+                    self.config["param_dict"],
+                )
+                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                              "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+                DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                ]
+                self._run_traversal(graph)
+
+                # assert that tests were not repeated
+                self.assertEqual(len(self.runner.job.result.tests), 1)
+                self.assertEqual(len(graph.get_nodes(param_val="tutorial1", unique=True).results), 1)
+                # also assert the correct results were registered
+                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status])
+                registered_results = []
+                for result in self.runner.job.result.tests:
+                    result["name"] = result["name"].name
+                    registered_results.append(result)
+                self.assertEqual(registered_results, graph.get_nodes(param_val="tutorial1", unique=True).results)
+                # the test graph and thus the test node is recreated
+                self.runner.job.result.tests.clear()
+
+    def test_rerun_status_rerun(self):
+        """Test that the `rerun_status` parameter keep the traversal repeating a run."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_dict"]["nets"] = "net1"
+        self.config["param_dict"]["max_tries"] = "3"
+
+        # expect success and get success -> should run only once
+        for stop_status in ["pass", "warn", "fail", "error"]:
+            with self.subTest(f"Test rerun stop on status {stop_status}"):
+                self.config["param_dict"]["rerun_status"] = stop_status
+                status = stop_status.upper()
+                graph = TestGraph.parse_object_trees(
+                    None, self.config["tests_str"],
+                    self.prefix, self.config["vm_strs"],
+                    self.config["param_dict"],
+                )
+                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                              "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+                DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "INTERRUPTED"},
+                ]
+                self._run_traversal(graph)
+
+                # assert that tests were not repeated
+                self.assertEqual(len(self.runner.job.result.tests), 2)
+                self.assertEqual(len(graph.get_nodes(param_val="tutorial1", unique=True).results), 2)
+                # also assert the correct results were registered
+                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status, "INTERRUPTED"])
+                registered_results = []
+                for result in self.runner.job.result.tests:
+                    result["name"] = result["name"].name
+                    registered_results.append(result)
+                self.assertEqual(registered_results, graph.get_nodes(param_val="tutorial1", unique=True).results)
+                # the test graph and thus the test node is recreated
+                self.runner.job.result.tests.clear()
+
+    def test_rerun_previous_job_default(self):
+        """Test that rerunning a previous job gives more tries and works as expected."""
+        # need proper previous results from full nodes (possibly different worker and set variant)
+        self.config["param_dict"] = {"nets": "net2"}
+        self.config["tests_str"] = "only leaves..tutorial2\n"
+        self.config["vm_strs"]["vm1"] = ""
+        graph = TestGraph.parse_object_trees(
+            None, self.config["tests_str"],
+            self.prefix, self.config["vm_strs"],
+            self.config["param_dict"],
+        )
+        node11, node12, node21, node22 = graph.get_nodes(param_val="tutorial2")
+        # results from the previous job (inclusive of setup that should now be skipped)
+        on_customize_tests = [n.params["name"] for n in graph.get_nodes(param_val="on_customize")]
+        self.assertEqual(len(on_customize_tests), 2)
+        self.runner.previous_results += [{"name": on_customize_tests[0], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": on_customize_tests[1], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": node11.params["name"], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": node12.params["name"], "status": "FAIL", "time": 0.2}]
+        self.runner.previous_results += [{"name": node21.params["name"].replace("leaves", "all"), "status": "FAIL", "time": 0.2}]
+        self.runner.previous_results += [{"name": node22.params["name"].replace("leaves", "all"), "status": "PASS", "time": 1}]
+
+        # include flat and other types of nodes by traversing partially parsed graph
+        graph = TestGraph()
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2"))
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"nets": "net1", "only_vm1": ""}))
+        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+        DummyTestRun.asserted_tests = [
+            # skip the previously passed test since it doesn't have a rerun status (here fail by default) and rerun second test
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1.+CentOS", "vms": "^vm1$"},
+            # skip the previously passed test since it doesn't have a rerun status (here fail by default) and rerun second test
+            {"shortname": "^leaves.quicktest.tutorial2.files.vm1.+Fedora", "vms": "^vm1$"},
+        ]
+        self._run_traversal(graph, {"replay": "previous_job"})
+
+        node11, node12, node21, node22 = graph.get_nodes(param_val="tutorial2.+vm1")
+        # assert that tests were repeated only when needed
+        self.assertEqual(len(self.runner.job.result.tests), 2)
+        self.assertEqual(len(node11.results), 1)
+        self.assertEqual(len(node12.results), 2)
+        self.assertEqual(len(node21.results), 2)
+        self.assertEqual(len(node22.results), 1)
+        # also assert the correct results were registered
+        self.assertEqual([x["status"] for x in self.runner.job.result.tests], ["PASS", "PASS"])
+        self.assertEqual([x["status"] for x in node11.results], ["PASS"])
+        self.assertEqual([x["status"] for x in node12.results], ["FAIL", "PASS"])
+        self.assertEqual([x["status"] for x in node21.results], ["FAIL", "PASS"])
+        self.assertEqual([x["status"] for x in node22.results], ["PASS"])
+        registered_results = []
+        for result in self.runner.job.result.tests:
+            result["name"] = result["name"].name
+            registered_results.append(result)
+        self.assertEqual(registered_results, node21.results[1:] + node12.results[1:])
+
+    def test_rerun_previous_job_status(self):
+        """Test that rerunning a previous job on a given status works as expected."""
+        # need proper previous results from full nodes
+        self.config["param_dict"] = {"nets": "net1"}
+        self.config["tests_str"] = "only leaves..tutorial2\n"
+        graph = TestGraph.parse_object_trees(
+            None, self.config["tests_str"],
+            self.prefix, self.config["vm_strs"],
+            self.config["param_dict"],
+        )
+        node1, node2 = graph.get_nodes(param_val="tutorial2")
+        # results from the previous job (inclusive of setup that should now be skipped)
+        self.runner.previous_results += [{"name": graph.get_nodes(param_val="on_customize", unique=True).params["name"], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": node1.params["name"], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": node2.params["name"], "status": "FAIL", "time": 0.2}]
+
+        # include flat and other types of nodes by traversing partially parsed graph
+        graph = TestGraph()
+        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2"))
+        graph.parse_shared_root_from_object_roots()
+        graph.new_workers(TestGraph.parse_workers({"nets": "net1", "only_vm1": "CentOS"}))
+        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+        DummyTestRun.asserted_tests = [
+            # previously run setup tests with rerun status are still rerun (scan is overriden)
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "set_state_vms": "^on_customize$"},
+            # skip the previously failed second test since it doesn't have a rerun status and rerun first test
+            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$"},
+        ]
+        self._run_traversal(graph, {"replay": "previous_job", "rerun_status": "pass"})
+
+        node1, node2 = graph.get_nodes(param_val="tutorial2.+vm1")
+        # assert that tests were repeated only when needed
+        self.assertEqual(len(self.runner.job.result.tests), 2)
+        self.assertEqual(len(node1.results), 2)
+        self.assertEqual(len(node2.results), 1)
+        # also assert the correct results were registered
+        self.assertEqual([x["status"] for x in self.runner.job.result.tests], ["PASS", "PASS"])
+        self.assertEqual([x["status"] for x in node1.results], ["PASS", "PASS"])
+        self.assertEqual([x["status"] for x in node2.results], ["FAIL"])
+        registered_results = []
+        for result in self.runner.job.result.tests:
+            result["name"] = result["name"].name
+            registered_results.append(result)
+        self.assertEqual(registered_results[1:], node1.results[1:])
+
+    def test_rerun_invalid(self):
+        """Test if an exception is thrown with invalid retry parameter values."""
+        self.config["tests_str"] += "only tutorial1\n"
+        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+
+        DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+        ]
+        with mock.patch.dict(self.config["param_dict"], {"max_tries": "3",
+                                                         "stop_status": "invalid"}):
+            graph = TestGraph.parse_object_trees(
+                None, self.config["tests_str"],
+                self.prefix, self.config["vm_strs"],
+                self.config["param_dict"],
+            )
+            with self.assertRaisesRegex(ValueError, r"^Value of stop status must be a valid test status"):
+                self._run_traversal(graph)
+
+        # negative values
+        DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+        ]
+        with mock.patch.dict(self.config["param_dict"], {"max_tries": "-32",
+                                                         "stop_status": ""}):
+            graph = TestGraph.parse_object_trees(
+                None, self.config["tests_str"],
+                self.prefix, self.config["vm_strs"],
+                self.config["param_dict"],
+            )
+            with self.assertRaisesRegex(ValueError, r"^Number of max_tries cannot be less than zero$"):
+                self._run_traversal(graph)
+
+        # floats
+        DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+        ]
+        with mock.patch.dict(self.config["param_dict"], {"max_tries": "3.5",
+                                                         "stop_status": ""}):
+            graph = TestGraph.parse_object_trees(
+                None, self.config["tests_str"],
+                self.prefix, self.config["vm_strs"],
+                self.config["param_dict"],
+            )
+            with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
+                self._run_traversal(graph)
+
+        # non-integers
+        DummyTestRun.asserted_tests = [
+                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
+        ]
+        with mock.patch.dict(self.config["param_dict"], {"max_tries": "hey",
+                                                         "stop_status": ""}):
+            graph = TestGraph.parse_object_trees(
+                None, self.config["tests_str"],
+                self.prefix, self.config["vm_strs"],
+                self.config["param_dict"],
+            )
+            with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
+                self._run_traversal(graph)
+
+    def test_dry_run(self):
+        """Test a complete dry run traversal of a graph."""
+        # TODO: cannot parse "all" with flat nodes with largest available test set being "leaves"
+        graph = self._load_for_parsing("leaves", {"nets": " ".join([f"net{i+1}" for i in range(3)])})
+
+        DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
+                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
+        DummyTestRun.asserted_tests = [
+        ]
+
+        self._run_traversal(graph, {"dry_run": "yes"})
+        for action in ["get", "set", "unset"]:
+            for state in DummyStateControl.asserted_states[action]:
+                self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
+
+    def test_aborted_run(self):
+        """Test that traversal is aborted through explicit configuration."""
+        graph = self._load_for_parsing("tutorial1", {"nets": " ".join([f"net{i+1}" for i in range(3)])})
+
+        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "set_state_vms_on_error": "^$", "_status": "FAIL"},
+        ]
+
+        with self.assertRaisesRegex(exceptions.TestSkipError, r"^God wanted this test to abort$"):
+            self._run_traversal(graph, {"abort_on_error": "yes"})
+
+    def test_parsing_on_demand(self):
+        """Test that parsing on demand works as expected."""
+        # make sure to parse flat nodes (with CentOS restriction) that will never be composed with any compatible objects
+        graph = self._load_for_parsing("leaves",
+                                       {"nets": " ".join([f"net{i+1}" for i in range(2)]),
+                                        # TODO: this only overwrites the nets with no only restrictions predefined (no net3)
+                                        "only_vm1": "Fedora"})
+
+        # wrap within a mock as a spy option
+        actual_parsing = graph.parse_paths_to_object_roots
+        graph.parse_paths_to_object_roots = mock.MagicMock()
+        graph.parse_paths_to_object_roots.side_effect = actual_parsing
+        async def interrupted_wrapper(*args, **kwards):
+            await asyncio.sleep(0.01)
+        graph.traverse_node = mock.MagicMock()
+        graph.traverse_node.side_effect = interrupted_wrapper
+        graph.reverse_node = mock.MagicMock()
+        graph.reverse_node.side_effect = interrupted_wrapper
+
+        DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
+                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
+        DummyTestRun.asserted_tests = [
+        ]
+
+        self._run_traversal(graph)
+
+        # the graph has a specific connectedness with the shared root
+        shared_roots = graph.get_nodes("shared_root", "yes")
+        assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
+        root = shared_roots[0]
+        for node in graph.nodes:
+            if node in root.cleanup_nodes:
+                self.assertTrue(node.is_flat() or node.is_object_root())
+        # all flat nodes but the shared root must be unrolled once and must have parsed paths
+        flat_nodes = [node for node in graph.nodes if node.is_flat()]
+        self.assertEqual(graph.parse_paths_to_object_roots.call_count, (len(flat_nodes) - 1) * 2)
+        for node in flat_nodes:
+            parse_calls = [mock.call(node, w.net, mock.ANY) for w in graph.workers.values()]
+            for i in range(2):
+                worker = graph.workers[f"net{i+1}"]
+                self.assertTrue(node.is_unrolled())
+                if node == root:
+                    self.assertNotIn(mock.call(node, worker.net, mock.ANY),
+                                     graph.parse_paths_to_object_roots.call_args_list)
+                else:
+                    self.assertFalse(node.is_shared_root())
+                    self.assertTrue(parse_calls[0] in graph.parse_paths_to_object_roots.call_args_list or
+                                    parse_calls[1] in graph.parse_paths_to_object_roots.call_args_list)
+
+        # check flat nodes that could never be composed (not compatible with vm1 restriction)
+        flat_residue = graph.get_nodes_by_name("tutorial3.remote")
+        self.assertEqual(len(flat_residue), 16)
+        for node in flat_residue:
+            self.assertNotEqual(node.incompatible_workers & {"net1", "net2"}, set())
+
+    def test_traversing_in_isolation(self):
+        """Test that actual traversing (not just test running) works as expected."""
+        graph = self._load_for_parsing("leaves", {"nets": " ".join([f"net{i+1}" for i in range(3)])})
+
+        # wrap within a mock as a spy option
+        actual_traversing = graph.traverse_node
+        actual_reversing = graph.reverse_node
+        graph.traverse_node = mock.MagicMock()
+        graph.traverse_node.side_effect = actual_traversing
+        graph.reverse_node = mock.MagicMock()
+        graph.reverse_node.side_effect = actual_reversing
+
+        DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
+                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
+        DummyTestRun.asserted_tests = [
+        ]
+
+        self._run_traversal(graph, {"dry_run": "yes"})
+
+        traverse_calls = graph.traverse_node.call_args_list
+        reverse_calls = graph.reverse_node.call_args_list
+        for node in graph.nodes:
+            # shared root will be checked in the end with separate expectations
+            if node.is_shared_root():
+                continue
+            picked_by_setup = node._picked_by_setup_nodes
+            picked_by_cleanup = node._picked_by_cleanup_nodes
+            dropped_setup = node._dropped_setup_nodes
+            dropped_cleanup = node._dropped_cleanup_nodes
+            # the three workers comprise all possible visits of the node in the four registers
+            self.assertEqual(picked_by_setup.get_counters(),
+                             sum(picked_by_setup.get_counters(worker=w) for w in graph.workers.values()))
+            self.assertEqual(picked_by_cleanup.get_counters(),
+                             sum(picked_by_cleanup.get_counters(worker=w) for w in graph.workers.values()))
+            self.assertEqual(dropped_setup.get_counters(),
+                             sum(dropped_setup.get_counters(worker=w) for w in graph.workers.values()))
+            self.assertEqual(dropped_cleanup.get_counters(),
+                             sum(dropped_cleanup.get_counters(worker=w) for w in graph.workers.values()))
+            for worker in graph.workers.values():
+                if worker.id not in ["net1", "net2", "net3"]:
+                    continue
+                # consider only workers relevant to the current checked node
+                if not node.is_flat() and worker.id not in node.params["name"]:
+                    continue
+                # the worker relevant nodes comprise all possible visits by that worker
+                worker_setup = [n for n in node.setup_nodes if n.is_flat() or worker.id in n.params["name"]]
+                worker_cleanup = [n for n in node.cleanup_nodes if n.is_flat() or worker.id in n.params["name"]]
+                self.assertEqual(picked_by_setup.get_counters(worker=worker),
+                                sum(picked_by_setup.get_counters(n, worker=worker) for n in worker_setup))
+                self.assertEqual(picked_by_cleanup.get_counters(worker=worker),
+                                sum(picked_by_cleanup.get_counters(n, worker=worker) for n in worker_cleanup))
+                self.assertEqual(dropped_setup.get_counters(worker=worker),
+                                sum(dropped_setup.get_counters(n, worker=worker) for n in worker_setup))
+                self.assertEqual(dropped_cleanup.get_counters(worker=worker),
+                                sum(dropped_cleanup.get_counters(n, worker=worker) for n in worker_cleanup))
+
+                picked_counter = {s: s._picked_by_cleanup_nodes.get_counters(node=node, worker=worker) for s in worker_setup}
+                average_picked_counter = sum(picked_counter.values()) / len(picked_counter) if picked_counter else 0.0
+                for setup_node in worker_setup:
+                    # validate ergodicity of setup picking from this node
+                    self.assertLessEqual(int(abs(picked_counter[setup_node] - average_picked_counter)), 1)
+                    # may not be picked by some setup that was needed for it to be setup ready
+                    self.assertGreaterEqual(max(picked_counter[setup_node],
+                                                picked_by_setup.get_counters(node=setup_node, worker=worker)), 1)
+                    # each setup/cleanup node dropped exactly once per worker
+                    self.assertEqual(dropped_setup.get_counters(node=setup_node, worker=worker), 1)
+                picked_counter = {c: c._picked_by_setup_nodes.get_counters(node=node, worker=worker) for c in worker_cleanup}
+                average_picked_counter = sum(picked_counter.values()) / len(picked_counter) if picked_counter else 0.0
+                for cleanup_node in worker_cleanup:
+                    # validate ergodicity of cleanup picking from this node
+                    self.assertLessEqual(int(abs(picked_counter[cleanup_node] - average_picked_counter)), 1)
+                    # picked at least once from each cleanup node (for one or all workers if flat)
+                    self.assertGreaterEqual(picked_by_cleanup.get_counters(node=cleanup_node, worker=worker), 1)
+                    # each cleanup node dropped exactly once per worker
+                    self.assertEqual(dropped_cleanup.get_counters(node=cleanup_node, worker=worker), 1)
+
+                # whether picked as a parent or child, a node has to be traversed at least once
+                graph.traverse_node.assert_any_call(node, worker, {"dry_run": "yes"})
+                self.assertGreaterEqual(len([c for c in traverse_calls if c.args[0] == node and c.args[1] == worker]), 1)
+                # node should have been reversed by this worker and done so exactly once
+                graph.reverse_node.assert_any_call(node, worker, {"dry_run": "yes"})
+                self.assertEqual(len([r for r in reverse_calls if r == mock.call(node, worker, mock.ANY)]), 1)
+                # setup should always be reversed after reversed in the right order
+                for setup_node in worker_setup:
+                    if setup_node.is_shared_root():
+                        continue
+                    self.assertGreater(reverse_calls.index(mock.call(setup_node, worker, mock.ANY)),
+                                       reverse_calls.index(mock.call(node, worker, mock.ANY)))
+                for cleanup_node in worker_cleanup:
+                    self.assertLess(reverse_calls.index(mock.call(cleanup_node, worker, mock.ANY)),
+                                    reverse_calls.index(mock.call(node, worker, mock.ANY)))
+
+                # the shared root can be traversed many times but never reversed
+                shared_roots = graph.get_nodes("shared_root", "yes")
+                assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
+                root = shared_roots[0]
+                graph.traverse_node.assert_any_call(root, worker, mock.ANY)
+                self.assertNotIn(mock.call(root, worker, mock.ANY), reverse_calls)
 
     def test_trace_work_external(self):
         """Test a multi-object test run with reusable setup of diverging workers and shared pool or previous runs."""
@@ -3318,745 +4109,6 @@ class CartesianGraphTest(Test):
         self._run_traversal(graph, self.config["param_dict"])
         # expect a single cleanup call only for the states of enforcing cleanup policy
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
-
-    def test_dry_run(self):
-        """Test a complete dry run traversal of a graph."""
-        # TODO: cannot parse "all" with flat nodes with largest available test set being "leaves"
-        graph = self._load_for_parsing("leaves", {"nets": " ".join([f"net{i+1}" for i in range(3)])})
-
-        DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
-                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
-                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
-                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
-        DummyTestRun.asserted_tests = [
-        ]
-
-        self._run_traversal(graph, {"dry_run": "yes"})
-        for action in ["get", "set", "unset"]:
-            for state in DummyStateControl.asserted_states[action]:
-                self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
-
-    def test_aborted_run(self):
-        """Test that traversal is aborted through explicit configuration."""
-        graph = self._load_for_parsing("tutorial1", {"nets": " ".join([f"net{i+1}" for i in range(3)])})
-
-        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "set_state_vms_on_error": "^$", "_status": "FAIL"},
-        ]
-
-        with self.assertRaisesRegex(exceptions.TestSkipError, r"^God wanted this test to abort$"):
-            self._run_traversal(graph, {"abort_on_error": "yes"})
-
-    def test_parsing_on_demand(self):
-        """Test that parsing on demand works as expected."""
-        # make sure to parse flat nodes (with CentOS restriction) that will never be composed with any compatible objects
-        graph = self._load_for_parsing("leaves",
-                                       {"nets": " ".join([f"net{i+1}" for i in range(2)]),
-                                        # TODO: this only overwrites the nets with no only restrictions predefined (no net3)
-                                        "only_vm1": "Fedora"})
-
-        # wrap within a mock as a spy option
-        actual_parsing = graph.parse_paths_to_object_roots
-        graph.parse_paths_to_object_roots = mock.MagicMock()
-        graph.parse_paths_to_object_roots.side_effect = actual_parsing
-        async def interrupted_wrapper(*args, **kwards):
-            await asyncio.sleep(0.01)
-        graph.traverse_node = mock.MagicMock()
-        graph.traverse_node.side_effect = interrupted_wrapper
-        graph.reverse_node = mock.MagicMock()
-        graph.reverse_node.side_effect = interrupted_wrapper
-
-        DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
-                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
-                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
-                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
-        DummyTestRun.asserted_tests = [
-        ]
-
-        self._run_traversal(graph)
-
-        # the graph has a specific connectedness with the shared root
-        shared_roots = graph.get_nodes("shared_root", "yes")
-        assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
-        root = shared_roots[0]
-        for node in graph.nodes:
-            if node in root.cleanup_nodes:
-                self.assertTrue(node.is_flat() or node.is_object_root())
-        # all flat nodes but the shared root must be unrolled once and must have parsed paths
-        flat_nodes = [node for node in graph.nodes if node.is_flat()]
-        self.assertEqual(graph.parse_paths_to_object_roots.call_count, (len(flat_nodes) - 1) * 2)
-        for node in flat_nodes:
-            parse_calls = [mock.call(node, w.net, mock.ANY) for w in graph.workers.values()]
-            for i in range(2):
-                worker = graph.workers[f"net{i+1}"]
-                self.assertTrue(node.is_unrolled())
-                if node == root:
-                    self.assertNotIn(mock.call(node, worker.net, mock.ANY),
-                                     graph.parse_paths_to_object_roots.call_args_list)
-                else:
-                    self.assertFalse(node.is_shared_root())
-                    self.assertTrue(parse_calls[0] in graph.parse_paths_to_object_roots.call_args_list or
-                                    parse_calls[1] in graph.parse_paths_to_object_roots.call_args_list)
-
-        # check flat nodes that could never be composed (not compatible with vm1 restriction)
-        flat_residue = graph.get_nodes_by_name("tutorial3.remote")
-        self.assertEqual(len(flat_residue), 16)
-        for node in flat_residue:
-            self.assertNotEqual(node.incompatible_workers & {"net1", "net2"}, set())
-
-    def test_traversing_in_isolation(self):
-        """Test that actual traversing (not just test running) works as expected."""
-        graph = self._load_for_parsing("leaves", {"nets": " ".join([f"net{i+1}" for i in range(3)])})
-
-        # wrap within a mock as a spy option
-        actual_traversing = graph.traverse_node
-        actual_reversing = graph.reverse_node
-        graph.traverse_node = mock.MagicMock()
-        graph.traverse_node.side_effect = actual_traversing
-        graph.reverse_node = mock.MagicMock()
-        graph.reverse_node.side_effect = actual_reversing
-
-        DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
-                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
-                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
-                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
-        DummyTestRun.asserted_tests = [
-        ]
-
-        self._run_traversal(graph, {"dry_run": "yes"})
-
-        traverse_calls = graph.traverse_node.call_args_list
-        reverse_calls = graph.reverse_node.call_args_list
-        for node in graph.nodes:
-            # shared root will be checked in the end with separate expectations
-            if node.is_shared_root():
-                continue
-            picked_by_setup = node._picked_by_setup_nodes
-            picked_by_cleanup = node._picked_by_cleanup_nodes
-            dropped_setup = node._dropped_setup_nodes
-            dropped_cleanup = node._dropped_cleanup_nodes
-            # the three workers comprise all possible visits of the node in the four registers
-            self.assertEqual(picked_by_setup.get_counters(),
-                             sum(picked_by_setup.get_counters(worker=w) for w in graph.workers.values()))
-            self.assertEqual(picked_by_cleanup.get_counters(),
-                             sum(picked_by_cleanup.get_counters(worker=w) for w in graph.workers.values()))
-            self.assertEqual(dropped_setup.get_counters(),
-                             sum(dropped_setup.get_counters(worker=w) for w in graph.workers.values()))
-            self.assertEqual(dropped_cleanup.get_counters(),
-                             sum(dropped_cleanup.get_counters(worker=w) for w in graph.workers.values()))
-            for worker in graph.workers.values():
-                if worker.id not in ["net1", "net2", "net3"]:
-                    continue
-                # consider only workers relevant to the current checked node
-                if not node.is_flat() and worker.id not in node.params["name"]:
-                    continue
-                # the worker relevant nodes comprise all possible visits by that worker
-                worker_setup = [n for n in node.setup_nodes if n.is_flat() or worker.id in n.params["name"]]
-                worker_cleanup = [n for n in node.cleanup_nodes if n.is_flat() or worker.id in n.params["name"]]
-                self.assertEqual(picked_by_setup.get_counters(worker=worker),
-                                sum(picked_by_setup.get_counters(n, worker=worker) for n in worker_setup))
-                self.assertEqual(picked_by_cleanup.get_counters(worker=worker),
-                                sum(picked_by_cleanup.get_counters(n, worker=worker) for n in worker_cleanup))
-                self.assertEqual(dropped_setup.get_counters(worker=worker),
-                                sum(dropped_setup.get_counters(n, worker=worker) for n in worker_setup))
-                self.assertEqual(dropped_cleanup.get_counters(worker=worker),
-                                sum(dropped_cleanup.get_counters(n, worker=worker) for n in worker_cleanup))
-
-                picked_counter = {s: s._picked_by_cleanup_nodes.get_counters(node=node, worker=worker) for s in worker_setup}
-                average_picked_counter = sum(picked_counter.values()) / len(picked_counter) if picked_counter else 0.0
-                for setup_node in worker_setup:
-                    # validate ergodicity of setup picking from this node
-                    self.assertLessEqual(int(abs(picked_counter[setup_node] - average_picked_counter)), 1)
-                    # may not be picked by some setup that was needed for it to be setup ready
-                    self.assertGreaterEqual(max(picked_counter[setup_node],
-                                                picked_by_setup.get_counters(node=setup_node, worker=worker)), 1)
-                    # each setup/cleanup node dropped exactly once per worker
-                    self.assertEqual(dropped_setup.get_counters(node=setup_node, worker=worker), 1)
-                picked_counter = {c: c._picked_by_setup_nodes.get_counters(node=node, worker=worker) for c in worker_cleanup}
-                average_picked_counter = sum(picked_counter.values()) / len(picked_counter) if picked_counter else 0.0
-                for cleanup_node in worker_cleanup:
-                    # validate ergodicity of cleanup picking from this node
-                    self.assertLessEqual(int(abs(picked_counter[cleanup_node] - average_picked_counter)), 1)
-                    # picked at least once from each cleanup node (for one or all workers if flat)
-                    self.assertGreaterEqual(picked_by_cleanup.get_counters(node=cleanup_node, worker=worker), 1)
-                    # each cleanup node dropped exactly once per worker
-                    self.assertEqual(dropped_cleanup.get_counters(node=cleanup_node, worker=worker), 1)
-
-                # whether picked as a parent or child, a node has to be traversed at least once
-                graph.traverse_node.assert_any_call(node, worker, {"dry_run": "yes"})
-                self.assertGreaterEqual(len([c for c in traverse_calls if c.args[0] == node and c.args[1] == worker]), 1)
-                # node should have been reversed by this worker and done so exactly once
-                graph.reverse_node.assert_any_call(node, worker, {"dry_run": "yes"})
-                self.assertEqual(len([r for r in reverse_calls if r == mock.call(node, worker, mock.ANY)]), 1)
-                # setup should always be reversed after reversed in the right order
-                for setup_node in worker_setup:
-                    if setup_node.is_shared_root():
-                        continue
-                    self.assertGreater(reverse_calls.index(mock.call(setup_node, worker, mock.ANY)),
-                                       reverse_calls.index(mock.call(node, worker, mock.ANY)))
-                for cleanup_node in worker_cleanup:
-                    self.assertLess(reverse_calls.index(mock.call(cleanup_node, worker, mock.ANY)),
-                                    reverse_calls.index(mock.call(node, worker, mock.ANY)))
-
-                # the shared root can be traversed many times but never reversed
-                shared_roots = graph.get_nodes("shared_root", "yes")
-                assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
-                root = shared_roots[0]
-                graph.traverse_node.assert_any_call(root, worker, mock.ANY)
-                self.assertNotIn(mock.call(root, worker, mock.ANY), reverse_calls)
-
-    def test_overwrite_params_and_restrs(self):
-        """Test for correct overwriting of default parameters and restrictions."""
-        self.config["param_dict"]["nets"] = "net1"
-        self.config["tests_str"] = "only leaves..explicit_clicked\n"
-        graph = TestGraph.parse_object_trees(
-            None, self.config["tests_str"],
-            self.prefix, self.config["vm_strs"],
-            self.config["param_dict"],
-        )
-        default_object_param = graph.get_nodes(param_val="explicit_clicked", unique=True).params["images"]
-        default_node_param = graph.get_nodes(param_val="explicit_clicked", unique=True).params["shared_pool"]
-        custom_object_param1 = default_object_param + "01"
-        custom_object_param2 = default_object_param + "02"
-        custom_node_param = "remote:" + default_node_param
-
-        self.config["param_dict"]["shared_pool"] = custom_node_param
-        self.config["param_dict"]["new_key"] = "123"
-        self.config["param_dict"]["images_vm1"] = custom_object_param1
-        self.config["param_dict"]["images_vm2"] = custom_object_param2
-        graph = self._load_for_parsing("leaves..explicit_clicked", {"nets": "net1"})
-
-        # wrap within a mock to introduce delays
-        graph.traverse_node = mock.MagicMock()
-        graph.reverse_node = mock.MagicMock()
-        async def traverse_wrapper(*args, **kwards):
-            test_node, worker = args[0], args[1]
-            test_node.finished_worker = worker
-            test_node.results = [{"status": "PASS", "time": 3}]
-        async def reverse_wrapper(*args, **kwards):
-            pass
-        graph.traverse_node.side_effect = traverse_wrapper
-        graph.reverse_node.side_effect = reverse_wrapper
-
-        async def interrupted_wrapper(*args, **kwards):
-            args[0].finished_worker = args[1]
-            await asyncio.sleep(0.01)
-        graph.traverse_node = mock.MagicMock()
-        graph.traverse_node.side_effect = interrupted_wrapper
-        graph.reverse_node = mock.MagicMock()
-        graph.reverse_node.side_effect = interrupted_wrapper
-        DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
-                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
-                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
-                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
-        DummyTestRun.asserted_tests = [
-        ]
-        self._run_traversal(graph, params=self.config["param_dict"])
-
-        test_node = graph.get_nodes(param_val="explicit_clicked.*net1", unique=True)
-        self.assertNotEqual(test_node.params["shared_pool"], default_node_param,
-                            "The default %s of %s wasn't overwritten" % (default_node_param, test_node.prefix))
-        self.assertEqual(test_node.params["shared_pool"], custom_node_param,
-                         "The new %s of %s must be %s" % (default_node_param, test_node.prefix, custom_node_param))
-        self.assertEqual(test_node.params["new_key"], "123",
-                         "A new parameter=%s of %s must be 123" % (test_node.params["new_key"], test_node.prefix))
-        # TODO: the current suffix operators don't allow overwriting the suffix-free parameter default
-        self.assertEqual(test_node.params["images"], default_object_param,
-                         "The object-general default %s of %s must be overwritten" % (default_object_param, test_node.prefix))
-        self.assertNotEqual(test_node.params["images_vm1"], default_object_param,
-                            "The default %s of %s wasn't overwritten" % (default_object_param, test_node.prefix))
-        self.assertEqual(test_node.params["images_vm1"], custom_object_param1,
-                         "The new %s of %s must be %s" % (default_object_param, test_node.prefix, custom_object_param2))
-        self.assertNotEqual(test_node.params["images_vm2"], default_object_param,
-                            "The default %s of %s wasn't overwritten" % (default_object_param, test_node.prefix))
-        self.assertEqual(test_node.params["images_vm2"], custom_object_param2,
-                         "The new %s of %s must be %s" % (default_object_param, test_node.prefix, custom_object_param2))
-        self.assertNotIn("images_vm3", test_node.params,
-                         "The third vm of %s should use default images" % (test_node.prefix))
-
-        test_objects = graph.get_objects(param_val="vm1.*CentOS")
-        vm_objects = [o for o in test_objects if o.key == "vms"]
-        self.assertEqual(len(vm_objects), 1, "There must be exactly one vm1 object")
-        test_object1 = vm_objects[0]
-        test_object_params1 = test_object1.params.object_params(test_object1.suffix)
-        self.assertEqual(test_object_params1["new_key"], "123",
-                         "A new parameter=%s of %s must be 123" % (test_object_params1["new_key"], test_object1.suffix))
-        self.assertNotEqual(test_object_params1["images"], default_object_param,
-                            "The default %s of %s wasn't overwritten" % (default_object_param, test_object1.suffix))
-        self.assertEqual(test_object_params1["images"], custom_object_param1,
-                         "The new %s of %s must be %s" % (default_object_param, test_object1.suffix, custom_object_param1))
-
-        test_objects = graph.get_objects(param_val="vm2.*Win10")
-        vm_objects = [o for o in test_objects if o.key == "vms"]
-        self.assertEqual(len(vm_objects), 1, "There must be exactly one vm object for tutorial1")
-        test_object2 = vm_objects[0]
-        test_object_params2 = test_object2.params.object_params(test_object2.suffix)
-        self.assertEqual(test_object_params1["new_key"], "123",
-                         "A new parameter=%s of %s must be 123" % (test_object_params1["new_key"], test_object1.suffix))
-        self.assertNotEqual(test_object_params2["images"], default_object_param,
-                            "The default %s of %s wasn't overwritten" % (default_object_param, test_object2.suffix))
-        self.assertEqual(test_object_params2["images"], custom_object_param2,
-                         "The new %s of %s must be %s" % (default_object_param, test_object2.suffix, custom_object_param2))
-
-    def test_overwrite_params_and_restrs_preparsed(self):
-        """Test for correct overwriting of default parameters and restrictions in a preparsed graph."""
-        self.config["param_dict"]["nets"] = "net1"
-        self.config["tests_str"] = "only leaves..explicit_clicked\n"
-        graph = TestGraph.parse_object_trees(
-            None, self.config["tests_str"],
-            self.prefix, self.config["vm_strs"],
-            self.config["param_dict"],
-        )
-        default_object_param = graph.get_nodes(param_val="explicit_clicked", unique=True).params["images"]
-        default_node_param = graph.get_nodes(param_val="explicit_clicked", unique=True).params["shared_pool"]
-        custom_object_param1 = default_object_param + "01"
-        custom_object_param2 = default_object_param + "02"
-        custom_node_param = "remote:" + default_node_param
-
-        self.config["param_dict"]["shared_pool"] = custom_node_param
-        self.config["param_dict"]["new_key"] = "123"
-        self.config["param_dict"]["images_vm1"] = custom_object_param1
-        self.config["param_dict"]["images_vm2"] = custom_object_param2
-        graph = TestGraph.parse_object_trees(
-            None, self.config["tests_str"],
-            self.prefix, self.config["vm_strs"],
-            self.config["param_dict"],
-        )
-
-        test_node = graph.get_nodes(param_val="explicit_clicked", unique=True)
-        self.assertNotEqual(test_node.params["shared_pool"], default_node_param,
-                            "The default %s of %s wasn't overwritten" % (default_node_param, test_node.prefix))
-        self.assertEqual(test_node.params["shared_pool"], custom_node_param,
-                         "The new %s of %s must be %s" % (default_node_param, test_node.prefix, custom_node_param))
-        self.assertEqual(test_node.params["new_key"], "123",
-                         "A new parameter=%s of %s must be 123" % (test_node.params["new_key"], test_node.prefix))
-        # TODO: the current suffix operators don't allow overwriting the suffix-free parameter default
-        self.assertEqual(test_node.params["images"], default_object_param,
-                         "The object-general default %s of %s must be overwritten" % (default_object_param, test_node.prefix))
-        self.assertNotEqual(test_node.params["images_vm1"], default_object_param,
-                            "The default %s of %s wasn't overwritten" % (default_object_param, test_node.prefix))
-        self.assertEqual(test_node.params["images_vm1"], custom_object_param1,
-                         "The new %s of %s must be %s" % (default_object_param, test_node.prefix, custom_object_param2))
-        self.assertNotEqual(test_node.params["images_vm2"], default_object_param,
-                            "The default %s of %s wasn't overwritten" % (default_object_param, test_node.prefix))
-        self.assertEqual(test_node.params["images_vm2"], custom_object_param2,
-                         "The new %s of %s must be %s" % (default_object_param, test_node.prefix, custom_object_param2))
-        self.assertNotIn("images_vm3", test_node.params,
-                         "The third vm of %s should use default images" % (test_node.prefix))
-
-        test_objects = graph.get_objects(param_val="vm1")
-        vm_objects = [o for o in test_objects if o.key == "vms"]
-        self.assertEqual(len(vm_objects), 1, "There must be exactly one vm1 object")
-        test_object1 = vm_objects[0]
-        test_object_params1 = test_object1.params.object_params(test_object1.suffix)
-        self.assertEqual(test_object_params1["new_key"], "123",
-                         "A new parameter=%s of %s must be 123" % (test_object_params1["new_key"], test_object1.suffix))
-        self.assertNotEqual(test_object_params1["images"], default_object_param,
-                            "The default %s of %s wasn't overwritten" % (default_object_param, test_object1.suffix))
-        self.assertEqual(test_object_params1["images"], custom_object_param1,
-                         "The new %s of %s must be %s" % (default_object_param, test_object1.suffix, custom_object_param1))
-
-        test_objects = graph.get_objects(param_val="vm2")
-        vm_objects = [o for o in test_objects if o.key == "vms"]
-        self.assertEqual(len(vm_objects), 1, "There must be exactly one vm object for tutorial1")
-        test_object2 = vm_objects[0]
-        test_object_params2 = test_object2.params.object_params(test_object2.suffix)
-        self.assertEqual(test_object_params1["new_key"], "123",
-                         "A new parameter=%s of %s must be 123" % (test_object_params1["new_key"], test_object1.suffix))
-        self.assertNotEqual(test_object_params2["images"], default_object_param,
-                            "The default %s of %s wasn't overwritten" % (default_object_param, test_object2.suffix))
-        self.assertEqual(test_object_params2["images"], custom_object_param2,
-                         "The new %s of %s must be %s" % (default_object_param, test_object2.suffix, custom_object_param2))
-
-    def test_rerun_max_times_serial(self):
-        """Test that the test is tried `max_tries` times if no status is not specified."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["max_tries"] = "3"
-        graph = TestGraph.parse_object_trees(
-            None, self.config["tests_str"],
-            "", self.config["vm_strs"],
-            self.config["param_dict"],
-        )
-        DummyTestRun.asserted_tests = [
-            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^internal.stateless.noop.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
-            {"shortname": r"^internal.automated.customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
-            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
-            {"shortname": r"^internal.automated.on_customize.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
-            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$"},
-            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
-            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
-        ]
-        self._run_traversal(graph)
-
-    def test_rerun_max_times_parallel(self):
-        """Test that the test is tried `max_tries` times if no status is not specified."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["max_tries"] = "3"
-        self.config["param_dict"]["nets"] = "net1 net2"
-        graph = TestGraph.parse_object_trees(
-            None, self.config["tests_str"],
-            "", self.config["vm_strs"],
-            self.config["param_dict"],
-        )
-        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-        DummyTestRun.asserted_tests = [
-            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "nets": "^net1$"},
-            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$", "nets": "^net2$"},
-            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$", "nets": "^net1$"},
-        ]
-        self._run_traversal(graph)
-
-    def test_rerun_status_times(self):
-        """Test that valid statuses are considered when retrying a test."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["nets"] = "net1"
-        self.config["param_dict"]["max_tries"] = "4"
-        self.config["param_dict"]["stop_status"] = ""
-
-        # test should be re-run on these statuses
-        for status in ["PASS", "WARN", "FAIL", "ERROR", "SKIP", "INTERRUPTED", "CANCEL"]:
-            with self.subTest(f"Test rerun on status {status}"):
-                graph = TestGraph.parse_object_trees(
-                    None, self.config["tests_str"],
-                    self.prefix, self.config["vm_strs"],
-                    self.config["param_dict"],
-                )
-                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                              "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-                DummyTestRun.asserted_tests = [
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                ]
-                self._run_traversal(graph)
-
-                # assert that tests were repeated
-                self.assertEqual(len(self.runner.job.result.tests), 4)
-                self.assertEqual(len(graph.get_nodes(param_val="tutorial1", unique=True).results), 4)
-                # also assert the correct results were registered
-                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status] * 4)
-                registered_results = []
-                for result in self.runner.job.result.tests:
-                    result["name"] = result["name"].name
-                    registered_results.append(result)
-                self.assertEqual(registered_results, graph.get_nodes(param_val="tutorial1", unique=True).results)
-                # the test graph and thus the test node is recreated
-                self.runner.job.result.tests.clear()
-
-    def test_rerun_status_stop(self):
-        """Test that the `stop_status` parameter lets the traversal continue as usual."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["nets"] = "net1"
-        self.config["param_dict"]["max_tries"] = "3"
-
-        # expect success and get success -> should run only once
-        for stop_status in ["pass", "warn", "fail", "error"]:
-            with self.subTest(f"Test rerun stop on status {stop_status}"):
-                self.config["param_dict"]["stop_status"] = stop_status
-                status = stop_status.upper()
-                graph = TestGraph.parse_object_trees(
-                    None, self.config["tests_str"],
-                    self.prefix, self.config["vm_strs"],
-                    self.config["param_dict"],
-                )
-                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                              "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-                DummyTestRun.asserted_tests = [
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                ]
-                self._run_traversal(graph)
-
-                # assert that tests were not repeated
-                self.assertEqual(len(self.runner.job.result.tests), 1)
-                self.assertEqual(len(graph.get_nodes(param_val="tutorial1", unique=True).results), 1)
-                # also assert the correct results were registered
-                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status])
-                registered_results = []
-                for result in self.runner.job.result.tests:
-                    result["name"] = result["name"].name
-                    registered_results.append(result)
-                self.assertEqual(registered_results, graph.get_nodes(param_val="tutorial1", unique=True).results)
-                # the test graph and thus the test node is recreated
-                self.runner.job.result.tests.clear()
-
-    def test_rerun_status_rerun(self):
-        """Test that the `rerun_status` parameter keep the traversal repeating a run."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["param_dict"]["nets"] = "net1"
-        self.config["param_dict"]["max_tries"] = "3"
-
-        # expect success and get success -> should run only once
-        for stop_status in ["pass", "warn", "fail", "error"]:
-            with self.subTest(f"Test rerun stop on status {stop_status}"):
-                self.config["param_dict"]["rerun_status"] = stop_status
-                status = stop_status.upper()
-                graph = TestGraph.parse_object_trees(
-                    None, self.config["tests_str"],
-                    self.prefix, self.config["vm_strs"],
-                    self.config["param_dict"],
-                )
-                DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                              "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-                DummyTestRun.asserted_tests = [
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : status},
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "INTERRUPTED"},
-                ]
-                self._run_traversal(graph)
-
-                # assert that tests were not repeated
-                self.assertEqual(len(self.runner.job.result.tests), 2)
-                self.assertEqual(len(graph.get_nodes(param_val="tutorial1", unique=True).results), 2)
-                # also assert the correct results were registered
-                self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status, "INTERRUPTED"])
-                registered_results = []
-                for result in self.runner.job.result.tests:
-                    result["name"] = result["name"].name
-                    registered_results.append(result)
-                self.assertEqual(registered_results, graph.get_nodes(param_val="tutorial1", unique=True).results)
-                # the test graph and thus the test node is recreated
-                self.runner.job.result.tests.clear()
-
-    def test_rerun_previous_job_default(self):
-        """Test that rerunning a previous job gives more tries and works as expected."""
-        # need proper previous results from full nodes (possibly different worker and set variant)
-        self.config["param_dict"] = {"nets": "net2"}
-        self.config["tests_str"] = "only leaves..tutorial2\n"
-        self.config["vm_strs"]["vm1"] = ""
-        graph = TestGraph.parse_object_trees(
-            None, self.config["tests_str"],
-            self.prefix, self.config["vm_strs"],
-            self.config["param_dict"],
-        )
-        node11, node12, node21, node22 = graph.get_nodes(param_val="tutorial2")
-        # results from the previous job (inclusive of setup that should now be skipped)
-        on_customize_tests = [n.params["name"] for n in graph.get_nodes(param_val="on_customize")]
-        self.assertEqual(len(on_customize_tests), 2)
-        self.runner.previous_results += [{"name": on_customize_tests[0], "status": "PASS", "time": 1}]
-        self.runner.previous_results += [{"name": on_customize_tests[1], "status": "PASS", "time": 1}]
-        self.runner.previous_results += [{"name": node11.params["name"], "status": "PASS", "time": 1}]
-        self.runner.previous_results += [{"name": node12.params["name"], "status": "FAIL", "time": 0.2}]
-        self.runner.previous_results += [{"name": node21.params["name"].replace("leaves", "all"), "status": "FAIL", "time": 0.2}]
-        self.runner.previous_results += [{"name": node22.params["name"].replace("leaves", "all"), "status": "PASS", "time": 1}]
-
-        # include flat and other types of nodes by traversing partially parsed graph
-        graph = TestGraph()
-        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2"))
-        graph.parse_shared_root_from_object_roots()
-        graph.new_workers(TestGraph.parse_workers({"nets": "net1", "only_vm1": ""}))
-        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-        DummyTestRun.asserted_tests = [
-            # skip the previously passed test since it doesn't have a rerun status (here fail by default) and rerun second test
-            {"shortname": "^leaves.quicktest.tutorial2.names.vm1.+CentOS", "vms": "^vm1$"},
-            # skip the previously passed test since it doesn't have a rerun status (here fail by default) and rerun second test
-            {"shortname": "^leaves.quicktest.tutorial2.files.vm1.+Fedora", "vms": "^vm1$"},
-        ]
-        self._run_traversal(graph, {"replay": "previous_job"})
-
-        node11, node12, node21, node22 = graph.get_nodes(param_val="tutorial2.+vm1")
-        # assert that tests were repeated only when needed
-        self.assertEqual(len(self.runner.job.result.tests), 2)
-        self.assertEqual(len(node11.results), 1)
-        self.assertEqual(len(node12.results), 2)
-        self.assertEqual(len(node21.results), 2)
-        self.assertEqual(len(node22.results), 1)
-        # also assert the correct results were registered
-        self.assertEqual([x["status"] for x in self.runner.job.result.tests], ["PASS", "PASS"])
-        self.assertEqual([x["status"] for x in node11.results], ["PASS"])
-        self.assertEqual([x["status"] for x in node12.results], ["FAIL", "PASS"])
-        self.assertEqual([x["status"] for x in node21.results], ["FAIL", "PASS"])
-        self.assertEqual([x["status"] for x in node22.results], ["PASS"])
-        registered_results = []
-        for result in self.runner.job.result.tests:
-            result["name"] = result["name"].name
-            registered_results.append(result)
-        self.assertEqual(registered_results, node21.results[1:] + node12.results[1:])
-
-    def test_rerun_previous_job_status(self):
-        """Test that rerunning a previous job on a given status works as expected."""
-        # need proper previous results from full nodes
-        self.config["param_dict"] = {"nets": "net1"}
-        self.config["tests_str"] = "only leaves..tutorial2\n"
-        graph = TestGraph.parse_object_trees(
-            None, self.config["tests_str"],
-            self.prefix, self.config["vm_strs"],
-            self.config["param_dict"],
-        )
-        node1, node2 = graph.get_nodes(param_val="tutorial2")
-        # results from the previous job (inclusive of setup that should now be skipped)
-        self.runner.previous_results += [{"name": graph.get_nodes(param_val="on_customize", unique=True).params["name"], "status": "PASS", "time": 1}]
-        self.runner.previous_results += [{"name": node1.params["name"], "status": "PASS", "time": 1}]
-        self.runner.previous_results += [{"name": node2.params["name"], "status": "FAIL", "time": 0.2}]
-
-        # include flat and other types of nodes by traversing partially parsed graph
-        graph = TestGraph()
-        graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2"))
-        graph.parse_shared_root_from_object_roots()
-        graph.new_workers(TestGraph.parse_workers({"nets": "net1", "only_vm1": "CentOS"}))
-        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-        DummyTestRun.asserted_tests = [
-            # previously run setup tests with rerun status are still rerun (scan is overriden)
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "set_state_vms": "^on_customize$"},
-            # skip the previously failed second test since it doesn't have a rerun status and rerun first test
-            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$"},
-        ]
-        self._run_traversal(graph, {"replay": "previous_job", "rerun_status": "pass"})
-
-        node1, node2 = graph.get_nodes(param_val="tutorial2.+vm1")
-        # assert that tests were repeated only when needed
-        self.assertEqual(len(self.runner.job.result.tests), 2)
-        self.assertEqual(len(node1.results), 2)
-        self.assertEqual(len(node2.results), 1)
-        # also assert the correct results were registered
-        self.assertEqual([x["status"] for x in self.runner.job.result.tests], ["PASS", "PASS"])
-        self.assertEqual([x["status"] for x in node1.results], ["PASS", "PASS"])
-        self.assertEqual([x["status"] for x in node2.results], ["FAIL"])
-        registered_results = []
-        for result in self.runner.job.result.tests:
-            result["name"] = result["name"].name
-            registered_results.append(result)
-        self.assertEqual(registered_results[1:], node1.results[1:])
-
-    def test_rerun_invalid(self):
-        """Test if an exception is thrown with invalid retry parameter values."""
-        self.config["tests_str"] += "only tutorial1\n"
-        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
-                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
-
-        DummyTestRun.asserted_tests = [
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
-        ]
-        with mock.patch.dict(self.config["param_dict"], {"max_tries": "3",
-                                                         "stop_status": "invalid"}):
-            graph = TestGraph.parse_object_trees(
-                None, self.config["tests_str"],
-                self.prefix, self.config["vm_strs"],
-                self.config["param_dict"],
-            )
-            with self.assertRaisesRegex(ValueError, r"^Value of stop status must be a valid test status"):
-                self._run_traversal(graph)
-
-        # negative values
-        DummyTestRun.asserted_tests = [
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
-        ]
-        with mock.patch.dict(self.config["param_dict"], {"max_tries": "-32",
-                                                         "stop_status": ""}):
-            graph = TestGraph.parse_object_trees(
-                None, self.config["tests_str"],
-                self.prefix, self.config["vm_strs"],
-                self.config["param_dict"],
-            )
-            with self.assertRaisesRegex(ValueError, r"^Number of max_tries cannot be less than zero$"):
-                self._run_traversal(graph)
-
-        # floats
-        DummyTestRun.asserted_tests = [
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
-        ]
-        with mock.patch.dict(self.config["param_dict"], {"max_tries": "3.5",
-                                                         "stop_status": ""}):
-            graph = TestGraph.parse_object_trees(
-                None, self.config["tests_str"],
-                self.prefix, self.config["vm_strs"],
-                self.config["param_dict"],
-            )
-            with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
-                self._run_traversal(graph)
-
-        # non-integers
-        DummyTestRun.asserted_tests = [
-                    {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
-        ]
-        with mock.patch.dict(self.config["param_dict"], {"max_tries": "hey",
-                                                         "stop_status": ""}):
-            graph = TestGraph.parse_object_trees(
-                None, self.config["tests_str"],
-                self.prefix, self.config["vm_strs"],
-                self.config["param_dict"],
-            )
-            with self.assertRaisesRegex(ValueError, r"^invalid literal for int"):
-                self._run_traversal(graph)
-
-    def test_run_warn_duration(self):
-        """Test that a good test status is converted to warning if test takes too long."""
-        self.config["tests_str"] += "only tutorial1\n"
-
-        flat_net = TestGraph.parse_net_from_object_restrs("net1", self.config["vm_strs"])
-        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
-        net = test_objects[-1]
-        test_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"].copy())
-
-        test_node.results = [{"status": "PASS", "time": 3}]
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status": "PASS", "_time": "10"},
-        ]
-        test_node.started_worker = "some-worker-since-only-traversal-allowed"
-        to_run = self.runner.run_test_node(test_node)
-        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
-        self.assertTrue(status)
-        # the test succeed but too long so its status must be changed to WARN
-        self.assertEqual(test_node.results[-1]["status"], "WARN")
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-
-    def test_run_exit_code(self):
-        """Test that the test status is properly converted to a simple exit status."""
-        self.config["tests_str"] += "only tutorial1\n"
-
-        flat_net = TestGraph.parse_net_from_object_restrs("net1", self.config["vm_strs"])
-        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
-        net = test_objects[-1]
-        test_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"].copy())
-
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
-        ]
-        test_node.started_worker = "some-worker-since-only-traversal-allowed"
-        to_run = self.runner.run_test_node(test_node)
-        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
-        # all runs succeed - status must be True
-        self.assertTrue(status)
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        self.runner.job.result.tests.clear()
-        test_node.results.clear()
-
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
-        ]
-        to_run = self.runner.run_test_node(test_node)
-        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
-        # last run fails - status must be False
-        self.assertFalse(status, "Runner did not preserve last run fail status")
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        self.runner.job.result.tests.clear()
-        test_node.results.clear()
-
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
-        ]
-        to_run = self.runner.run_test_node(test_node)
-        _ = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
-        to_run = self.runner.run_test_node(test_node)
-        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
-        # only previous run fails - status must be True
-        self.assertTrue(status, "Runner did not preserve last run fail status")
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        self.runner.job.result.tests.clear()
-        test_node.results.clear()
 
     @mock.patch('avocado_i2n.runner.StatusRepo')
     @mock.patch('avocado_i2n.runner.StatusServer')
