@@ -728,8 +728,13 @@ class CartesianNodeTest(Test):
 
         with self.assertRaises(RuntimeError):
             composite_nodes[0].is_unrolled(TestWorker(flat_object))
+
         flat_node.params["shared_root"] = "yes"
         self.assertTrue(flat_node.is_unrolled(TestWorker(flat_object)))
+
+        incompatible_worker = TestWorker(flat_object)
+        flat_node.incompatible_workers.add(incompatible_worker)
+        self.assertTrue(flat_node.is_unrolled(incompatible_worker))
 
     def test_is_ready(self):
         """Test that a test node is setup/cleanup ready under the right circumstances."""
@@ -3012,18 +3017,23 @@ class CartesianGraphTest(Test):
 
     def test_parsing_on_demand(self):
         """Test that parsing on demand works as expected."""
-        # make sure to parse flat nodes (with CentOS restriction) that will never be composed with any objects
-        self.config["vm_strs"]["vm1"] = "only Fedora\n"
-
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("leaves"))
         graph.parse_shared_root_from_object_roots()
-        graph.new_workers(TestGraph.parse_workers({"nets": " ".join([f"net{i+1}" for i in range(3)])}))
+        # make sure to parse flat nodes (with CentOS restriction) that will never be composed with any objects
+        graph.new_workers(TestGraph.parse_workers({"nets": " ".join([f"net{i+1}" for i in range(3)]),
+                                                   "only_vm1": "Fedora"}))
 
-        # wrap the on-demand parsing within a mock as a spy option
+        # wrap within a mock as a spy option
         actual_parsing = graph.parse_paths_to_object_roots
         graph.parse_paths_to_object_roots = mock.MagicMock()
         graph.parse_paths_to_object_roots.side_effect = actual_parsing
+        async def interrupted_wrapper(*args, **kwards):
+            await asyncio.sleep(0.01)
+        graph.traverse_node = mock.MagicMock()
+        graph.traverse_node.side_effect = interrupted_wrapper
+        graph.reverse_node = mock.MagicMock()
+        graph.reverse_node.side_effect = interrupted_wrapper
 
         DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
                                                            "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
@@ -3032,7 +3042,7 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
         ]
 
-        self._run_traversal(graph, {"dry_run": "yes"})
+        self._run_traversal(graph)
 
         # the graph has a specific connectedness with the shared root
         shared_roots = graph.get_nodes_by("shared_root", "yes")
@@ -3054,6 +3064,14 @@ class CartesianGraphTest(Test):
                 else:
                     self.assertFalse(node.is_shared_root())
                     graph.parse_paths_to_object_roots.assert_any_call(node, worker.net, mock.ANY)
+
+        # check flat nodes that could never be composed (not compatible with vm1 restriction)
+        flat_residue = graph.get_nodes_by_name("tutorial3.remote")
+        self.assertEqual(len(flat_residue), 16)
+        for node in flat_residue:
+            for i in range(3):
+                worker = graph.workers[f"net{i+1}"]
+                self.assertIn(worker.id, node.incompatible_workers)
 
     def test_traversing_in_isolation(self):
         """Test that actual traversing (not just test running) works as expected."""

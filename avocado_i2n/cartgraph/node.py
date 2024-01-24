@@ -293,10 +293,12 @@ class TestNode(Runnable):
 
         self.finished_worker = None
         self.started_worker = None
-        self.results = []
+
         self._bridged_nodes = []
+        self.incompatible_workers = set()
 
         self.objects = []
+        self.results = []
 
         # lists of parent and children test nodes
         self.setup_nodes = []
@@ -371,6 +373,8 @@ class TestNode(Runnable):
             return True
         elif not self.is_flat():
             raise RuntimeError(f"Only flat nodes can be unrolled, {self} is not flat")
+        elif worker.id in self.incompatible_workers:
+            return True
         for node in self.cleanup_nodes:
             if self.setless_form in node.id and worker.id in node.id:
                 return True

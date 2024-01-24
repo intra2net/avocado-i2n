@@ -1459,7 +1459,7 @@ class TestGraph(object):
                     if current == next:
                         if len(siblings) == 0:
                             logging.warning(f"Could not compose flat node {next} due to test object incompatibility")
-                            next.is_unrolled = lambda x: True
+                            next.incompatible_workers.add(worker.id)
                     for parent in parents:
                         if parent.is_object_root():
                             parent.setup_nodes.append(root)
@@ -1521,8 +1521,10 @@ class TestGraph(object):
 
                     # capture premature cleanup ready cases (only cleanup ready due to unparsed nodes)
                     unexplored_nodes = [node for node in self.nodes if node.is_flat() and not node.is_unrolled(worker)]
-                    if len(unexplored_nodes) > 0:
+                    if not next.is_flat() and len(unexplored_nodes) > 0:
                         # postpone cleaning up current node since it might have newly added children
+                        logging.info(f"Worker {worker.id} postponing the cleanup for {next} "
+                                     f"due to {len(unexplored_nodes)} unexplored nodes")
                         traverse_path.append(root)
                         traverse_path.append(root.pick_child(worker))
                         continue
