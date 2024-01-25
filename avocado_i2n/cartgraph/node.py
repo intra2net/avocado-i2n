@@ -812,7 +812,9 @@ class TestNode(Runnable):
                 # no additional parameters needed for shared (local) locations
                 if not wid:
                     continue
-                for worker in node.shared_finished_workers:
+                # we might have results from previous jobs with non-traversed workers
+                workers = [w for s in TestSwarm.run_swarms.values() for w in s.workers]
+                for worker in workers:
                     if worker.id == wid:
                         source_suffix = "_" + wid
                         for key in worker.params:

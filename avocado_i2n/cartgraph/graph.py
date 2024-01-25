@@ -1436,8 +1436,10 @@ class TestGraph(object):
 
         # add previous results if traversed for the first time (could be parsed on demand)
         if len(test_node.results) == 0:
-            test_name = test_node.params["name"]
-            test_node.results += [r for r in self.runner.previous_results if r["name"] == test_name]
+            # TODO: cannot do simpler comparison due to current limitations in the bridged form
+            previous_results = [r for r in self.runner.previous_results if re.search(test_node.bridged_form, r["name"])]
+            logging.info(f"Found {len(previous_results)} previous test results for {test_node}")
+            test_node.results += previous_results
         # add shared pool and result based setup locations
         test_node.pull_locations()
 

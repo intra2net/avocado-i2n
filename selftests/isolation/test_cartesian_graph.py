@@ -1725,14 +1725,14 @@ class CartesianNodeTest(Test):
 
         node = TestGraph.parse_node_from_object(full_net, "normal..tutorial1", params=self.config["param_dict"])
         parent_node = TestGraph.parse_node_from_object(full_net, "normal..tutorial1", params=self.config["param_dict"])
-        # nets host is a runtime parameter
+        # parent nodes was parsed as dependency of node via its vm1 object
         parent_node.params["dep_suffix"] = "vm1"
         worker = TestWorker(flat_net)
         swarm = TestSwarm("localhost", [worker])
         TestSwarm.run_swarms = {swarm.id: swarm}
+        # nets host is a runtime parameter
         worker.params["nets_host"] = "some_host"
-        parent_node.finished_worker = worker
-        # parent nodes was parsed as dependency of node via its vm1 object
+        # could also be result from a previous job, not determined here
         parent_node.results = [{"name": "tutorial1.net1",
                                 "status": "PASS", "time": 3}]
         node.setup_nodes = [parent_node]
@@ -1745,12 +1745,11 @@ class CartesianNodeTest(Test):
         # parameters to access the worker location should also be provided for the test
         self.assertEqual(node.params[f"nets_host_{worker.id}"], worker.params[f"nets_host"])
 
-        # finished workers should not get out of sync with previous results
-        swarm.workers += [TestWorker(TestGraph.parse_flat_objects("net2", "nets")[0])]
-        parent_node.results = [{"name": "tutorial1.net2",
-                                "status": "PASS", "time": 3}]
-        with self.assertRaises(RuntimeError):
-            node.pull_locations()
+        # an impossible situation with different worker ids must be validated against
+        with mock.patch('avocado_i2n.cartgraph.TestNode.shared_result_worker_ids', new_callable=mock.PropertyMock) as mock_ids:
+            mock_ids.return_value = {"net2"}
+            with self.assertRaises(RuntimeError):
+                node.pull_locations()
 
     def test_pull_locations_bridged(self):
         """Test that all setup get locations for a node are properly updated."""
@@ -1773,17 +1772,17 @@ class CartesianNodeTest(Test):
         node2 = TestGraph.parse_node_from_object(full_net2, "normal..tutorial1", params=self.config["param_dict"])
         parent_node1 = TestGraph.parse_node_from_object(full_net1, "normal..tutorial1", params=self.config["param_dict"])
         parent_node2 = TestGraph.parse_node_from_object(full_net2, "normal..tutorial1", params=self.config["param_dict"])
-        # nets host is a runtime parameter
+        # parent nodes were parsed as dependency of node via its vm1 object
         parent_node1.params["dep_suffix"] = "vm1"
         parent_node2.params["dep_suffix"] = "vm1"
         worker1 = TestWorker(flat_net1)
         worker2 = TestWorker(flat_net2)
         swarm = TestSwarm("localhost", [worker1, worker2])
         TestSwarm.run_swarms = {swarm.id: swarm}
-        # parent nodes were parsed as dependency of node via its vm1 object
+        # nets host is a runtime parameter
         worker1.params["nets_host"] = "some_host"
         worker2.params["nets_host"] = "other_host"
-        parent_node1.finished_worker = worker1
+        # could also be result from a previous job, not determined here
         parent_node1.results = [{"name": "tutorial1.net1",
                                  "status": "PASS", "time": 3}]
         node1.setup_nodes = [parent_node1]
@@ -3702,51 +3701,63 @@ class CartesianGraphTest(Test):
                 self.runner.job.result.tests.clear()
 
     def test_rerun_previous_job_default(self):
-        """Test that rerunning a previous job gives more tries and works reasonably."""
-        # need proper previous results from full nodes
-        self.config["param_dict"] = {"nets": "net1"}
+        """Test that rerunning a previous job gives more tries and works as expected."""
+        # need proper previous results from full nodes (possibly different worker and set variant)
+        self.config["param_dict"] = {"nets": "net2"}
         self.config["tests_str"] = "only leaves..tutorial2\n"
+        self.config["vm_strs"]["vm1"] = ""
         graph = TestGraph.parse_object_trees(
             None, self.config["tests_str"],
             self.prefix, self.config["vm_strs"],
             self.config["param_dict"],
         )
-        node1, node2 = graph.get_nodes_by(param_val="tutorial2")
+        node11, node12, node21, node22 = graph.get_nodes_by(param_val="tutorial2")
         # results from the previous job (inclusive of setup that should now be skipped)
-        self.runner.previous_results += [{"name": graph.get_node_by(param_val="on_customize").params["name"], "status": "PASS", "time": 1}]
-        self.runner.previous_results += [{"name": node1.params["name"], "status": "PASS", "time": 1}]
-        self.runner.previous_results += [{"name": node2.params["name"], "status": "FAIL", "time": 0.2}]
+        on_customize_tests = [n.params["name"] for n in graph.get_nodes_by(param_val="on_customize")]
+        self.assertEqual(len(on_customize_tests), 2)
+        self.runner.previous_results += [{"name": on_customize_tests[0], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": on_customize_tests[1], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": node11.params["name"], "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": node12.params["name"], "status": "FAIL", "time": 0.2}]
+        self.runner.previous_results += [{"name": node21.params["name"].replace("leaves", "all"), "status": "FAIL", "time": 0.2}]
+        self.runner.previous_results += [{"name": node22.params["name"].replace("leaves", "all"), "status": "PASS", "time": 1}]
 
         # include flat and other types of nodes by traversing partially parsed graph
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2"))
         graph.parse_shared_root_from_object_roots()
-        graph.new_workers(TestGraph.parse_workers({"nets": "net1", "only_vm1": "CentOS"}))
+        graph.new_workers(TestGraph.parse_workers({"nets": "net1", "only_vm1": ""}))
         DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
                                                       "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
         DummyTestRun.asserted_tests = [
-            # skip the previously passed test since it doesn't have a rerun status and rerun second test
-            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$"},
+            # skip the previously passed test since it doesn't have a rerun status (here fail by default) and rerun second test
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1.+CentOS", "vms": "^vm1$"},
+            # skip the previously passed test since it doesn't have a rerun status (here fail by default) and rerun second test
+            {"shortname": "^leaves.quicktest.tutorial2.files.vm1.+Fedora", "vms": "^vm1$"},
         ]
         self._run_traversal(graph, {"replay": "previous_job"})
 
-        node1, node2 = graph.get_nodes_by(param_val="tutorial2.+vm1")
+        node11, node12, node21, node22 = graph.get_nodes_by(param_val="tutorial2.+vm1")
         # assert that tests were repeated only when needed
-        self.assertEqual(len(self.runner.job.result.tests), 1)
-        self.assertEqual(len(node1.results), 1)
-        self.assertEqual(len(node2.results), 2)
+        self.assertEqual(len(self.runner.job.result.tests), 2)
+        self.assertEqual(len(node11.results), 1)
+        self.assertEqual(len(node12.results), 2)
+        self.assertEqual(len(node21.results), 2)
+        self.assertEqual(len(node22.results), 1)
         # also assert the correct results were registered
-        self.assertEqual([x["status"] for x in self.runner.job.result.tests], ["PASS"])
-        self.assertEqual([x["status"] for x in node1.results], ["PASS"])
-        self.assertEqual([x["status"] for x in node2.results], ["FAIL", "PASS"])
+        self.assertEqual([x["status"] for x in self.runner.job.result.tests], ["PASS", "PASS"])
+        self.assertEqual([x["status"] for x in node11.results], ["PASS"])
+        self.assertEqual([x["status"] for x in node12.results], ["FAIL", "PASS"])
+        self.assertEqual([x["status"] for x in node21.results], ["FAIL", "PASS"])
+        self.assertEqual([x["status"] for x in node22.results], ["PASS"])
         registered_results = []
         for result in self.runner.job.result.tests:
             result["name"] = result["name"].name
             registered_results.append(result)
-        self.assertEqual(registered_results, node2.results[1:])
+        self.assertEqual(registered_results, node21.results[1:] + node12.results[1:])
 
     def test_rerun_previous_job_status(self):
-        """Test that rerunning a previous job gives more tries and works reasonably."""
+        """Test that rerunning a previous job on a given status works as expected."""
         # need proper previous results from full nodes
         self.config["param_dict"] = {"nets": "net1"}
         self.config["tests_str"] = "only leaves..tutorial2\n"
@@ -3771,7 +3782,7 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
             # previously run setup tests with rerun status are still rerun (scan is overriden)
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "set_state_vms": "^on_customize$"},
-            # skip the previously passed test since it doesn't have a rerun status and rerun second test
+            # skip the previously failed second test since it doesn't have a rerun status and rerun first test
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$"},
         ]
         self._run_traversal(graph, {"replay": "previous_job", "rerun_status": "pass"})
