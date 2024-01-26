@@ -37,7 +37,7 @@ INTERFACE
 
 
 import logging as log
-logging = log.getLogger('avocado.test.' + __name__)
+logging = log.getLogger('avocado.job.' + __name__)
 
 from virttest import utils_params
 

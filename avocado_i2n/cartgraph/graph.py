@@ -30,7 +30,7 @@ INTERFACE
 import os
 import re
 import logging as log
-logging = log.getLogger('avocado.test.' + __name__)
+logging = log.getLogger('avocado.job.' + __name__)
 import collections
 
 
@@ -188,7 +188,7 @@ class TestGraph(object):
         """
         try:
             from graphviz import Digraph
-            log.getLogger("graphviz").parent = log.getLogger("avocado.test")
+            log.getLogger("graphviz").parent = log.getLogger("avocado.job")
         except ImportError:
             logging.warning("Couldn't visualize the Cartesian graph due to missing dependency (Graphviz)")
             return

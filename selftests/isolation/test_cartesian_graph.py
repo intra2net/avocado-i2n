@@ -67,7 +67,7 @@ class DummyTestRun(object):
         node.params["_uid"] = node.id_test.uid
         # small enough not to slow down our tests too much for a test timeout of 300 but
         # large enough to surpass the minimal occupation waiting timeout for more realism
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.1)
         return DummyTestRun(node.params, _self.job.result.tests).get_test_result()
 
 

@@ -84,7 +84,7 @@ setup(name='avocado-framework-plugin-i2n',
                 'avocado_i2n.cartgraph', 'avocado_i2n.vmnet',
                 'avocado_i2n.states'],
       package_data={'avocado_i2n.vmnet': ['templates/*.template']},
-      install_requires=['avocado-framework-plugin-vt==%s' % VERSION, 'aexpect'],
+      install_requires=['avocado-framework-plugin-vt>=103.0', 'aexpect'],
       data_files=get_data_files(),
       include_package_data=True,
       entry_points={
@@ -97,7 +97,7 @@ setup(name='avocado-framework-plugin-i2n',
           'avocado.plugins.cli.cmd': [
               'manu = avocado_i2n.plugins.manu:Manu',
               ],
-          'avocado.plugins.runner': [
+          'avocado.plugins.suite.runner': [
               # TODO: wait for the upstream to make the default loader a plugin as well
               'traverser = avocado_i2n.runner:CartesianRunner',
               ],

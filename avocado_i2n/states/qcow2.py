@@ -31,7 +31,7 @@ import os
 import re
 import shutil
 import logging as log
-logging = log.getLogger('avocado.test.' + __name__)
+logging = log.getLogger('avocado.job.' + __name__)
 
 from virttest import env_process
 from virttest.qemu_storage import QemuImg

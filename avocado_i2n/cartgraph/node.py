@@ -31,7 +31,7 @@ import os
 import re
 from functools import cmp_to_key
 import logging as log
-logging = log.getLogger('avocado.test.' + __name__)
+logging = log.getLogger('avocado.job.' + __name__)
 
 from aexpect.exceptions import ShellCmdError, ShellTimeoutError
 from aexpect import remote
@@ -151,7 +151,7 @@ class TestNode(object):
         self.params['short_id'] = self.long_prefix
         self.params['id'] = self.id_test.str_uid + "_" + self.id_test.name
 
-        uri = self.params["shortname"]
+        uri = self.params.get('name')
         vt_params = self.params.copy()
 
         # Flatten the vt_params, discarding the attributes that are not
@@ -543,7 +543,7 @@ class TestNode(object):
         :returns: remote session to the slot determined from current node environment
         :rtype: :type session: :py:class:`aexpect.ShellSession`
         """
-        log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
+        log.getLogger("aexpect").parent = log.getLogger("avocado.job")
         host, port = self.get_session_ip_port()
         address = host + ":" + port
         cache = type(self)._session_cache

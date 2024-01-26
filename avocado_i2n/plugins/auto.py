@@ -15,7 +15,12 @@
 
 import os
 
-from avocado.core.loader import loader
+try:
+    from avocado.core.loader import loader
+    LOADER_AVAILABLE = True
+except:
+    LOADER_AVAILABLE = False
+
 from avocado.core.settings import settings
 from avocado.core.output import LOG_JOB as log
 from avocado.core.plugin_interfaces import CLI
@@ -79,5 +84,6 @@ class Auto(CLI):
             config["params"] = []
         cmd_parser.params_from_cmd(config)
 
-        loader.register_plugin(CartesianLoader)
-        config["run.test_runner"] = "traverser"
+        if LOADER_AVAILABLE:
+            loader.register_plugin(CartesianLoader)
+        config["run.suite_runner"] = "traverser"

@@ -8,8 +8,8 @@ Control for a pre-test-run environment localized state check.
 import logging
 logging.basicConfig(level=logging.DEBUG, format='%(module)-16.16s '
                     'L%(lineno)-.4d %(levelname)-5.5s| %(message)s')
-logging.getLogger('avocado.test').setLevel(9)
-logging.getLogger('avocado.test').parent = logging.getLogger('')
+logging.getLogger('avocado.job.pre').setLevel(9)
+logging.getLogger('avocado.job.pre').parent = logging.getLogger('')
 
 # custom imports
 from virttest.utils_params import Params
