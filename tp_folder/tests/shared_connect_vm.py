@@ -42,4 +42,7 @@ def run(test, params, env):
     vm, session = vmnet.get_single_vm_with_session()
 
     vmnet.ping_all()
-    session.cmd("pip3 install Pyro4")
+    if vm.params["os_variant"] == "el8":
+        session.cmd("pip3 install Pyro4")
+    else:
+        test.log.info(f"No remote support for OS variant {vm.params['os_variant']}")

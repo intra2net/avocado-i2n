@@ -28,22 +28,120 @@ class CartesianObjectTest(Test):
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
 
+    def test_parse_object_variants_vm1(self):
+        """Test for correctly parsed vm objects from a vm string restriction."""
+        self.config["param_dict"] = {"object_suffix": "vm1", "object_type": "vms"}
+        self.config["vm_strs"] = {"vm1": ""}
+        test_objects = self.loader.parse_object_variants(self.config["param_dict"],
+                                                         self.config["vm_strs"])
+        self.assertEqual(len(test_objects), 2)
+        self.assertRegex(test_objects[1].params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*")
+        self.assertEqual(test_objects[1].params["vms"], "vm1")
+        self.assertEqual(test_objects[1].params["main_vm"], "vm1")
+        self.assertEqual(test_objects[1].params["os_variant"], "el8")
+        self.assertRegex(test_objects[0].params["name"], r"vm1\.qemu_kvm_fedora.*Fedora.*")
+        self.assertEqual(test_objects[0].params["vms"], "vm1")
+        self.assertEqual(test_objects[0].params["main_vm"], "vm1")
+        self.assertEqual(test_objects[0].params["os_variant"], "f33")
+
+    def test_parse_object_variants_net1(self):
+        """Test for a correctly parsed net object from joined vm string restrictions."""
+        test_objects = self.loader.parse_object_variants(self.config["param_dict"],
+                                                         self.config["vm_strs"])
+        self.assertEqual(len(test_objects), 1)
+        test_object = test_objects[0]
+        self.assertRegex(test_object.params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*")
+        self.assertEqual(test_object.params["vms_vm1"], "vm1")
+        self.assertEqual(test_object.params["vms_vm2"], "vm2")
+        self.assertEqual(test_object.params["vms_vm3"], "vm3")
+        self.assertEqual(test_object.params["main_vm"], "vm1")
+        self.assertEqual(test_object.params["main_vm_vm2"], "vm2")
+        self.assertEqual(test_object.params["main_vm_vm3"], "vm3")
+        self.assertEqual(test_object.params["os_variant_vm1"], "el8")
+        self.assertEqual(test_object.params["os_variant_vm2"], "win10")
+        self.assertEqual(test_object.params["os_variant_vm3"], "ubuntutrusty")
+
+    def test_parse_object_from_objects(self):
+        """Test for a correctly parsed net composite object from already parsed vm component objects."""
+        vms = []
+        for vm_name, vm_restriction in self.config["vm_strs"].items():
+            vms += self.loader.parse_object_variants({"object_suffix": vm_name, "object_type": "vms"},
+                                                     {vm_name: vm_restriction})
+        net = self.loader.parse_object_from_objects(vms, self.config["param_dict"])
+        self.assertEqual(net.components, vms)
+        for vm in vms:
+            self.assertEqual(vm.composites, [net])
+            # besides object composition we should expect the joined component variants
+            self.assertIn(vm.params["name"], net.params["name"])
+            # each joined component variant must be traceable back to the component object id
+            self.assertEqual(vm.id, net.params[f"object_id_{vm.suffix}"])
+
+    def test_parse_objects_vms(self):
+        """Test for correctly parsed vm objects composition if multiple variants."""
+        self.config["vm_strs"] = {"vm1": "", "vm2": "", "vm3": ""}
+        test_objects = self.loader.parse_objects(self.config["param_dict"],
+                                                 self.config["vm_strs"],
+                                                 skip_nets=True)
+        vms = [o for o in test_objects if o.key == "vms"]
+        images = [o for o in test_objects if o.key == "images"]
+        self.assertEqual(len(test_objects), len(vms) + len(images))
+        self.assertEqual(len(vms), 6)
+        vms_vm1 = [vm for vm in vms if vm.long_suffix == "vm1"]
+        self.assertEqual(len(vms_vm1), 2)
+        self.assertEqual(vms_vm1[0].suffix, vms_vm1[1].suffix)
+        self.assertEqual(vms_vm1[0].long_suffix, vms_vm1[1].long_suffix)
+        self.assertNotEqual(vms_vm1[0].id, vms_vm1[1].id)
+        self.assertEqual(len([vm for vm in vms if vm.long_suffix == "vm2"]), 2)
+        self.assertEqual(len([vm for vm in vms if vm.long_suffix == "vm3"]), 2)
+        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm1"]), 2)
+        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm2"]), 2)
+        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm3"]), 2)
+
+    def test_parse_objects_nets(self):
+        """Test for correctly parsed net objects composition if multiple variants."""
+        self.config["vm_strs"] = {"vm1": "", "vm2": "", "vm3": ""}
+        test_objects = self.loader.parse_objects(self.config["param_dict"],
+                                                 self.config["vm_strs"],
+                                                 skip_nets=False)
+        nets = [o for o in test_objects if o.key == "nets"]
+        self.assertEqual(len(nets), 8)
+        # TODO: typically we should test for some of this in the net1 object variants cases above but due to limitation of the Cartesian parser and lack of
+        # such functionality, the multi-variant nets are generated at this stage and therefore tested here
+        def assertVariant(test_object, name, vm1_os, vm2_os, vm3_os):
+            self.assertEqual(test_object.suffix, "net1")
+            self.assertEqual(test_object.long_suffix, "net1")
+            self.assertRegex(test_object.params["name"], name)
+            self.assertEqual(test_object.params["os_variant_vm1"], vm1_os)
+            self.assertEqual(test_object.params["os_variant_vm2"], vm2_os)
+            self.assertEqual(test_object.params["os_variant_vm3"], vm3_os)
+        assertVariant(nets[0], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "f33", "win7", "ubuntutrusty")
+        assertVariant(nets[1], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_kali.*Kali.*", "f33", "win7", "kl")
+        assertVariant(nets[2], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "f33", "win10", "ubuntutrusty")
+        assertVariant(nets[3], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_kali.*Kali.*", "f33", "win10", "kl")
+        assertVariant(nets[4], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "el8", "win7", "ubuntutrusty")
+        assertVariant(nets[5], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_kali.*Kali.*", "el8", "win7", "kl")
+        assertVariant(nets[6], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "el8", "win10", "ubuntutrusty")
+        assertVariant(nets[7], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_kali.*Kali.*", "el8", "win10", "kl")
+
     def test_params(self):
-        """Test for correctly parsed test object parameters."""
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
-        test_object = graph.get_object_by(param_key="object_suffix", param_val="^vm1$")
+        """Test for correctly parsed and regenerated test object parameters."""
+        test_objects = self.loader.parse_object_variants(self.config["param_dict"],
+                                                         self.config["vm_strs"])
+        self.assertEqual(len(test_objects), 1)
+        test_object = test_objects[0]
         regenerated_params = test_object.object_typed_params(test_object.config.get_params())
         self.assertEqual(len(regenerated_params.keys()), len(test_object.params.keys()),
-                         "The parameters of a test object must be the same as its only parser dictionary")
+                        "The parameters of a test object must be the same as its only parser dictionary")
         for key in regenerated_params.keys():
             self.assertEqual(regenerated_params[key], test_object.params[key],
-                             "The values of key %s %s=%s must be the same" % (key, regenerated_params[key], test_object.params[key]))
+                            "The values of key %s %s=%s must be the same" % (key, regenerated_params[key], test_object.params[key]))
+        # the test object attributes are fully separated from its parameters
+        self.assertNotIn("object_suffix", test_object.params)
+        self.assertNotIn("object_type", test_object.params)
+        self.assertNotIn("object_id", test_object.params)
 
-    def test_sanity(self):
-        """Test generic usage and composition."""
+    def test_sanity_in_graph(self):
+        """Test generic usage and composition of test objects within a graph."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -57,7 +155,7 @@ class CartesianObjectTest(Test):
             graph.new_objects(test_object)
             self.assertEqual(len(graph.suffixes), object_num)
 
-    def test_overwrite(self):
+    def test_overwrite_in_graph(self):
         """Test for correct overwriting of preselected configuration."""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -86,7 +184,7 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object_params["new_key"], "123",
                          "A new parameter=%s of %s must be 123" % (test_object_params["new_key"], test_object.suffix))
 
-    def test_overwrite_scope(self):
+    def test_overwrite_scope_in_graph(self):
         """Test the scope of application of overwriting preselected configuration."""
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -136,6 +234,126 @@ class CartesianNodeTest(Test):
         self.prefix = ""
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
+
+    def test_parse_node_from_object(self):
+        """Test for a correctly parsed node from an already parsed net object."""
+        test_objects = self.loader.parse_objects(self.config["param_dict"],
+                                                 self.config["vm_strs"])
+        nets = [o for o in test_objects if o.key == "nets"]
+        self.assertEqual(len(nets), 1)
+        net = nets[0]
+        node = self.loader.parse_node_from_object(net, self.config["param_dict"],
+                                                  "only all..tutorial_get..explicit_noop\n")
+        self.assertEqual(node.objects[0], net)
+        self.assertIn(net.params["name"], node.params["name"])
+        self.assertEqual(node.params["nets"], net.params["nets"])
+        self.assertEqual(node.params["vms_vm1"], net.params["vms_vm1"])
+        self.assertEqual(node.params["vms_vm2"], net.params["vms_vm2"])
+        self.assertEqual(node.params["vms_vm3"], net.params["vms_vm3"])
+        self.assertEqual(node.params["main_vm"], net.params["main_vm"])
+        self.assertEqual(node.params["main_vm_vm2"], net.params["main_vm_vm2"])
+        self.assertEqual(node.params["main_vm_vm3"], net.params["main_vm_vm3"])
+        self.assertEqual(node.params["os_variant_vm1"], net.params["os_variant_vm1"])
+        self.assertEqual(node.params["os_variant_vm2"], net.params["os_variant_vm2"])
+        self.assertEqual(node.params["os_variant_vm3"], net.params["os_variant_vm3"])
+
+    def test_parse_node_from_object_invalid_object_type(self):
+        """Test correctly parsed node is not possible from an already parsed vm object."""
+        test_objects = self.loader.parse_objects(self.config["param_dict"],
+                                                 {"vm1": self.config["vm_strs"]["vm1"]})
+        vms = [o for o in test_objects if o.key == "vms"]
+        self.assertEqual(len(vms), 1)
+        vm = vms[0]
+        with self.assertRaises(ValueError):
+            self.loader.parse_node_from_object(vm, self.config["param_dict"])
+
+    def test_parse_node_from_object_invalid_object_mix(self):
+        """Test correctly parsed node is not possible from incompatible vm variants."""
+        test_objects = self.loader.parse_objects(self.config["param_dict"],
+                                                 {"vm1": self.config["vm_strs"]["vm1"], "vm2": "only Win7\n"})
+        nets = [o for o in test_objects if o.key == "nets"]
+        self.assertEqual(len(nets), 1)
+        net = nets[0]
+        with self.assertRaises(param.EmptyCartesianProduct):
+            self.loader.parse_node_from_object(net, self.config["param_dict"],
+                                               "only all..tutorial3.remote.object.control.decorator.util\n")
+
+    def test_parse_nodes(self):
+        """Test for correctly parsed test nodes from graph retrievable test objects."""
+        self.config["tests_str"] += "only tutorial1,tutorial2\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"],
+                                               {"vm1": ""})
+        graph.nodes = []
+        test_objects = graph.objects
+
+        nets = [o for o in test_objects if o.key == "nets"]
+        self.assertEqual(len(nets), 2)
+        nodes = self.loader.parse_nodes(graph, self.config["param_dict"], self.config["tests_str"])
+        self.assertEqual(len(nodes), 4)
+        self.assertIn(nets[0].params["name"], nodes[0].params["name"])
+        self.assertEqual(nodes[0].params["nets"], "net1")
+        self.assertIn(nets[1].params["name"], nodes[1].params["name"])
+        self.assertEqual(nodes[1].params["nets"], "net1")
+        self.assertIn(nets[0].params["name"], nodes[2].params["name"])
+        self.assertEqual(nodes[2].params["nets"], "net1")
+        self.assertIn(nets[1].params["name"], nodes[3].params["name"])
+        self.assertEqual(nodes[3].params["nets"], "net1")
+
+    def test_parse_nodes_compatibility_complete(self):
+        """Test for correctly parsed test nodes from compatible graph retrievable test objects."""
+        self.config["tests_str"] = "only all\nonly tutorial3\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"],
+                                               {"vm1": "", "vm2": ""})
+        graph.nodes = []
+        test_objects = graph.objects
+
+        nets = [o for o in test_objects if o.key == "nets" if "vm1." in o.params["name"] and "vm2." in o.params["name"]]
+        self.assertEqual(len(nets), 4)
+        self.assertRegex(nets[0].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_10")
+        self.assertRegex(nets[1].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_7")
+        self.assertRegex(nets[2].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_10")
+        self.assertRegex(nets[3].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_7")
+        nodes = self.loader.parse_nodes(graph, self.config["param_dict"], self.config["tests_str"])
+        self.assertEqual(len(nodes), 20)
+        for i in range(0, 4):
+            self.assertIn("no_remote", nodes[i].params["name"])
+            self.assertNotIn("only_vm1", nodes[i].params)
+            self.assertNotIn("only_vm2", nodes[i].params)
+            self.assertIn(nets[i].params["name"], nodes[i].params["name"])
+        for i in range(4, 20):
+            self.assertIn("remote", nodes[i].params["name"])
+            self.assertEqual(nodes[i].params["only_vm1"], "qemu_kvm_centos")
+            self.assertEqual(nodes[i].params["only_vm2"], "qemu_kvm_windows_10")
+            self.assertIn(nets[0].params["name"], nodes[i].params["name"])
+
+    def test_parse_nodes_compatibility_separate(self):
+        """Test that no restriction leaks across separately restricted variants."""
+        self.config["tests_str"] = "only all\nonly tutorial3.remote.object.control.decorator.util,tutorial_gui.client_noop\n"
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"],
+                                               {"vm1": "", "vm2": ""})
+        graph.nodes = []
+        test_objects = graph.objects
+
+        nets = [o for o in test_objects if o.key == "nets" if "vm1." in o.params["name"] and "vm2." in o.params["name"]]
+        self.assertEqual(len(nets), 4)
+        self.assertRegex(nets[0].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_10")
+        self.assertRegex(nets[1].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_7")
+        self.assertRegex(nets[2].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_10")
+        self.assertRegex(nets[3].params["name"], "qemu_kvm_fedora.+qemu_kvm_windows_7")
+        nodes = self.loader.parse_nodes(graph, self.config["param_dict"], self.config["tests_str"])
+        self.assertEqual(len(nodes), 5)
+        self.assertIn("remote", nodes[0].params["name"])
+        self.assertEqual(nodes[0].params["only_vm1"], "qemu_kvm_centos")
+        self.assertEqual(nodes[0].params["only_vm2"], "qemu_kvm_windows_10")
+        self.assertIn(nets[0].params["name"], nodes[0].params["name"])
+        for i in range(1, 5):
+            self.assertIn("client_noop", nodes[i].params["name"])
+            self.assertNotIn("only_vm1", nodes[i].params)
+            self.assertNotIn("only_vm2", nodes[i].params)
+            self.assertIn(nets[i-1].params["name"], nodes[i].params["name"])
 
     def test_params(self):
         """Test for correctly parsed test node parameters."""
@@ -347,42 +565,54 @@ class CartesianGraphTest(Test):
         to_traverse = [self.runner.run_traversal(graph, params, s) for s in self.runner.slots]
         loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse), None))
 
-    def test_sanity(self):
+    def test_object_node_incompatible(self):
+        """Test incompatibility of parsed tests and pre-parsed available objects."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
+        with self.assertRaises(param.EmptyCartesianProduct):
+            self.loader.parse_object_nodes(self.config["param_dict"],
+                                           self.config["tests_str"], self.config["vm_strs"],
+                                           prefix=self.prefix)
+
+    def test_object_node_intersection(self):
+        """Test restricted vms-tests nonempty intersection of parsed tests and pre-parsed available objects."""
+        self.config["tests_str"] += "only tutorial1,tutorial_get\n"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
+        nodes, objects = self.loader.parse_object_nodes(self.config["param_dict"],
+                                                        self.config["tests_str"], self.config["vm_strs"],
+                                                        prefix=self.prefix)
+        object_suffixes = [o.suffix for o in objects]
+        self.assertIn("vm1", object_suffixes)
+        # due to lacking vm3 tutorial_get will not be parsed and the only already parsed vm remains vm1
+        self.assertNotIn("vm2", object_suffixes)
+        # vm3 is fully lacking
+        self.assertNotIn("vm3", object_suffixes)
+        for n in nodes:
+            if "tutorial1" in n.params["name"]:
+                break
+        else:
+            raise AssertionError("The tutorial1 variant must be present in the object-node intersection")
+        for n in nodes:
+            if "tutorial_get" in n.params["name"]:
+                raise AssertionError("The tutorial_get variant must be skipped since vm3 is not available")
+
+    def test_graph_sanity(self):
         """Test generic usage and composition."""
         self.config["tests_str"] += "only tutorial1\n"
+        nodes, objects = self.loader.parse_object_nodes(self.config["param_dict"],
+                                                        self.config["tests_str"], self.config["vm_strs"],
+                                                        prefix=self.prefix)
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
+        self.assertEqual(set(o.suffix for o in graph.objects), set(o.suffix for o in objects))
+        self.assertEqual(set(n.prefix for n in graph.nodes).intersection(n.prefix for n in nodes),
+                         set(n.prefix for n in nodes))
 
         repr = str(graph)
         self.assertIn("[cartgraph]", repr)
         self.assertIn("[object]", repr)
         self.assertIn("[node]", repr)
-
-    def test_object_node_incompatible(self):
-        """Test incompatibility of parsed tests and preselected available objects."""
-        self.config["tests_str"] += "only tutorial1\n"
-        self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
-        with self.assertRaises(param.EmptyCartesianProduct):
-            self.loader.parse_object_trees(self.config["param_dict"],
-                                           self.config["tests_str"], self.config["vm_strs"],
-                                           prefix=self.prefix)
-
-        # restrict to vms-tests intersection if the same is nonempty
-        self.config["tests_str"] += "only tutorial1,tutorial_get\n"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "set_state_images": "^install$"},
-            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_images": "^install$", "set_state_images": "^customize$"},
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "set_state_vms": "^on_customize$"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "get_state_vms": "^on_customize$"},
-        ]
-        self._run_traversal(graph, self.config["param_dict"])
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
     def test_shared_root_from_object_trees(self):
         """Test correct expectation of separately adding a shared root to a graph of disconnected object trees."""
@@ -731,8 +961,8 @@ class CartesianGraphTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 4)
 
-    def test_permanent_object_and_simple_cloning(self):
-        """Test a complete test run including complex setup."""
+    def test_cloning_simple_permanent_object(self):
+        """Test a complete test run including complex setup that involves permanent vms and cloning."""
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_get\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -789,7 +1019,84 @@ class CartesianGraphTest(Test):
         # root state of a permanent vm is not synced from a single worker to itself
         self.assertEqual(DummyStateControl.asserted_states["get"]["ready"][self.shared_pool], 0)
 
-    def test_deep_cloning(self):
+    def test_cloning_simple_cross_object(self):
+        """Test a complete test run with multi-variant objects where cloning should not be affected."""
+        self.config["tests_str"] = "only leaves\n"
+        self.config["tests_str"] += "only tutorial_get,tutorial_gui\n"
+        self.config["vm_strs"]["vm1"] = ""
+        self.config["vm_strs"]["vm2"] = ""
+        graph = self.loader.parse_object_trees(self.config["param_dict"],
+                                               self.config["tests_str"], self.config["vm_strs"],
+                                               prefix=self.prefix)
+        DummyStateControl.asserted_states["check"]["root"] = {self.shared_pool: True}
+        DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.noop": {self.shared_pool: False}, "getsetup.clicked": {self.shared_pool: False},
+                                                           "getsetup.guisetup.noop": {self.shared_pool: False},
+                                                           "getsetup.guisetup.clicked": {self.shared_pool: False}})
+        DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
+        DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
+        # test syncing also for permanent vms
+        DummyStateControl.asserted_states["get"]["ready"] = {self.shared_pool: 0}
+        # TODO: currently not used due to excluded self-sync but one that is not the correct implementation
+        DummyStateControl.asserted_states["get"].update({"guisetup.noop": {self.shared_pool: 0}, "guisetup.clicked": {self.shared_pool: 0},
+                                                         "getsetup.noop": {self.shared_pool: 0}, "getsetup.clicked": {self.shared_pool: 0},
+                                                         "getsetup.guisetup.noop": {self.shared_pool: 0},
+                                                         "getsetup.guisetup.clicked": {self.shared_pool: 0}})
+        DummyStateControl.asserted_states["unset"] = {"guisetup.noop": {self.shared_pool: 0},
+                                                      "getsetup.noop": {self.shared_pool: 0},
+                                                      "ready": {self.shared_pool: 0}}
+        DummyTestRun.asserted_tests = [
+            # automated setup of vm1 of CentOS variant
+            {"shortname": "^internal.automated.linux_virtuser.vm1.+CentOS", "vms": "^vm1$"},
+            # automated setup of vm2 of Win7 variant
+            {"shortname": "^internal.automated.windows_virtuser.vm2.+Win7", "vms": "^vm2$"},
+            # first (noop) parent GUI setup dependency through vm2 of Win7 variant
+            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
+            # extra dependency dependency through vm1 of CentOS variant
+            {"shortname": "^internal.automated.connect.vm1.+CentOS", "vms": "^vm1$"},
+            # first (noop) explicit actual test of CentOS+Win7
+            {"shortname": "^leaves.tutorial_get.explicit_noop..+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.noop"},
+            # first (noop) duplicated actual test of CentOS+Win7
+            {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
+            # automated setup of vm2 of Win10 variant
+            {"shortname": "^internal.automated.windows_virtuser.vm2.+Win10", "vms": "^vm2$"},
+            # first (noop) parent GUI setup dependency through vm2 of Win10 variant
+            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
+            # first (noop) explicit actual test of CentOS+Win10
+            {"shortname": "^leaves.tutorial_get.explicit_noop.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.noop"},
+            # first (noop) duplicated actual test of CentOS+Win10
+            {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
+            # second (clicked) parent GUI setup dependency through vm2 of Win7 variant
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+            # second (clicked) explicit actual test of CentOS+Win7
+            {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.clicked"},
+            # second (clicked) duplicated actual test of CentOS+Win7
+            {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
+            # second (clicked) parent GUI setup dependency through vm2 of Win10 variant
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+            # second (clicked) explicit actual test of CentOS+Win10
+            {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.clicked"},
+            # second (clicked) duplicated actual test of CentOS+Win10
+            {"shortname": "^leaves.tutorial_get.implicit_both.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
+            # automated setup of vm1 of Fedora variant, required via extra "tutorial_gui" restriction
+            {"shortname": "^internal.automated.linux_virtuser.vm1.+Fedora", "vms": "^vm1$"},
+            # GUI test for vm1 of Fedora variant which is not first (noop) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
+            # GUI test for vm1 of Fedora variant which is not first (noop) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
+            # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+            # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+        ]
+        self._run_traversal(graph, self.config["param_dict"])
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        # expect four cleanups of four different variant product states
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 4)
+        # expect two cleanups of two different variant product states (vm1 variant restricted)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.noop"][self.shared_pool], 2)
+
+    def test_cloning_deep(self):
         """Test for correct deep cloning."""
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial_finale\n"
