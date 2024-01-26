@@ -67,6 +67,9 @@ target/
 .project
 .pydevproject
 
+# VSCode
+.vscode
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
