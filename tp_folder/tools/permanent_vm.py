@@ -24,6 +24,7 @@ import asyncio
 
 from avocado.core.output import LOG_UI, LOG_JOB as logging
 from avocado_i2n import params_parser as param
+from avocado_i2n.cartgraph import TestGraph
 from avocado_i2n.intertest_setup import with_cartesian_graph
 
 
@@ -50,7 +51,9 @@ def permubuntu(config, tag=""):
     LOG_UI.info("Starting permanent vm setup for %s (%s)",
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
-    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
+    graph = TestGraph()
+    graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
+    for test_object in graph.objects:
         if test_object.key != "vms":
             continue
         vm = test_object
@@ -66,7 +69,13 @@ def permubuntu(config, tag=""):
         setup_dict.update({"set_state_vms": "ready"})
         setup_str = param.re_str("all..internal..manage.start")
         test_node = l.parse_node_from_object(net, setup_dict, setup_str, prefix=tag)
-        to_run = r.run_test_node(test_node)
-        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
+        # TODO: traversal relies explicitly on object_suffix which only indicates
+        # where a parent node was parsed from, i.e. which test object of the child node
+        test_node.params["object_suffix"] = test_object.long_suffix
+        graph.nodes += [test_node]
 
+    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
+    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
+                                                                 r.job.timeout or None))
     LOG_UI.info("Finished permanent vm setup")

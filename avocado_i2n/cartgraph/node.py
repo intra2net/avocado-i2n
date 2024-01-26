@@ -100,12 +100,12 @@ class TestNode(object):
         self.config = config
         self._params_cache = None
 
-        self.should_run = True
-        self.should_clean = True
-        self.should_scan = True
+        self.should_run = self.default_run_decision
+        self.should_clean = self.default_clean_decision
 
-        self.spawner = None
+        self.all_workers = {}
         self.workers = set()
+        self.spawner = None
 
         # flattened list of objects (in composition) involved in the test
         self.objects = [object]
@@ -174,25 +174,45 @@ class TestNode(object):
         This isolating environment could be a container, a virtual machine, or
         a less-isolated process and is managed by a specialized spawner.
         """
-        env_tuple = tuple(env_id.split("/"))
-        if len(env_tuple) == 1:
-            env_net = ""
-            env_name = "c" + env_tuple[0] if env_tuple[0] else ""
-            # NOTE: at present handle empty environment id (lack of slots) as an indicator
-            # of using non-isolated serial runs via the old process environment spawner
-            env_type = "lxc" if env_name else "process"
-        elif len(env_tuple) == 2:
-            env_net = env_tuple[0]
-            env_name = env_tuple[1]
-            env_type = "remote"
-        else:
-            raise ValueError(f"Environment ID {env_id} could not be parsed for {self}")
+        def slot_attributes(env_id):
+            env_tuple = tuple(env_id.split("/"))
+            if len(env_tuple) == 1:
+                env_net = ""
+                env_name = "c" + env_tuple[0] if env_tuple[0] else ""
+                # NOTE: at present handle empty environment id (lack of slots) as an indicator
+                # of using non-isolated serial runs via the old process environment spawner
+                env_type = "lxc" if env_name else "process"
+            elif len(env_tuple) == 2:
+                env_net = env_tuple[0]
+                env_name = env_tuple[1]
+                env_type = "remote"
+            else:
+                raise ValueError(f"Environment ID {env_id} could not be parsed for {self}")
+            return env_net, env_name, env_type
 
-        self.spawner = SpawnerDispatcher(job.config, job)[env_type].obj
-
-        self.params["nets_host"] = env_name
+        if not self.all_workers:
+            slots = job.config["param_dict"].get("slots", "").split(" ")
+            for slot in slots:
+                env_net, env_name, env_type = slot_attributes(slot)
+                if env_net not in self.all_workers:
+                    self.all_workers[env_net] = {}
+                self.all_workers[env_net][env_name] = env_type
+        env_net, env_name, env_type = slot_attributes(env_id)
+        if env_net not in self.all_workers:
+            raise RuntimeError(f"Invalid environment net found: {env_net} not among the initially "
+                                f"defined {', '.join(self.all_workers.keys())}")
+        if env_name not in self.all_workers[env_net]:
+            raise RuntimeError(f"Invalid environment name found: {env_name} not among the initially "
+                                f"defined {', '.join(self.all_workers[env_net].keys())}")
+        if env_type != self.all_workers[env_net][env_name]:
+            raise RuntimeError(f"Invalid environment type: {env_type} not same as the initially "
+                                f"defined {self.all_workers[env_net][env_type]} for {env_net}/{env_type}")
         self.params["nets_gateway"] = env_net
+        self.params["nets_host"] = env_name
         self.params["nets_spawner"] = env_type
+
+        # TODO: drop params from runner and use unified job config for slots and all other run operations
+        self.spawner = SpawnerDispatcher(job.config, job)[self.params["nets_spawner"]].obj
 
     @staticmethod
     def start_environment(env_id):
@@ -266,24 +286,50 @@ class TestNode(object):
                 return False
         return True
 
-    def is_finished(self):
+    def is_eagerly_finished(self, worker=None):
         """
-        The test was run by at least one worker.
+        The test was run by at least one worker of all or some scopes.
 
-        This choice of criterion makes sure that already available
+        :param worker: evaluate with respect to an optional worker ID scope or globally if none given
+        :type worker: str or None
+
+        This happens in an eager manner so that any already available
         setup nodes are considered finished. If we instead wait for
         this setup to be cleaned up or synced, this would count most
-        of the setup as finished in the end of the traversal while
-        we would prefer to do so in an eager manner.
+        of the setup as finished in the very end of the traversal.
         """
-        if "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
-            hosts = set(worker for worker in self.workers)
-            return self.params["nets_host"] in hosts
-        elif "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
-            gateways = set(worker.split("/")[0] for worker in self.workers)
-            return self.params["nets_gateway"] in gateways
+        if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
+            # is finished separately by each worker
+            return worker.split("/")[-1] in set(worker for worker in self.workers)
+        elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
+            # is finished for an entire swarm by at least one of its workers
+            return worker.split("/")[0] in set(worker.split("/")[0] for worker in self.workers)
         else:
+            # is finished globally by at least one worker
             return len(self.workers) > 0
+
+    def is_fully_finished(self, worker=None):
+        """
+        The test was run by all workers of a given scope.
+
+        :param worker: evaluate with respect to an optional worker ID scope or globally if none given
+        :type worker: str or None
+
+        The consideration here is for fully traversed node by all workers
+        unless restricted within some scope of setup reuse.
+        """
+        if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
+            # is finished separately by each worker and for all workers
+            return worker.split("/")[-1] in set(worker for worker in self.workers)
+        elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
+            # is finished for an entire swarm by all of its workers
+            slot_cluster = worker.split("/")[0]
+            all_cluster_hosts = set(host for host in self.all_workers[slot_cluster])
+            node_cluster_hosts = set(worker.split("/")[1] for worker in self.workers if worker.split("/")[0] == slot_cluster)
+            return all_cluster_hosts == node_cluster_hosts
+        else:
+            # is finished globally by all workers
+            return len(self.workers) == sum([len([w for w in self.all_workers[s]]) for s in self.all_workers])
 
     def is_terminal_node_for(self):
         """
@@ -334,6 +380,36 @@ class TestNode(object):
                 if state == setup_object_params.get("set_state"):
                     return True
         return False
+
+    def default_run_decision(self, slot):
+        """Default decision policy on whether a test node should be run or skipped."""
+        if not self.produces_setup():
+            # most standard stateless behavior is to run each test node by exactly one worker
+            should_run = len(self.workers) == 0
+        else:
+            # scanning will be triggered once for each worker on internal nodes
+            should_scan = slot not in self.workers
+            should_run = self.scan_states() if should_scan else False
+
+        return should_run
+
+    def default_clean_decision(self, slot):
+        """Default decision policy on whether a test node should be cleaned or skipped."""
+        # no support for parallelism within reversible nodes since we might hit a race condition
+        # whereby a node will be run for missing setup but its parent will be reversed before it
+        # gets any parent-provided states
+        is_reversible = True
+        for test_object in self.objects:
+            object_params = test_object.object_typed_params(self.params)
+            is_reversible = object_params.get("unset_mode_images", object_params["unset_mode"])[0] == "f"
+            is_reversible |= object_params.get("unset_mode_vms", object_params["unset_mode"])[0] == "f"
+            if is_reversible:
+                break
+        if not is_reversible:
+            return True
+        else:
+            # last one of a given scope should "close the door" for that scope
+            return self.is_fully_finished(slot)
 
     @classmethod
     def prefix_priority(cls, prefix1, prefix2):
@@ -565,8 +641,13 @@ class TestNode(object):
         return session
 
     def scan_states(self):
-        """Scan for present object states to reuse the test from previous runs."""
-        self.should_run = True
+        """
+        Scan for present object states to reuse the test from previous runs.
+
+        :returns: whether all required states are available
+        :rtype: bool
+        """
+        should_run = True
         node_params = self.params.copy()
 
         slot, slothost = self.params["nets_host"], self.params["nets_gateway"]
@@ -583,7 +664,7 @@ class TestNode(object):
 
             # the object state has to be defined to reach this stage
             if object_state == "install" and test_object.is_permanent():
-                self.should_run = False
+                should_run = False
                 break
 
             # ultimate consideration of whether the state is actually present
@@ -605,14 +686,15 @@ class TestNode(object):
             mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)
             try:
                 door.run_subcontrol(session, mod_control_path)
-                self.should_run = False
+                should_run = False
             except ShellCmdError as error:
                 if "AssertionError" in error.output:
-                    self.should_run = True
+                    should_run = True
                 else:
                     raise RuntimeError("Could not complete state scan due to control file error")
         logging.info(f"The test node {self} %s run from a scan on {slothost + '/' + slot}",
-                     "should" if self.should_run else "should not")
+                     "should" if should_run else "should not")
+        return should_run
 
     def sync_states(self, params):
         """Sync or drop present object states to clean or later skip tests from previous runs."""
@@ -640,7 +722,7 @@ class TestNode(object):
                 continue
             # the object state has to be defined to reach this stage
             if object_state == "install" and test_object.is_permanent():
-                self.should_clean = False
+                should_clean = False
                 break
             vm_name = test_object.suffix if test_object.key == "vms" else test_object.composites[0].suffix
             # TODO: is this needed?

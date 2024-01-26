@@ -67,11 +67,19 @@ def develop(config, tag=""):
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
     vms = " ".join(selected_vms)
     mode = config["tests_params"].get("devmode", "generator")
+
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
     setup_str = param.re_str("all..manual..develop.%s" % mode)
     tests, objects = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
-    to_run = r.run_test_node(TestNode(tag, tests[0].config, objects[-1]))
-    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, r.job.timeout or None))
+
+    graph = TestGraph()
+    graph.objects = objects
+    graph.nodes = [TestNode(tag, tests[0].config, objects[-1])]
+    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    graph.flag_children(flag_type="run", flag=lambda self, slot: True)
+    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
+    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
+                                                                 r.job.timeout or None))
     LOG_UI.info("Development complete")

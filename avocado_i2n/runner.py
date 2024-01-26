@@ -77,7 +77,7 @@ class CartesianRunner(RunnerInterface):
         self.skip_tests = []
 
     """running functionality"""
-    async def _update_status(self, job):
+    async def _update_status(self):
         message_handler = MessageHandler()
         while True:
             try:
@@ -92,14 +92,12 @@ class CartesianRunner(RunnerInterface):
             tasks_by_id = {str(runtime_task.task.identifier): runtime_task.task
                            for runtime_task in self.tasks}
             task = tasks_by_id.get(task_id)
-            message_handler.process_message(message, task, job)
+            message_handler.process_message(message, task, self.job)
 
-    async def run_test(self, job, node):
+    async def run_test(self, node):
         """
         Run a test instance inside a subprocess.
 
-        :param job: job that includes the test suite
-        :type job: :py:class:`avocado.core.job.Job`
         :param node: test node to run
         :type node: :py:class:`TestNode`
         """
@@ -110,23 +108,24 @@ class CartesianRunner(RunnerInterface):
 
         if not node.is_occupied():
             logging.warning("Environment not set, assuming serial unisolated test runs")
-            node.set_environment(job, "")
+            node.set_environment(self.job, "")
         if not self.status_repo:
-            self.status_repo = StatusRepo(job.unique_id)
-            self.status_server = StatusServer(job.config.get('run.status_server_listen'),
+            self.status_repo = StatusRepo(self.job.unique_id)
+            self.status_server = StatusServer(self.job.config.get('run.status_server_listen'),
                                               self.status_repo)
             asyncio.ensure_future(self.status_server.serve_forever())
             # TODO: this needs more customization
-            asyncio.ensure_future(self._update_status(job))
+            asyncio.ensure_future(self._update_status())
 
-        status_server_uri = job.config.get('run.status_server_uri')
+        status_server_uri = self.job.config.get('run.status_server_uri')
         raw_task = Task(node.get_runnable(), node.id_test,
                         [status_server_uri],
                         category=TASK_DEFAULT_CATEGORY,
                         job_id=self.job.unique_id)
-        raw_task.runnable.output_dir = os.path.join(job.test_results_path,
+        raw_task.runnable.output_dir = os.path.join(self.job.test_results_path,
                                                     raw_task.identifier.str_filesystem)
         task = RuntimeTask(raw_task)
+        config = self.test_suite.config if hasattr(self, "test_suite") else self.job.config
         pre_tasks = PreRuntimeTask.get_tasks_from_test_task(
             task,
             1,
@@ -134,7 +133,7 @@ class CartesianRunner(RunnerInterface):
             None,
             status_server_uri,
             self.job.unique_id,
-            self.test_suite.config,
+            config,
         )
         post_tasks = PostRuntimeTask.get_tasks_from_test_task(
             task,
@@ -143,7 +142,7 @@ class CartesianRunner(RunnerInterface):
             None,
             status_server_uri,
             self.job.unique_id,
-            self.test_suite.config,
+            config,
         )
         tasks = [*pre_tasks, task, *post_tasks]
         for task in tasks:
@@ -157,7 +156,7 @@ class CartesianRunner(RunnerInterface):
         # to at least add requested tasks to it safely (using its locks)
         await Worker(state_machine=TaskStateMachine(tasks, self.status_repo),
                      spawner=node.spawner, max_running=1,
-                     task_timeout=job.config.get('task.timeout.running')).run()
+                     task_timeout=self.job.config.get('task.timeout.running')).run()
 
     async def run_test_node(self, node):
         """
@@ -203,7 +202,7 @@ class CartesianRunner(RunnerInterface):
             uid = node.id_test.uid
             name = node.params["name"]
 
-            await self.run_test(self.job, node)
+            await self.run_test(node)
 
             for i in range(10):
                 try:
@@ -256,6 +255,7 @@ class CartesianRunner(RunnerInterface):
         Of course all possible children are restricted by the user-defined "only" and
         the number of internal test nodes is minimized for achieving this goal.
         """
+        logging.debug(f"Worker {slot} starting complete graph traversal with parameters {params}")
         shared_roots = graph.get_nodes_by("shared_root", "yes")
         assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
         root = shared_roots[0]
@@ -295,14 +295,10 @@ class CartesianRunner(RunnerInterface):
                 await asyncio.sleep(occupied_timeout)
                 continue
 
-            logging.debug("Worker %s at test node %s which is %sready with setup, %sready with cleanup,"
-                          " should %srun, should %sbe cleaned, and should %sbe scanned",
+            logging.debug("Worker %s at test node %s which is %sready with setup and %sready with cleanup",
                           slot, next.params["shortname"],
                           "not " if not next.is_setup_ready(slot) else "",
-                          "not " if not next.is_cleanup_ready(slot) else "",
-                          "not " if not next.should_run else "",
-                          "not " if not next.should_clean else "",
-                          "not " if not next.should_scan else "")
+                          "not " if not next.is_cleanup_ready(slot) else "")
             logging.debug("Current traverse path/stack for %s:\n%s", slot,
                           "\n".join([n.params["shortname"] for n in traverse_path]))
             # if previous in path is the child of the next, then the path is reversed
@@ -364,14 +360,14 @@ class CartesianRunner(RunnerInterface):
         self.test_suite = test_suite
         self.tasks = []
 
-        self.status_repo = StatusRepo(job.unique_id)
-        self.status_server = StatusServer(job.config.get('run.status_server_listen'),
+        self.status_repo = StatusRepo(self.job.unique_id)
+        self.status_server = StatusServer(self.job.config.get('run.status_server_listen'),
                                           self.status_repo)
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.status_server.create_server())
         asyncio.ensure_future(self.status_server.serve_forever())
         # TODO: this needs more customization
-        asyncio.ensure_future(self._update_status(job))
+        asyncio.ensure_future(self._update_status())
 
         graph = self._graph_from_suite(test_suite)
         params = self.job.config["param_dict"]
@@ -416,7 +412,7 @@ class CartesianRunner(RunnerInterface):
                 summary.add('FAIL')
         except (KeyboardInterrupt, asyncio.TimeoutError) as error:
             logging.info(str(error))
-            job.interrupted_reason = str(error)
+            self.job.interrupted_reason = str(error)
             summary.add('INTERRUPTED')
 
         # clean up any test node session cache
@@ -516,28 +512,16 @@ class CartesianRunner(RunnerInterface):
             test_node.set_environment(self.job, slot)
         else:
             return
-        # scanning can now be additionally triggered for each worker on internal nodes
-        if not test_node.should_scan and not test_node.is_cleanup_ready(slot):
-            test_node.should_scan = slot not in test_node.workers
+
         if not test_node.params.get("set_location") and not test_node.is_shared_root():
             shared_locations = test_node.params.get_list("shared_pool", ["/:."])
             for location in shared_locations:
                 test_node.add_location(location)
 
-        if test_node.should_scan:
-            test_node.scan_states()
-            test_node.should_scan = False
-
-            # TODO: in addition to syncing this also needs generalized run decision instead of the old flags
-            is_cleaned_up = test_node.params.get("unset_mode_images", test_node.params["unset_mode"])[0] == "f"
-            is_cleaned_up |= test_node.params.get("unset_mode_vms", test_node.params["unset_mode"])[0] == "f"
-            is_cleaned_up &= test_node.is_finished()
-            test_node.should_run &= not is_cleaned_up
-
         replay_skip = test_node.params["name"] in self.skip_tests
         if replay_skip:
             logging.debug(f"Test {test_node.params['shortname']} will be skipped via previous job")
-        if test_node.should_run and (not replay_skip or test_node.produces_setup()):
+        if test_node.should_run(slot) and (not replay_skip or test_node.produces_setup()):
 
             # the primary setup nodes need special treatment
             if params.get("dry_run", "no") == "yes":
@@ -567,8 +551,6 @@ class CartesianRunner(RunnerInterface):
             # node is not shared and with owned setup that is not yet claimed
             if status:
                 self._update_reusable_trail(test_node)
-
-            test_node.should_run = False
         else:
             logging.debug("Skipping test %s on %s", test_node.params["shortname"], slot)
 
@@ -585,7 +567,7 @@ class CartesianRunner(RunnerInterface):
             test_node.set_environment(self.job, slot)
         else:
             return
-        if test_node.should_clean:
+        if test_node.should_clean(slot):
 
             if params.get("dry_run", "no") == "yes":
                 logging.info("Cleaning a dry %s", test_node.params["shortname"])
