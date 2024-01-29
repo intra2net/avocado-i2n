@@ -130,6 +130,8 @@ class CartesianRunner(RunnerInterface):
         spawner = node.params["nets_spawner"]
         logging.debug(f"Running {node.id} on {gateway}/{host} using {spawner} isolation")
 
+        if node.started_worker is None:
+            raise RuntimeError(f"No worker is running {node}")
         if node.started_worker.spawner is None:
             raise RuntimeError(f"Worker {node.started_worker} cannot spawn tasks")
         if not self.status_repo:
@@ -173,7 +175,7 @@ class CartesianRunner(RunnerInterface):
             if spawner == "lxc":
                 task.spawner_handle = host
             elif spawner == "remote":
-                task.spawner_handle = node.get_session_to_net()
+                task.spawner_handle = node.started_worker.get_session()
         self.tasks += tasks
 
         # TODO: use a single state machine for all test nodes when we are able
@@ -317,7 +319,7 @@ class CartesianRunner(RunnerInterface):
             summary.add('INTERRUPTED')
 
         # clean up any test node session cache
-        for session in TestNode._session_cache.values():
+        for session in TestWorker._session_cache.values():
             session.close()
 
         # TODO: The avocado implementation needs a workaround here:

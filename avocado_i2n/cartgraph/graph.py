@@ -270,7 +270,7 @@ class TestGraph(object):
 
         def get_display_id(node):
             node_id = node.long_prefix
-            node_id += f"[{node.params['nets_host']}/{node.params['nets_host']}]" if node.is_occupied(node.started_worker) else ""
+            node_id += f"[{node.started_worker}]" if node.is_occupied(node.started_worker) else ""
             return node_id
 
         graph = Digraph('cartesian_graph', format='svg')
@@ -1201,18 +1201,13 @@ class TestGraph(object):
             for flat_net in TestGraph.parse_flat_objects(suffix, "nets", params=params):
                 test_worker = TestWorker(flat_net)
                 test_workers += [test_worker]
-
-            # env_net = cluster name, env_name = worker name, env_type = worker spawner
             if slot is not None:
-                env_net, env_name, env_type = TestWorker.slot_attributes(slot)
-                test_worker.params["nets_gateway"] = env_net
-                test_worker.params["nets_host"] = env_name
-                test_worker.params["nets_spawner"] = env_type
-            else:
-                env_net = test_worker.params["nets_gateway"]
-                env_name = test_worker.params["nets_host"]
-                env_type = test_worker.params["nets_spawner"]
+                test_worker.overwrite_with_slot(slot)
 
+            # TODO: convert: env_net = cluster name, env_name = worker name, env_type = worker spawner
+            env_net = test_worker.params["nets_gateway"]
+            env_name = test_worker.params["nets_host"]
+            env_type = test_worker.params["nets_spawner"]
             if env_net not in TestWorker.run_slots:
                 TestWorker.run_slots[env_net] = {}
             TestWorker.run_slots[env_net][env_name] = env_type

@@ -64,12 +64,18 @@ class CartesianWorkerTest(Test):
         self.assertEqual(test_workers[0].params["nets_gateway"], "")
         self.assertEqual(test_workers[0].params["nets_host"], "c1")
         self.assertEqual(test_workers[0].params["nets_spawner"], "lxc")
+        self.assertEqual(test_workers[0].params["nets_shell_host"], "192.168.254.1")
+        self.assertEqual(test_workers[0].params["nets_shell_port"], "22")
         self.assertEqual(test_workers[1].params["nets_gateway"], "remote.com")
         self.assertEqual(test_workers[1].params["nets_host"], "2")
         self.assertEqual(test_workers[1].params["nets_spawner"], "remote")
+        self.assertEqual(test_workers[1].params["nets_shell_host"], "remote.com")
+        self.assertEqual(test_workers[1].params["nets_shell_port"], "222")
         self.assertEqual(test_workers[2].params["nets_gateway"], "")
         self.assertEqual(test_workers[2].params["nets_host"], "")
         self.assertEqual(test_workers[2].params["nets_spawner"], "process")
+        self.assertEqual(test_workers[2].params["nets_shell_host"], "localhost")
+        self.assertEqual(test_workers[2].params["nets_shell_port"], "22")
         self.assertEqual(TestWorker.run_slots, {"": {"": "process", "c1": "lxc"}, "remote.com": {"2": "remote"}})
 
     def test_sanity_in_graph(self):
@@ -1020,7 +1026,7 @@ class CartesianNodeTest(Test):
         with self.assertRaisesRegex(ValueError, r"^Detected reflexive dependency of"):
             test_node.validate()
 
-    @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
+    @mock.patch('avocado_i2n.cartgraph.worker.remote.wait_for_login', mock.MagicMock())
     @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
     def test_default_run_decision(self):
         """Test expectations on the default decision policy of whether to run or skip a test node."""
@@ -1090,7 +1096,7 @@ class CartesianNodeTest(Test):
         test_node1.results = [{"status": "PASS"}]
         self.assertTrue(test_node1.default_run_decision(worker1))
 
-    @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
+    @mock.patch('avocado_i2n.cartgraph.worker.remote.wait_for_login', mock.MagicMock())
     def test_default_clean_decision(self):
         """Test expectations on the default decision policy of whether to clean or not a test node."""
         self.config["tests_str"] = "only leaves\n"
@@ -1367,7 +1373,7 @@ class CartesianNodeTest(Test):
         self.assertEqual(node2.params[f"nets_host_{worker1.id}"], worker1.params[f"nets_host"])
 
 
-@mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
+@mock.patch('avocado_i2n.cartgraph.worker.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
 @mock.patch('avocado_i2n.runner.SpawnerDispatcher', mock.MagicMock())
 @mock.patch.object(CartesianRunner, 'run_test_task', DummyTestRun.mock_run_test_task)
@@ -2470,29 +2476,27 @@ class CartesianGraphTest(Test):
              "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^1$",
              # TODO: no full support for cluster variants yet, this must have been "cluster1.net1" instead of "net1"
              "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
-             "nets_shell_host_net1": "192.168.254.101", "nets_shell_port_net1": "22"},
+             "nets_shell_host_net1": "^host1$", "nets_shell_port_net1": "221"},
             # host1/2 no longer waits and picks its planned tests reusing setup from net1
             {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^net2$",
              "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^2$",
              "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
-             "nets_shell_host_net1": "192.168.254.101", "nets_shell_port_net1": "22"},
+             "nets_shell_host_net1": "^host1$", "nets_shell_port_net1": "221"},
             # host2/1 is done with half of the setup for client_noop and waits for host2/2 to provide the other half
             # host2/2 now moves on to its planned test
             {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^net4$",
              "nets_spawner": "remote", "nets_gateway": "^host2$", "nets_host": "^2$",
              # TODO: no full support for cluster variants yet, this must have been "cluster2.net1" instead of "net3"
              "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm",
-             # TODO: special ports like 221 must be added to the cluster configuration, currently expect simpler 22
-             "nets_shell_host_net3": "192.168.254.103", "nets_shell_host_net4": "192.168.254.104",
-             "nets_shell_port_net3": "22", "nets_shell_port_net4": "22"},
+             "nets_shell_host_net3": "^host2$", "nets_shell_host_net4": "^host2$",
+             "nets_shell_port_net3": "221", "nets_shell_port_net4": "222"},
             # host1/1 picks unattended install from shared root since all flat nodes were traversed (postponed full tutorial2 cleanup) waiting for host1/2
             # host1/2 picks the first gui test before host2/1's turn
             {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^net2$",
              "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^2$",
              "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm",
-             # TODO: special ports like 221 must be added to the cluster configuration, currently expect simpler 22
-             "nets_shell_host_net3": "192.168.254.103", "nets_shell_host_net4": "192.168.254.104",
-             "nets_shell_port_net3": "22", "nets_shell_port_net4": "22"},
+             "nets_shell_host_net3": "^host2$", "nets_shell_host_net4": "^host2$",
+             "nets_shell_port_net3": "221", "nets_shell_port_net4": "222"},
         ]
 
         self._run_traversal(graph, self.config["param_dict"])

@@ -141,36 +141,6 @@ class NetObject(TestObject):
         self.key = "nets"
         self.components = []
 
-    @staticmethod
-    def get_session_ip_port(host, gateway, prefix, port):
-        """
-        Get an IP address and a port for a given slot configuration.
-
-        :param str host: host name or IP of the main host (empty for localhost)
-        :param str gateway: host name or IP of the host gateway if port forwarded
-        :param str prefix: IP prefix of host within gateway's intranet
-        :param str port: port of the gateway to access the host
-        :returns: IP and port in string parameter format
-        :rtype: (str, str)
-        """
-        # serial non-isolated run
-        if host == "":
-            ip = "localhost"
-        # local isolated run
-        if gateway == "":
-            if host != "":
-                ip = f"{prefix}.{host[1:]}"
-            else:
-                ip = "localhost"
-        # remote isolated run
-        else:
-            ip = gateway
-            if not host.isdigit():
-                raise RuntimeError(f"Invalid remote host '{host}', "
-                                   f"only numbers (as forwarded ports) accepted")
-            port = f"22{host}"
-        return ip, port
-
 
 class VMObject(TestObject):
     """A VM wrapper for a test object used in one or more test nodes."""

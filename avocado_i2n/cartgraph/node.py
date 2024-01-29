@@ -33,8 +33,7 @@ from functools import cmp_to_key
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 
-from aexpect.exceptions import ShellCmdError, ShellTimeoutError
-from aexpect import remote
+from aexpect.exceptions import ShellCmdError
 from aexpect import remote_door as door
 from avocado.core.test_id import TestID
 from avocado.core.nrunner.runnable import Runnable
@@ -276,8 +275,6 @@ class TestNode(Runnable):
         full_prefix = self.prefix + "-" + net_id
         return TestID(full_prefix, self.params["name"])
     id_test = property(fget=id_test)
-
-    _session_cache = {}
 
     def __init__(self, prefix, recipe):
         """
@@ -847,46 +844,6 @@ class TestNode(Runnable):
                 del(vt_params[key])
         super().__init__('avocado-vt', uri, **vt_params)
 
-    def get_session_ip_port(self):
-        """
-        Get an IP address and a port to the current slot for the given test node.
-
-        :returns: IP and port in string parameter format
-        :rtype: (str, str)
-        """
-        return NetObject.get_session_ip_port(self.params['nets_host'],
-                                             self.params['nets_gateway'],
-                                             self.params['nets_ip_prefix'],
-                                             self.params["nets_shell_port"])
-
-    def get_session_to_net(self):
-        """
-        Get a remote session to the current slot for the given test node.
-
-        :returns: remote session to the slot determined from current node environment
-        :rtype: :type session: :py:class:`aexpect.ShellSession`
-        """
-        log.getLogger("aexpect").parent = log.getLogger("avocado.job")
-        host, port = self.get_session_ip_port()
-        address = host + ":" + port
-        cache = type(self)._session_cache
-        session = cache.get(address)
-        if session:
-            # check for corrupted sessions
-            try:
-                logging.debug("Remote session health check: " + session.cmd_output("date"))
-            except ShellTimeoutError as error:
-                logging.warning(f"Bad remote session health for {address}!")
-                session = None
-        if not session:
-            session = remote.wait_for_login(self.params["nets_shell_client"],
-                                            host, port,
-                                            self.params["nets_username"], self.params["nets_password"],
-                                            self.params["nets_shell_prompt"])
-            cache[address] = session
-
-        return session
-
     def scan_states(self):
         """
         Scan for present object states to reuse the test from previous runs.
@@ -926,7 +883,7 @@ class TestNode(Runnable):
             node_params[f"soft_boot{object_suffix}"] = "no"
 
         if not is_leaf:
-            session = self.get_session_to_net()
+            session = self.started_worker.get_session()
             control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
             mod_control_path = door.set_subcontrol_parameter(control_path, "action", "check")
             mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)
@@ -1027,7 +984,7 @@ class TestNode(Runnable):
         if should_clean:
             action = "Cleaning up" if unset_policy[0] == "f" else "Syncing"
             logging.info(f"{action} {self} for {self.started_worker.id}")
-            session = self.get_session_to_net()
+            session = self.started_worker.get_session()
             control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
             mod_control_path = door.set_subcontrol_parameter(control_path, "action", do)
             mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)

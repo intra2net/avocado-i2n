@@ -32,7 +32,7 @@ def new_job(config):
 
 @skip("Manual tools lack multi-graph support")
 @mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
-@mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
+@mock.patch('avocado_i2n.cartgraph.worker.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
 @mock.patch('avocado_i2n.cartgraph.worker.TestWorker.set_up', mock.MagicMock())
 @mock.patch('avocado_i2n.runner.SpawnerDispatcher', mock.MagicMock())
