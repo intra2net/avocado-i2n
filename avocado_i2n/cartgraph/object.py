@@ -42,11 +42,6 @@ class TestObject(object):
         return self._params_cache
     params = property(fget=params)
 
-    def final_restr(self):
-        """Final restriction to make the object parsing variant unique."""
-        return self.config.steps[-1].parsable_form()
-    final_restr = property(fget=final_restr)
-
     def component_form(self):
         return self.params["name"].replace(self.key + ".", "")
     component_form = property(fget=component_form)
@@ -73,6 +68,7 @@ class TestObject(object):
         self._long_suffix = suffix
         self.config = config
         self._params_cache = None
+        self.restrs = {}
         # TODO: Cartesian parser needs support for restrictions after join operations
         self.dict_index = 0
 
@@ -87,6 +83,10 @@ class TestObject(object):
     def __repr__(self):
         shortname = self.params.get("shortname", "<unknown>")
         return f"[object] longsuffix='{self.long_suffix}', shortname='{shortname}'"
+
+    def is_flat(self) -> bool:
+        """Check if the test object is flat and does not yet have components to evaluate."""
+        return len(self.components) == 0
 
     def is_permanent(self):
         """
@@ -112,15 +112,33 @@ class TestObject(object):
             params = params.object_params(composite.suffix)
         return params.object_params(self.suffix).object_params(self.key)
 
-    def regenerate_params(self, verbose=False):
+    def update_restrs(self, object_restrs: dict[str, str]) -> None:
+        """
+        Update any restrictions with further filters.
+
+        :param object_restrs: multi-line object restrictions to append
+        """
+        for suffix, restriction in object_restrs.items():
+            self.restrs[suffix] = self.restrs.get(suffix, "")
+            if restriction != "":
+                if restriction.rstrip() not in self.restrs[suffix].splitlines():
+                    self.restrs[suffix] += restriction
+
+    def regenerate_params(self, verbose: bool = False) -> None:
         """
         Regenerate all parameters from the current reparsable config.
 
-        :param bool verbose: whether to show generated parameter dictionaries
+        :param verbose: whether to show generated parameter dictionaries
         """
         generic_params = self.config.get_params(dict_index=self.dict_index,
                                                 show_dictionaries=verbose)
         self._params_cache = self.object_typed_params(generic_params)
+        for key, value in list(self._params_cache.items()):
+            if key.startswith("only_") or key.startswith("no_"):
+                restr_type, suffix = key.split("_", maxsplit=1)
+                restr_line = restr_type + " " + value + "\n" if value != "" else ""
+                self.update_restrs({suffix: restr_line})
+                del self._params_cache[key]
 
 
 class NetObject(TestObject):

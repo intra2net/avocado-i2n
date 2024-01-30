@@ -79,6 +79,11 @@ class TestWorker(TestEnvironment):
         return self.net.params
     params = property(fget=params)
 
+    def restrs(self):
+        """Restrictions property."""
+        return self.net.restrs
+    restrs = property(fget=restrs)
+
     def __init__(self, id_net: NetObject):
         """
         Construct a test worker (execution environment) for any test nodes (tests).

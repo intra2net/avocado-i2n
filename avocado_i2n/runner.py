@@ -256,6 +256,10 @@ class CartesianRunner(RunnerInterface):
         """
         if isinstance(test_suite, TestSuite):
             graph = TestGraph()
+            for node in test_suite.tests:
+                assert isinstance(node, TestNode), f"Invalid test type fo test suite to run workers on for {node}"
+                # apply default_only or user overwritten restriction
+                node.update_restrs(self.job.config["vm_strs"])
             graph.new_nodes(test_suite.tests)
             graph.parse_shared_root_from_object_roots(params)
             graph.new_workers(TestGraph.parse_workers(params))

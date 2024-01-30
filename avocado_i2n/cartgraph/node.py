@@ -226,11 +226,6 @@ class TestNode(Runnable):
         return workers
     shared_result_worker_ids = property(fget=shared_result_worker_ids)
 
-    def final_restr(self):
-        """Final restriction to make the object parsing variant unique."""
-        return self.recipe.steps[-2].parsable_form()
-    final_restr = property(fget=final_restr)
-
     def setless_form(self):
         """Test set invariant form of the test node name."""
         max_restr = ""
@@ -254,7 +249,7 @@ class TestNode(Runnable):
 
     def long_prefix(self):
         """Sufficiently unique prefix to identify a diagram test node."""
-        return self.prefix + "-" + self.params["vms"].replace(" ", "")
+        return self.prefix + "-" + self.params.get("vms", "").replace(" ", "")
     long_prefix = property(fget=long_prefix)
 
     def id(self):
@@ -287,6 +282,7 @@ class TestNode(Runnable):
         self.prefix = prefix
         self.recipe = recipe
         self._params_cache = None
+        self.restrs = {}
 
         self.should_run = self.default_run_decision
         self.should_clean = self.default_clean_decision
@@ -809,16 +805,34 @@ class TestNode(Runnable):
                 else:
                     raise RuntimeError(f"Could not pull setup location {setup_location} for {self}")
 
-    def regenerate_params(self, verbose=False):
+    def update_restrs(self, object_restrs: dict[str, str]) -> None:
+        """
+        Update any restrictions with further filters.
+
+        :param object_restrs: multi-line object restrictions to append
+        """
+        for suffix, restriction in object_restrs.items():
+            self.restrs[suffix] = self.restrs.get(suffix, "")
+            if restriction != "":
+                if restriction.rstrip() not in self.restrs[suffix].splitlines():
+                    self.restrs[suffix] += restriction
+
+    def regenerate_params(self, verbose: bool = False) -> None:
         """
         Regenerate all parameters from the current reparsable config.
 
         :param bool verbose: whether to show generated parameter dictionaries
         """
         self._params_cache = self.recipe.get_params(show_dictionaries=verbose)
+        for key, value in list(self._params_cache.items()):
+            if key.startswith("only_") or key.startswith("no_"):
+                restr_type, suffix = key.split("_", maxsplit=1)
+                restr_line = restr_type + " " + value + "\n" if value != "" else ""
+                self.update_restrs({suffix: restr_line})
+                del self._params_cache[key]
         self.regenerate_vt_parameters()
 
-    def regenerate_vt_parameters(self):
+    def regenerate_vt_parameters(self) -> None:
         """
         Regenerate the parameters provided to the VT runner.
         """
