@@ -43,9 +43,9 @@ class CartesianWorkerTest(Test):
         """Test for correctly parsed objects of different object variants from a restriction."""
         test_objects = TestGraph.parse_flat_objects("net1", "nets")
         self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"nets\.net1\.cluster1")
+        self.assertRegex(test_objects[0].params["name"], r"nets\.net1\.localhost")
         self.assertEqual(test_objects[0].params["nets"], "net1")
-        self.assertEqual(test_objects[0].params["cid"], "101")
+        self.assertEqual(test_objects[0].params["nets_id"], "101")
 
     def test_params(self):
         """Test for correctly parsed and regenerated test worker parameters."""
@@ -58,7 +58,7 @@ class CartesianWorkerTest(Test):
 
     def test_params_slots(self):
         """Test environment setting and validation."""
-        test_workers = TestGraph.parse_workers({"nets": "net3 net4 net5",
+        test_workers = TestGraph.parse_workers({"nets": "net3 net6 net0",
                                                 "slots": "1 remote.com/2 "})
         self.assertEqual(len(test_workers), 3)
         self.assertEqual(test_workers[0].params["nets_gateway"], "")
@@ -76,10 +76,9 @@ class CartesianWorkerTest(Test):
         self.assertEqual(test_workers[2].params["nets_spawner"], "process")
         self.assertEqual(test_workers[2].params["nets_shell_host"], "localhost")
         self.assertEqual(test_workers[2].params["nets_shell_port"], "22")
-        # TODO: provide a product with multiple clusters
-        self.assertEqual(TestWorker.run_slots, {"cluster1": {"net3": test_workers[0],
-                                                             "net4": test_workers[1],
-                                                             "net5": test_workers[2]}})
+        self.assertEqual(TestWorker.run_slots, {"localhost": {"net3": test_workers[0],
+                                                              "net0": test_workers[2]},
+                                                "cluster1": {"net6": test_workers[1]}})
 
     def test_sanity_in_graph(self):
         """Test generic usage and composition."""
@@ -2144,7 +2143,7 @@ class CartesianGraphTest(Test):
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1"))
         graph.parse_shared_root_from_object_roots()
-        graph.new_workers(TestGraph.parse_workers({"slots": "", "only_vm1": "CentOS"}))
+        graph.new_workers(TestGraph.parse_workers({"nets": "net0", "only_vm1": "CentOS"}))
 
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$", "nets_spawner": "process"},
@@ -2421,21 +2420,27 @@ class CartesianGraphTest(Test):
             # net1 now moves on to its planned test
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets": "^net1$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c101$",
-             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm"},
+             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
+             "nets_shell_host_net1": "^192.168.254.101$", "nets_shell_port_net1": "22"},
             # net2 no longer waits and picks its planned tests reusing setup from net1
             {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^net2$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c102$",
-             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm"},
+             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
+             "nets_shell_host_net1": "^192.168.254.101$", "nets_shell_port_net1": "22"},
             # net3 is done with half of the setup for client_noop and waits for net4 to provide the other half
             # net4 now moves on to its planned test
             {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^net4$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c104$",
-             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm"},
+             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm",
+             "nets_shell_host_net3": "^192.168.254.103$", "nets_shell_host_net4": "^192.168.254.104$",
+             "nets_shell_port_net3": "22", "nets_shell_port_net4": "22"},
             # net1 picks unattended install from shared root since all flat nodes were traversed (postponed full tutorial2 cleanup) waiting for net2
             # net2 picks the first gui test before net3's turn
             {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^net2$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c102$",
-             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm"},
+             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm",
+             "nets_shell_host_net3": "^192.168.254.103$", "nets_shell_host_net4": "^192.168.254.104$",
+             "nets_shell_port_net3": "22", "nets_shell_port_net4": "22"},
         ]
 
         self._run_traversal(graph, self.config["param_dict"])
@@ -2448,7 +2453,7 @@ class CartesianGraphTest(Test):
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2,leaves..tutorial_gui"))
         graph.parse_shared_root_from_object_roots()
-        graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"host1/{i+1}" for i in range(2)] + [f"host2/{i+1}" for i in range(2)]),
+        graph.new_workers(TestGraph.parse_workers({"nets": "net6 net7 net8 net9",
                                                    "only_vm1": "CentOS", "only_vm2": "Win10",
                                                    "shared_pool": self.config["param_dict"]["shared_pool"]}))
 
@@ -2469,42 +2474,40 @@ class CartesianGraphTest(Test):
         DummyStateControl.asserted_states["unset"] = {"guisetup.noop": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
             # TODO: localhost is not acceptable when we mix hosts
-            # host1/1 starts from first tutorial2 variant and provides vm1 setup
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets": "^net1$",
-             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^1$"},
-            # host1/2 starts from second tutorial variant and waits for its single (same) setup to be provided
-            # host2/1 starts from first gui test and provides vm1 setup
-            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets": "^net3$",
-             "nets_spawner": "remote", "nets_gateway": "^host2$", "nets_host": "^1$"},
-            # host2/2 starts from second gui test and provides vm2 setup
-            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "nets": "^net4$",
-             "nets_spawner": "remote", "nets_gateway": "^host2$", "nets_host": "^2$"},
-            # host1/1 now moves on to its planned test
-            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets": "^net1$",
-             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^1$",
-             # TODO: no full support for cluster variants yet, this must have been "cluster1.net1" instead of "net1"
-             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
-             "nets_shell_host_net1": "^host1$", "nets_shell_port_net1": "221"},
-            # host1/2 no longer waits and picks its planned tests reusing setup from net1
-            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^net2$",
-             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^2$",
-             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
-             "nets_shell_host_net1": "^host1$", "nets_shell_port_net1": "221"},
-            # host2/1 is done with half of the setup for client_noop and waits for host2/2 to provide the other half
-            # host2/2 now moves on to its planned test
-            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^net4$",
-             "nets_spawner": "remote", "nets_gateway": "^host2$", "nets_host": "^2$",
-             # TODO: no full support for cluster variants yet, this must have been "cluster2.net1" instead of "net3"
-             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm",
-             "nets_shell_host_net3": "^host2$", "nets_shell_host_net4": "^host2$",
-             "nets_shell_port_net3": "221", "nets_shell_port_net4": "222"},
-            # host1/1 picks unattended install from shared root since all flat nodes were traversed (postponed full tutorial2 cleanup) waiting for host1/2
-            # host1/2 picks the first gui test before host2/1's turn
-            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^net2$",
-             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^2$",
-             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm",
-             "nets_shell_host_net3": "^host2$", "nets_shell_host_net4": "^host2$",
-             "nets_shell_port_net3": "221", "nets_shell_port_net4": "222"},
+            # cluster1.net.lan/1 starts from first tutorial2 variant and provides vm1 setup
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets": "^net6$",
+             "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^1$"},
+            # cluster1.net.lan/2 starts from second tutorial variant and waits for its single (same) setup to be provided
+            # cluster2.net.lan/1 starts from first gui test and provides vm1 setup
+            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets": "^net8$",
+             "nets_spawner": "remote", "nets_gateway": "^cluster2.net.lan$", "nets_host": "^1$"},
+            # cluster2.net.lan/2 starts from second gui test and provides vm2 setup
+            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "nets": "^net9$",
+             "nets_spawner": "remote", "nets_gateway": "^cluster2.net.lan$", "nets_host": "^2$"},
+            # cluster1.net.lan/1 now moves on to its planned test
+            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets": "^net6$",
+             "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^1$",
+             "get_location_vm1": "[\w:/]+ net6.cluster1:/mnt/local/images/swarm",
+             "nets_shell_host_net6.cluster1": "^cluster1.net.lan$", "nets_shell_port_net6.cluster1": "221"},
+            # cluster1.net.lan/2 no longer waits and picks its planned tests reusing setup from net6
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^net7$",
+             "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^2$",
+             "get_location_vm1": "[\w:/]+ net6.cluster1:/mnt/local/images/swarm",
+             "nets_shell_host_net6.cluster1": "^cluster1.net.lan$", "nets_shell_port_net6.cluster1": "221"},
+            # cluster2.net.lan/1 is done with half of the setup for client_noop and waits for cluster2.net.lan/2 to provide the other half
+            # cluster2.net.lan/2 now moves on to its planned test
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^net9$",
+             "nets_spawner": "remote", "nets_gateway": "^cluster2.net.lan$", "nets_host": "^2$",
+             "get_location_image1_vm1": "[\w:/]+ net8.cluster2:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net9.cluster2:/mnt/local/images/swarm",
+             "nets_shell_host_net8.cluster2": "^cluster2.net.lan$", "nets_shell_host_net9.cluster2": "^cluster2.net.lan$",
+             "nets_shell_port_net8.cluster2": "221", "nets_shell_port_net9.cluster2": "222"},
+            # cluster1.net.lan/1 picks unattended install from shared root since all flat nodes were traversed (postponed full tutorial2 cleanup) waiting for cluster1.net.lan/2
+            # cluster1.net.lan/2 picks the first gui test before cluster2.net.lan/1's turn
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^net7$",
+             "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^2$",
+             "get_location_image1_vm1": "[\w:/]+ net8.cluster2:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net9.cluster2:/mnt/local/images/swarm",
+             "nets_shell_host_net8.cluster2": "^cluster2.net.lan$", "nets_shell_host_net9.cluster2": "^cluster2.net.lan$",
+             "nets_shell_port_net8.cluster2": "221", "nets_shell_port_net9.cluster2": "222"},
         ]
 
         self._run_traversal(graph, self.config["param_dict"])

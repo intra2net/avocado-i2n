@@ -379,11 +379,14 @@ def list(config, tag=""):
         prefix = tag + "l" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
         # provide the logdir in advance in order to visualize parsed graph there
         TestGraph.logdir = runner.job.logdir
+        setup_dict = config["param_dict"].copy()
+        # listing can only be done in serial mode
+        setup_dict["nets"] = "net0"
         graph = loader.parse_object_trees(
             restriction=config["tests_str"],
             prefix=prefix,
             object_strs=config["vm_strs"],
-            params=config["param_dict"],
+            params=setup_dict,
             verbose=True,
         )
         graph.visualize(job.logdir)
