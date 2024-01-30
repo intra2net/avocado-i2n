@@ -778,7 +778,7 @@ class TestGraph(object):
             variant_config = config.get_copy()
             variant_config.parse_next_str("only " + d["name"])
 
-            test_node = TestNode(str(i), variant_config)
+            test_node = TestNode(str(i+1), variant_config)
             # TODO: this causes a separate re-parsing for each node
             test_node.regenerate_params()
             # TODO: consider generator as performance option also for flat and composite nodes
@@ -1170,10 +1170,10 @@ class TestGraph(object):
                            "dep_type": test_object.key,
                            "dep_id": test_object.id,
                            "require_existence": "yes"})
-        name = test_node.prefix + "a"
+        setup_prefix = test_node.prefix + "a"
         if len(filtered_parents) == 0:
-            return [], self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], name, params=setup_dict)
-        return self.parse_and_get_composite_nodes("all.." + setup_restr, None, test_node.objects[0], name, params=setup_dict)
+            return [], self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], setup_prefix, params=setup_dict)
+        return self.parse_and_get_composite_nodes("all.." + setup_restr, None, test_node.objects[0], setup_prefix, params=setup_dict)
 
     def parse_branches_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
                                            params: dict[str, str] = None) -> tuple[list[TestNode], list[TestNode], list[TestNode]]:
@@ -1259,9 +1259,7 @@ class TestGraph(object):
                 object_roots.append(test_node)
 
         setup_dict = {} if params is None else params.copy()
-        setup_dict.update({"shared_root" : "yes",
-                           # TODO: vms are part of the prefix at present
-                           "vms": " ".join(sorted(list(set(o.suffix for o in self.objects if o.key == "vms"))))})
+        setup_dict.update({"shared_root" : "yes"})
         root_for_all = TestGraph.parse_flat_nodes("all..internal..noop", setup_dict)
         assert len(root_for_all) == 1, "A unique shared root must be parsable"
         root_for_all = root_for_all[0]
@@ -1409,7 +1407,7 @@ class TestGraph(object):
                                         ovrwrt_file=param.tests_ovrwrt_file(),
                                         ovrwrt_str=param.re_str("all..noop"),
                                         ovrwrt_dict=setup_dict)
-        pre_node = TestNode("0t", install_config)
+        pre_node = TestNode("0", install_config)
         pre_node.results = list(test_node.results)
         pre_node.set_objects_from_net(test_node.objects[0])
         pre_node.started_worker = worker

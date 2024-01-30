@@ -175,6 +175,10 @@ class TestNode(Runnable):
     objects and dependencies to/from other test nodes (setup/cleanup).
     """
 
+    #: digit: 0 for object root, >0 for everything else
+    #: letter: "a" (autosetup), "b" (byproduct), "c" (cleanup), "d" (duplicate)
+    prefix_pattern = re.compile(r"^(\d+)([abcd]?)(.+)")
+
     def params(self):
         """Parameters (cache) property."""
         if self._params_cache is None:
@@ -259,24 +263,19 @@ class TestNode(Runnable):
 
     def long_prefix(self):
         """Sufficiently unique prefix to identify a diagram test node."""
-        return self.prefix + "-" + self.params.get("vms", "").replace(" ", "")
+        nets = self.params.get("nets", "").replace(" ", ".")
+        vms = self.params.get("vms", "").replace(" ", ".")
+        return self.prefix + "-" + nets + "." + vms
     long_prefix = property(fget=long_prefix)
 
     def id(self):
         """Unique ID to identify a test node."""
-        return self.long_prefix + "-" + self.params["name"]
+        return self.prefix + "-" + self.params["name"]
     id = property(fget=id)
 
     def id_test(self):
         """Unique test ID to identify a test node."""
-        # TODO: cannot reuse long prefix since container is set at runtime
-        #return TestID(self.long_prefix, self.params["name"])
-        net_id = self.params.get("nets_gateway", "")
-        net_id += "." if net_id else ""
-        net_id += self.params.get("nets_host", "")
-        net_id += self.params["vms"].replace(" ", "")
-        full_prefix = self.prefix + "-" + net_id
-        return TestID(full_prefix, self.params["name"])
+        return TestID(self.prefix, self.params["name"])
     id_test = property(fget=id_test)
 
     def __init__(self, prefix, recipe):
@@ -655,20 +654,21 @@ class TestNode(Runnable):
             return self.is_finished(worker, -1) and not still_rerunning
 
     @classmethod
-    def prefix_priority(cls, prefix1, prefix2):
+    def prefix_priority(cls, prefix1: str, prefix2: str) -> int:
         """
         Class method for secondary prioritization using test prefixes.
 
-        :param str prefix1: first prefix to use for the priority comparison
-        :param str prefix2: second prefix to use for the priority comparison
-        :returns: -1 if prefix1 < prefix2, 1 if prefix1 > prefix2, 0 otherwise
+        :param prefix1: first prefix to use for the priority comparison
+        :param prefix2: second prefix to use for the priority comparison
+        :returns: negative integer if prefix1 < prefix2, positive if prefix1 > prefix2,
+                  0 otherwise (lower is better in our standard sorting)
 
         This function also does recursive calls of sub-prefixes.
         """
         if prefix1 == prefix2:
             # identical prefixes detected, nothing we can do but choose a default
-            return 1
-        match1, match2 = re.match(r"^(\d+)(\w)(.+)", prefix1), re.match(r"^(\d+)(\w)(.+)", prefix2)
+            return 0
+        match1, match2 = re.match(cls.prefix_pattern, prefix1), re.match(cls.prefix_pattern, prefix2)
         digit1, alpha1, else1 = (prefix1, None, None) if match1 is None else match1.group(1, 2, 3)
         digit2, alpha2, else2 = (prefix2, None, None) if match2 is None else match2.group(1, 2, 3)
 
@@ -683,16 +683,25 @@ class TestNode(Runnable):
                 return 1 if digit1 > digit2 else -1
 
         # compare the node type flags next
-        if alpha1 != alpha2:
-            if alpha1 is None:
-                return 1 if alpha2 == "a" else -1  # reverse order for "c" (cleanup), "b" (byproduct), "d" (duplicate)
-            if alpha2 is None:
-                return -1 if alpha1 == "a" else 1  # reverse order for "c" (cleanup), "b" (byproduct), "d" (duplicate)
+        if alpha1 is not None and alpha2 is not None and alpha1 != alpha2:
+            if alpha1 == "":
+                return -1
+            if alpha2 == "":
+                return 1
+            # priority to lower alphas (from a down to e)
             return 1 if alpha1 > alpha2 else -1
         # redo the comparison for the next prefix part
         else:
-            assert else1 is not None, f"could not match test prefix part {prefix1} to choose priority"
-            assert else2 is not None, f"could not match test prefix part {prefix2} to choose priority"
+            if else1 is None:
+                raise ValueError(f"could not match test prefix part {prefix1} to choose priority")
+            if else2 is None:
+                raise ValueError(f"could not match test prefix part {prefix2} to choose priority")
+            # priority to the prefix that didn't terminate yet
+            if else1.startswith("-"):
+                return 1
+            elif else2.startswith("-"):
+                return -1
+            # retry on next step
             return cls.prefix_priority(else1, else2)
 
     def pick_parent(self, worker: TestWorker) -> "TestNode":

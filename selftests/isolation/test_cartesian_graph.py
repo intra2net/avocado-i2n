@@ -1411,7 +1411,8 @@ class CartesianNodeTest(Test):
         )
 
         test_node = graph.get_node_by(param_val="tutorial1", subset=graph.get_nodes_by(param_val="net1"))
-        self.assertIn("1-vm1", test_node.long_prefix)
+        self.assertIn("1", test_node.prefix)
+        self.assertIn("1-net1.vm1", test_node.long_prefix)
 
     def test_validation(self):
         """Test graph (and component) retrieval and validation methods."""
@@ -1443,6 +1444,31 @@ class CartesianNodeTest(Test):
         test_node.setup_nodes.append(test_node)
         with self.assertRaisesRegex(ValueError, r"^Detected reflexive dependency of"):
             test_node.validate()
+
+    def test_prefix_priority(self):
+        """Test the default priority policy for test node prefixes."""
+        self.assertEqual(TestNode.prefix_priority("3-net1vm1", "3-net1vm1"), 0)
+        # simple comparison for leaf nodes
+        self.assertEqual(TestNode.prefix_priority("3-net1vm1", "5-net1vm1"), -2)
+        self.assertEqual(TestNode.prefix_priority("6-net1vm1", "3-net1vm1"), 3)
+        # prioritize leaf node from derivative node
+        self.assertEqual(TestNode.prefix_priority("3-net1vm1vm2", "3a1-net1vm1vm2"), -1)
+        self.assertEqual(TestNode.prefix_priority("3-net1vm1vm2", "3b1-net1vm1vm2"), -1)
+        self.assertEqual(TestNode.prefix_priority("3-net1vm1vm2", "3c1-net1vm1vm2"), -1)
+        self.assertEqual(TestNode.prefix_priority("3-net1vm1vm2", "3d1-net1vm1vm2"), -1)
+        # prioritize alpha category
+        self.assertEqual(TestNode.prefix_priority("3b1-net1vm1vm2vm3", "3a1-net1vm1vm2vm3"), 1)
+        self.assertEqual(TestNode.prefix_priority("3c1-net1vm1vm2vm3", "3b1-net1vm1vm2vm3"), 1)
+        self.assertEqual(TestNode.prefix_priority("3d1-net1vm1vm2vm3", "3c1-net1vm1vm2vm3"), 1)
+        # nested matching
+        self.assertEqual(TestNode.prefix_priority("3b2-net1vm1vm2vm3", "3b1-net1vm1vm2vm3"), 1)
+        self.assertEqual(TestNode.prefix_priority("3b2a1-net1vm1vm2vm3", "3b2-net1vm1vm2vm3"), 1)
+        self.assertEqual(TestNode.prefix_priority("3b2c1-net1vm1vm2vm3", "3b2a1-net1vm1vm2vm3"), 1)
+        # error handling for unterminated equal prefixes
+        with self.assertRaises(ValueError):
+            TestNode.prefix_priority("5d2", "5d2-net1vm2")
+        with self.assertRaises(ValueError):
+            TestNode.prefix_priority("5d2-net1vm2", "5d2")
 
     @mock.patch('avocado_i2n.cartgraph.worker.remote.wait_for_login', mock.MagicMock())
     @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
@@ -2112,6 +2138,7 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(get_nodes), 0)
         self.assertEqual(len(parse_nodes), 1)
         new_node = parse_nodes[0]
+        self.assertEqual(new_node.prefix, "1a1")
         self.assertEqual(new_node.params["nets"], "net1")
         self.assertEqual(new_node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         graph.new_nodes(parse_nodes)
@@ -2206,6 +2233,7 @@ class CartesianGraphTest(Test):
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image)
         self.assertEqual(len(get_nodes), 0)
         self.assertEqual(len(parse_nodes), 2)
+        self.assertEqual([n.prefix for n in parse_nodes], ["1a1", "1a2"])
         graph.new_nodes(parse_nodes)
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_image)
         self.assertEqual(len(get_nodes), 2)
@@ -2223,6 +2251,7 @@ class CartesianGraphTest(Test):
 
         parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
         self.assertEqual(len(parents), 2)
+        self.assertEqual([n.prefix for n in parents], ["1a1", "1b1a1"])
         # validate cache is exactly as expected, namely just the newly parsed nodes
         self.assertEqual(len(graph.nodes), len(parents + children))
         self.assertEqual(set(graph.nodes), set(parents + children))
@@ -2236,6 +2265,7 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(full_images), 2)
 
         self.assertEqual(len(children), 2)
+        self.assertEqual([n.prefix for n in children], ["1", "1b1"])
         for i in range(len(children)):
             self.assertEqual(children[i].objects[0], full_nets[i])
             self.assertEqual(children[i].objects[0].components[0], full_vms[i])
@@ -2305,6 +2335,8 @@ class CartesianGraphTest(Test):
 
         parents, children = graph.parse_branches_for_node_and_object(flat_node, flat_object)
         self.assertEqual(len([p for p in parents if "tutorial_gui" in p.id]), 2)
+        # parents via two separate test objects followed by a second parent
+        self.assertEqual([n.prefix for n in parents], ["1a1", "1a1", "1a2"])
         # validate cache is exactly as expected, namely just the newly parsed nodes
         self.assertEqual(len(graph.nodes), len(parents + children))
         self.assertEqual(set(graph.nodes), set(parents + children))
@@ -2320,6 +2352,8 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(full_images), 6)
 
         self.assertEqual(len(children), 2)
+        # extra duplicated clone
+        self.assertEqual([n.prefix for n in children], ["1", "1d1"])
         for i in range(len(children)):
             self.assertIn(children[i].objects[0], full_nets)
             self.assertTrue(set(children[i].objects[0].components) <= set(full_vms))
@@ -2346,6 +2380,8 @@ class CartesianGraphTest(Test):
         self.assertEqual(len([p for p in parents if "connect" in p.id]), 1)
         # 4 variants of tutorial_gui for the 2x2 variants of vm1 and vm2 (as setup for vm2, user specified)
         self.assertEqual(len([p for p in parents if "tutorial_gui" in p.id]), 4)
+        # parents via two separate test objects followed by a second parent then by reused vm2 byproduct parents
+        self.assertEqual([n.prefix for n in parents], ["1a1", "1a1", "1a2", "1b2a1", "1b2a2"])
         # validate cache is exactly as expected, namely just the newly parsed nodes
         self.assertEqual(len(graph.nodes), len(parents + children))
         self.assertEqual(set(graph.nodes), set(parents + children))
@@ -2366,6 +2402,8 @@ class CartesianGraphTest(Test):
         self.assertEqual(len([c for c in children if "implicit_both" in c.id]), 2**(4-1))
         self.assertEqual(len([c for c in children if "implicit_both" in c.id and "guisetup.noop" in c.id]), 2**(4-1-1))
         self.assertEqual(len([c for c in children if "implicit_both" in c.id and "guisetup.clicked" in c.id]), 2**(4-1-1))
+        # four byproducts followed by four duplications
+        self.assertEqual([n.prefix for n in children], ["1", "1b1", "1b2", "1b3", "1d1", "1b1d1", "1b2d1", "1b3d1"])
         for i in range(len(children)):
             self.assertIn(children[i].objects[0], full_nets)
             self.assertTrue(set(children[i].objects[0].components) <= set(full_vms))
@@ -3027,7 +3065,6 @@ class CartesianGraphTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
 
-    @skip("Needs fixes on prefix priority and vm variant ordering")
     def test_cloning_simple_permanent_object(self):
         """Test a complete test run including complex setup that involves permanent vms and cloning."""
         graph = self._load_for_parsing("leaves..tutorial_get", {"nets": "net1"})
@@ -3084,7 +3121,6 @@ class CartesianGraphTest(Test):
         # root state of a permanent vm is not synced from a single worker to itself
         self.assertEqual(DummyStateControl.asserted_states["get"]["ready"][self.shared_pool], 0)
 
-    @skip("Needs fixes on prefix priority and vm variant ordering")
     def test_cloning_simple_cross_object(self):
         """Test a complete test run with multi-variant objects where cloning should not be affected."""
         self.job.config["vm_strs"] = {"vm1": "", "vm2": "", "vm3": "only Ubuntu\n"}
@@ -3130,14 +3166,14 @@ class CartesianGraphTest(Test):
 
             # automated setup of vm2 of Win7 variant
             {"shortname": "^internal.automated.windows_virtuser.vm2.+Win7", "vms": "^vm2$"},
-            # second (clicked) parent GUI setup dependency through vm2 of Win7 variant
-            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
-            # second (clicked) duplicated actual test of CentOS+Win7
-            {"shortname": "^leaves.tutorial_get.implicit_both.guisetup.clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
             # first (noop) parent GUI setup dependency through vm2 of Win7 variant
             {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
             # first (noop) duplicated actual test of CentOS+Win7
             {"shortname": "^leaves.tutorial_get.implicit_both.guisetup.noop.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.noop"},
+            # second (clicked) parent GUI setup dependency through vm2 of Win7 variant
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+            # second (clicked) duplicated actual test of CentOS+Win7
+            {"shortname": "^leaves.tutorial_get.implicit_both.guisetup.clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
 
             # TODO: prefix order would change the vm variants on implicit_both flat node
 
@@ -3166,7 +3202,6 @@ class CartesianGraphTest(Test):
         # expect two cleanups of two different variant product states (vm1 variant restricted)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.noop"][self.shared_pool], 2)
 
-    @skip("Needs fixes on prefix priority and vm variant ordering")
     def test_cloning_deep(self):
         """Test for correct deep cloning."""
         graph = self._load_for_parsing("leaves..tutorial_finale", {"nets": "net1"})
