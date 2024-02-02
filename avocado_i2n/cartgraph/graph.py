@@ -728,7 +728,7 @@ class TestGraph(object):
     def parse_node_from_object(test_object: TestObject, restriction: str = "",
                                prefix: str = "", params: dict[str, str] = None) -> TestNode:
         """
-        Get the original install test node for the given object.
+        Get a unique test node of some restriction for the given object.
 
         :param test_object: fully parsed test object to parse the node from, typically a test net
         :param restriction: single or multi-line restriction to use
@@ -1470,14 +1470,9 @@ class TestGraph(object):
         setup_dict.update({"type": "shared_configure_install", "check_mode": "rr",  # explicit root handling
                            # overwrite some params inherited from the modified install node
                            f"set_state_images_{object_image}_{object_vm}": "root", "start_vm": "no"})
-        install_config = test_object.config.get_copy()
-        install_config.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file(),
-                                        ovrwrt_str=param.re_str("all..noop"),
-                                        ovrwrt_dict=setup_dict)
-        pre_node = TestNode("0", install_config)
+        pre_node = TestGraph.parse_node_from_object(test_node.objects[0], "all..noop",
+                                                    prefix="0", params=setup_dict)
         pre_node.results = list(test_node.results)
-        pre_node.set_objects_from_net(test_node.objects[0])
         pre_node.started_worker = worker
         status = await self.runner.run_test_node(pre_node)
         if not status:
