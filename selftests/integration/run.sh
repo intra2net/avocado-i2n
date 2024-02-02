@@ -81,6 +81,10 @@ ls -A1q /mnt/local/images/shared/vm2-* 2>/dev/null | grep -q . && (echo "Unexpec
 ls -A1q /mnt/local/images/shared/vm3* | grep -q . || (echo "Missing vm3 images in the shared pool" && exit 1)
 
 echo
+echo "Check that some workers never ran incompatible tests"
+ls -A1q "$test_results/latest/test-results" | grep -q CentOS | grep -q net5 && (echo "The worker net5 should never run CentOS tests" && exit 1)
+
+echo
 echo "Check replay and overall test reruns behave as expected"
 latest=$(basename $(realpath "$test_results"/latest))
 test_options="replay=$latest"

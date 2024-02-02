@@ -486,7 +486,7 @@ def re_str(variant_str, base_str="", tag=""):
     :rtype: str
     """
     if tag != "":
-        variant_str = "variants:\n    - %s:\n        only %s\n" % (tag, variant)
+        variant_str = "variants:\n    - %s:\n        only %s\n" % (tag, variant_str)
     else:
         variant_str = "only %s\n" % variant_str
     return base_str + variant_str

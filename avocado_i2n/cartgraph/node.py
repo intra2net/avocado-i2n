@@ -226,11 +226,6 @@ class TestNode(Runnable):
         return workers
     shared_result_worker_ids = property(fget=shared_result_worker_ids)
 
-    def final_restr(self):
-        """Final restriction to make the object parsing variant unique."""
-        return self.recipe.steps[-2].parsable_form()
-    final_restr = property(fget=final_restr)
-
     def setless_form(self):
         """Test set invariant form of the test node name."""
         max_restr = ""
@@ -254,7 +249,7 @@ class TestNode(Runnable):
 
     def long_prefix(self):
         """Sufficiently unique prefix to identify a diagram test node."""
-        return self.prefix + "-" + self.params["vms"].replace(" ", "")
+        return self.prefix + "-" + self.params.get("vms", "").replace(" ", "")
     long_prefix = property(fget=long_prefix)
 
     def id(self):
@@ -287,16 +282,19 @@ class TestNode(Runnable):
         self.prefix = prefix
         self.recipe = recipe
         self._params_cache = None
+        self.restrs = {}
 
         self.should_run = self.default_run_decision
         self.should_clean = self.default_clean_decision
 
         self.finished_worker = None
         self.started_worker = None
-        self.results = []
+
         self._bridged_nodes = []
+        self.incompatible_workers = set()
 
         self.objects = []
+        self.results = []
 
         # lists of parent and children test nodes
         self.setup_nodes = []
@@ -348,29 +346,17 @@ class TestNode(Runnable):
                                                        self.params.get_numeric("max_tries", 1))
         return self.is_started(worker, max(max_concurrent_tries, 1))
 
-    def is_flat(self):
+    def is_flat(self) -> bool:
         """Check if the test node is flat and does not yet have objects and dependencies to evaluate."""
         return len(self.objects) == 0
 
-    def is_scan_node(self):
-        """Check if the test node is the root of all test nodes for all test objects."""
-        return self.prefix.endswith("0s1")
-
-    def is_terminal_node(self):
-        """Check if the test node is the root of all test nodes for some test object."""
-        return self.prefix.endswith("t")
-
-    def is_shared_root(self):
+    def is_shared_root(self) -> bool:
         """Check if the test node is the root of all test nodes for all test objects."""
         return self.params.get_boolean("shared_root", False)
 
-    def is_object_root(self):
+    def is_object_root(self) -> bool:
         """Check if the test node is the root of all test nodes for some test object."""
         return "object_root" in self.params
-
-    def is_objectless(self):
-        """Check if the test node is not defined with any test object."""
-        return len(self.objects) == 0 or self.params["vms"] == ""
 
     def is_unrolled(self, worker: TestWorker) -> bool:
         """
@@ -379,10 +365,14 @@ class TestNode(Runnable):
         :param worker: worker a flat node is unrolled for
         :raises: :py:class:`RuntimeError` if the current node is not flat (cannot be unrolled)
         """
-        if not self.is_flat():
+        if self.is_shared_root():
+            return True
+        elif not self.is_flat():
             raise RuntimeError(f"Only flat nodes can be unrolled, {self} is not flat")
+        elif worker.id in self.incompatible_workers:
+            return True
         for node in self.cleanup_nodes:
-            if self.params["name"] in node.id and worker.id in node.id:
+            if self.setless_form in node.id and worker.id in node.id:
                 return True
         return False
 
@@ -393,6 +383,8 @@ class TestNode(Runnable):
         :param worker: relative setup readiness with respect to a worker ID
         """
         for node in self.setup_nodes:
+            if not node.is_flat() and worker.id not in node.params["name"]:
+                continue
             if worker.id not in self._dropped_setup_nodes.get_workers(node):
                 return False
         return True
@@ -404,6 +396,8 @@ class TestNode(Runnable):
         :param str worker: relative setup readiness with respect to a worker ID
         """
         for node in self.cleanup_nodes:
+            if not node.is_flat() and worker.id not in node.params["name"]:
+                continue
             if worker.id not in self._dropped_cleanup_nodes.get_workers(node):
                 return False
         return True
@@ -541,9 +535,6 @@ class TestNode(Runnable):
             return False
         elif self.is_flat():
             logging.debug(f"Should not rerun a flat node {self}")
-            return False
-        elif self.is_shared_root():
-            logging.debug(f"Should not rerun the shared root")
             return False
         elif worker and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not consider rerunning {self}")
@@ -698,7 +689,7 @@ class TestNode(Runnable):
 
         The current order will prioritize less traversed test paths.
         """
-        available_nodes = [n for n in self.setup_nodes if worker.id in n.params["name"] or n.is_flat() or n.is_shared_root()]
+        available_nodes = [n for n in self.setup_nodes if worker.id in n.params["name"] or n.is_flat()]
         available_nodes = [n for n in available_nodes if worker.id not in self._dropped_setup_nodes.get_workers(n)]
         if len(available_nodes) == 0:
             raise RuntimeError(f"Picked a parent of a node without remaining parents for {self}")
@@ -720,7 +711,7 @@ class TestNode(Runnable):
 
         The current order will prioritize less traversed test paths.
         """
-        available_nodes = [n for n in self.cleanup_nodes if worker.id in n.params["name"] or n.is_flat() or n.is_shared_root()]
+        available_nodes = [n for n in self.cleanup_nodes if worker.id in n.params["name"] or n.is_flat()]
         available_nodes = [n for n in available_nodes if worker.id not in self._dropped_cleanup_nodes.get_workers(n)]
         if len(available_nodes) == 0:
             raise RuntimeError(f"Picked a child of a node without remaining children for {self}")
@@ -780,7 +771,7 @@ class TestNode(Runnable):
 
     def pull_locations(self) -> None:
         """Update all setup locations for the current node."""
-        if self.is_shared_root() or self.is_flat():
+        if self.is_flat():
             return
         setup_path = self.params.get("swarm_pool", self.params["vms_base_dir"])
         for node in self.setup_nodes:
@@ -792,7 +783,7 @@ class TestNode(Runnable):
             for setup_location in setup_locations:
                 wid, _ = setup_location.split(":")
 
-                object_suffix = "_" + node.params.get("object_suffix", "none")
+                object_suffix = "_" + node.params.get("dep_suffix", "none")
                 # discard parameters if we are not talking about any specific non-net object
                 object_suffix = "_none" if object_suffix == f"_{wid}" else object_suffix
                 if setup_location in self.params.get(f"get_location{object_suffix}", ""):
@@ -814,16 +805,34 @@ class TestNode(Runnable):
                 else:
                     raise RuntimeError(f"Could not pull setup location {setup_location} for {self}")
 
-    def regenerate_params(self, verbose=False):
+    def update_restrs(self, object_restrs: dict[str, str]) -> None:
+        """
+        Update any restrictions with further filters.
+
+        :param object_restrs: multi-line object restrictions to append
+        """
+        for suffix, restriction in object_restrs.items():
+            self.restrs[suffix] = self.restrs.get(suffix, "")
+            if restriction != "":
+                if restriction.rstrip() not in self.restrs[suffix].splitlines():
+                    self.restrs[suffix] += restriction
+
+    def regenerate_params(self, verbose: bool = False) -> None:
         """
         Regenerate all parameters from the current reparsable config.
 
         :param bool verbose: whether to show generated parameter dictionaries
         """
         self._params_cache = self.recipe.get_params(show_dictionaries=verbose)
+        for key, value in list(self._params_cache.items()):
+            if key.startswith("only_") or key.startswith("no_"):
+                restr_type, suffix = key.split("_", maxsplit=1)
+                restr_line = restr_type + " " + value + "\n" if value != "" else ""
+                self.update_restrs({suffix: restr_line})
+                del self._params_cache[key]
         self.regenerate_vt_parameters()
 
-    def regenerate_vt_parameters(self):
+    def regenerate_vt_parameters(self) -> None:
         """
         Regenerate the parameters provided to the VT runner.
         """

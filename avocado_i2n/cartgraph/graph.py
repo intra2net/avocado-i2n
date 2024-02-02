@@ -381,13 +381,36 @@ class TestGraph(object):
                 test_node.should_clean = flag.__get__(test_node)
 
     """parse and get functionality"""
+    def get_objects_by_restr(self, restriction: str = "", subset: list[TestObject] = None) -> list[TestObject]:
+        """
+        Query all test objects by a multi-line restriction of "only" and "no" filters.
+
+        :param restriction: single or multi-line restriction to use
+        :param subset: a subset of test objects possibly within the graph to search in
+        :returns: a selection of objects satisfying all filter criteria
+
+        ..todo:: No support is available for the ".." operator yet, consider simpler restriction syntax only
+            until we integrate better with the Cartesian config.
+        """
+        filtered_objects = subset
+        for restr_line in restriction.splitlines():
+            if restr_line.startswith("only "):
+                or_restriction = restr_line.replace("only ", "").replace(" ", "").strip()
+                regex = r"(\.|^)(" + or_restriction.replace(",", "|") + r")(\.|$)"
+            elif restr_line.startswith("no "):
+                or_restriction = restr_line.replace("no ", "").replace(" ", "").strip()
+                regex = r"^(?!.*(\.|^)(" + or_restriction.replace(",", "|") + r")(\.|$))"
+            filtered_objects = self.get_objects_by(param_val=regex,
+                                                   subset=filtered_objects)
+        return filtered_objects
+
     def get_objects_by(self, param_key: str = "name", param_val: str = "", subset: list[TestObject] = None) -> list[TestObject]:
         """
         Query all test objects by a value in a parameter, returning a list of objects.
 
         :param param_key: exact key to use for the search
         :param param_val: regex to match the object parameter values
-        :param subset: a subset of test objects within the graph to search in
+        :param subset: a subset of test objects possibly within the graph to search in
         :returns: a selection of objects satisfying ``key=val`` criterion
         """
         regex = re.compile(param_val)
@@ -420,13 +443,36 @@ class TestGraph(object):
         logging.debug(f"Retrieved {len(nodes)}/{len(self.nodes)} test nodes with name like {name}")
         return nodes
 
+    def get_nodes_by_restr(self, restriction: str = "", subset: list[TestNode] = None) -> list[TestNode]:
+        """
+        Query all test nodes by a multi-line restriction of "only" and "no" filters.
+
+        :param restriction: single or multi-line restriction to use
+        :param subset: a subset of test nodes possibly within the graph to search in
+        :returns: a selection of nodes satisfying all filter criteria
+
+        ..todo:: No support is available for the ".." operator yet, consider simpler restriction syntax only
+            until we integrate better with the Cartesian config.
+        """
+        filtered_nodes = subset
+        for restr_line in restriction.splitlines():
+            if restr_line.startswith("only "):
+                or_restriction = restr_line.replace("only ", "").replace(" ", "").strip()
+                regex = r"(\.|^)(" + or_restriction.replace(",", "|") + r")(\.|$)"
+            elif restr_line.startswith("no "):
+                or_restriction = restr_line.replace("no ", "").replace(" ", "").strip()
+                regex = r"^(?!.*(\.|^)(" + or_restriction.replace(",", "|") + r")(\.|$))"
+            filtered_nodes = self.get_nodes_by(param_val=regex,
+                                               subset=filtered_nodes)
+        return filtered_nodes
+
     def get_nodes_by(self, param_key: str = "name", param_val: str = "", subset: list[TestNode] = None) -> list[TestNode]:
         """
         Query all test nodes by a value in a parameter, returning a list of nodes.
 
         :param param_key: exact key to use for the search
         :param param_val: regex to match the object parameter values
-        :param subset: a subset of test nodes within the graph to search in
+        :param subset: a subset of test nodes possibly within the graph to search in
         :returns: a selection of nodes satisfying ``key=val`` criterion
         """
         regex = re.compile(param_val)
@@ -456,13 +502,17 @@ class TestGraph(object):
 
         :param suffix: suffix to expand into variant objects
         :param category: category of the suffix that will determine the type of the objects
-        :param restriction: restriction for the generated variants
+        :param restriction: single or multi-line restriction to use
         :param params: additional parameters to add to or overwrite all objects' parameters
         :returns: a list of parsed flat test objects
         """
         params = params or {}
         params_str = param.ParsedDict(params).parsable_form()
-        restriction = category if not restriction else restriction
+        if "\n" in restriction:
+            restriction = param.join_str({suffix: restriction}, params_str)
+        else:
+            restriction_word = category if not restriction else restriction
+            restriction = param.join_str({suffix: "only " + restriction_word + "\n"}, params_str)
 
         if category == "images":
             raise TypeError("Multi-variant image test objects are not supported.")
@@ -472,7 +522,7 @@ class TestGraph(object):
         # pick a suffix and all its variants via join operation
         config = param.Reparsable()
         config.parse_next_batch(base_file=f"{category}.cfg",
-                                base_str=param.join_str({suffix: "only " + restriction + "\n"}, params_str),
+                                base_str=restriction,
                                 ovrwrt_file=param.ovrwrt_file("objects"))
         for d in config.get_parser().get_dicts():
             variant_config = config.get_copy()
@@ -495,7 +545,7 @@ class TestGraph(object):
 
         :param suffix: suffix to expand into variant objects
         :param category: category of the suffix that will determine the type of the objects
-        :param restriction: restriction for the composite generated variants
+        :param restriction: single or multi-line restriction to use
         :param component_restrs: object-specific suffixes (keys) and variant restrictions (values) for the components
         :param params: runtime parameters used for extra customization
         :param verbose: whether to print extra messages or not
@@ -503,7 +553,12 @@ class TestGraph(object):
         """
         params = params or {}
         params_str = param.ParsedDict({k: v for k, v in params.items() if not k.startswith("only_")}).parsable_form()
-        restriction = category if not restriction else restriction
+        if "\n" in restriction:
+            top_restriction = param.join_str({suffix: restriction}, params_str)
+        else:
+            restriction_word = category if not restriction else restriction
+            top_restriction = param.join_str({suffix: "only " + restriction_word + "\n"}, params_str)
+
         if component_restrs is None:
             # TODO: all possible default suffixes, currently only vms supported
             component_restrs = {suffix: "" for suffix in param.all_objects("vms")}
@@ -511,9 +566,7 @@ class TestGraph(object):
         if category == "images":
             raise TypeError("Multi-variant image test objects are not supported.")
         object_class = NetObject if category == "nets" else VMObject
-        top_restriction = {suffix: "only " + restriction + "\n"}
-        vm_restrs = component_restrs if category == "nets" else top_restriction
-        main_vm = param.main_vm() if len(vm_restrs.keys()) > 1 else list(vm_restrs.keys())[0]
+        vm_restriction = param.join_str(component_restrs, params_str) if category == "nets" else top_restriction
 
         test_objects = []
         # all possible component object combinations for a given composite object
@@ -522,13 +575,11 @@ class TestGraph(object):
         # instead of the more reasonable vms followed by nets
         if category == "nets":
             config.parse_next_batch(base_file="nets.cfg",
-                                    base_str=param.join_str(top_restriction, params_str),
+                                    base_str=top_restriction,
                                     base_dict={})
         # TODO: even the new order is not good enough for multi-vm test nodes
         config.parse_next_batch(base_file="vms.cfg",
-                                base_str=param.join_str(vm_restrs, params_str),
-                                # make sure we have the final word on parameters we use to identify objects
-                                base_dict={"main_vm": main_vm})
+                                base_str=vm_restriction)
         config.parse_next_file(param.vms_ovrwrt_file())
         for i, d in enumerate(config.get_parser().get_dicts()):
             variant_config = config.get_copy()
@@ -544,6 +595,16 @@ class TestGraph(object):
             #test_object.config = param.Reparsable()
             #test_object.config.parse_next_dict(d)
             test_object.regenerate_params()
+            test_object.update_restrs(component_restrs)
+            # apply only_vm restrictions for nets during runtime (after initial parsing)
+            if category == "nets":
+                for key in test_object.restrs.keys():
+                    if test_object.restrs.get(key, "") != "" and key in test_object.id:
+                        filtered_objects = TestGraph().get_objects_by_restr(test_object.restrs[key],
+                                                                            subset=[test_object])
+                        if len(filtered_objects) == 0:
+                            raise param.EmptyCartesianProduct(f"{test_object} parsed with incompatible "
+                                                              f"{key} restriction")
 
             if verbose:
                 print(f"{test_object.key.rstrip('s')}    {test_object.suffix}:  {test_object.params['shortname']}")
@@ -596,14 +657,11 @@ class TestGraph(object):
         :raises: :py:class:`exceptions.AssertionError` if the parsed composite is not unique
         """
         params = params or {}
-        setup_dict = {k: v for k, v in params.items() if not k.startswith("only_")}
+        setup_dict = params.copy()
         setup_dict.update({f"object_id_{o.suffix}": o.id for o in test_objects})
-        # TODO: this should have been "only_*" but the Cartesian config limitation disallowing
-        # conditional overwriting means we should not define this parameter in advance in order
-        # to fully consider "only_*" object restrictions from nodes parsed from such nets
-        setup_dict.update({f"object_only_{o.suffix}": o.component_form for o in test_objects})
-        object_strs = {o.suffix: "only " + o.component_form + "\n" for o in test_objects}
-        composite_objects = TestGraph.parse_composite_objects(suffix, category, component_restrs=object_strs,
+        component_restrs = {o.suffix: "only " + o.component_form + "\n" for o in test_objects}
+        composite_objects = TestGraph.parse_composite_objects(suffix, category,
+                                                              component_restrs=component_restrs,
                                                               params=setup_dict, verbose=verbose)
 
         if len(composite_objects) > 1:
@@ -648,6 +706,8 @@ class TestGraph(object):
             return test_objects
 
         net = test_object
+        if restriction != "" and "\n" not in restriction:
+            restriction = param.re_str(restriction)
         suffix_variants = {}
         selected_vms = net.params.objects("vms") or param.all_objects("vms")
         for vm_name in selected_vms:
@@ -655,7 +715,8 @@ class TestGraph(object):
             # TODO: the images don't have variant suffix definitions so just take the vm generic variant and join
             # it with itself, i.e. here all possible hardware-software combinations as variants of the same vm slot
             # TODO: parsing vms from a full net does not guarantee the full net has the component id-s and restrictions
-            vms = TestGraph.parse_composite_objects(vm_name, "vms", restriction=net.params.get("only_" + vm_name, "vms"),
+            vms = TestGraph.parse_composite_objects(vm_name, "vms",
+                                                    restriction=net.restrs.get(vm_name, "only vms\n") + restriction,
                                                     params=params, verbose=verbose)
 
             suffix_variants[f"{vm_name}_{net.suffix}"] = vms
@@ -675,34 +736,39 @@ class TestGraph(object):
         return test_objects
 
     @staticmethod
-    def parse_net_from_object_strs(suffix: str, object_strs: dict[str, str] = None) -> NetObject:
+    def parse_net_from_object_restrs(suffix: str, object_restrs: dict[str, str] = None) -> NetObject:
         """
         Parse a default net with object strings as compatibility.
 
         :param suffix: suffix of the net to parse
-        :param object_strs: vm restrictions as component restrictions for the net
+        :param object_restrs: object (vm) restrictions as component restrictions for the net
         :returns: default net object
         """
-        config = param.Reparsable()
-        config.parse_next_dict({"nets": suffix})
-        config.parse_next_dict({"vms": " ".join(list(object_strs.keys()))})
-        config.parse_next_dict({f"only_{s}": object_strs[s].replace("only ", "") for s in object_strs})
-        return NetObject(suffix, config)
+        flat_objects = TestGraph.parse_flat_objects(suffix, "nets")
+        assert len(flat_objects) == 1, f"A unique net variant must be parsed from restrictions {object_restrs}"
+        flat_object = flat_objects[0]
+        flat_object.update_restrs(object_restrs)
+        flat_object_vms = " ".join(list(object_restrs.keys()))
+        flat_object.config.parse_next_dict({"vms": flat_object_vms})
+        flat_object.params["vms"] = flat_object_vms
+        return flat_object
 
     @staticmethod
     def parse_flat_nodes(restriction: str = "", params: dict[str, str] = None) -> list[TestNode]:
         """
         Parse a flat node for each variant of satisfying a restriction.
 
-        :param restriction: block of node-specific variant restrictions
+        :param restriction: single or multi-line restriction to use
         :param params: runtime parameters used for extra customization
         :returns: a list of parsed flat test nodes
         """
         params = params or {}
+        if restriction != "" and "\n" not in restriction:
+            restriction = param.re_str(restriction)
 
         config = param.Reparsable()
         config.parse_next_batch(base_file=f"sets.cfg",
-                                base_str=param.re_str(restriction),
+                                base_str=restriction,
                                 base_dict=params)
 
         test_nodes = []
@@ -725,7 +791,7 @@ class TestGraph(object):
         Get the original install test node for the given object.
 
         :param test_object: fully parsed test object to parse the node from, typically a test net
-        :param restriction: restriction for the generated variants
+        :param restriction: single or multi-line restriction to use
         :param prefix: extra name identifier for the test to be run
         :param params: runtime parameters used for extra customization
         :returns: parsed test node for the object
@@ -736,30 +802,30 @@ class TestGraph(object):
         if test_object.key != "nets":
             raise ValueError("Test node could be parsed only from test objects of the "
                              "same composition level, currently only test nets")
-        for component in test_object.components:
-            if f"only_{component.suffix}" in test_object.params:
-                raise RuntimeError("A vm restriction found in a test net that a node is "
-                                   "parsed from, not yet supported by the Cartesian config")
+        if test_object.is_flat():
+            raise param.EmptyCartesianProduct("A vm restriction found in a flat test net "
+                                                "that a node is parsed from will result in "
+                                                "an empty Cartesian product")
+        if restriction != "" and "\n" not in restriction:
+            restriction = param.re_str(restriction)
 
         setup_dict = params.copy() if params else {}
         setup_dict.update({"nets": test_object.suffix})
         config = test_object.config.get_copy()
         config.parse_next_batch(base_file="sets.cfg",
                                 ovrwrt_file=param.tests_ovrwrt_file(),
-                                ovrwrt_str=param.re_str(restriction),
+                                ovrwrt_str=restriction,
                                 ovrwrt_dict=setup_dict)
         test_node = TestNode(prefix, config)
         test_node.set_objects_from_net(test_object)
         test_node.regenerate_params()
         for vm_name in test_node.params.objects("vms"):
-            if test_node.params.get(f"only_{vm_name}"):
-                for vm_variant in test_node.params[f"only_{vm_name}"].split(","):
-                    # TODO: have to check the separate objects!
-                    if vm_variant.strip() in test_node.params["name"]:
-                        break
-                else:
-                    raise param.EmptyCartesianProduct(f"{test_node} has incompatible {vm_name} "
-                                                      f"restriction {test_node.params[f'only_{vm_name}']}")
+            if test_node.restrs.get(vm_name, "") != "":
+                filtered_objects = TestGraph().get_objects_by_restr(test_node.restrs[vm_name],
+                                                                    subset=[test_object])
+                if len(filtered_objects) == 0:
+                    raise param.EmptyCartesianProduct(f"{test_node} needs incompatible {vm_name} "
+                                                      f"restriction with {test_object}")
         return test_node
 
     def parse_and_get_objects_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
@@ -777,9 +843,9 @@ class TestGraph(object):
         """
         if not isinstance(test_object, NetObject):
             raise NotImplementedError("Can only parse objects for node and net for now")
-        object_name = test_node.params.get("object_suffix", "")
-        object_type = test_node.params.get("object_type", "")
-        object_variant = test_node.params.get("object_id", ".*").replace(object_name + "-", "")
+        object_name = test_node.params.get("dep_suffix", "")
+        object_type = test_node.params.get("dep_type", "")
+        object_variant = test_node.params.get("dep_id", ".*").replace(object_name + "-", "")
         node_name = test_node.params["shortname"]
 
         all_vms = param.all_objects(key="vms")
@@ -817,16 +883,16 @@ class TestGraph(object):
                 for vm in parse_vms[vm_name]:
                     self.objects += TestGraph.parse_components_for_object(vm, "vms", params=params)
                 get_vms[vm_name] = parse_vms[vm_name]
-            # mix of regex and own OR operator to restrict down to compatible variants
-            filtered_vms = []
-            needed_restr = test_node.params.get(f"only_{vm_name}", "")
-            supported_restr = test_object.params.get(f"only_{vm_name}", test_object.params.get(f"object_only_{vm_name}", ""))
-            logging.debug(f"Needed vms have restriction '{needed_restr}' and the supported vms have restriction '{supported_restr}'")
-            for needed_variant, supported_variant in itertools.product(needed_restr.split(","), supported_restr.split(",")):
-                needed, supported = needed_variant.strip() or ".*", supported_variant.strip() or ".*"
-                filtered_vms += self.get_objects_by(param_val="(\.|^)"+needed+"(\.|$)",
-                                                    subset=self.get_objects_by(param_val="(\.|^)"+supported+"(\.|$)",
-                                                                               subset=get_vms[vm_name]))
+            # restrict down to compatible variants
+            filtered_vms = get_vms[vm_name]
+
+            logging.debug(f"Restricting needed vm variants for {vm_name} by {test_node}")
+            filtered_vms = self.get_objects_by_restr(test_node.restrs.get(vm_name, ""),
+                                                     subset=filtered_vms)
+            logging.debug(f"Restricting supported vm variants for {vm_name} by {test_object}")
+            filtered_vms = self.get_objects_by_restr(test_object.restrs.get(vm_name, ""),
+                                                     subset=filtered_vms)
+
             get_vms[vm_name] = filtered_vms
             # dependency filter for child node object has to be applied too
             if vm_name == object_name or (object_type == "images" and object_name.endswith(f"_{vm_name}")):
@@ -834,7 +900,6 @@ class TestGraph(object):
             if len(get_vms[vm_name]) == 0:
                 raise ValueError(f"Could not fetch any objects for suffix {vm_name} "
                                  f"in the test {node_name}")
-            get_vms[vm_name] = sorted(get_vms[vm_name], key=lambda x: x.id)
 
         previous_nets = [o for o in self.objects if o.key == "nets" and o.long_suffix == test_object.long_suffix]
         # dependency filter for child node object has to be applied too
@@ -844,19 +909,14 @@ class TestGraph(object):
         # all possible vm combinations as variants of the same net slot
         for combination in itertools.product(*get_vms.values()):
             # filtering for nets based on complete vm object variant names from the product
-            reused_nets, filtered_nets = [], list(previous_nets)
+            filtered_nets = list(previous_nets)
             for vm_object in combination:
                 vm_restr = "(\.|^)" + vm_object.component_form + "(\.|$)"
                 filtered_nets = self.get_objects_by(param_val=vm_restr, subset=filtered_nets)
             # additional filtering for nets based on dropped vm suffixes
-            for get_net in filtered_nets:
-                for vm_suffix in dropped_vms:
-                    if re.search("(\.|^)" + vm_suffix + "(\.|$)", get_net.params["name"]):
-                        logging.debug(f"Test net {get_net} not (right-)compatible with the test node "
-                                      f"{node_name} configuration and contains a redundant {vm_suffix}")
-                        break
-                else:
-                    reused_nets += [get_net]
+            regex = r"^(?!.*(\.|^)(" + "|".join(dropped_vms) + r")(\.|$))"
+            filtered_nets = self.get_objects_by(param_val=regex, subset=filtered_nets)
+            reused_nets = filtered_nets
             if len(reused_nets) == 1:
                 get_nets[test_object.long_suffix] += [reused_nets[0]]
             elif len(reused_nets) == 0:
@@ -876,13 +936,66 @@ class TestGraph(object):
                       f"with {len(parse_nets[test_object.long_suffix])} newly parsed ones")
         return get_nets[test_object.long_suffix], parse_nets[test_object.long_suffix]
 
+    def parse_nodes_from_flat_node_and_object(self, test_node: TestNode, test_object: TestObject, prefix: str = "",
+                                              params: dict[str, str] = None, verbose: bool = False) -> list[TestNode]:
+        """
+        Parse composite nodes from a flat node and a flat object.
+
+        :param test_node: flat test node to use as a source of parameters and restrictions
+        :param test_object: possibly flat test object to compose the node on top of, typically a test net
+        :param prefix: extra name identifier for the test to be run
+        :param params: runtime parameters used for extra customization
+        :param verbose: whether to print extra messages or not
+        :returns: parsed test nodes
+        :raises: :py:class:`param.EmptyCartesianProduct` if no result on preselected vm
+
+        All already parsed test objects will be used to also validate test object
+        uniqueness and main test object.
+        """
+        # get configuration of each participating object and choose the one to mix with the node
+        test_nodes = []
+
+        try:
+            get_nets, parse_nets = self.parse_and_get_objects_for_node_and_object(test_node, test_object, params=params)
+            test_nets = get_nets + parse_nets
+        except ValueError:
+            logging.debug(f"Could not get or construct a test net that is (right-)compatible "
+                            f"with the test node {test_node.params['shortname']} configuration - skipping")
+            return []
+
+        # produce a test node variant for each reused test net variant
+        logging.debug(f"Parsing {test_node.params['name']} customization for {test_nets}")
+        for j, net in enumerate(test_nets):
+            try:
+                j_prefix = "b" + str(j) if j > 0 else ""
+                node_prefix = prefix + j_prefix
+                new_node = self.parse_node_from_object(net, test_node.params['name'],
+                                                       prefix=node_prefix, params=params)
+                logging.info(f"Parsed a test node {new_node.params['shortname']} from "
+                             f"two-way compatible test net {net}")
+                # provide dynamic fingerprint to an original object root node
+                if re.search("(\.|^)original(\.|$)", new_node.params["name"]):
+                    new_node.params["object_root"] = test_node.params.get("dep_id", net.id)
+            except param.EmptyCartesianProduct:
+                # empty product in cases like parent (dependency) nodes imply wrong configuration
+                if test_node.params.get("require_existence", "no") == "yes":
+                    raise
+                logging.debug(f"Test net {net} not (left-)compatible with the test node "
+                              f"{test_node.params['shortname']} configuration - skipping")
+            else:
+                if verbose:
+                    print(f"test    {new_node.prefix}:  {new_node.params['shortname']}")
+                test_nodes.append(new_node)
+
+        return test_nodes
+
     def parse_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
                               params: dict[str, str] = None, verbose: bool = False) -> list[TestNode]:
         """
         Parse all user defined tests (leaf nodes) using the nodes restriction string
         and possibly restricting to a single test object for the singleton tests.
 
-        :param restriction: block of node-specific variant restrictions
+        :param restriction: single or multi-line restriction to use
         :param test_object: possibly flat test object to compose the node on top of, typically a test net
         :param prefix: extra name identifier for the test to be run
         :param params: runtime parameters used for extra customization
@@ -894,55 +1007,52 @@ class TestGraph(object):
         uniqueness and main test object.
         """
         test_nodes = []
-
         # prepare initial parser as starting configuration and get through tests
         for i, node in enumerate(self.parse_flat_nodes(restriction, params=params)):
-
-            # get configuration of each participating object and choose the one to mix with the node
-            try:
-                get_nets, parse_nets = self.parse_and_get_objects_for_node_and_object(node, test_object, params=params)
-                test_nets = get_nets + parse_nets
-            except ValueError:
-                logging.debug(f"Could not get or construct a test net that is (right-)compatible "
-                              f"with the test node {node.params['shortname']} configuration - skipping")
-                continue
-
-            # produce a test node variant for each reused test net variant
-            logging.debug(f"Parsing {node.params['name']} customization for {test_nets}")
-            for j, net in enumerate(test_nets):
-                try:
-                    j_prefix = "b" + str(j) if j > 0 else ""
-                    node_prefix = prefix + str(i+1) + j_prefix
-                    test_node = self.parse_node_from_object(net, node.params['name'],
-                                                            prefix=node_prefix, params=params)
-                    logging.info(f"Parsed a test node {test_node.params['shortname']} from "
-                                 f"two-way compatible test net {net}")
-                    # provide dynamic fingerprint to an original object root node
-                    if re.search("(\.|^)original(\.|$)", test_node.params["name"]):
-                        test_node.params["object_root"] = node.params.get("object_id", net.id)
-                except param.EmptyCartesianProduct:
-                    # empty product in cases like parent (dependency) nodes imply wrong configuration
-                    if node.params.get("require_existence", "no") == "yes":
-                        raise
-                    logging.debug(f"Test net {net} not (left-)compatible with the test node "
-                                  f"{node.params['shortname']} configuration - skipping")
-                else:
-                    if verbose:
-                        print(f"test    {test_node.prefix}:  {test_node.params['shortname']}")
-                    test_nodes.append(test_node)
-
+            test_nodes += self.parse_nodes_from_flat_node_and_object(node, test_object, prefix + str(i+1), params, verbose)
         return test_nodes
 
+    def parse_and_get_composite_nodes(self, restriction: str = "", test_node: TestNode = None, test_object: TestObject = None, prefix: str = "",
+                                      params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestNode]]:
+        """
+        Parse new composite nodes and reuse already cached ones instead of overlapping new ones.
+
+        :param restriction: single or multi-line restriction to use
+        :param test_node: optional flat test node to use instead of a string restriction
+        :param test_object: possibly flat test object to compose the node on top of, typically a test net
+        :param prefix: extra name identifier for the test to be run
+        :param params: runtime parameters used for extra customization
+        :param verbose: whether to print extra messages or not
+        :returns: a tuple of all reused and newly parsed test nodes
+        """
+        get_nodes, parse_nodes = [], []
+        if test_node is None:
+            new_nodes = self.parse_composite_nodes(restriction, test_object, prefix, params=params, verbose=verbose)
+        else:
+            new_nodes = self.parse_nodes_from_flat_node_and_object(test_node, test_object, prefix, params=params, verbose=verbose)
+        for new_node in new_nodes:
+            old_nodes = self.get_nodes_by_name(new_node.setless_form)
+            for old_node in old_nodes:
+                logging.debug(f"Found old parsed node {old_node.params['shortname']} for "
+                              f"{restriction} through object {test_object.suffix}")
+                if old_node not in get_nodes:
+                    get_nodes.append(old_node)
+            if len(old_nodes) == 0:
+                logging.debug(f"Found new node {new_node.params['shortname']} for "
+                              f"{restriction} through object {test_object.suffix}")
+                parse_nodes.append(new_node)
+        return get_nodes, parse_nodes
+
     @staticmethod
-    def parse_object_nodes(worker: TestWorker = None, restriction: str = "", prefix: str = "", object_strs: dict[str, str] = None,
+    def parse_object_nodes(worker: TestWorker = None, restriction: str = "", prefix: str = "", object_restrs: dict[str, str] = None,
                            params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestObject]]:
         """
         Parse test nodes based on a selection of parsable objects.
 
         :param worker: worker to parse the objects and nodes with or none for backward compatibility
-        :param restriction: block of node-specific variant restrictions
+        :param restriction: single or multi-line restriction to use
         :param prefix: extra name identifier for the test to be run
-        :param object_strs: vm restrictions as component restrictions for the nets and thus nodes
+        :param object_restrs: vm restrictions as component restrictions for the nets and thus nodes
         :param params: runtime parameters used for extra customization
         :param verbose: whether to print extra messages or not
         :returns: parsed test nodes and test objects
@@ -956,11 +1066,13 @@ class TestGraph(object):
         """
         test_nodes, test_objects = [], []
         # starting object restrictions could be specified externally
-        object_strs = {} if object_strs is None else object_strs
+        object_restrs = {} if object_restrs is None else object_restrs
         if worker:
-            worker.params.update({f"only_{s}": object_strs[s].replace("only ", "") for s in object_strs})
+            worker.net.update_restrs(object_restrs)
+        if restriction != "" and "\n" not in restriction:
+            restriction = param.re_str(restriction)
 
-        flat_net = worker.net if worker else TestGraph.parse_net_from_object_strs("net1", object_strs)
+        flat_net = worker.net if worker else TestGraph.parse_net_from_object_restrs("net1", object_restrs)
         objects = TestGraph.parse_components_for_object(flat_net, "nets",
                                                         params=params, verbose=False, unflatten=False)
         # the parsed test nodes are already fully restricted by the available test objects
@@ -989,7 +1101,7 @@ class TestGraph(object):
         # handle empty product of node and object variants
         if len(test_nodes) == 0:
             config = param.Reparsable()
-            config.parse_next_str(param.join_str(object_strs))
+            config.parse_next_str(param.join_str(object_restrs))
             config.parse_next_str(param.re_str(restriction))
             config.parse_next_dict(params)
             raise param.EmptyCartesianProduct(config.print_parsed())
@@ -1051,31 +1163,15 @@ class TestGraph(object):
 
         # main parsing entry point for the parents
         setup_dict = {} if params is None else params.copy()
-        setup_dict.update({"object_suffix": test_object.long_suffix,
-                           "object_type": test_object.key,
-                           "object_id": test_object.id,
+        # TODO: improve the API further to just past the test object determining the dependency
+        setup_dict.update({"dep_suffix": test_object.long_suffix,
+                           "dep_type": test_object.key,
+                           "dep_id": test_object.id,
                            "require_existence": "yes"})
         name = test_node.prefix + "a"
-        new_parents = self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], name, params=setup_dict)
         if len(filtered_parents) == 0:
-            return [], new_parents
-
-        get_parents, parse_parents = [], []
-        for new_parent in new_parents:
-            old_parents = self.get_nodes_by_name(new_parent.setless_form)
-            old_parents = self.get_nodes_by("name", f"(\.|^){setup_obj_restr}(\.|$)",
-                                            subset=old_parents)
-            if len(old_parents) > 0:
-                for old_parent in old_parents:
-                    logging.debug(f"Found parsed dependency {old_parent.params['shortname']} for "
-                                  f"{test_node.params['shortname']} through object {test_object.suffix}")
-                    if old_parent not in get_parents:
-                        get_parents.append(old_parent)
-            else:
-                logging.debug(f"Found new dependency {new_parent.params['shortname']} for "
-                              f"{test_node.params['shortname']} through object {test_object.suffix}")
-                parse_parents.append(new_parent)
-        return get_parents, parse_parents
+            return [], self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], name, params=setup_dict)
+        return self.parse_and_get_composite_nodes("all.." + setup_restr, None, test_node.objects[0], name, params=setup_dict)
 
     def parse_branches_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
                                            params: dict[str, str] = None) -> tuple[list[TestNode], list[TestNode], list[TestNode]]:
@@ -1088,18 +1184,13 @@ class TestGraph(object):
         :returns: a tuple of all reused and newly parsed parent test nodes as well as final child test nodes
         """
         if test_node.is_flat():
-            old_children = self.get_nodes_by_name(test_node.setless_form)
-            old_children = self.get_nodes_by("name", f"(\.|^){test_object.component_form}(\.|$)",
-                                             subset=old_children)
-            if len(old_children) > 0:
-                for old_child in old_children:
-                    logging.debug(f"Found parsed expansion {old_child.params['shortname']} for flat node "
-                                  f"{test_node.params['shortname']} through object {test_object.long_suffix}")
-                children = []
-            else:
-                logging.debug(f"Will newly expand flat {test_node.params['shortname']} for {test_object.long_suffix}")
-                children = self.parse_composite_nodes(test_node.params["name"],
-                                                      test_object, test_node.prefix, params=params)
+            logging.debug(f"Will newly expand flat {test_node.params['shortname']} for {test_object.long_suffix}")
+            get_children, parse_children = self.parse_and_get_composite_nodes("", test_node, test_object, test_node.prefix, params=params)
+            # both parsed and reused leaf composite nodes should be traversed as children of the leaf flat node
+            for child in get_children + parse_children:
+                child.setup_nodes.append(test_node)
+                test_node.cleanup_nodes.append(child)
+            children = parse_children
         else:
             # TODO: cannot get nodes by (prefix tree index) name due to current limitations in the bridged form
             old_bridges = self.get_nodes_by("name", test_node.bridged_form)
@@ -1164,13 +1255,17 @@ class TestGraph(object):
                 if not test_node.is_object_root():
                     logging.warning(f"{test_node} is not an object root but will be treated as such")
                 object_roots.append(test_node)
+
         setup_dict = {} if params is None else params.copy()
         setup_dict.update({"shared_root" : "yes",
+                           # TODO: vms are part of the prefix at present
                            "vms": " ".join(sorted(list(set(o.suffix for o in self.objects if o.key == "vms"))))})
-        root_for_all = TestGraph.parse_node_from_object(NetObject("net0", param.Reparsable()),
-                                                        "all..internal..noop", prefix="0s", params=setup_dict)
+        root_for_all = TestGraph.parse_flat_nodes("all..internal..noop", setup_dict)
+        assert len(root_for_all) == 1, "A unique shared root must be parsable"
+        root_for_all = root_for_all[0]
         logging.debug(f"Parsed shared root {root_for_all.params['shortname']}")
         self.new_nodes(root_for_all)
+
         for root_for_object in object_roots:
             root_for_object.setup_nodes = [root_for_all]
             root_for_all.cleanup_nodes.append(root_for_object)
@@ -1214,15 +1309,15 @@ class TestGraph(object):
         return test_workers
 
     @staticmethod
-    def parse_object_trees(worker: TestWorker = None, restriction: str = "", prefix: str = "", object_strs: dict[str, str] = None,
+    def parse_object_trees(worker: TestWorker = None, restriction: str = "", prefix: str = "", object_restrs: dict[str, str] = None,
                            params: dict[str, str] = None, verbose: bool = False, with_shared_root: bool =True) -> "TestGraph":
         """
         Parse a complete test graph.
 
         :param worker: worker traversing the graph with or none for backward compatibility
-        :param restriction: block of node-specific variant restrictions
+        :param restriction: single or multi-line restriction to use
         :param prefix: extra name identifier for the test to be run
-        :param object_strs: vm restrictions as component restrictions for the nets and thus nodes
+        :param object_restrs: vm restrictions as component restrictions for the nets and thus nodes
         :param params: runtime parameters used for extra customization
         :param verbose: whether to print extra messages or not
         :param with_shared_root: whether to connect all object trees via shared root node
@@ -1243,7 +1338,7 @@ class TestGraph(object):
         for i, worker in enumerate(workers):
             logging.info(f"Parsing a copy of the object trees for {worker.id}")
             # parse leaves and discover necessary setup (internal nodes)
-            leaves, stubs = TestGraph.parse_object_nodes(worker, restriction, object_strs=object_strs,
+            leaves, stubs = TestGraph.parse_object_nodes(worker, restriction, object_restrs=object_restrs,
                                                          prefix=prefix, params=params, verbose=verbose)
             graph.new_nodes(leaves)
             # TODO: to make such changes more gradual at least for now reuse vms and image (<net) objects
@@ -1346,13 +1441,10 @@ class TestGraph(object):
 
         if test_node.should_run(worker):
 
-            # the primary setup nodes need special treatment
-            if params.get("dry_run", "no") == "yes":
-                logging.info(f"Worker {worker.id} skipping via dry test run {test_node}")
-            elif test_node.is_flat():
+            if test_node.is_flat():
                 logging.debug(f"Worker {worker.id} skipping a flat node {test_node}")
-            elif test_node.is_shared_root():
-                logging.debug(f"Worker {worker.id} starting from the shared root")
+            elif params.get("dry_run", "no") == "yes":
+                logging.info(f"Worker {worker.id} skipping via dry test run {test_node}")
             elif test_node.is_object_root():
                 status = await self.traverse_terminal_node(test_node.params["object_root"], worker, params)
                 if not status:
@@ -1396,12 +1488,10 @@ class TestGraph(object):
         test_node.started_worker = worker
         if test_node.should_clean(worker):
 
-            if params.get("dry_run", "no") == "yes":
-                logging.info(f"Worker {worker.id} not cleaning via dry test run {test_node}")
-            elif test_node.is_flat():
+            if test_node.is_flat():
                 logging.debug(f"Worker {worker.id} not cleaning a flat node {test_node}")
-            elif test_node.is_shared_root():
-                logging.debug(f"Worker {worker.id} ending at the shared root")
+            elif params.get("dry_run", "no") == "yes":
+                logging.info(f"Worker {worker.id} not cleaning via dry test run {test_node}")
 
             elif test_node.produces_setup():
                 test_node.sync_states(params)
@@ -1410,7 +1500,7 @@ class TestGraph(object):
             logging.debug(f"Worker {worker.id} should not clean up {test_node}")
         test_node.started_worker = None
 
-    async def traverse_object_trees(self, worker: TestWorker, params: dict[str, str]) -> None:
+    async def traverse_object_trees(self, worker: TestWorker, params: dict[str, str] = None) -> None:
         """
         Run all user and system defined tests optimizing the setup reuse and
         minimizing the repetition of demanded tests.
@@ -1428,6 +1518,7 @@ class TestGraph(object):
         Of course all possible children are restricted by the user-defined "only" and
         the number of internal test nodes is minimized for achieving this goal.
         """
+        params = params or {}
         logging.debug(f"Worker {worker.id} starting complete graph traversal with parameters {params}")
         shared_roots = self.get_nodes_by("shared_root", "yes")
         assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
@@ -1438,6 +1529,7 @@ class TestGraph(object):
             if not os.path.exists(traverse_dir):
                 os.makedirs(traverse_dir)
 
+        logging.debug(f"Worker {worker.id} starting from the shared root")
         traverse_path = [root]
         occupied_at, occupied_wait = None, 0.0
         while not root.is_cleanup_ready(worker):
@@ -1455,11 +1547,7 @@ class TestGraph(object):
                     if current == next:
                         if len(siblings) == 0:
                             logging.warning(f"Could not compose flat node {next} due to test object incompatibility")
-                            next.is_unrolled = lambda x: True
-                        # the parsed leaf composite nodes should be traversed as children of the leaf flat node
-                        for child in siblings:
-                            child.setup_nodes.append(next)
-                            next.cleanup_nodes.append(child)
+                            next.incompatible_workers.add(worker.id)
                     for parent in parents:
                         if parent.is_object_root():
                             parent.setup_nodes.append(root)
@@ -1497,7 +1585,7 @@ class TestGraph(object):
 
                 if next.is_setup_ready(worker):
                     await self.traverse_node(next, worker, params)
-                    if next == root or not next.should_rerun(worker):
+                    if not next.should_rerun(worker):
                         previous.drop_parent(next, worker)
                     traverse_path.pop()
                 else:
@@ -1521,8 +1609,10 @@ class TestGraph(object):
 
                     # capture premature cleanup ready cases (only cleanup ready due to unparsed nodes)
                     unexplored_nodes = [node for node in self.nodes if node.is_flat() and not node.is_unrolled(worker)]
-                    if len(unexplored_nodes) > 0:
+                    if not next.is_flat() and len(unexplored_nodes) > 0:
                         # postpone cleaning up current node since it might have newly added children
+                        logging.info(f"Worker {worker.id} postponing the cleanup for {next} "
+                                     f"due to {len(unexplored_nodes)} unexplored nodes")
                         traverse_path.append(root)
                         traverse_path.append(root.pick_child(worker))
                         continue
@@ -1544,4 +1634,5 @@ class TestGraph(object):
                 self.visualize(traverse_dir, f"{time.time():.4f}_{worker.id}")
 
         assert traverse_path == [root], f"Unfinished traverse path detected {traverse_path}"
+        logging.debug(f"Worker {worker.id} ending at the shared root")
         traverse_path.pop()

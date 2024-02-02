@@ -219,7 +219,7 @@ def update(config, tag=""):
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
     graph = TestGraph()
-    flat_net = l.parse_net_from_object_strs("net1", config["vm_strs"])
+    flat_net = l.parse_net_from_object_restrs("net1", config["vm_strs"])
     initial_objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for i, vm_name in enumerate(selected_vms):
         vm_params = config["vms_params"].object_params(vm_name)
@@ -263,7 +263,7 @@ def update(config, tag=""):
         vm_graph = l.parse_object_trees(
             restriction=setup_str,
             prefix=f"{tag}m{i+1}",
-            object_strs=config["available_vms"],
+            object_restrs=config["available_vms"],
             params=setup_dict,
             verbose=False, with_shared_root=False,
         )
@@ -294,7 +294,7 @@ def update(config, tag=""):
             update_graph = l.parse_object_trees(
                 restriction=param.re_str("all.." + to_state),
                 prefix=tag,
-                object_strs={vm_name: config["vm_strs"][vm_name]},
+                object_restrs={vm_name: config["vm_strs"][vm_name]},
                 params=setup_dict,
             )
         vm_graph.flag_intersection(update_graph, flag_type="run", flag=lambda self, slot: not self.is_finished(slot),
@@ -305,7 +305,7 @@ def update(config, tag=""):
             reuse_graph = l.parse_object_trees(
                 restriction=param.re_str("all.." + from_state),
                 prefix=tag,
-                object_strs={vm_name: config["vm_strs"][vm_name]},
+                object_restrs={vm_name: config["vm_strs"][vm_name]},
                 params=setup_dict,
                 verbose=False,
             )
@@ -385,7 +385,7 @@ def list(config, tag=""):
         graph = loader.parse_object_trees(
             restriction=config["tests_str"],
             prefix=prefix,
-            object_strs=config["vm_strs"],
+            object_restrs=config["vm_strs"],
             params=setup_dict,
             verbose=True,
         )
@@ -584,7 +584,7 @@ def unset(config, tag=""):
 
     l, r = config["graph"].l, config["graph"].r
     setup_dict = config["param_dict"].copy()
-    flat_net = l.parse_net_from_object_strs("net1", config["vm_strs"])
+    flat_net = l.parse_net_from_object_restrs("net1", config["vm_strs"])
     for test_object in l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True):
         if test_object.key != "vms":
             continue
@@ -712,7 +712,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
                 param.ParsedDict(config["param_dict"]).reportable_form().rstrip("\n"))
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
-    flat_net = l.parse_net_from_object_strs("net1", config["vm_strs"])
+    flat_net = l.parse_net_from_object_restrs("net1", config["vm_strs"])
     graph.objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for test_object in graph.objects:
         if test_object.key != "vms":
