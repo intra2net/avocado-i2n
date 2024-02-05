@@ -787,7 +787,7 @@ class TestNode(Runnable):
             for setup_location in setup_locations:
                 wid, _ = setup_location.split(":")
 
-                object_suffix = "_" + node.params.get("object_suffix", "none")
+                object_suffix = "_" + node.params.get("dep_suffix", "none")
                 # discard parameters if we are not talking about any specific non-net object
                 object_suffix = "_none" if object_suffix == f"_{wid}" else object_suffix
                 if setup_location in self.params.get(f"get_location{object_suffix}", ""):

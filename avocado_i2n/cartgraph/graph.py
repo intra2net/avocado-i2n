@@ -777,9 +777,9 @@ class TestGraph(object):
         """
         if not isinstance(test_object, NetObject):
             raise NotImplementedError("Can only parse objects for node and net for now")
-        object_name = test_node.params.get("object_suffix", "")
-        object_type = test_node.params.get("object_type", "")
-        object_variant = test_node.params.get("object_id", ".*").replace(object_name + "-", "")
+        object_name = test_node.params.get("dep_suffix", "")
+        object_type = test_node.params.get("dep_type", "")
+        object_variant = test_node.params.get("dep_id", ".*").replace(object_name + "-", "")
         node_name = test_node.params["shortname"]
 
         all_vms = param.all_objects(key="vms")
@@ -919,7 +919,7 @@ class TestGraph(object):
                                  f"two-way compatible test net {net}")
                     # provide dynamic fingerprint to an original object root node
                     if re.search("(\.|^)original(\.|$)", test_node.params["name"]):
-                        test_node.params["object_root"] = node.params.get("object_id", net.id)
+                        test_node.params["object_root"] = node.params.get("dep_id", net.id)
                 except param.EmptyCartesianProduct:
                     # empty product in cases like parent (dependency) nodes imply wrong configuration
                     if node.params.get("require_existence", "no") == "yes":
@@ -1077,9 +1077,10 @@ class TestGraph(object):
 
         # main parsing entry point for the parents
         setup_dict = {} if params is None else params.copy()
-        setup_dict.update({"object_suffix": test_object.long_suffix,
-                           "object_type": test_object.key,
-                           "object_id": test_object.id,
+        # TODO: improve the API further to just past the test object determining the dependency
+        setup_dict.update({"dep_suffix": test_object.long_suffix,
+                           "dep_type": test_object.key,
+                           "dep_id": test_object.id,
                            "require_existence": "yes"})
         name = test_node.prefix + "a"
         if len(filtered_parents) == 0:

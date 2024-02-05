@@ -229,6 +229,7 @@ class CartesianObjectTest(Test):
             # besides object composition we should expect the joined component variants
             self.assertIn(vm.component_form, net.params["name"])
             # each joined component variant must be traceable back to the component object id
+            self.assertNotIn("object_id", net.params)
             self.assertEqual(vm.id, net.params[f"object_id_{vm.suffix}"])
             # each joined component variant must inform about supported vms via workaround restrictions
             self.assertEqual(vm.component_form, net.params[f"object_only_{vm.suffix}"])
@@ -1468,7 +1469,7 @@ class CartesianNodeTest(Test):
         node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"])
         parent_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"])
         # nets host is a runtime parameter
-        parent_node.params["object_suffix"] = "vm1"
+        parent_node.params["dep_suffix"] = "vm1"
         worker = TestWorker(flat_net)
         swarm = TestSwarm("localhost", [worker])
         TestSwarm.run_swarms = {swarm.id: swarm}
@@ -1514,8 +1515,8 @@ class CartesianNodeTest(Test):
         parent_node1 = TestGraph.parse_node_from_object(net1, "normal..tutorial1", params=self.config["param_dict"])
         parent_node2 = TestGraph.parse_node_from_object(net2, "normal..tutorial1", params=self.config["param_dict"])
         # nets host is a runtime parameter
-        parent_node1.params["object_suffix"] = "vm1"
-        parent_node2.params["object_suffix"] = "vm1"
+        parent_node1.params["dep_suffix"] = "vm1"
+        parent_node2.params["dep_suffix"] = "vm1"
         worker1 = TestWorker(flat_net1)
         worker2 = TestWorker(flat_net2)
         swarm = TestSwarm("localhost", [worker1, worker2])
