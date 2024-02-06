@@ -385,7 +385,7 @@ class TestGraph(object):
         """
         Query all test objects by a multi-line restriction of "only" and "no" filters.
 
-        :param restriction: multi-line restriction
+        :param restriction: single or multi-line restriction to use
         :param subset: a subset of test objects possibly within the graph to search in
         :returns: a selection of objects satisfying all filter criteria
 
@@ -447,7 +447,7 @@ class TestGraph(object):
         """
         Query all test nodes by a multi-line restriction of "only" and "no" filters.
 
-        :param restriction: multi-line restriction
+        :param restriction: single or multi-line restriction to use
         :param subset: a subset of test nodes possibly within the graph to search in
         :returns: a selection of nodes satisfying all filter criteria
 
@@ -502,13 +502,17 @@ class TestGraph(object):
 
         :param suffix: suffix to expand into variant objects
         :param category: category of the suffix that will determine the type of the objects
-        :param restriction: restriction for the generated variants
+        :param restriction: single or multi-line restriction to use
         :param params: additional parameters to add to or overwrite all objects' parameters
         :returns: a list of parsed flat test objects
         """
         params = params or {}
         params_str = param.ParsedDict(params).parsable_form()
-        restriction = category if not restriction else restriction
+        if "\n" in restriction:
+            restriction = param.join_str({suffix: restriction}, params_str)
+        else:
+            restriction_word = category if not restriction else restriction
+            restriction = param.join_str({suffix: "only " + restriction_word + "\n"}, params_str)
 
         if category == "images":
             raise TypeError("Multi-variant image test objects are not supported.")
@@ -518,7 +522,7 @@ class TestGraph(object):
         # pick a suffix and all its variants via join operation
         config = param.Reparsable()
         config.parse_next_batch(base_file=f"{category}.cfg",
-                                base_str=param.join_str({suffix: "only " + restriction + "\n"}, params_str),
+                                base_str=restriction,
                                 ovrwrt_file=param.ovrwrt_file("objects"))
         for d in config.get_parser().get_dicts():
             variant_config = config.get_copy()
@@ -541,7 +545,7 @@ class TestGraph(object):
 
         :param suffix: suffix to expand into variant objects
         :param category: category of the suffix that will determine the type of the objects
-        :param restriction: restriction for the composite generated variants
+        :param restriction: single or multi-line restriction to use
         :param component_restrs: object-specific suffixes (keys) and variant restrictions (values) for the components
         :param params: runtime parameters used for extra customization
         :param verbose: whether to print extra messages or not
@@ -549,7 +553,12 @@ class TestGraph(object):
         """
         params = params or {}
         params_str = param.ParsedDict({k: v for k, v in params.items() if not k.startswith("only_")}).parsable_form()
-        restriction = category if not restriction else restriction
+        if "\n" in restriction:
+            top_restriction = param.join_str({suffix: restriction}, params_str)
+        else:
+            restriction_word = category if not restriction else restriction
+            top_restriction = param.join_str({suffix: "only " + restriction_word + "\n"}, params_str)
+
         if component_restrs is None:
             # TODO: all possible default suffixes, currently only vms supported
             component_restrs = {suffix: "" for suffix in param.all_objects("vms")}
@@ -557,9 +566,7 @@ class TestGraph(object):
         if category == "images":
             raise TypeError("Multi-variant image test objects are not supported.")
         object_class = NetObject if category == "nets" else VMObject
-        top_restriction = {suffix: "only " + restriction + "\n"}
-        vm_restrs = component_restrs if category == "nets" else top_restriction
-        main_vm = param.main_vm() if len(vm_restrs.keys()) > 1 else list(vm_restrs.keys())[0]
+        vm_restriction = param.join_str(component_restrs, params_str) if category == "nets" else top_restriction
 
         test_objects = []
         # all possible component object combinations for a given composite object
@@ -568,13 +575,11 @@ class TestGraph(object):
         # instead of the more reasonable vms followed by nets
         if category == "nets":
             config.parse_next_batch(base_file="nets.cfg",
-                                    base_str=param.join_str(top_restriction, params_str),
+                                    base_str=top_restriction,
                                     base_dict={})
         # TODO: even the new order is not good enough for multi-vm test nodes
         config.parse_next_batch(base_file="vms.cfg",
-                                base_str=param.join_str(vm_restrs, params_str),
-                                # make sure we have the final word on parameters we use to identify objects
-                                base_dict={"main_vm": main_vm})
+                                base_str=vm_restriction)
         config.parse_next_file(param.vms_ovrwrt_file())
         for i, d in enumerate(config.get_parser().get_dicts()):
             variant_config = config.get_copy()
@@ -701,6 +706,8 @@ class TestGraph(object):
             return test_objects
 
         net = test_object
+        if restriction != "" and "\n" not in restriction:
+            restriction = param.re_str(restriction)
         suffix_variants = {}
         selected_vms = net.params.objects("vms") or param.all_objects("vms")
         for vm_name in selected_vms:
@@ -708,9 +715,8 @@ class TestGraph(object):
             # TODO: the images don't have variant suffix definitions so just take the vm generic variant and join
             # it with itself, i.e. here all possible hardware-software combinations as variants of the same vm slot
             # TODO: parsing vms from a full net does not guarantee the full net has the component id-s and restrictions
-            # TODO: the net restrictions are in multi-line format while the "restriction" argument is limited to a single only-string
-            restriction = "..".join(l.replace("only ", "") for l in net.restrs.get(vm_name, "only vms\n").splitlines() if l.startswith("only "))
-            vms = TestGraph.parse_composite_objects(vm_name, "vms", restriction=restriction,
+            vms = TestGraph.parse_composite_objects(vm_name, "vms",
+                                                    restriction=net.restrs.get(vm_name, "only vms\n") + restriction,
                                                     params=params, verbose=verbose)
 
             suffix_variants[f"{vm_name}_{net.suffix}"] = vms
@@ -752,15 +758,17 @@ class TestGraph(object):
         """
         Parse a flat node for each variant of satisfying a restriction.
 
-        :param restriction: block of node-specific variant restrictions
+        :param restriction: single or multi-line restriction to use
         :param params: runtime parameters used for extra customization
         :returns: a list of parsed flat test nodes
         """
         params = params or {}
+        if restriction != "" and "\n" not in restriction:
+            restriction = param.re_str(restriction)
 
         config = param.Reparsable()
         config.parse_next_batch(base_file=f"sets.cfg",
-                                base_str=param.re_str(restriction),
+                                base_str=restriction,
                                 base_dict=params)
 
         test_nodes = []
@@ -783,7 +791,7 @@ class TestGraph(object):
         Get the original install test node for the given object.
 
         :param test_object: fully parsed test object to parse the node from, typically a test net
-        :param restriction: restriction for the generated variants
+        :param restriction: single or multi-line restriction to use
         :param prefix: extra name identifier for the test to be run
         :param params: runtime parameters used for extra customization
         :returns: parsed test node for the object
@@ -798,13 +806,15 @@ class TestGraph(object):
             raise param.EmptyCartesianProduct("A vm restriction found in a flat test net "
                                                 "that a node is parsed from will result in "
                                                 "an empty Cartesian product")
+        if restriction != "" and "\n" not in restriction:
+            restriction = param.re_str(restriction)
 
         setup_dict = params.copy() if params else {}
         setup_dict.update({"nets": test_object.suffix})
         config = test_object.config.get_copy()
         config.parse_next_batch(base_file="sets.cfg",
                                 ovrwrt_file=param.tests_ovrwrt_file(),
-                                ovrwrt_str=param.re_str(restriction),
+                                ovrwrt_str=restriction,
                                 ovrwrt_dict=setup_dict)
         test_node = TestNode(prefix, config)
         test_node.set_objects_from_net(test_object)
@@ -932,7 +942,7 @@ class TestGraph(object):
         Parse all user defined tests (leaf nodes) using the nodes restriction string
         and possibly restricting to a single test object for the singleton tests.
 
-        :param restriction: block of node-specific variant restrictions
+        :param restriction: single or multi-line restriction to use
         :param test_object: possibly flat test object to compose the node on top of, typically a test net
         :param prefix: extra name identifier for the test to be run
         :param params: runtime parameters used for extra customization
@@ -988,7 +998,7 @@ class TestGraph(object):
         """
         Parse new composite nodes and reuse already cached ones instead of overlapping new ones.
 
-        :param restriction: block of node-specific variant restrictions
+        :param restriction: single or multi-line restriction to use
         :param test_object: possibly flat test object to compose the node on top of, typically a test net
         :param prefix: extra name identifier for the test to be run
         :param params: runtime parameters used for extra customization
@@ -1016,7 +1026,7 @@ class TestGraph(object):
         Parse test nodes based on a selection of parsable objects.
 
         :param worker: worker to parse the objects and nodes with or none for backward compatibility
-        :param restriction: block of node-specific variant restrictions
+        :param restriction: single or multi-line restriction to use
         :param prefix: extra name identifier for the test to be run
         :param object_restrs: vm restrictions as component restrictions for the nets and thus nodes
         :param params: runtime parameters used for extra customization
@@ -1035,6 +1045,8 @@ class TestGraph(object):
         object_restrs = {} if object_restrs is None else object_restrs
         if worker:
             worker.net.update_restrs(object_restrs)
+        if restriction != "" and "\n" not in restriction:
+            restriction = param.re_str(restriction)
 
         flat_net = worker.net if worker else TestGraph.parse_net_from_object_restrs("net1", object_restrs)
         objects = TestGraph.parse_components_for_object(flat_net, "nets",
@@ -1285,7 +1297,7 @@ class TestGraph(object):
         Parse a complete test graph.
 
         :param worker: worker traversing the graph with or none for backward compatibility
-        :param restriction: block of node-specific variant restrictions
+        :param restriction: single or multi-line restriction to use
         :param prefix: extra name identifier for the test to be run
         :param object_restrs: vm restrictions as component restrictions for the nets and thus nodes
         :param params: runtime parameters used for extra customization

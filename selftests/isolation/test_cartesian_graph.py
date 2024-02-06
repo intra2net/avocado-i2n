@@ -39,6 +39,14 @@ class CartesianWorkerTest(Test):
         self.assertEqual(test_objects[0].params["vms"], "vm1")
         self.assertEqual(test_objects[0].params["os_variant"], "f33")
 
+        test_objects = TestGraph.parse_flat_objects("vm1", "vms", "CentOS")
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"vms.vm1\.qemu_kvm_centos.*CentOS.*")
+
+        test_objects = TestGraph.parse_flat_objects("vm1", "vms", "no CentOS\nonly qcow2\n")
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"vms.vm1\.qemu_kvm_fedora.*qcow2.*Fedora.*")
+
     def test_parse_flat_objects_net(self):
         """Test for correctly parsed objects of different object variants from a restriction."""
         test_objects = TestGraph.parse_flat_objects("net1", "nets")
@@ -46,6 +54,14 @@ class CartesianWorkerTest(Test):
         self.assertRegex(test_objects[0].params["name"], r"nets\.localhost\.net1")
         self.assertEqual(test_objects[0].params["nets"], "net1")
         self.assertEqual(test_objects[0].params["nets_id"], "101")
+
+        test_objects = TestGraph.parse_flat_objects("net1", "nets", "localhost")
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"nets\.localhost\.net1")
+
+        test_objects = TestGraph.parse_flat_objects("net1", "nets", "no remotehost\nonly localhost\n")
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"nets\.localhost\.net1")
 
     def test_parse_flat_objects_net_and_cluster(self):
         """Test for correctly parsed objects of different object variants from a restriction."""
@@ -60,6 +76,14 @@ class CartesianWorkerTest(Test):
         self.assertRegex(test_objects[2].params["name"], r"nets\.cluster2\.net6")
         self.assertEqual(test_objects[2].params["nets"], "net6")
         self.assertEqual(test_objects[2].params["nets_id"], "1")
+
+        test_objects = TestGraph.parse_flat_objects("net6", "nets", "cluster1")
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"nets\.cluster1\.net6")
+
+        test_objects = TestGraph.parse_flat_objects("net6", "nets", "no cluster1\nonly cluster2\n")
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"nets\.cluster2\.net6")
 
     def test_params(self):
         """Test for correctly parsed and regenerated test worker parameters."""
@@ -149,6 +173,14 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertNotIn("only", test_objects[0].params)
 
+        test_objects = TestGraph.parse_composite_objects("vm1", "vms", "CentOS")
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*")
+
+        test_objects = TestGraph.parse_composite_objects("vm1", "vms", "no CentOS\nonly qcow2\n")
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"vms.vm1\.qemu_kvm_fedora.*qcow2.*Fedora.*")
+
     def test_parse_composite_objects_net(self):
         """Test for a correctly parsed net object from joined vm string restrictions."""
         test_objects = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
@@ -158,9 +190,6 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object.params["vms_vm1"], "vm1")
         self.assertEqual(test_object.params["vms_vm2"], "vm2")
         self.assertEqual(test_object.params["vms_vm3"], "vm3")
-        self.assertEqual(test_object.params["main_vm"], "vm1")
-        self.assertEqual(test_object.params["main_vm_vm2"], "vm2")
-        self.assertEqual(test_object.params["main_vm_vm3"], "vm3")
         self.assertEqual(test_object.params["os_variant_vm1"], "el8")
         self.assertEqual(test_object.params["os_variant_vm2"], "win10")
         self.assertEqual(test_object.params["os_variant_vm3"], "ubuntutrusty")
@@ -169,6 +198,15 @@ class CartesianObjectTest(Test):
         self.assertNotIn("only_vm1", test_object.params)
         self.assertNotIn("only_vm2", test_object.params)
         self.assertNotIn("only_vm3", test_object.params)
+
+        test_objects = TestGraph.parse_composite_objects("net1", "nets", "localhost", self.config["vm_strs"])
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"nets\.localhost\.net1")
+
+        test_objects = TestGraph.parse_composite_objects("net1", "nets", "no remotehost\nonly localhost\n", self.config["vm_strs"])
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"nets\.localhost\.net1")
+
         # some workers only support certain vm variants
         with self.assertRaises(param.EmptyCartesianProduct):
             TestGraph.parse_composite_objects("net5", "nets", "", {"vm1": "only CentOS\n"})
@@ -188,9 +226,6 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object.params["vms_vm1"], "vm1")
         self.assertEqual(test_object.params["vms_vm2"], "vm2")
         self.assertEqual(test_object.params["vms_vm3"], "vm3")
-        self.assertEqual(test_object.params["main_vm"], "vm1")
-        self.assertEqual(test_object.params["main_vm_vm2"], "vm2")
-        self.assertEqual(test_object.params["main_vm_vm3"], "vm3")
         self.assertEqual(test_object.params["os_variant_vm1"], "el8")
         self.assertEqual(test_object.params["os_variant_vm2"], "win10")
         self.assertEqual(test_object.params["os_variant_vm3"], "ubuntutrusty")
@@ -200,6 +235,15 @@ class CartesianObjectTest(Test):
         self.assertNotIn("only_vm2", test_object.params)
         self.assertNotIn("only_vm3", test_object.params)
         # some workers only support certain vm variants
+
+        test_objects = TestGraph.parse_composite_objects("net6", "nets", "cluster1", self.config["vm_strs"])
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"nets\.cluster1\.net6")
+
+        test_objects = TestGraph.parse_composite_objects("net6", "nets", "no cluster1\nonly cluster2\n", self.config["vm_strs"])
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"nets\.cluster2\.net6")
+
         with self.assertRaises(param.EmptyCartesianProduct):
             TestGraph.parse_composite_objects("net9", "nets", "cluster2", {"vm1": "only Fedora\n"})
         with self.assertRaises(param.EmptyCartesianProduct):
@@ -292,19 +336,19 @@ class CartesianObjectTest(Test):
             self.assertEqual(test_object.params["os_variant_vm2"], vm2_os)
             self.assertEqual(test_object.params["os_variant_vm3"], vm3_os)
             self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
-        assertVariant(nets[0], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "f33", "win7", "ubuntutrusty")
-        assertVariant(nets[1], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_kali.*Kali.*", "f33", "win7", "kl")
-        assertVariant(nets[2], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "f33", "win10", "ubuntutrusty")
-        assertVariant(nets[3], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_kali.*Kali.*", "f33", "win10", "kl")
-        assertVariant(nets[4], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "el8", "win7", "ubuntutrusty")
-        assertVariant(nets[5], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_kali.*Kali.*", "el8", "win7", "kl")
-        assertVariant(nets[6], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "el8", "win10", "ubuntutrusty")
-        assertVariant(nets[7], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_kali.*Kali.*", "el8", "win10", "kl")
+        assertVariant(nets[0], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_7.*qcow.*Win7.*.vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "f33", "win7", "ubuntutrusty")
+        assertVariant(nets[1], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_7.*qcow.*Win7.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "f33", "win7", "kl")
+        assertVariant(nets[2], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "f33", "win10", "ubuntutrusty")
+        assertVariant(nets[3], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "f33", "win10", "kl")
+        assertVariant(nets[4], r"vm1\.qemu_kvm_centos.*qcow.*CentOS.*vm2\.qemu_kvm_windows_7.*.qcow.*Win7.*vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "el8", "win7", "ubuntutrusty")
+        assertVariant(nets[5], r"vm1\.qemu_kvm_centos.*qcow.*CentOS.*vm2\.qemu_kvm_windows_7.*qcow.*Win7.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "el8", "win7", "kl")
+        assertVariant(nets[6], r"vm1\.qemu_kvm_centos.*qcow.*CentOS.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "el8", "win10", "ubuntutrusty")
+        assertVariant(nets[7], r"vm1\.qemu_kvm_centos.*qcow.*CentOS.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "el8", "win10", "kl")
 
     def test_parse_components_for_net_restricted(self):
         """Test for correctly parsed restricted vm components with unflattened net."""
         flat_net = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})[0]
-        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", unflatten=True)
+        test_objects = TestGraph.parse_components_for_object(flat_net, "nets", restriction="qcow2", unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 4)
         # TODO: typically we should test for some of this in the net1 object variants cases above but due to limitation of the Cartesian parser and lack of
@@ -558,6 +602,23 @@ class CartesianNodeTest(Test):
         self.assertEqual(register.get_counters(worker=worker2), 3)
         self.assertEqual(register.get_counters(), 4)
 
+    def test_parse_flat_nodes(self):
+        """Test for a correctly parsed flat nodes."""
+        test_nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        self.assertEqual(len(test_nodes), 1)
+        self.assertRegex(test_nodes[0].params["name"], r"normal.*tutorial1.*")
+        self.assertEqual(test_nodes[0].params["vms"], "vm1")
+
+        test_nodes = TestGraph.parse_flat_nodes("only normal\nonly tutorial1")
+        self.assertEqual(len(test_nodes), 1)
+        self.assertRegex(test_nodes[0].params["name"], r"normal.*tutorial1.*")
+        self.assertEqual(test_nodes[0].params["vms"], "vm1")
+
+        test_nodes = TestGraph.parse_flat_nodes("only leaves..tutorial2\nno files\n")
+        self.assertEqual(len(test_nodes), 1)
+        self.assertRegex(test_nodes[0].params["name"], r"leaves.*tutorial2.names.*")
+        self.assertEqual(test_nodes[0].params["vms"], "vm1")
+
     def test_parse_node_from_object(self):
         """Test for a correctly parsed node from an already parsed net object."""
         flat_net = TestGraph.parse_net_from_object_restrs("net1", self.config["vm_strs"])
@@ -572,9 +633,6 @@ class CartesianNodeTest(Test):
         self.assertEqual(node.params["vms_vm1"], net.params["vms_vm1"])
         self.assertEqual(node.params["vms_vm2"], net.params["vms_vm2"])
         self.assertEqual(node.params["vms_vm3"], net.params["vms_vm3"])
-        self.assertEqual(node.params["main_vm"], net.params["main_vm"])
-        self.assertEqual(node.params["main_vm_vm2"], net.params["main_vm_vm2"])
-        self.assertEqual(node.params["main_vm_vm3"], net.params["main_vm_vm3"])
         self.assertEqual(node.params["os_variant_vm1"], net.params["os_variant_vm1"])
         self.assertEqual(node.params["os_variant_vm2"], net.params["os_variant_vm2"])
         self.assertEqual(node.params["os_variant_vm3"], net.params["os_variant_vm3"])
@@ -630,13 +688,25 @@ class CartesianNodeTest(Test):
         self.assertIn(nodes[2].objects[0], nets)
         self.assertIn(nodes[3].objects[0], nets)
         for node in nodes:
+            self.assertRegex(node.params["name"], r"normal.*tutorial.*")
             self.assertEqual(node.params["nets"], "net1")
+            self.assertEqual(node.params["vms"], "vm1")
             self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
 
-        nodes = graph.parse_composite_nodes("normal..tutorial3", flat_object)
+        nodes = graph.parse_composite_nodes("only normal\nonly tutorial3", flat_object)
         self.assertEqual(len(nodes), 4)
         for node in nodes:
+            self.assertRegex(node.params["name"], r"normal.*tutorial3.*")
             self.assertEqual(node.params["nets"], "net1")
+            self.assertEqual(node.params["vms"], "vm1 vm2")
+            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+
+        nodes = graph.parse_composite_nodes("only leaves..tutorial2\nno files\n", flat_object)
+        self.assertEqual(len(nodes), 2)
+        for node in nodes:
+            self.assertRegex(node.params["name"], r"leaves.*tutorial2.names.*")
+            self.assertEqual(node.params["nets"], "net1")
+            self.assertEqual(node.params["vms"], "vm1")
             self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
 
     def test_parse_composite_nodes_compatibility_complete(self):
