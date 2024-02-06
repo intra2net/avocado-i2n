@@ -672,6 +672,40 @@ class CartesianNodeTest(Test):
         with self.assertRaises(param.EmptyCartesianProduct):
             TestGraph.parse_node_from_object(net, "all..tutorial3.remote.object.control.decorator.util", params=self.config["param_dict"])
 
+    def test_parse_nodes_from_flat_node_and_object(self):
+        """Test for correctly parsed composite nodes from a flat node and object."""
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_objects), 1)
+        flat_object = flat_objects[0]
+
+        flat_object.params["vms"] = "vm1"
+        test_objects = TestGraph.parse_components_for_object(flat_object, "nets", unflatten=True)
+        nets = [o for o in test_objects if o.key == "nets"]
+        self.assertEqual(len(nets), 2)
+        graph = TestGraph()
+        graph.objects = test_objects
+
+        flat_nodes = graph.parse_flat_nodes("normal..tutorial1,normal..tutorial2")
+        self.assertEqual(len(flat_nodes), 2)
+        for flat_node in flat_nodes:
+            nodes = graph.parse_nodes_from_flat_node_and_object(flat_node, flat_object)
+            self.assertEqual(len(nodes), 2)
+            for node in nodes:
+                self.assertIn(node.objects[0], nets)
+                self.assertEqual(len(node.objects[0].components), 1)
+                self.assertEqual(len(node.objects[0].components[0].components), 1)
+                self.assertEqual(node.params["nets"], "net1")
+                self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+
+        flat_nodes = graph.parse_flat_nodes("normal..tutorial3")
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
+        nodes = graph.parse_nodes_from_flat_node_and_object(flat_node, flat_object)
+        self.assertEqual(len(nodes), 4)
+        for node in nodes:
+            self.assertEqual(node.params["nets"], "net1")
+            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+
     def test_parse_composite_nodes(self):
         """Test for correctly parsed composite nodes from graph retrievable test objects."""
         flat_objects = TestGraph.parse_flat_objects("net1", "nets")
@@ -801,14 +835,22 @@ class CartesianNodeTest(Test):
         graph = TestGraph()
         graph.objects = test_objects
 
-        get_nodes, parse_nodes = graph.parse_and_get_composite_nodes(self.config["tests_str"], flat_object,
+        get_nodes, parse_nodes = graph.parse_and_get_composite_nodes(self.config["tests_str"], None, flat_object,
                                                                      params=self.config["param_dict"])
         self.assertEqual(len(parse_nodes), 4)
         self.assertEqual(len(get_nodes), 0)
+        # alternative call reusing a flat node
+        flat_nodes = graph.parse_flat_nodes(self.config["tests_str"])
+        self.assertEqual(len(flat_nodes), 2)
+        for flat_node in flat_nodes:
+            get_nodes, parse_nodes = graph.parse_and_get_composite_nodes("", flat_node, flat_object,
+                                                                         params=self.config["param_dict"])
+            self.assertEqual(len(parse_nodes), 2)
+            self.assertEqual(len(get_nodes), 0)
 
         reused_nodes = parse_nodes[:2]
         graph.new_nodes(reused_nodes)
-        get_nodes, parse_nodes = graph.parse_and_get_composite_nodes(self.config["tests_str"], flat_object,
+        get_nodes, parse_nodes = graph.parse_and_get_composite_nodes(self.config["tests_str"], None, flat_object,
                                                                      params=self.config["param_dict"])
         self.assertEqual(len(parse_nodes), 2)
         self.assertEqual(len(get_nodes), 2)

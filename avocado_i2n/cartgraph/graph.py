@@ -936,6 +936,59 @@ class TestGraph(object):
                       f"with {len(parse_nets[test_object.long_suffix])} newly parsed ones")
         return get_nets[test_object.long_suffix], parse_nets[test_object.long_suffix]
 
+    def parse_nodes_from_flat_node_and_object(self, test_node: TestNode, test_object: TestObject, prefix: str = "",
+                                              params: dict[str, str] = None, verbose: bool = False) -> list[TestNode]:
+        """
+        Parse composite nodes from a flat node and a flat object.
+
+        :param test_node: flat test node to use as a source of parameters and restrictions
+        :param test_object: possibly flat test object to compose the node on top of, typically a test net
+        :param prefix: extra name identifier for the test to be run
+        :param params: runtime parameters used for extra customization
+        :param verbose: whether to print extra messages or not
+        :returns: parsed test nodes
+        :raises: :py:class:`param.EmptyCartesianProduct` if no result on preselected vm
+
+        All already parsed test objects will be used to also validate test object
+        uniqueness and main test object.
+        """
+        # get configuration of each participating object and choose the one to mix with the node
+        test_nodes = []
+
+        try:
+            get_nets, parse_nets = self.parse_and_get_objects_for_node_and_object(test_node, test_object, params=params)
+            test_nets = get_nets + parse_nets
+        except ValueError:
+            logging.debug(f"Could not get or construct a test net that is (right-)compatible "
+                            f"with the test node {test_node.params['shortname']} configuration - skipping")
+            return []
+
+        # produce a test node variant for each reused test net variant
+        logging.debug(f"Parsing {test_node.params['name']} customization for {test_nets}")
+        for j, net in enumerate(test_nets):
+            try:
+                j_prefix = "b" + str(j) if j > 0 else ""
+                node_prefix = prefix + j_prefix
+                new_node = self.parse_node_from_object(net, test_node.params['name'],
+                                                       prefix=node_prefix, params=params)
+                logging.info(f"Parsed a test node {new_node.params['shortname']} from "
+                             f"two-way compatible test net {net}")
+                # provide dynamic fingerprint to an original object root node
+                if re.search("(\.|^)original(\.|$)", new_node.params["name"]):
+                    new_node.params["object_root"] = test_node.params.get("dep_id", net.id)
+            except param.EmptyCartesianProduct:
+                # empty product in cases like parent (dependency) nodes imply wrong configuration
+                if test_node.params.get("require_existence", "no") == "yes":
+                    raise
+                logging.debug(f"Test net {net} not (left-)compatible with the test node "
+                              f"{test_node.params['shortname']} configuration - skipping")
+            else:
+                if verbose:
+                    print(f"test    {new_node.prefix}:  {new_node.params['shortname']}")
+                test_nodes.append(new_node)
+
+        return test_nodes
+
     def parse_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
                               params: dict[str, str] = None, verbose: bool = False) -> list[TestNode]:
         """
@@ -954,51 +1007,18 @@ class TestGraph(object):
         uniqueness and main test object.
         """
         test_nodes = []
-
         # prepare initial parser as starting configuration and get through tests
         for i, node in enumerate(self.parse_flat_nodes(restriction, params=params)):
-
-            # get configuration of each participating object and choose the one to mix with the node
-            try:
-                get_nets, parse_nets = self.parse_and_get_objects_for_node_and_object(node, test_object, params=params)
-                test_nets = get_nets + parse_nets
-            except ValueError:
-                logging.debug(f"Could not get or construct a test net that is (right-)compatible "
-                              f"with the test node {node.params['shortname']} configuration - skipping")
-                continue
-
-            # produce a test node variant for each reused test net variant
-            logging.debug(f"Parsing {node.params['name']} customization for {test_nets}")
-            for j, net in enumerate(test_nets):
-                try:
-                    j_prefix = "b" + str(j) if j > 0 else ""
-                    node_prefix = prefix + str(i+1) + j_prefix
-                    test_node = self.parse_node_from_object(net, node.params['name'],
-                                                            prefix=node_prefix, params=params)
-                    logging.info(f"Parsed a test node {test_node.params['shortname']} from "
-                                 f"two-way compatible test net {net}")
-                    # provide dynamic fingerprint to an original object root node
-                    if re.search("(\.|^)original(\.|$)", test_node.params["name"]):
-                        test_node.params["object_root"] = node.params.get("dep_id", net.id)
-                except param.EmptyCartesianProduct:
-                    # empty product in cases like parent (dependency) nodes imply wrong configuration
-                    if node.params.get("require_existence", "no") == "yes":
-                        raise
-                    logging.debug(f"Test net {net} not (left-)compatible with the test node "
-                                  f"{node.params['shortname']} configuration - skipping")
-                else:
-                    if verbose:
-                        print(f"test    {test_node.prefix}:  {test_node.params['shortname']}")
-                    test_nodes.append(test_node)
-
+            test_nodes += self.parse_nodes_from_flat_node_and_object(node, test_object, prefix + str(i+1), params, verbose)
         return test_nodes
 
-    def parse_and_get_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
+    def parse_and_get_composite_nodes(self, restriction: str = "", test_node: TestNode = None, test_object: TestObject = None, prefix: str = "",
                                       params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestNode]]:
         """
         Parse new composite nodes and reuse already cached ones instead of overlapping new ones.
 
         :param restriction: single or multi-line restriction to use
+        :param test_node: optional flat test node to use instead of a string restriction
         :param test_object: possibly flat test object to compose the node on top of, typically a test net
         :param prefix: extra name identifier for the test to be run
         :param params: runtime parameters used for extra customization
@@ -1006,7 +1026,11 @@ class TestGraph(object):
         :returns: a tuple of all reused and newly parsed test nodes
         """
         get_nodes, parse_nodes = [], []
-        for new_node in self.parse_composite_nodes(restriction, test_object, prefix, params=params, verbose=verbose):
+        if test_node is None:
+            new_nodes = self.parse_composite_nodes(restriction, test_object, prefix, params=params, verbose=verbose)
+        else:
+            new_nodes = self.parse_nodes_from_flat_node_and_object(test_node, test_object, prefix, params=params, verbose=verbose)
+        for new_node in new_nodes:
             old_nodes = self.get_nodes_by_name(new_node.setless_form)
             for old_node in old_nodes:
                 logging.debug(f"Found old parsed node {old_node.params['shortname']} for "
@@ -1147,7 +1171,7 @@ class TestGraph(object):
         name = test_node.prefix + "a"
         if len(filtered_parents) == 0:
             return [], self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], name, params=setup_dict)
-        return self.parse_and_get_composite_nodes("all.." + setup_restr, test_node.objects[0], name, params=setup_dict)
+        return self.parse_and_get_composite_nodes("all.." + setup_restr, None, test_node.objects[0], name, params=setup_dict)
 
     def parse_branches_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
                                            params: dict[str, str] = None) -> tuple[list[TestNode], list[TestNode], list[TestNode]]:
@@ -1161,13 +1185,7 @@ class TestGraph(object):
         """
         if test_node.is_flat():
             logging.debug(f"Will newly expand flat {test_node.params['shortname']} for {test_object.long_suffix}")
-            get_children, parse_children = self.parse_and_get_composite_nodes(test_node.params["name"], test_object, test_node.prefix, params=params)
-            # leave only compatible newly parsed children
-            for vm_name in test_node.params.objects("vms"):
-                # TODO: improve the parse_composite_nodes() to not create its own flat node and reuse this one
-                # in order to support repeated product variants for vms and less necessary parsing
-                parse_children = self.get_nodes_by_restr(test_node.restrs.get(vm_name, ""),
-                                                         subset=parse_children)
+            get_children, parse_children = self.parse_and_get_composite_nodes("", test_node, test_object, test_node.prefix, params=params)
             # both parsed and reused leaf composite nodes should be traversed as children of the leaf flat node
             for child in get_children + parse_children:
                 child.setup_nodes.append(test_node)
