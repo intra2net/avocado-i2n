@@ -834,11 +834,11 @@ class TestGraph(object):
                                  f"in the test {node_name}")
             get_vms[vm_name] = sorted(get_vms[vm_name], key=lambda x: x.id)
 
-        previous_nets = [o for o in self.objects if o.key == "nets" and o.suffix == test_object.suffix]
+        previous_nets = [o for o in self.objects if o.key == "nets" and o.long_suffix == test_object.long_suffix]
         # dependency filter for child node object has to be applied too
         if object_variant and object_type == "nets":
             previous_nets = self.get_objects_by(param_val="(\.|^)" + object_variant + "(\.|$)", subset=previous_nets)
-        get_nets, parse_nets = {test_object.suffix: []}, {test_object.suffix: []}
+        get_nets, parse_nets = {test_object.long_suffix: []}, {test_object.long_suffix: []}
         # all possible vm combinations as variants of the same net slot
         for combination in itertools.product(*get_vms.values()):
             # filtering for nets based on complete vm object variant names from the product
@@ -856,23 +856,23 @@ class TestGraph(object):
                 else:
                     reused_nets += [get_net]
             if len(reused_nets) == 1:
-                get_nets[test_object.suffix] += [reused_nets[0]]
+                get_nets[test_object.long_suffix] += [reused_nets[0]]
             elif len(reused_nets) == 0:
                 logging.debug(f"Parsing a new net from vms {', '.join(vms)} for {node_name}")
                 setup_dict = {} if params is None else params.copy()
                 setup_dict.update({key: value for key, value in test_object.params.items() if key.startswith("nets_")})
-                net = TestGraph.parse_object_from_objects(test_object.suffix, test_object.key, combination,
+                net = TestGraph.parse_object_from_objects(test_object.long_suffix, test_object.key, combination,
                                                           params=setup_dict, verbose=False)
-                parse_nets[test_object.suffix] += [net]
+                parse_nets[test_object.long_suffix] += [net]
                 self.objects += [net]
             else:
                 raise ValueError("Multiple nets reusable for the same vm variant combination:\n{reused_nets}")
-        get_nets[test_object.suffix] = sorted(get_nets[test_object.suffix], key=lambda x: x.id)
-        parse_nets[test_object.suffix] = sorted(parse_nets[test_object.suffix], key=lambda x: x.id)
+        get_nets[test_object.long_suffix] = sorted(get_nets[test_object.long_suffix], key=lambda x: x.id)
+        parse_nets[test_object.long_suffix] = sorted(parse_nets[test_object.long_suffix], key=lambda x: x.id)
 
-        logging.debug(f"{len(get_nets[test_object.suffix])} test nets will be reused for {node_name} "
-                      f"with {len(parse_nets[test_object.suffix])} newly parsed ones")
-        return get_nets[test_object.suffix], parse_nets[test_object.suffix]
+        logging.debug(f"{len(get_nets[test_object.long_suffix])} test nets will be reused for {node_name} "
+                      f"with {len(parse_nets[test_object.long_suffix])} newly parsed ones")
+        return get_nets[test_object.long_suffix], parse_nets[test_object.long_suffix]
 
     def parse_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
                               params: dict[str, str] = None, verbose: bool = False) -> list[TestNode]:
@@ -1092,10 +1092,10 @@ class TestGraph(object):
             if len(old_children) > 0:
                 for old_child in old_children:
                     logging.debug(f"Found parsed expansion {old_child.params['shortname']} for flat node "
-                                  f"{test_node.params['shortname']} through object {test_object.suffix}")
+                                  f"{test_node.params['shortname']} through object {test_object.long_suffix}")
                 children = []
             else:
-                logging.debug(f"Will newly expand flat {test_node.params['shortname']} for {test_object.suffix}")
+                logging.debug(f"Will newly expand flat {test_node.params['shortname']} for {test_object.long_suffix}")
                 children = self.parse_composite_nodes(test_node.params["name"],
                                                       test_object, test_node.prefix, params=params)
         else:
@@ -1204,7 +1204,7 @@ class TestGraph(object):
             if slot is not None:
                 test_worker.overwrite_with_slot(slot)
 
-            _, worker_suffix, swarm_suffix = test_worker.params["name"].split(".")
+            _, swarm_suffix, worker_suffix = test_worker.params["name"].split(".")
             if swarm_suffix not in TestWorker.run_slots:
                 TestWorker.run_slots[swarm_suffix] = {}
             TestWorker.run_slots[swarm_suffix][worker_suffix] = test_worker

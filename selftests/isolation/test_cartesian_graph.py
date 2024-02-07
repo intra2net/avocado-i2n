@@ -28,7 +28,7 @@ class CartesianWorkerTest(Test):
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
 
-    def test_parse_flat_vm1(self):
+    def test_parse_flat_objects_vm(self):
         """Test for correctly parsed objects of different object variants from a restriction."""
         test_objects = TestGraph.parse_flat_objects("vm1", "vms")
         self.assertEqual(len(test_objects), 2)
@@ -39,13 +39,27 @@ class CartesianWorkerTest(Test):
         self.assertEqual(test_objects[0].params["vms"], "vm1")
         self.assertEqual(test_objects[0].params["os_variant"], "f33")
 
-    def test_parse_flat_net1(self):
+    def test_parse_flat_objects_net(self):
         """Test for correctly parsed objects of different object variants from a restriction."""
         test_objects = TestGraph.parse_flat_objects("net1", "nets")
         self.assertEqual(len(test_objects), 1)
-        self.assertRegex(test_objects[0].params["name"], r"nets\.net1\.localhost")
+        self.assertRegex(test_objects[0].params["name"], r"nets\.localhost\.net1")
         self.assertEqual(test_objects[0].params["nets"], "net1")
         self.assertEqual(test_objects[0].params["nets_id"], "101")
+
+    def test_parse_flat_objects_net_and_cluster(self):
+        """Test for correctly parsed objects of different object variants from a restriction."""
+        test_objects = TestGraph.parse_flat_objects("net6", "nets")
+        self.assertEqual(len(test_objects), 3)
+        self.assertRegex(test_objects[0].params["name"], r"nets\.localhost\.net6")
+        self.assertEqual(test_objects[0].params["nets"], "net6")
+        self.assertEqual(test_objects[0].params["nets_id"], "101")
+        self.assertRegex(test_objects[1].params["name"], r"nets\.cluster1\.net6")
+        self.assertEqual(test_objects[1].params["nets"], "net6")
+        self.assertEqual(test_objects[1].params["nets_id"], "1")
+        self.assertRegex(test_objects[2].params["name"], r"nets\.cluster2\.net6")
+        self.assertEqual(test_objects[2].params["nets"], "net6")
+        self.assertEqual(test_objects[2].params["nets_id"], "1")
 
     def test_params(self):
         """Test for correctly parsed and regenerated test worker parameters."""
@@ -58,7 +72,7 @@ class CartesianWorkerTest(Test):
 
     def test_params_slots(self):
         """Test environment setting and validation."""
-        test_workers = TestGraph.parse_workers({"nets": "net3 net6 net0",
+        test_workers = TestGraph.parse_workers({"nets": "net3 cluster1.net6 net0",
                                                 "slots": "1 remote.com/2 "})
         self.assertEqual(len(test_workers), 3)
         self.assertEqual(test_workers[0].params["nets_gateway"], "")
@@ -109,7 +123,7 @@ class CartesianObjectTest(Test):
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
 
-    def test_parse_composite_objects_vm1(self):
+    def test_parse_composite_objects_vm(self):
         """Test for correctly parsed vm objects from a vm string restriction."""
         test_objects = TestGraph.parse_composite_objects("vm1", "vms", "")
         self.assertEqual(len(test_objects), 2)
@@ -125,7 +139,7 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertNotIn("only", test_objects[0].params)
 
-    def test_parse_composite_objects_net1(self):
+    def test_parse_composite_objects_net(self):
         """Test for a correctly parsed net object from joined vm string restrictions."""
         test_objects = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
         self.assertEqual(len(test_objects), 1)
@@ -146,7 +160,28 @@ class CartesianObjectTest(Test):
         self.assertNotIn("only_vm2", test_object.params)
         self.assertNotIn("only_vm3", test_object.params)
 
-    def test_parse_composite_objects_net1_unrestricted(self):
+    def test_parse_composite_objects_net_and_cluster(self):
+        """Test for a correctly parsed cluster net object from empty joined vm string restrictions."""
+        test_objects = TestGraph.parse_composite_objects("cluster1.net6", "nets", "", self.config["vm_strs"])
+        self.assertEqual(len(test_objects), 1)
+        test_object = test_objects[0]
+        self.assertRegex(test_object.params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*")
+        self.assertEqual(test_object.params["vms_vm1"], "vm1")
+        self.assertEqual(test_object.params["vms_vm2"], "vm2")
+        self.assertEqual(test_object.params["vms_vm3"], "vm3")
+        self.assertEqual(test_object.params["main_vm"], "vm1")
+        self.assertEqual(test_object.params["main_vm_vm2"], "vm2")
+        self.assertEqual(test_object.params["main_vm_vm3"], "vm3")
+        self.assertEqual(test_object.params["os_variant_vm1"], "el8")
+        self.assertEqual(test_object.params["os_variant_vm2"], "win10")
+        self.assertEqual(test_object.params["os_variant_vm3"], "ubuntutrusty")
+        self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+        self.assertNotIn("only", test_object.params)
+        self.assertNotIn("only_vm1", test_object.params)
+        self.assertNotIn("only_vm2", test_object.params)
+        self.assertNotIn("only_vm3", test_object.params)
+
+    def test_parse_composite_objects_net_unrestricted(self):
         """Test for a correctly parsed net object from empty joined vm string restrictions."""
         test_objects = TestGraph.parse_composite_objects("net1", "nets", "")
         # TODO: bug in the Cartesian parser, they must be 6!
@@ -2397,6 +2432,14 @@ class CartesianGraphTest(Test):
         self.assertEqual(workers[1].params["nets_spawner"], "lxc")
         self.assertEqual(workers[2].params["nets_spawner"], "lxc")
         self.assertEqual(workers[3].params["nets_spawner"], "lxc")
+        self.assertEqual(workers[0].params["nets_shell_host"], "192.168.254.101")
+        self.assertEqual(workers[1].params["nets_shell_host"], "192.168.254.102")
+        self.assertEqual(workers[2].params["nets_shell_host"], "192.168.254.103")
+        self.assertEqual(workers[3].params["nets_shell_host"], "192.168.254.104")
+        self.assertEqual(workers[0].params["nets_shell_port"], "22")
+        self.assertEqual(workers[1].params["nets_shell_port"], "22")
+        self.assertEqual(workers[2].params["nets_shell_port"], "22")
+        self.assertEqual(workers[3].params["nets_shell_port"], "22")
 
         # this is not what we test but simply a means to remove some initial nodes for simpler testing
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
@@ -2453,7 +2496,8 @@ class CartesianGraphTest(Test):
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2,leaves..tutorial_gui"))
         graph.parse_shared_root_from_object_roots()
-        graph.new_workers(TestGraph.parse_workers({"nets": "net6 net7 net8 net9",
+        # TODO: the worker restrictions are still a bit clunky
+        graph.new_workers(TestGraph.parse_workers({"nets": "cluster1.net6 cluster1.net7 cluster2.net6 cluster2.net7",
                                                    "only_vm1": "CentOS", "only_vm2": "Win10",
                                                    "shared_pool": self.config["param_dict"]["shared_pool"]}))
 
@@ -2463,6 +2507,14 @@ class CartesianGraphTest(Test):
         self.assertEqual(workers[1].params["nets_spawner"], "remote")
         self.assertEqual(workers[2].params["nets_spawner"], "remote")
         self.assertEqual(workers[3].params["nets_spawner"], "remote")
+        self.assertEqual(workers[0].params["nets_shell_host"], "cluster1.net.lan")
+        self.assertEqual(workers[1].params["nets_shell_host"], "cluster1.net.lan")
+        self.assertEqual(workers[2].params["nets_shell_host"], "cluster2.net.lan")
+        self.assertEqual(workers[3].params["nets_shell_host"], "cluster2.net.lan")
+        self.assertEqual(workers[0].params["nets_shell_port"], "221")
+        self.assertEqual(workers[1].params["nets_shell_port"], "222")
+        self.assertEqual(workers[2].params["nets_shell_port"], "221")
+        self.assertEqual(workers[3].params["nets_shell_port"], "222")
 
         # this is not what we test but simply a means to remove some initial nodes for simpler testing
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
@@ -2475,39 +2527,39 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
             # TODO: localhost is not acceptable when we mix hosts
             # cluster1.net.lan/1 starts from first tutorial2 variant and provides vm1 setup
-            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets": "^net6$",
+            {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets": "^cluster1.net6$",
              "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^1$"},
             # cluster1.net.lan/2 starts from second tutorial variant and waits for its single (same) setup to be provided
             # cluster2.net.lan/1 starts from first gui test and provides vm1 setup
-            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets": "^net8$",
+            {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets": "^cluster2.net6$",
              "nets_spawner": "remote", "nets_gateway": "^cluster2.net.lan$", "nets_host": "^1$"},
             # cluster2.net.lan/2 starts from second gui test and provides vm2 setup
-            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "nets": "^net9$",
+            {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "nets": "^cluster2.net7$",
              "nets_spawner": "remote", "nets_gateway": "^cluster2.net.lan$", "nets_host": "^2$"},
             # cluster1.net.lan/1 now moves on to its planned test
-            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets": "^net6$",
+            {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets": "^cluster1.net6$",
              "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^1$",
-             "get_location_vm1": "[\w:/]+ net6.cluster1:/mnt/local/images/swarm",
-             "nets_shell_host_net6.cluster1": "^cluster1.net.lan$", "nets_shell_port_net6.cluster1": "221"},
+             "get_location_vm1": "[\w:/]+ cluster1.net6:/mnt/local/images/swarm",
+             "nets_shell_host_cluster1.net6": "^cluster1.net.lan$", "nets_shell_port_cluster1.net6": "221"},
             # cluster1.net.lan/2 no longer waits and picks its planned tests reusing setup from net6
-            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^net7$",
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^cluster1.net7$",
              "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^2$",
-             "get_location_vm1": "[\w:/]+ net6.cluster1:/mnt/local/images/swarm",
-             "nets_shell_host_net6.cluster1": "^cluster1.net.lan$", "nets_shell_port_net6.cluster1": "221"},
+             "get_location_vm1": "[\w:/]+ cluster1.net6:/mnt/local/images/swarm",
+             "nets_shell_host_cluster1.net6": "^cluster1.net.lan$", "nets_shell_port_cluster1.net6": "221"},
             # cluster2.net.lan/1 is done with half of the setup for client_noop and waits for cluster2.net.lan/2 to provide the other half
             # cluster2.net.lan/2 now moves on to its planned test
-            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^net9$",
+            {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^cluster2.net7$",
              "nets_spawner": "remote", "nets_gateway": "^cluster2.net.lan$", "nets_host": "^2$",
-             "get_location_image1_vm1": "[\w:/]+ net8.cluster2:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net9.cluster2:/mnt/local/images/swarm",
-             "nets_shell_host_net8.cluster2": "^cluster2.net.lan$", "nets_shell_host_net9.cluster2": "^cluster2.net.lan$",
-             "nets_shell_port_net8.cluster2": "221", "nets_shell_port_net9.cluster2": "222"},
+             "get_location_image1_vm1": "[\w:/]+ cluster2.net6:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ cluster2.net7:/mnt/local/images/swarm",
+             "nets_shell_host_cluster2.net6": "^cluster2.net.lan$", "nets_shell_host_cluster2.net7": "^cluster2.net.lan$",
+             "nets_shell_port_cluster2.net6": "221", "nets_shell_port_cluster2.net7": "222"},
             # cluster1.net.lan/1 picks unattended install from shared root since all flat nodes were traversed (postponed full tutorial2 cleanup) waiting for cluster1.net.lan/2
             # cluster1.net.lan/2 picks the first gui test before cluster2.net.lan/1's turn
-            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^net7$",
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^cluster1.net7$",
              "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^2$",
-             "get_location_image1_vm1": "[\w:/]+ net8.cluster2:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net9.cluster2:/mnt/local/images/swarm",
-             "nets_shell_host_net8.cluster2": "^cluster2.net.lan$", "nets_shell_host_net9.cluster2": "^cluster2.net.lan$",
-             "nets_shell_port_net8.cluster2": "221", "nets_shell_port_net9.cluster2": "222"},
+             "get_location_image1_vm1": "[\w:/]+ cluster2.net6:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ cluster2.net7:/mnt/local/images/swarm",
+             "nets_shell_host_cluster2.net6": "^cluster2.net.lan$", "nets_shell_host_cluster2.net7": "^cluster2.net.lan$",
+             "nets_shell_port_cluster2.net6": "221", "nets_shell_port_cluster2.net7": "222"},
         ]
 
         self._run_traversal(graph, self.config["param_dict"])
