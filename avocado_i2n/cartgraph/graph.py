@@ -772,7 +772,8 @@ class TestGraph(object):
                                                       f"restriction with {test_object}")
         return test_node
 
-    def parse_and_get_objects_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
+    # TODO: this should be named get_and_parse as well as other methods
+    def get_and_parse_objects_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
                                                   params: dict[str, str] = None) -> (list[TestObject], list[TestObject]):
         """
         Generate or reuse all component test objects for a given test node.
@@ -900,7 +901,7 @@ class TestGraph(object):
         test_nodes = []
 
         try:
-            get_nets, parse_nets = self.parse_and_get_objects_for_node_and_object(test_node, test_object, params=params)
+            get_nets, parse_nets = self.get_and_parse_objects_for_node_and_object(test_node, test_object, params=params)
             test_nets = get_nets + parse_nets
         except ValueError:
             logging.debug(f"Could not get or construct a test net that is (right-)compatible "
@@ -933,7 +934,7 @@ class TestGraph(object):
 
         return test_nodes
 
-    def parse_and_get_nodes_from_flat_node_and_object(self, test_node: TestNode = None, test_object: TestObject = None, prefix: str = "",
+    def get_and_parse_nodes_from_flat_node_and_object(self, test_node: TestNode = None, test_object: TestObject = None, prefix: str = "",
                                                       params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestNode]]:
         """
         Parse new composite nodes and reuse already cached ones for a flat node.
@@ -1010,7 +1011,7 @@ class TestGraph(object):
             test_nodes += self.parse_nodes_from_flat_node_and_object(node, test_object, prefix + str(i+1), params, verbose)
         return test_nodes
 
-    def parse_and_get_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
+    def get_and_parse_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
                                       params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestNode]]:
         """
         Parse new composite nodes and reuse already cached ones instead of overlapping new ones.
@@ -1025,13 +1026,13 @@ class TestGraph(object):
         get_nodes, parse_nodes = [], []
         # prepare initial parser as starting configuration and get through tests
         for i, node in enumerate(self.parse_flat_nodes(restriction, params=params)):
-            more_get_nodes, more_parse_nodes = self.parse_and_get_nodes_from_flat_node_and_object(node, test_object,
+            more_get_nodes, more_parse_nodes = self.get_and_parse_nodes_from_flat_node_and_object(node, test_object,
                                                                                                   prefix + str(i+1), params, verbose)
             get_nodes += more_get_nodes
             parse_nodes += more_parse_nodes
         return get_nodes, parse_nodes
 
-    def parse_and_get_nodes_from_composite_node_and_object(self, test_node: TestNode, test_object: TestObject,
+    def get_and_parse_nodes_from_composite_node_and_object(self, test_node: TestNode, test_object: TestObject,
                                                            params: dict[str, str] = None) -> tuple[list[TestNode], list[TestNode]]:
         """
         Parse new composite nodes and reuse already cached ones for a composite node.
@@ -1100,7 +1101,7 @@ class TestGraph(object):
         setup_prefix = test_node.prefix + "a"
         if len(filtered_parents) == 0:
             return [], self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], setup_prefix, params=setup_dict)
-        return self.parse_and_get_composite_nodes("all.." + setup_restr, test_node.objects[0], setup_prefix, params=setup_dict)
+        return self.get_and_parse_composite_nodes("all.." + setup_restr, test_node.objects[0], setup_prefix, params=setup_dict)
 
     @staticmethod
     def parse_object_nodes(worker: TestWorker = None, restriction: str = "", prefix: str = "", object_restrs: dict[str, str] = None,
@@ -1255,7 +1256,7 @@ class TestGraph(object):
         """
         if test_node.is_flat():
             logging.debug(f"Will newly expand flat {test_node.params['shortname']} for {test_object.long_suffix}")
-            get_children, parse_children = self.parse_and_get_nodes_from_flat_node_and_object(test_node, test_object,
+            get_children, parse_children = self.get_and_parse_nodes_from_flat_node_and_object(test_node, test_object,
                                                                                               test_node.prefix, params=params)
             # both parsed and reused leaf composite nodes should be traversed as children of the leaf flat node
             more_children = get_children + parse_children
@@ -1279,7 +1280,7 @@ class TestGraph(object):
                 logging.debug(f"Parsing dependencies of {child.params['shortname']} "
                               f"for object {component.long_suffix}")
 
-                get_parents, parse_parents = self.parse_and_get_nodes_from_composite_node_and_object(child, component, params)
+                get_parents, parse_parents = self.get_and_parse_nodes_from_composite_node_and_object(child, component, params)
                 # the graph node cache has to be updated as early as possible to avoid redundancy
                 self.new_nodes(parse_parents)
                 parents += parse_parents
