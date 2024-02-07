@@ -23,6 +23,16 @@ class ParamsParserTest(Test):
     def tearDown(self):
         pass
 
+    def test_all_suffixes_by_restriction(self):
+        """Test a resulting list of suffixes from a suffix variant restriction."""
+        output = param.all_suffixes_by_restriction("only cluster1", key="nets")
+        self.assertEqual(output, ["cluster1.net6", "cluster1.net7",
+                                  "cluster1.net8", "cluster1.net9"])
+
+        output = param.all_suffixes_by_restriction("no localhost, net6, net7", key="nets")
+        self.assertEqual(output, ["cluster1.net8", "cluster1.net9",
+                                  "cluster2.net8", "cluster2.net9"])
+
     def test_join_str(self):
         """Test a resulting join string satifies certain syntactic form."""
         output = param.join_str({"obj1": "only a", "obj2": "param1 = A\n"}, base_str="")

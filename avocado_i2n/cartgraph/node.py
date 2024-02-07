@@ -33,13 +33,12 @@ from functools import cmp_to_key
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 
-from aexpect.exceptions import ShellCmdError, ShellTimeoutError
-from aexpect import remote
+from aexpect.exceptions import ShellCmdError
 from aexpect import remote_door as door
 from avocado.core.test_id import TestID
 from avocado.core.nrunner.runnable import Runnable
 
-from . import TestWorker, NetObject
+from . import TestSwarm, TestWorker, NetObject
 
 
 door.DUMP_CONTROL_DIR = "/tmp"
@@ -219,12 +218,10 @@ class TestNode(Runnable):
         for result in self.shared_results:
             if result["status"] != "PASS":
                 continue
-            # TODO: all nets and thus worker parameters are not provided to each node
-            # for net_suffix in self.params.objects("nets"):
-            from .. import params_parser as param
-            for net_suffix in param.all_objects("nets"):
-                if net_suffix in result["name"]:
-                    workers.add(net_suffix)
+            worker_ids = [w.id for s in TestSwarm.run_swarms.values() for w in s.workers]
+            for worker_id in worker_ids:
+                if worker_id in result["name"]:
+                    workers.add(worker_id)
                     break
         return workers
     shared_result_worker_ids = property(fget=shared_result_worker_ids)
@@ -276,8 +273,6 @@ class TestNode(Runnable):
         full_prefix = self.prefix + "-" + net_id
         return TestID(full_prefix, self.params["name"])
     id_test = property(fget=id_test)
-
-    _session_cache = {}
 
     def __init__(self, prefix, recipe):
         """
@@ -428,21 +423,18 @@ class TestNode(Runnable):
             # is started separately by each worker (doesn't matter eager of full)
             return worker in self.shared_started_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
-            own_cluster = worker.params["runtime_str"].split("/")[0]
-            own_cluster_started_hosts = {worker.params["runtime_str"].split("/")[1] for worker in self.shared_started_workers if worker.params["runtime_str"].split("/")[0] == own_cluster}
+            own_cluster = worker.swarm_id
+            own_cluster_started_hosts = {w.id for w in self.shared_started_workers if w.swarm_id == own_cluster}
             if threshold == -1:
                 # is started for an entire swarm by all of its workers
-                own_cluster_all_hosts = {*TestWorker.run_slots[own_cluster]}
+                own_cluster_all_hosts = {*TestSwarm.run_swarms[own_cluster].workers}
                 return len(own_cluster_all_hosts) == len(own_cluster_started_hosts)
             # is started for an entire swarm by at least N of its workers
             return len(own_cluster_started_hosts) >= threshold
-            # alternative implementation for threshold = 1
-            # started_clusters = {worker.params["runtime_str"].split("/")[0] for worker in self.shared_started_workers}
-            # return own_cluster in started_clusters
         else:
             if threshold == -1:
                 # is started globally by all workers
-                return len(self.shared_started_workers) == sum([len([w for w in TestWorker.run_slots[s]]) for s in TestWorker.run_slots])
+                return len(self.shared_started_workers) == sum([len([w for w in TestSwarm.run_swarms[s].workers]) for s in TestSwarm.run_swarms])
             # is started globally by at least N workers (down to at least one worker)
             return len(self.shared_started_workers) >= threshold
 
@@ -468,21 +460,18 @@ class TestNode(Runnable):
             # is finished separately by each worker (doesn't matter eager of full)
             return worker in self.shared_finished_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
-            own_cluster = worker.params["runtime_str"].split("/")[0]
-            own_cluster_finished_hosts = {worker.params["runtime_str"].split("/")[1] for worker in self.shared_finished_workers if worker.params["runtime_str"].split("/")[0] == own_cluster}
+            own_cluster = worker.swarm_id
+            own_cluster_finished_hosts = {w.id for w in self.shared_finished_workers if w.swarm_id == own_cluster}
             if threshold == -1:
                 # is finished for an entire swarm by all of its workers
-                own_cluster_all_hosts = {*TestWorker.run_slots[own_cluster]}
+                own_cluster_all_hosts = {*TestSwarm.run_swarms[own_cluster].workers}
                 return len(own_cluster_all_hosts) == len(own_cluster_finished_hosts)
             # is finished for an entire swarm by at least N of its workers
             return len(own_cluster_finished_hosts) >= threshold
-            # alternative implementation for threshold = 1
-            # finished_clusters = {worker.params["runtime_str"].split("/")[0] for worker in self.shared_finished_workers}
-            # return own_cluster in finished_clusters
         else:
             if threshold == -1:
                 # is finished globally by all workers
-                return len(self.shared_finished_workers) == sum([len([w for w in TestWorker.run_slots[s]]) for s in TestWorker.run_slots])
+                return len(self.shared_finished_workers) == sum([len([w for w in TestSwarm.run_swarms[s].workers]) for s in TestSwarm.run_swarms])
             # is finished globally by at least N workers (down to at least one worker)
             return len(self.shared_finished_workers) >= threshold
 
@@ -847,46 +836,6 @@ class TestNode(Runnable):
                 del(vt_params[key])
         super().__init__('avocado-vt', uri, **vt_params)
 
-    def get_session_ip_port(self):
-        """
-        Get an IP address and a port to the current slot for the given test node.
-
-        :returns: IP and port in string parameter format
-        :rtype: (str, str)
-        """
-        return NetObject.get_session_ip_port(self.params['nets_host'],
-                                             self.params['nets_gateway'],
-                                             self.params['nets_ip_prefix'],
-                                             self.params["nets_shell_port"])
-
-    def get_session_to_net(self):
-        """
-        Get a remote session to the current slot for the given test node.
-
-        :returns: remote session to the slot determined from current node environment
-        :rtype: :type session: :py:class:`aexpect.ShellSession`
-        """
-        log.getLogger("aexpect").parent = log.getLogger("avocado.job")
-        host, port = self.get_session_ip_port()
-        address = host + ":" + port
-        cache = type(self)._session_cache
-        session = cache.get(address)
-        if session:
-            # check for corrupted sessions
-            try:
-                logging.debug("Remote session health check: " + session.cmd_output("date"))
-            except ShellTimeoutError as error:
-                logging.warning(f"Bad remote session health for {address}!")
-                session = None
-        if not session:
-            session = remote.wait_for_login(self.params["nets_shell_client"],
-                                            host, port,
-                                            self.params["nets_username"], self.params["nets_password"],
-                                            self.params["nets_shell_prompt"])
-            cache[address] = session
-
-        return session
-
     def scan_states(self):
         """
         Scan for present object states to reuse the test from previous runs.
@@ -926,7 +875,7 @@ class TestNode(Runnable):
             node_params[f"soft_boot{object_suffix}"] = "no"
 
         if not is_leaf:
-            session = self.get_session_to_net()
+            session = self.started_worker.get_session()
             control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
             mod_control_path = door.set_subcontrol_parameter(control_path, "action", "check")
             mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)
@@ -1027,7 +976,7 @@ class TestNode(Runnable):
         if should_clean:
             action = "Cleaning up" if unset_policy[0] == "f" else "Syncing"
             logging.info(f"{action} {self} for {self.started_worker.id}")
-            session = self.get_session_to_net()
+            session = self.started_worker.get_session()
             control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
             mod_control_path = door.set_subcontrol_parameter(control_path, "action", do)
             mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)

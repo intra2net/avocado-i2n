@@ -446,6 +446,22 @@ def all_objects(key="vms", composites=None):
     return params.objects(key)
 
 
+def all_suffixes_by_restriction(restriction, key="nets"):
+    """
+    Return all object suffixes via restriction of their variants.
+
+    :param: str restriction: restriction of the suffix variants
+    :param: str key: key to describe the parametric object type
+    :returns: all restricted (from configuration) object suffixes of a given type
+    :rtype: [str]
+    """
+    rep = Reparsable()
+    rep.parse_next_file(f"{key}.cfg")
+    rep.parse_next_str(restriction)
+    parser = rep.get_parser()
+    return [d["shortname"] for d in parser.get_dicts()]
+
+
 def main_vm():
     """
     Return the default main vm that can be passed for any test configuration.

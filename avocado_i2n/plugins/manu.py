@@ -60,7 +60,7 @@ class Manu(CLICmd):
         config["params"] = config["i2n.manu.params"]
         try:
             cmd_parser.params_from_cmd(config)
-        except param.EmptyCartesianProduct as error:
+        except (ValueError, param.EmptyCartesianProduct) as error:
             LOG_UI.error(error)
             return 1
         intertest.load_addons_tools()

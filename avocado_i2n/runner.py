@@ -130,6 +130,8 @@ class CartesianRunner(RunnerInterface):
         spawner = node.params["nets_spawner"]
         logging.debug(f"Running {node.id} on {gateway}/{host} using {spawner} isolation")
 
+        if node.started_worker is None:
+            raise RuntimeError(f"No worker is running {node}")
         if node.started_worker.spawner is None:
             raise RuntimeError(f"Worker {node.started_worker} cannot spawn tasks")
         if not self.status_repo:
@@ -173,7 +175,7 @@ class CartesianRunner(RunnerInterface):
             if spawner == "lxc":
                 task.spawner_handle = host
             elif spawner == "remote":
-                task.spawner_handle = node.get_session_to_net()
+                task.spawner_handle = node.started_worker.get_session()
         self.tasks += tasks
 
         # TODO: use a single state machine for all test nodes when we are able
@@ -269,10 +271,10 @@ class CartesianRunner(RunnerInterface):
         for worker in graph.workers.values():
             if not worker.spawner:
                 worker.spawner = SpawnerDispatcher(self.job.config, self.job)[worker.params["nets_spawner"]].obj
-            if "runtime_str" in worker.params and not worker.set_up():
+            if not worker.set_up():
                 raise RuntimeError(f"Failed to start environment {worker.id}")
         slot_workers = sorted([*graph.workers.values()], key=lambda x: x.params["name"])
-        to_traverse = [graph.traverse_object_trees(s, params) for s in slot_workers if "runtime_str" in s.params]
+        to_traverse = [graph.traverse_object_trees(s, params) for s in slot_workers]
         asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
                                                                      self.job.timeout or None))
 
@@ -317,7 +319,7 @@ class CartesianRunner(RunnerInterface):
             summary.add('INTERRUPTED')
 
         # clean up any test node session cache
-        for session in TestNode._session_cache.values():
+        for session in TestWorker._session_cache.values():
             session.close()
 
         # TODO: The avocado implementation needs a workaround here:
