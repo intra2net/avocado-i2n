@@ -218,12 +218,10 @@ class TestNode(Runnable):
         for result in self.shared_results:
             if result["status"] != "PASS":
                 continue
-            # TODO: all nets and thus worker parameters are not provided to each node
-            # for net_suffix in self.params.objects("nets"):
-            from .. import params_parser as param
-            for net_suffix in param.all_objects("nets"):
-                if net_suffix in result["name"]:
-                    workers.add(net_suffix)
+            worker_ids = [w.id for s in TestWorker.run_slots.values() for w in s.values()]
+            for worker_id in worker_ids:
+                if worker_id in result["name"]:
+                    workers.add(worker_id)
                     break
         return workers
     shared_result_worker_ids = property(fget=shared_result_worker_ids)
@@ -425,17 +423,14 @@ class TestNode(Runnable):
             # is started separately by each worker (doesn't matter eager of full)
             return worker in self.shared_started_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
-            own_cluster = worker.params["nets_gateway"]
-            own_cluster_started_hosts = {w.params["nets_host"] for w in self.shared_started_workers if w.params["nets_gateway"] == own_cluster}
+            own_cluster = worker.id.split(".")[0]
+            own_cluster_started_hosts = {w.id.split(".")[1] for w in self.shared_started_workers if w.id.split(".")[0] == own_cluster}
             if threshold == -1:
                 # is started for an entire swarm by all of its workers
                 own_cluster_all_hosts = {*TestWorker.run_slots[own_cluster]}
                 return len(own_cluster_all_hosts) == len(own_cluster_started_hosts)
             # is started for an entire swarm by at least N of its workers
             return len(own_cluster_started_hosts) >= threshold
-            # alternative implementation for threshold = 1
-            # started_clusters = {w.params["nets_gateway"] for w in self.shared_started_workers}
-            # return own_cluster in started_clusters
         else:
             if threshold == -1:
                 # is started globally by all workers
@@ -465,17 +460,14 @@ class TestNode(Runnable):
             # is finished separately by each worker (doesn't matter eager of full)
             return worker in self.shared_finished_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
-            own_cluster = worker.params["nets_gateway"]
-            own_cluster_finished_hosts = {w.params["nets_host"] for w in self.shared_finished_workers if w.params["nets_gateway"] == own_cluster}
+            own_cluster = worker.id.split(".")[0]
+            own_cluster_finished_hosts = {w.id.split(".")[1] for w in self.shared_finished_workers if w.id.split(".")[0] == own_cluster}
             if threshold == -1:
                 # is finished for an entire swarm by all of its workers
                 own_cluster_all_hosts = {*TestWorker.run_slots[own_cluster]}
                 return len(own_cluster_all_hosts) == len(own_cluster_finished_hosts)
             # is finished for an entire swarm by at least N of its workers
             return len(own_cluster_finished_hosts) >= threshold
-            # alternative implementation for threshold = 1
-            # finished_clusters = {w.params["nets_gateway"] for w in self.shared_finished_workers}
-            # return own_cluster in finished_clusters
         else:
             if threshold == -1:
                 # is finished globally by all workers

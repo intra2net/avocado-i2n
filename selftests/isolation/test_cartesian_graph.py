@@ -76,7 +76,10 @@ class CartesianWorkerTest(Test):
         self.assertEqual(test_workers[2].params["nets_spawner"], "process")
         self.assertEqual(test_workers[2].params["nets_shell_host"], "localhost")
         self.assertEqual(test_workers[2].params["nets_shell_port"], "22")
-        self.assertEqual(TestWorker.run_slots, {"": {"": "process", "c1": "lxc"}, "remote.com": {"2": "remote"}})
+        # TODO: provide a product with multiple clusters
+        self.assertEqual(TestWorker.run_slots, {"cluster1": {"net3": test_workers[0],
+                                                             "net4": test_workers[1],
+                                                             "net5": test_workers[2]}})
 
     def test_sanity_in_graph(self):
         """Test generic usage and composition."""
@@ -843,6 +846,8 @@ class CartesianNodeTest(Test):
         flat_nets = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"})
         self.assertEqual(len(flat_nets), 1)
         flat_net2 = flat_nets[0]
+        TestWorker.run_slots = {"localhost": {"net1": TestWorker(flat_net1),
+                                              "net2": TestWorker(flat_net2)}}
         graph = TestGraph()
         nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net1)
         self.assertEqual(len(nodes), 1)
@@ -1125,7 +1130,7 @@ class CartesianNodeTest(Test):
         # should not clean a reversible test node that is not globally cleanup ready
         test_node1 = graph.get_node_by(param_val="explicit_noop.+net1")
         test_node2 = graph.get_node_by(param_val="explicit_noop.+net2")
-        TestWorker.run_slots = {"": {"1": "lxc", "2": "lxc"}}
+        TestWorker.run_slots = {"localhost": {"net1": worker1, "net2": worker2}}
         self.assertFalse(test_node1.default_clean_decision(worker1))
         self.assertFalse(test_node2.default_clean_decision(worker2))
         test_node1.finished_worker = worker1
@@ -1300,6 +1305,7 @@ class CartesianNodeTest(Test):
         # nets host is a runtime parameter
         parent_node.params["object_suffix"] = "vm1"
         worker = TestWorker(flat_net)
+        TestWorker.run_slots = {"localhost": {"net1": worker}}
         worker.params["nets_host"] = "some_host"
         parent_node.finished_worker = worker
         # parent nodes was parsed as dependency of node via its vm1 object
@@ -1316,6 +1322,7 @@ class CartesianNodeTest(Test):
         self.assertEqual(node.params[f"nets_host_{worker.id}"], worker.params[f"nets_host"])
 
         # finished workers should not get out of sync with previous results
+        TestWorker.run_slots = {"localhost": {"net2": TestWorker(TestGraph.parse_flat_objects("net2", "nets")[0])}}
         parent_node.results = [{"name": "tutorial1.net2",
                                 "status": "PASS", "time": 3}]
         with self.assertRaises(RuntimeError):
@@ -1345,6 +1352,7 @@ class CartesianNodeTest(Test):
         parent_node2.params["object_suffix"] = "vm1"
         worker1 = TestWorker(flat_net1)
         worker2 = TestWorker(flat_net2)
+        TestWorker.run_slots = {"localhost": {"net1": worker1, "net2": worker2}}
         # parent nodes were parsed as dependency of node via its vm1 object
         worker1.params["nets_host"] = "some_host"
         worker2.params["nets_host"] = "other_host"

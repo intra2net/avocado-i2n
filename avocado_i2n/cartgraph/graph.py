@@ -1204,13 +1204,10 @@ class TestGraph(object):
             if slot is not None:
                 test_worker.overwrite_with_slot(slot)
 
-            # TODO: convert: env_net = cluster name, env_name = worker name, env_type = worker spawner
-            env_net = test_worker.params["nets_gateway"]
-            env_name = test_worker.params["nets_host"]
-            env_type = test_worker.params["nets_spawner"]
-            if env_net not in TestWorker.run_slots:
-                TestWorker.run_slots[env_net] = {}
-            TestWorker.run_slots[env_net][env_name] = env_type
+            _, worker_suffix, swarm_suffix = test_worker.params["name"].split(".")
+            if swarm_suffix not in TestWorker.run_slots:
+                TestWorker.run_slots[swarm_suffix] = {}
+            TestWorker.run_slots[swarm_suffix][worker_suffix] = test_worker
 
         return test_workers
 
