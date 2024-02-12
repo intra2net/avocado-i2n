@@ -201,6 +201,8 @@ class CartesianRunner(RunnerInterface):
         uid = node.id_test.uid
         name = node.params["name"]
 
+        node_result = {"name": name, "status": "UNKNOWN"}
+        node.results += [node_result]
         await self.run_test_task(node)
 
         for i in range(status_timeout):
@@ -217,6 +219,7 @@ class CartesianRunner(RunnerInterface):
                         # TODO: could we replace with WARN before the status is announced to the status server?
                         test_result["status"] = "WARN"
                 node.results += [test_result]
+                node.results.remove(node_result)
                 test_status = test_result["status"].lower()
                 break
             except StopIteration:

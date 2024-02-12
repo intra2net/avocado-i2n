@@ -543,7 +543,7 @@ class TestNode(Runnable):
         elif worker and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not consider rerunning {self}")
 
-        all_statuses = ["fail", "error", "pass", "warn", "skip", "cancel", "interrupted"]
+        all_statuses = ["fail", "error", "pass", "warn", "skip", "cancel", "interrupted", "unknown"]
         if self.params.get("replay"):
             rerun_status = self.params.get_list("rerun_status", "fail,error,warn", delimiter=",")
         else:
@@ -578,7 +578,7 @@ class TestNode(Runnable):
             return False
 
         # the runs total also considers UNKNOWN statuses from currently occupied test nodes minus currently traversed/evaluated case
-        total_runs = len(test_statuses) + len(self.shared_started_workers) - (1 if self.started_worker else 0)
+        total_runs = len(test_statuses)
         # implicitly this means that setting >1 retries will be done on tests actually collecting results (no flat nodes, dry runs, etc.)
         reruns_left = 0 if max_tries == 1 else max_tries - total_runs
         if reruns_left > 0:
