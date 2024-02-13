@@ -62,7 +62,7 @@ def params_from_cmd(config):
     # the run string includes only pure parameters
     param_dict = {}
     # the tests string includes the test restrictions while the vm strings include the ones for the vm variants
-    tests_str, nets_str, vm_strs = "", "", collections.OrderedDict([(vm, "") for vm in available_vms])
+    tests_str, nets_str, vm_strs = "", "", {vm: "" for vm in available_vms}
 
     # main tokenizing loop
     for cmd_param in config["params"]:

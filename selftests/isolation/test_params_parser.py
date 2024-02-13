@@ -35,12 +35,18 @@ class ParamsParserTest(Test):
 
     def test_join_str(self):
         """Test a resulting join string satifies certain syntactic form."""
-        output = param.join_str({"obj1": "only a", "obj2": "param1 = A\n"}, base_str="")
-        self.assertEqual(output, "obj1:\n"
+        output = param.join_str({"vm2": "param1 = A\n", "vm1": "only a"},
+                                 "vms", base_str="param2 = B\n")
+        self.assertEqual(output, "param2 = B\n"
+                                 "vm1:\n"
                                  "    only a\n"
-                                 "obj2:\n"
+                                 "vm2:\n"
                                  "    param1 = A\n"
-                                 "join obj1 obj2\n")
+                                 "join vm1 vm2\n")
+
+        with self.assertRaises(ValueError):
+            param.join_str({"vm_VARIANT_NOT_IN_VMS": "param1 = A\n"},
+                            "vms")
 
     def test_parser_params(self):
         """Test that parameters obtain from parser or directly are the same."""

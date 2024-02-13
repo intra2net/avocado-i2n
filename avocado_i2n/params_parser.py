@@ -492,7 +492,7 @@ def re_str(variant_str, base_str="", tag=""):
     return base_str + variant_str
 
 
-def join_str(variant_strs, base_str=""):
+def join_str(variant_strs, sort_key, base_str=""):
     """
     Join all object variant restrictions over the base string.
 
@@ -503,9 +503,16 @@ def join_str(variant_strs, base_str=""):
     :rtype: str
     """
     objects, variant_str = "", ""
-    for suffix, variant in variant_strs.items():
+    available_objects = all_objects(sort_key)
+    for suffix in available_objects:
+        if suffix not in variant_strs.keys():
+            continue
+        variant = variant_strs[suffix]
         subvariant = "".join(["    " + l + "\n" for l in variant.rstrip("\n").split("\n")])
         variant_str += "%s:\n%s" % (suffix, subvariant)
         objects += " " + suffix
+    if objects == "":
+        raise ValueError(f"Could not find some of {list(variant_strs.keys())} among "
+                         f"the available {available_objects}")
     variant_str += "join" + objects + "\n"
     return base_str + variant_str

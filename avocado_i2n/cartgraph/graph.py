@@ -509,10 +509,11 @@ class TestGraph(object):
         params = params or {}
         params_str = param.ParsedDict(params).parsable_form()
         if "\n" in restriction:
-            restriction = param.join_str({suffix: restriction}, params_str)
+            restriction = param.join_str({suffix: restriction}, category, params_str)
         else:
             restriction_word = category if not restriction else restriction
-            restriction = param.join_str({suffix: "only " + restriction_word + "\n"}, params_str)
+            restriction = param.join_str({suffix: "only " + restriction_word + "\n"},
+                                         category, params_str)
 
         if category == "images":
             raise TypeError("Multi-variant image test objects are not supported.")
@@ -554,10 +555,11 @@ class TestGraph(object):
         params = params or {}
         params_str = param.ParsedDict({k: v for k, v in params.items() if not k.startswith("only_")}).parsable_form()
         if "\n" in restriction:
-            top_restriction = param.join_str({suffix: restriction}, params_str)
+            top_restriction = param.join_str({suffix: restriction}, category, params_str)
         else:
             restriction_word = category if not restriction else restriction
-            top_restriction = param.join_str({suffix: "only " + restriction_word + "\n"}, params_str)
+            top_restriction = param.join_str({suffix: "only " + restriction_word + "\n"},
+                                             category, params_str)
 
         if component_restrs is None:
             # TODO: all possible default suffixes, currently only vms supported
@@ -566,7 +568,7 @@ class TestGraph(object):
         if category == "images":
             raise TypeError("Multi-variant image test objects are not supported.")
         object_class = NetObject if category == "nets" else VMObject
-        vm_restriction = param.join_str(component_restrs, params_str) if category == "nets" else top_restriction
+        vm_restriction = param.join_str(component_restrs, "vms", params_str) if category == "nets" else top_restriction
 
         test_objects = []
         # all possible component object combinations for a given composite object
@@ -1101,7 +1103,7 @@ class TestGraph(object):
         # handle empty product of node and object variants
         if len(test_nodes) == 0:
             config = param.Reparsable()
-            config.parse_next_str(param.join_str(object_restrs))
+            config.parse_next_str(param.join_str(object_restrs, "vms"))
             config.parse_next_str(param.re_str(restriction))
             config.parse_next_dict(params)
             raise param.EmptyCartesianProduct(config.print_parsed())
