@@ -2907,7 +2907,7 @@ class CartesianGraphTest(Test):
             # net1 starts from first tutorial2 variant and provides vm1 setup
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets": "^net1$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c101$"},
-            # net2 starts from second tutorial variant and waits for its single (same) setup to be provided
+            # net2 starts from second tutorial variant and steps back from its single (same) setup (net1)
             # net3 starts from first gui test and provides vm1 setup
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets": "^net3$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c103$"},
@@ -2919,11 +2919,7 @@ class CartesianGraphTest(Test):
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c101$",
              "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
              "nets_shell_host_net1": "^192.168.254.101$", "nets_shell_port_net1": "22"},
-            # net2 no longer waits and picks its planned tests reusing setup from net1
-            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^net2$",
-             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c102$",
-             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
-             "nets_shell_host_net1": "^192.168.254.101$", "nets_shell_port_net1": "22"},
+            # net2 now steps back from tutorial2.files newly occupied by net1
             # net3 is done with half of the setup for client_noop and waits for net4 to provide the other half
             # net4 now moves on to its planned test
             {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^net4$",
@@ -2931,7 +2927,11 @@ class CartesianGraphTest(Test):
              "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm",
              "nets_shell_host_net3": "^192.168.254.103$", "nets_shell_host_net4": "^192.168.254.104$",
              "nets_shell_port_net3": "22", "nets_shell_port_net4": "22"},
-            # net1 picks unattended install from shared root since all flat nodes were traversed (postponed full tutorial2 cleanup) waiting for net2
+            # net1 continues to the second tutorial2
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^net1$",
+             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c101$",
+             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
+             "nets_shell_host_net1": "^192.168.254.101$", "nets_shell_port_net1": "22"},
             # net2 picks the first gui test before net3's turn
             {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^net2$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c102$",
@@ -2977,35 +2977,26 @@ class CartesianGraphTest(Test):
         DummyStateControl.asserted_states["unset"] = {"guisetup.noop": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
             # TODO: localhost is not acceptable when we mix hosts
-            # cluster1.net.lan/1 starts from first tutorial2 variant and provides vm1 setup
+            # order of the tests must be identical to the swarm work tracing
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets": "^cluster1.net6$",
              "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^1$"},
-            # cluster1.net.lan/2 starts from second tutorial variant and waits for its single (same) setup to be provided
-            # cluster2.net.lan/1 starts from first gui test and provides vm1 setup
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets": "^cluster2.net6$",
              "nets_spawner": "remote", "nets_gateway": "^cluster2.net.lan$", "nets_host": "^1$"},
-            # cluster2.net.lan/2 starts from second gui test and provides vm2 setup
             {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "nets": "^cluster2.net7$",
              "nets_spawner": "remote", "nets_gateway": "^cluster2.net.lan$", "nets_host": "^2$"},
-            # cluster1.net.lan/1 now moves on to its planned test
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets": "^cluster1.net6$",
              "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^1$",
              "get_location_vm1": "[\w:/]+ cluster1.net6:/mnt/local/images/swarm",
              "nets_shell_host_cluster1.net6": "^cluster1.net.lan$", "nets_shell_port_cluster1.net6": "221"},
-            # cluster1.net.lan/2 no longer waits and picks its planned tests reusing setup from net6
-            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^cluster1.net7$",
-             "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^2$",
-             "get_location_vm1": "[\w:/]+ cluster1.net6:/mnt/local/images/swarm",
-             "nets_shell_host_cluster1.net6": "^cluster1.net.lan$", "nets_shell_port_cluster1.net6": "221"},
-            # cluster2.net.lan/1 is done with half of the setup for client_noop and waits for cluster2.net.lan/2 to provide the other half
-            # cluster2.net.lan/2 now moves on to its planned test
             {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^cluster2.net7$",
              "nets_spawner": "remote", "nets_gateway": "^cluster2.net.lan$", "nets_host": "^2$",
              "get_location_image1_vm1": "[\w:/]+ cluster2.net6:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ cluster2.net7:/mnt/local/images/swarm",
              "nets_shell_host_cluster2.net6": "^cluster2.net.lan$", "nets_shell_host_cluster2.net7": "^cluster2.net.lan$",
              "nets_shell_port_cluster2.net6": "221", "nets_shell_port_cluster2.net7": "222"},
-            # cluster1.net.lan/1 picks unattended install from shared root since all flat nodes were traversed (postponed full tutorial2 cleanup) waiting for cluster1.net.lan/2
-            # cluster1.net.lan/2 picks the first gui test before cluster2.net.lan/1's turn
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^cluster1.net6$",
+             "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^1$",
+             "get_location_vm1": "[\w:/]+ cluster1.net6:/mnt/local/images/swarm",
+             "nets_shell_host_cluster1.net6": "^cluster1.net.lan$", "nets_shell_port_cluster1.net6": "221"},
             {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^cluster1.net7$",
              "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^2$",
              "get_location_image1_vm1": "[\w:/]+ cluster2.net6:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ cluster2.net7:/mnt/local/images/swarm",
@@ -3041,18 +3032,18 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$", "nets": "^net2$"},
             # this tests reentry of traversed path by an extra worker net4 reusing setup from net1
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets": "^net3$"},
-            # net4 would step back from already occupied on_customize (by net1) for the time being
+            # net4 would step back from already occupied windows_virtuser (by net2) and wander off
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets": "^net1$",
              "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm"},
             # net2 would step back from already occupied linux_virtuser (by net3) and net3 proceeds from most distant path
             {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^net3$",
              "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net2:/mnt/local/images/swarm"},
-            # net4 now picks up available setup and tests from its own reentered branch
-            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^net4$",
-             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net2:/mnt/local/images/swarm"},
-            # net1 would now pick its second local tutorial2.names
-            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^net1$",
+            # net4 now picks up available setup and tests after wandering off from occupied node
+            {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^net4$",
              "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm"},
+            # net1 would bounce off the already occupied tutorial2.names
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^net2$",
+             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net2:/mnt/local/images/swarm"},
             # all others now step back from already occupied tutorial2.names (by net1)
         ]
         self._run_traversal(graph, self.config["param_dict"])
@@ -3179,21 +3170,23 @@ class CartesianGraphTest(Test):
 
             # second (clicked) duplicated actual test of CentOS+Win10
             {"shortname": "^leaves.tutorial_get.implicit_both.guisetup.clicked.vm1.+CentOS.+vm2.+Win10", "vms": "^vm1 vm2 vm3$", "get_state_images_image1_vm2": "guisetup.clicked"},
-            # second (clicked) explicit actual test of CentOS+Win7
-            {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.clicked"},
             # first (noop) explicit actual test of CentOS+Win7
             {"shortname": "^leaves.tutorial_get.explicit_noop..+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.noop"},
 
             # automated setup of vm1 of Fedora variant, required via extra "tutorial_gui" restriction
             {"shortname": "^internal.automated.linux_virtuser.vm1.+Fedora", "vms": "^vm1$"},
-            # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
-            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
-            # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
-            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
             # GUI test for vm1 of Fedora variant which is not first (noop) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
             {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
             # GUI test for vm1 of Fedora variant which is not first (noop) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
             {"shortname": "^leaves.tutorial_gui.client_noop.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
+
+            # second (clicked) explicit actual test of CentOS+Win7
+            {"shortname": "^leaves.tutorial_get.explicit_clicked.vm1.+CentOS.+vm2.+Win7", "vms": "^vm1 vm2 vm3$", "get_state_images_vm2": "guisetup.clicked"},
+
+            # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win10 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
+            # GUI test for vm1 of Fedora variant which is not second (clicked) dependency through vm2 of Win7 variant (produced with vm1 of CentOS variant)
+            {"shortname": "^leaves.tutorial_gui.client_clicked.vm1.+Fedora.+vm2.+Win7", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.clicked"},
         ]
 
         self._run_traversal(graph, self.config["param_dict"])

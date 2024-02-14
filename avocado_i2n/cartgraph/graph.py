@@ -1559,6 +1559,7 @@ class TestGraph(object):
                 # ending with an occupied node would mean we wait for a permill of its duration
                 test_duration = next.params.get_numeric("test_timeout", 3600) * next.params.get_numeric("max_tries", 1)
                 occupied_timeout = round(max(test_duration/1000, 0.1), 2)
+                # despite ergodicity we ended at the same node (no other work)
                 if next == occupied_at:
                     if occupied_wait > test_duration:
                         raise RuntimeError(f"Worker {worker.id} spent {occupied_wait:.2f} seconds waiting for "
@@ -1570,7 +1571,9 @@ class TestGraph(object):
                 occupied_at = next
                 logging.debug(f"Worker {worker.id} stepping back from already occupied test node {next} for "
                               f"a period of {occupied_timeout} seconds (total time spent: {occupied_wait:.2f})")
-                traverse_path.pop()
+                # reset the worker path to improve overall ergodicity (it will look for other work)
+                traverse_path = [root]
+                # postpone this worker as it might traverse most of the graph (better done when nothing else to do)
                 await asyncio.sleep(occupied_timeout)
                 continue
 
@@ -1615,8 +1618,9 @@ class TestGraph(object):
                         # postpone cleaning up current node since it might have newly added children
                         logging.info(f"Worker {worker.id} postponing the cleanup for {next} "
                                      f"due to {len(unexplored_nodes)} unexplored nodes")
-                        traverse_path.append(root)
-                        traverse_path.append(root.pick_child(worker))
+                        # reset the worker path to improve overall ergodicity (it will look for other work)
+                        traverse_path = [root]
+                        # no asyncio sleep here since we want the worker to only bounce from occupied nodes
                         continue
 
                     for setup in next.setup_nodes:
@@ -1626,9 +1630,6 @@ class TestGraph(object):
                 else:
                     # normal DFS
                     traverse_path.append(next.pick_child(worker))
-            elif next == root:
-                # discontinuous paths allowed via the shared root (waiting cleanup and else)
-                traverse_path.pop()
             else:
                 raise AssertionError("Discontinuous path in the test dependency graph detected")
 
