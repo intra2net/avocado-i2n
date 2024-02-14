@@ -51,14 +51,16 @@ class TestEnvironment(object):
 class TestSwarm(TestEnvironment):
     """A wrapper for a test swarm of workers traversing the graph."""
 
-    def __init__(self, id):
+    run_swarms = {}
+
+    def __init__(self, id, workers = None):
         """
         Construct a test swarm (of sub-environments for execution) for any test nodes (tests).
 
         The rest of the arguments are inherited from the base class.
         """
         super().__init__(id)
-        self.workers = []
+        self.workers = workers or []
 
     def __repr__(self):
         dump = f"[swarm] id='{self.id}', workers='{len(self.workers)}'"
@@ -70,7 +72,6 @@ class TestSwarm(TestEnvironment):
 class TestWorker(TestEnvironment):
     """A wrapper for a test worker traversing the graph."""
 
-    run_slots = {}
     _session_cache = {}
 
     def params(self):
@@ -88,6 +89,7 @@ class TestWorker(TestEnvironment):
         """
         super().__init__(id_net.params["shortname"])
         self.net = id_net
+        _, self.swarm_id, _ = self.params["name"].split(".")
         self.spawner = None
 
     def __repr__(self):

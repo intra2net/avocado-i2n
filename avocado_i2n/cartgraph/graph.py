@@ -39,7 +39,9 @@ import itertools
 import asyncio
 
 from .. import params_parser as param
-from . import PrefixTreeNode, PrefixTree, TestNode, TestWorker, TestObject, NetObject, VMObject, ImageObject
+from . import PrefixTreeNode, PrefixTree, TestNode
+from . import TestSwarm, TestWorker
+from . import TestObject, NetObject, VMObject, ImageObject
 
 
 def set_graph_logging_level(level=20):
@@ -1194,7 +1196,7 @@ class TestGraph(object):
         else:
             slots = [None for s in suffixes]
 
-        TestWorker.run_slots = {}
+        TestSwarm.run_swarms = {}
         test_workers = []
         for suffix, slot in zip(suffixes, slots):
             # TODO: currently we truly support only one flat net per suffix
@@ -1204,10 +1206,10 @@ class TestGraph(object):
             if slot is not None:
                 test_worker.overwrite_with_slot(slot)
 
-            _, swarm_suffix, worker_suffix = test_worker.params["name"].split(".")
-            if swarm_suffix not in TestWorker.run_slots:
-                TestWorker.run_slots[swarm_suffix] = {}
-            TestWorker.run_slots[swarm_suffix][worker_suffix] = test_worker
+            if test_worker.swarm_id not in TestSwarm.run_swarms:
+                TestSwarm.run_swarms[test_worker.swarm_id] = TestSwarm(test_worker.swarm_id, [test_worker])
+            else:
+                TestSwarm.run_swarms[test_worker.swarm_id].workers += [test_worker]
 
         return test_workers
 

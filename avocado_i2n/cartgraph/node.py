@@ -38,7 +38,7 @@ from aexpect import remote_door as door
 from avocado.core.test_id import TestID
 from avocado.core.nrunner.runnable import Runnable
 
-from . import TestWorker, NetObject
+from . import TestSwarm, TestWorker, NetObject
 
 
 door.DUMP_CONTROL_DIR = "/tmp"
@@ -218,7 +218,7 @@ class TestNode(Runnable):
         for result in self.shared_results:
             if result["status"] != "PASS":
                 continue
-            worker_ids = [w.id for s in TestWorker.run_slots.values() for w in s.values()]
+            worker_ids = [w.id for s in TestSwarm.run_swarms.values() for w in s.workers]
             for worker_id in worker_ids:
                 if worker_id in result["name"]:
                     workers.add(worker_id)
@@ -423,18 +423,18 @@ class TestNode(Runnable):
             # is started separately by each worker (doesn't matter eager of full)
             return worker in self.shared_started_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
-            own_cluster = worker.id.split(".")[0]
-            own_cluster_started_hosts = {w.id.split(".")[1] for w in self.shared_started_workers if w.id.split(".")[0] == own_cluster}
+            own_cluster = worker.swarm_id
+            own_cluster_started_hosts = {w.id for w in self.shared_started_workers if w.swarm_id == own_cluster}
             if threshold == -1:
                 # is started for an entire swarm by all of its workers
-                own_cluster_all_hosts = {*TestWorker.run_slots[own_cluster]}
+                own_cluster_all_hosts = {*TestSwarm.run_swarms[own_cluster].workers}
                 return len(own_cluster_all_hosts) == len(own_cluster_started_hosts)
             # is started for an entire swarm by at least N of its workers
             return len(own_cluster_started_hosts) >= threshold
         else:
             if threshold == -1:
                 # is started globally by all workers
-                return len(self.shared_started_workers) == sum([len([w for w in TestWorker.run_slots[s]]) for s in TestWorker.run_slots])
+                return len(self.shared_started_workers) == sum([len([w for w in TestSwarm.run_swarms[s].workers]) for s in TestSwarm.run_swarms])
             # is started globally by at least N workers (down to at least one worker)
             return len(self.shared_started_workers) >= threshold
 
@@ -460,18 +460,18 @@ class TestNode(Runnable):
             # is finished separately by each worker (doesn't matter eager of full)
             return worker in self.shared_finished_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
-            own_cluster = worker.id.split(".")[0]
-            own_cluster_finished_hosts = {w.id.split(".")[1] for w in self.shared_finished_workers if w.id.split(".")[0] == own_cluster}
+            own_cluster = worker.swarm_id
+            own_cluster_finished_hosts = {w.id for w in self.shared_finished_workers if w.swarm_id == own_cluster}
             if threshold == -1:
                 # is finished for an entire swarm by all of its workers
-                own_cluster_all_hosts = {*TestWorker.run_slots[own_cluster]}
+                own_cluster_all_hosts = {*TestSwarm.run_swarms[own_cluster].workers}
                 return len(own_cluster_all_hosts) == len(own_cluster_finished_hosts)
             # is finished for an entire swarm by at least N of its workers
             return len(own_cluster_finished_hosts) >= threshold
         else:
             if threshold == -1:
                 # is finished globally by all workers
-                return len(self.shared_finished_workers) == sum([len([w for w in TestWorker.run_slots[s]]) for s in TestWorker.run_slots])
+                return len(self.shared_finished_workers) == sum([len([w for w in TestSwarm.run_swarms[s].workers]) for s in TestSwarm.run_swarms])
             # is finished globally by at least N workers (down to at least one worker)
             return len(self.shared_finished_workers) >= threshold
 

@@ -90,9 +90,10 @@ class CartesianWorkerTest(Test):
         self.assertEqual(test_workers[2].params["nets_spawner"], "process")
         self.assertEqual(test_workers[2].params["nets_shell_host"], "localhost")
         self.assertEqual(test_workers[2].params["nets_shell_port"], "22")
-        self.assertEqual(TestWorker.run_slots, {"localhost": {"net3": test_workers[0],
-                                                              "net0": test_workers[2]},
-                                                "cluster1": {"net6": test_workers[1]}})
+        self.assertIn("localhost", TestSwarm.run_swarms)
+        self.assertEqual(TestSwarm.run_swarms["localhost"].workers, [test_workers[0], test_workers[2]])
+        self.assertIn("cluster1", TestSwarm.run_swarms)
+        self.assertEqual(TestSwarm.run_swarms["cluster1"].workers, [test_workers[1]])
 
     def test_sanity_in_graph(self):
         """Test generic usage and composition."""
@@ -734,25 +735,9 @@ class CartesianNodeTest(Test):
 
     def test_is_started_or_finished(self):
         """Test that a test node is eagerly to fully started or finished in different scopes."""
-        test_workers = TestGraph.parse_workers({"slots": "a/1 a/2 a/3 b/1 b/2",
-                                                "pool_scope": "own swarm cluster shared"})
-
-        # flat node is always started and finished with any threshold
-        nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
-        self.assertEqual(len(nodes), 1)
-        flat_node = nodes[0]
-        for worker in test_workers:
-            flat_node.started_worker = worker
-            self.assertTrue(flat_node.is_flat())
-            self.assertFalse(flat_node.is_started(worker, 1))
-            self.assertFalse(flat_node.is_started(worker, 2))
-            self.assertFalse(flat_node.is_started(worker, -1))
-            flat_node.finished_worker = worker
-            self.assertTrue(flat_node.is_flat())
-            self.assertTrue(flat_node.is_finished(worker, 1))
-            self.assertTrue(flat_node.is_finished(worker, 2))
-            self.assertTrue(flat_node.is_finished(worker, -1))
-
+        # TODO: the worker restrictions are still a bit clunky
+        test_workers = TestGraph.parse_workers({"nets": "cluster1.net6 cluster1.net7 cluster1.net8"
+                                                        " cluster2.net6 cluster2.net7"})
         full_nodes = []
         for worker in test_workers:
             new_node = TestGraph.parse_node_from_object(worker.net, "normal..tutorial1", prefix="1")
@@ -774,7 +759,7 @@ class CartesianNodeTest(Test):
                 self.assertFalse(node.is_finished(worker, 2))
                 self.assertFalse(node.is_finished(worker, -1))
 
-        # less eager threshold is satisfied with at more workers
+        # less eager threshold is satisfied with more workers
         full_nodes[1].started_worker = test_workers[1]
         for node in full_nodes:
             for worker in test_workers:
@@ -803,6 +788,89 @@ class CartesianNodeTest(Test):
                 self.assertTrue(node.is_finished(worker, 1))
                 self.assertTrue(node.is_finished(worker, 2))
                 self.assertTrue(node.is_finished(worker, -1))
+
+    def test_is_started_or_finished_filter(self):
+        """Test that a test node is eagerly to fully started or finished in filtered scopes."""
+        # TODO: the worker restrictions are still a bit clunky
+        test_workers = TestGraph.parse_workers({"nets": "cluster1.net6 cluster1.net7 cluster1.net8"
+                                                        " cluster2.net6 cluster2.net7"})
+        full_nodes = []
+        for worker in test_workers:
+            new_node = TestGraph().parse_composite_nodes("normal..tutorial1", worker.net,
+                                                         prefix="1", params={"pool_scope": "own swarm shared"})[0]
+            for bridge in full_nodes:
+                new_node.bridge_node(bridge)
+            full_nodes += [new_node]
+
+        # most eager threshold is satisfied with at least one worker per swarm
+        full_nodes[0].started_worker = test_workers[0]
+        for node, worker in zip(full_nodes, test_workers):
+            started_for_swarm = test_workers.index(worker) < 3
+            self.assertEqual(node.is_started(worker, 1), started_for_swarm)
+            self.assertFalse(node.is_started(worker, 2))
+            self.assertFalse(node.is_started(worker, -1))
+        full_nodes[1].finished_worker = test_workers[1]
+        for node, worker in zip(full_nodes, test_workers):
+            finished_for_swarm = test_workers.index(worker) < 3
+            self.assertEqual(node.is_finished(worker, 1), finished_for_swarm)
+            self.assertFalse(node.is_finished(worker, 2))
+            self.assertFalse(node.is_finished(worker, -1))
+
+        # less eager threshold is satisfied with more workers per swarm
+        full_nodes[1].started_worker = test_workers[1]
+        for node in full_nodes:
+            for worker in test_workers:
+                started_for_swarm = test_workers.index(worker) < 3
+                self.assertEqual(node.is_started(worker, 1), started_for_swarm)
+                self.assertEqual(node.is_started(worker, 2), started_for_swarm)
+                self.assertFalse(node.is_started(worker, -1))
+        full_nodes[0].finished_worker = test_workers[0]
+        for node in full_nodes:
+            for worker in test_workers:
+                finished_for_swarm = test_workers.index(worker) < 3
+                self.assertEqual(node.is_finished(worker, 1), finished_for_swarm)
+                self.assertEqual(node.is_finished(worker, 2), finished_for_swarm)
+                self.assertFalse(node.is_finished(worker, -1))
+
+        # fullest threshold is satisfied only with all workers of the swarm
+        for node, worker in zip(full_nodes, test_workers):
+            if test_workers.index(worker) < 3:
+                node.started_worker = worker
+        for node in full_nodes:
+            for worker in test_workers:
+                started_for_swarm = test_workers.index(worker) < 3
+                self.assertEqual(node.is_started(worker, 1), started_for_swarm)
+                self.assertEqual(node.is_started(worker, 2), started_for_swarm)
+                self.assertEqual(node.is_started(worker, -1), started_for_swarm)
+        for node, worker in zip(full_nodes, test_workers):
+            if test_workers.index(worker) < 3:
+                node.finished_worker = worker
+        for node in full_nodes:
+            for worker in test_workers:
+                finished_for_swarm = test_workers.index(worker) < 3
+                self.assertEqual(node.is_finished(worker, 1), finished_for_swarm)
+                self.assertEqual(node.is_finished(worker, 2), finished_for_swarm)
+                self.assertEqual(node.is_finished(worker, -1), finished_for_swarm)
+
+    def test_is_started_or_finished_flat(self):
+        """Test that a flat node is always started and finished with any threshold."""
+        # TODO: the worker restrictions are still a bit clunky
+        test_workers = TestGraph.parse_workers({"nets": "cluster1.net6 cluster1.net7 cluster1.net8"
+                                                        " cluster2.net6 cluster2.net7"})
+        nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        self.assertEqual(len(nodes), 1)
+        flat_node = nodes[0]
+        for worker in test_workers:
+            flat_node.started_worker = worker
+            self.assertTrue(flat_node.is_flat())
+            self.assertFalse(flat_node.is_started(worker, 1))
+            self.assertFalse(flat_node.is_started(worker, 2))
+            self.assertFalse(flat_node.is_started(worker, -1))
+            flat_node.finished_worker = worker
+            self.assertTrue(flat_node.is_flat())
+            self.assertTrue(flat_node.is_finished(worker, 1))
+            self.assertTrue(flat_node.is_finished(worker, 2))
+            self.assertTrue(flat_node.is_finished(worker, -1))
 
     def test_params(self):
         """Test for correctly parsed test node parameters."""
@@ -880,8 +948,8 @@ class CartesianNodeTest(Test):
         flat_nets = TestGraph.parse_flat_objects("net2", "nets", params={"only_vm1": "CentOS"})
         self.assertEqual(len(flat_nets), 1)
         flat_net2 = flat_nets[0]
-        TestWorker.run_slots = {"localhost": {"net1": TestWorker(flat_net1),
-                                              "net2": TestWorker(flat_net2)}}
+        swarm = TestSwarm("localhost", [TestWorker(flat_net1), TestWorker(flat_net2)])
+        TestSwarm.run_swarms = {swarm.id: swarm}
         graph = TestGraph()
         nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net1)
         self.assertEqual(len(nodes), 1)
@@ -1164,7 +1232,8 @@ class CartesianNodeTest(Test):
         # should not clean a reversible test node that is not globally cleanup ready
         test_node1 = graph.get_node_by(param_val="explicit_noop.+net1")
         test_node2 = graph.get_node_by(param_val="explicit_noop.+net2")
-        TestWorker.run_slots = {"localhost": {"net1": worker1, "net2": worker2}}
+        swarm = TestSwarm("localhost", [worker1, worker2])
+        TestSwarm.run_swarms = {swarm.id: swarm}
         self.assertFalse(test_node1.default_clean_decision(worker1))
         self.assertFalse(test_node2.default_clean_decision(worker2))
         test_node1.finished_worker = worker1
@@ -1339,7 +1408,8 @@ class CartesianNodeTest(Test):
         # nets host is a runtime parameter
         parent_node.params["object_suffix"] = "vm1"
         worker = TestWorker(flat_net)
-        TestWorker.run_slots = {"localhost": {"net1": worker}}
+        swarm = TestSwarm("localhost", [worker])
+        TestSwarm.run_swarms = {swarm.id: swarm}
         worker.params["nets_host"] = "some_host"
         parent_node.finished_worker = worker
         # parent nodes was parsed as dependency of node via its vm1 object
@@ -1356,7 +1426,7 @@ class CartesianNodeTest(Test):
         self.assertEqual(node.params[f"nets_host_{worker.id}"], worker.params[f"nets_host"])
 
         # finished workers should not get out of sync with previous results
-        TestWorker.run_slots = {"localhost": {"net2": TestWorker(TestGraph.parse_flat_objects("net2", "nets")[0])}}
+        swarm.workers += [TestWorker(TestGraph.parse_flat_objects("net2", "nets")[0])]
         parent_node.results = [{"name": "tutorial1.net2",
                                 "status": "PASS", "time": 3}]
         with self.assertRaises(RuntimeError):
@@ -1386,7 +1456,8 @@ class CartesianNodeTest(Test):
         parent_node2.params["object_suffix"] = "vm1"
         worker1 = TestWorker(flat_net1)
         worker2 = TestWorker(flat_net2)
-        TestWorker.run_slots = {"localhost": {"net1": worker1, "net2": worker2}}
+        swarm = TestSwarm("localhost", [worker1, worker2])
+        TestSwarm.run_swarms = {swarm.id: swarm}
         # parent nodes were parsed as dependency of node via its vm1 object
         worker1.params["nets_host"] = "some_host"
         worker2.params["nets_host"] = "other_host"
