@@ -39,13 +39,13 @@ from aexpect import remote_door as door
 from avocado.core.test_id import TestID
 from avocado.core.nrunner.runnable import Runnable
 
-from . import TestWorker
+from . import TestWorker, NetObject
 
 
 door.DUMP_CONTROL_DIR = "/tmp"
 
 
-class TestNode(object):
+class TestNode(Runnable):
     """
     A wrapper for all test relevant parts like parameters, parser, used
     objects and dependencies to/from other test nodes (setup/cleanup).
@@ -60,8 +60,17 @@ class TestNode(object):
 
     def final_restr(self):
         """Final restriction to make the object parsing variant unique."""
-        return self.config.steps[-2].parsable_form()
+        return self.recipe.steps[-2].parsable_form()
     final_restr = property(fget=final_restr)
+
+    def setless_form(self):
+        """Test set invariant form of the test node name."""
+        max_restr = ""
+        for main_restr in self.params.objects("main_restrictions"):
+            if self.params["name"].startswith(main_restr):
+                max_restr = main_restr if len(main_restr) > len(max_restr) else max_restr
+        return self.params["name"].replace(max_restr + ".", "", 1)
+    setless_form = property(fget=setless_form)
 
     def long_prefix(self):
         """Sufficiently unique prefix to identify a diagram test node."""
@@ -87,18 +96,18 @@ class TestNode(object):
 
     _session_cache = {}
 
-    def __init__(self, prefix, config, object):
+    def __init__(self, prefix, recipe):
         """
         Construct a test node (test) for any test objects (vms).
 
         :param str name: name of the test node
-        :param config: variant configuration for the test node
-        :type config: :py:class:`param.Reparsable`
-        :param object: node-level object participating in the test node
-        :type object: :py:class:`NetObject`
+        :param recipe: variant parsing recipe for the test node
+        :type recipe: :py:class:`param.Reparsable`
         """
+        super().__init__("avocado-vt", prefix, {})
+
         self.prefix = prefix
-        self.config = config
+        self.recipe = recipe
         self._params_cache = None
 
         self.should_run = self.default_run_decision
@@ -107,13 +116,43 @@ class TestNode(object):
         self.workers = set()
         self.worker = None
 
+        self.objects = []
+
+        # lists of parent and children test nodes
+        self.setup_nodes = []
+        self.cleanup_nodes = []
+        self.visited_setup_nodes = {}
+        self.visited_cleanup_nodes = {}
+
+    def __repr__(self):
+        shortname = self.params.get("shortname", "<unknown>")
+        return f"[node] longprefix='{self.long_prefix}', shortname='{shortname}'"
+
+    def set_environment(self, worker: TestWorker) -> None:
+        """
+        Set the environment for executing the test node.
+
+        :param worker: set an optional worker or run serially if none given
+                       for unisolated process spawners
+
+        This isolating environment could be a container, a virtual machine, or
+        a less-isolated process and is managed by a specialized spawner.
+        """
+        self.params["nets_gateway"] = worker.params["nets_gateway"]
+        self.params["nets_host"] = worker.params["nets_host"]
+        self.params["nets_spawner"] = worker.params["nets_spawner"]
+        self.worker = worker
+
+    def set_objects_from_net(self, net: NetObject) -> None:
+        """
+        Set all node's objects from a provided test net.
+
+        :param net: test net to use as first and top object
+        """
         # flattened list of objects (in composition) involved in the test
-        self.objects = [object]
+        self.objects = [net]
         # TODO: only three nesting levels from a test net are supported
-        if object.key != "nets":
-            raise AssertionError("Test node could be initialized only from test objects "
-                                 "of the same composition level, currently only test nets")
-        for test_object in object.components:
+        for test_object in net.components:
             self.objects += [test_object]
             self.objects += test_object.components
             # TODO: dynamically added additional images will not be detected here
@@ -131,54 +170,12 @@ class TestNode(object):
                     image.composites.append(test_object)
                     self.objects += [image]
 
-        # lists of parent and children test nodes
-        self.setup_nodes = []
-        self.cleanup_nodes = []
-        self.visited_setup_nodes = {}
-        self.visited_cleanup_nodes = {}
-
-    def __repr__(self):
-        shortname = self.params.get("shortname", "<unknown>")
-        return f"[node] longprefix='{self.long_prefix}', shortname='{shortname}'"
-
-    def get_runnable(self):
-        """
-        Get test factory from which the test loader will get a runnable test instance.
-
-        :return: test class and constructor parameters
-        :rtype: :py:class:`Runnable`
-        """
-        self.params['short_id'] = self.long_prefix
-        self.params['id'] = self.id_test.str_uid + "_" + self.id_test.name
-
-        uri = self.params.get('name')
-        vt_params = self.params.copy()
-
-        # Flatten the vt_params, discarding the attributes that are not
-        # scalars, and will not be used in the context of nrunner
-        for key in ('_name_map_file', '_short_name_map_file', 'dep'):
-            if key in self.params:
-                del(vt_params[key])
-
-        return Runnable('avocado-vt', uri, **vt_params)
-
-    def set_environment(self, worker: TestWorker) -> None:
-        """
-        Set the environment for executing the test node.
-
-        :param worker: set an optional worker or run serially if none given
-                       for unisolated process spawners
-
-        This isolating environment could be a container, a virtual machine, or
-        a less-isolated process and is managed by a specialized spawner.
-        """
-        self.params["nets_gateway"] = worker.params["nets_gateway"]
-        self.params["nets_host"] = worker.params["nets_host"]
-        self.params["nets_spawner"] = worker.params["nets_spawner"]
-        self.worker = worker
-
     def is_occupied(self):
         return self.worker is not None
+
+    def is_flat(self):
+        """Check if the test node is flat and does not yet have objects and dependencies to evaluate."""
+        return len(self.objects) == 0
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
@@ -199,6 +196,20 @@ class TestNode(object):
     def is_objectless(self):
         """Check if the test node is not defined with any test object."""
         return len(self.objects) == 0 or self.params["vms"] == ""
+
+    def is_unrolled(self, worker_id: str) -> bool:
+        """
+        Check if the test is unrolled as composite node with dependencies.
+
+        :param worker: worker a flat node is unrolled for
+        :raises: :py:class:`RuntimeError` if the current node is not flat (cannot be unrolled)
+        """
+        if not self.is_flat():
+            raise RuntimeError(f"Only flat nodes can be unrolled, {self} is not flat")
+        for node in self.cleanup_nodes:
+            if self.params["name"] in node.id and worker_id in node.id:
+                return True
+        return False
 
     def is_setup_ready(self, worker: TestWorker) -> bool:
         """
@@ -401,6 +412,7 @@ class TestNode(object):
         :type node1: :py:class:`TestNode`
         :param node2: first node to use for the priority comparison
         :type node2: :py:class:`TestNode`
+        :returns: -1 if node1 < node2, 1 if node1 > node2, 0 otherwise
 
         By default (if not externally set), it implements the divergent paths
         policy whereby workers will spread and explore the test space or
@@ -424,6 +436,7 @@ class TestNode(object):
         :type node1: :py:class:`TestNode`
         :param node2: first node to use for the priority comparison
         :type node2: :py:class:`TestNode`
+        :returns: -1 if node1 < node2, 1 if node1 > node2, 0 otherwise
 
         By default (if not externally set), it implements the divergent paths
         policy whereby workers will spread and explore the test space or
@@ -498,43 +511,53 @@ class TestNode(object):
         visitors.add(worker)
         self.visited_cleanup_nodes[test_node] = visitors
 
-    def add_location(self, location):
+    def add_location(self, location: str) -> None:
         """
-        Add a setup reuse location information to the current node and its children.
+        Add a setup reuse location information to the current node.
 
         :param str location: a special format string containing all information on the
                              location where the format must be "gateway/host:path"
         """
-        # TODO: networks need further refactoring possibly as node environments
-        object_suffix = self.params.get("object_suffix", "net1")
-        # discard parameters if we are not talking about any specific non-net object
-        object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
-        source_suffix = "_" + location
-        source_object_suffix = source_suffix + object_suffix
-
-        location_tuple = location.split(":")
-        gateway, host = ("", "") if len(location_tuple) <= 1 else location_tuple[0].split("/")
-        ip, port = type(self.objects[0]).get_session_ip_port(host, gateway,
-                                                             self.params['nets_ip_prefix'],
-                                                             self.params["nets_shell_port"])
+        def ip_and_port_from_location(location):
+            location_tuple = location.split(":")
+            gateway, host = ("", "") if len(location_tuple) <= 1 else location_tuple[0].split("/")
+            ip, port = NetObject.get_session_ip_port(host, gateway,
+                                                    self.params['nets_ip_prefix'],
+                                                    self.params["nets_shell_port"])
+            return ip, port
 
         if self.params.get("set_location"):
-            self.params["set_location"] += " " + location
+            if location not in self.params["set_location"]:
+                self.params["set_location"] += " " + location
         else:
             self.params["set_location"] = location
+        source_suffix = "_" + location
+        ip, port = ip_and_port_from_location(location)
         self.params[f"nets_shell_host{source_suffix}"] = ip
         self.params[f"nets_shell_port{source_suffix}"] = port
         self.params[f"nets_file_transfer_port{source_suffix}"] = port
 
-        for node in self.cleanup_nodes:
-            if node.params.get(f"get_location{object_suffix}"):
-                node.params[f"get_location{object_suffix}"] += " " + location
-            else:
-                node.params[f"get_location{object_suffix}"] = location
+        for node in self.setup_nodes:
+            # TODO: networks need further refactoring possibly as node environments
+            object_suffix = node.params.get("object_suffix", "net1")
+            # discard parameters if we are not talking about any specific non-net object
+            object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
+            setup_locations = node.params.get_list("set_location", [])
 
-            node.params[f"nets_shell_host{source_object_suffix}"] = ip
-            node.params[f"nets_shell_port{source_object_suffix}"] = port
-            node.params[f"nets_file_transfer_port{source_object_suffix}"] = port
+            if self.params.get(f"get_location{object_suffix}"):
+                for setup_location in setup_locations:
+                    if setup_location not in self.params[f"get_location{object_suffix}"]:
+                        self.params[f"get_location{object_suffix}"] += " " + setup_location
+            else:
+                self.params[f"get_location{object_suffix}"] = " ".join(setup_locations)
+
+            for setup_location in setup_locations:
+                source_suffix = "_" + setup_location
+                source_object_suffix = source_suffix + object_suffix
+                ip, port = ip_and_port_from_location(setup_location)
+                self.params[f"nets_shell_host{source_object_suffix}"] = ip
+                self.params[f"nets_shell_port{source_object_suffix}"] = port
+                self.params[f"nets_file_transfer_port{source_object_suffix}"] = port
 
     def regenerate_params(self, verbose=False):
         """
@@ -542,7 +565,21 @@ class TestNode(object):
 
         :param bool verbose: whether to show generated parameter dictionaries
         """
-        self._params_cache = self.config.get_params(show_dictionaries=verbose)
+        self._params_cache = self.recipe.get_params(show_dictionaries=verbose)
+        self.regenerate_vt_parameters()
+
+    def regenerate_vt_parameters(self):
+        """
+        Regenerate the parameters provided to the VT runner.
+        """
+        uri = self.params.get('name')
+        vt_params = self.params.copy()
+        # Flatten the vt_params, discarding the attributes that are not
+        # scalars, and will not be used in the context of nrunner
+        for key in ('_name_map_file', '_short_name_map_file', 'dep'):
+            if key in self.params:
+                del(vt_params[key])
+        super().__init__('avocado-vt', uri, **vt_params)
 
     def get_session_ip_port(self):
         """
@@ -551,10 +588,10 @@ class TestNode(object):
         :returns: IP and port in string parameter format
         :rtype: (str, str)
         """
-        return type(self.objects[0]).get_session_ip_port(self.params['nets_host'],
-                                                         self.params['nets_gateway'],
-                                                         self.params['nets_ip_prefix'],
-                                                         self.params["nets_shell_port"])
+        return NetObject.get_session_ip_port(self.params['nets_host'],
+                                             self.params['nets_gateway'],
+                                             self.params['nets_ip_prefix'],
+                                             self.params["nets_shell_port"])
 
     def get_session_to_net(self):
         """
@@ -746,7 +783,7 @@ class TestNode(object):
         if len(attr_nets) > 1 or len(param_nets) > 1:
             raise AssertionError(f"Test node {self} can have only one net ({attr_nets}/{param_nets}")
         param_net_name, attr_net_name = attr_nets[0], param_nets[0]
-        if self.objects[0].suffix != attr_net_name:
+        if self.objects and self.objects[0].suffix != attr_net_name:
             raise AssertionError(f"The net {attr_net_name} must be the first node object {self.objects[0]}")
         if param_net_name != attr_net_name:
             raise AssertionError(f"Parametric and attribute nets differ {param_net_name} != {attr_net_name}")

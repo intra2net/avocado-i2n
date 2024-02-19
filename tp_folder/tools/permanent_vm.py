@@ -54,7 +54,7 @@ def permubuntu(config, tag=""):
 
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
-    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    flat_net = l.parse_net_from_object_strs("net1", config["vm_strs"])
     graph.objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for test_object in graph.objects:
         if test_object.key != "vms":
@@ -70,13 +70,12 @@ def permubuntu(config, tag=""):
         logging.info("Booting %s for the first permanent on state", vm.suffix)
         setup_dict = config["param_dict"].copy()
         setup_dict.update({"set_state_vms": "ready"})
-        setup_str = param.re_str("all..internal..manage.start")
-        test_node = l.parse_node_from_object(net, setup_dict, setup_str, prefix=tag)
+        test_node = l.parse_node_from_object(net, "all..internal..manage.start", prefix=tag, params=setup_dict)
         # TODO: traversal relies explicitly on object_suffix which only indicates
         # where a parent node was parsed from, i.e. which test object of the child node
         test_node.params["object_suffix"] = test_object.long_suffix
         graph.nodes += [test_node]
 
-    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    graph.parse_shared_root_from_object_roots(config["param_dict"])
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished permanent vm setup")

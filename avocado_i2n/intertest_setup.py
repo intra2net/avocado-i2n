@@ -129,7 +129,7 @@ def with_cartesian_graph(fn):
     :rtype: function
     """
     def wrapper(config, tag=""):
-        loader = CartesianLoader(config)
+        loader = TestGraph
         runner = CartesianRunner()
         CartesianGraph = namedtuple('CartesianGraph', 'l r')
         config["graph"] = CartesianGraph(l=loader, r=runner)
@@ -219,7 +219,7 @@ def update(config, tag=""):
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
     graph = TestGraph()
-    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    flat_net = l.parse_net_from_object_strs("net1", config["vm_strs"])
     initial_objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for i, vm_name in enumerate(selected_vms):
         vm_params = config["vms_params"].object_params(vm_name)
@@ -282,10 +282,9 @@ def update(config, tag=""):
             update_graph = TestGraph()
             update_graph.objects = vm_graph.objects
             # figure out the install node to compare against
-            setup_str = param.re_str("all..internal..customize")
-            start_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
-            setup_str = param.re_str("all..original.." + start_node.params["get_images"])
-            install_node = l.parse_node_from_object(net, config["param_dict"], setup_str, prefix=tag)
+            start_node = l.parse_node_from_object(net, "all..internal..customize", prefix=tag, params=config["param_dict"])
+            install_node = l.parse_node_from_object(net, "all..original.." + start_node.params["get_images"],
+                                                    prefix=tag, params=config["param_dict"])
             install_node.params["object_root"] = image.id
             update_graph.nodes.append(install_node)
         else:
@@ -315,7 +314,7 @@ def update(config, tag=""):
         graph.objects += vm_graph.objects
         graph.nodes += vm_graph.nodes
 
-    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    graph.parse_shared_root_from_object_roots(config["param_dict"])
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished updating cache")
 
@@ -334,7 +333,7 @@ def run(config, tag=""):
     # is preferential to setup chains with a single "run" step since this is usually the case
     config["prefix"] = tag + "n" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
 
-    loader = CartesianLoader(config)
+    loader = TestGraph
     runner = CartesianRunner()
     CartesianGraph = namedtuple('CartesianGraph', 'l r')
     config["graph"] = CartesianGraph(l=loader, r=runner)
@@ -342,18 +341,11 @@ def run(config, tag=""):
     # essentially we imitate the auto plugin to make the tool plugin a superset
     with new_job(config) as job:
 
-        graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"],
-                                          prefix=config["prefix"], verbose=config["subcommand"]!="list")
-        runnables = [n.get_runnable() for n in graph.nodes]
+        params, restriction = config["param_dict"], config["tests_str"]
+        runnables = TestGraph.parse_flat_nodes(restriction, params)
         job.test_suites[0].tests = runnables
 
-        # HACK: pass the constructed graph to the runner using static attribute hack
-        # since the currently digested test suite contains factory arguments obtained
-        # from an irreversible (information destructive) approach
-        TestGraph.REFERENCE = graph
-
         retcode = job.run()
-        # runner.run_traversal(graph, config["param_dict"].copy())
 
         config["graph"] = None
         return retcode
@@ -369,11 +361,19 @@ def list(config, tag=""):
 
     This is equivalent to but more powerful than the loader plugin.
     """
-    loader = CartesianLoader(config, {"logdir": data_dir.get_base_dir()})
-    prefix = tag + "l" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
-    graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"],
-                                      prefix=prefix, verbose=True)
-    graph.visualize(data_dir.get_base_dir())
+    loader = TestGraph
+    runner = CartesianRunner()
+    CartesianGraph = namedtuple('CartesianGraph', 'l r')
+    config["graph"] = CartesianGraph(l=loader, r=runner)
+
+    with new_job(config) as job:
+
+        prefix = tag + "l" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
+        # provide the logdir in advance in order to visualize parsed graph there
+        TestGraph.logdir = runner.job.logdir
+        graph = loader.parse_object_trees(config["param_dict"], config["tests_str"], config["vm_strs"],
+                                          prefix=prefix, verbose=True)
+        graph.visualize(job.logdir)
 
 
 ############################################################
@@ -568,7 +568,7 @@ def unset(config, tag=""):
 
     l, r = config["graph"].l, config["graph"].r
     setup_dict = config["param_dict"].copy()
-    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    flat_net = l.parse_net_from_object_strs("net1", config["vm_strs"])
     for test_object in l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True):
         if test_object.key != "vms":
             continue
@@ -665,14 +665,15 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     vms = " ".join(selected_vms)
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
-    setup_str = param.re_str("all..internal..manage.%s" % verb[1])
-    tests, objects = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
+    tests, objects = l.parse_object_nodes("all..internal..manage.%s" % verb[1], tag, config["vm_strs"], params=setup_dict)
     assert len(tests) == 1, "There must be exactly one %s test variant from %s" % (verb[2], tests)
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
     graph.objects = objects
-    graph.nodes = [TestNode(tag, tests[0].config, objects[-1])]
-    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    test_node = TestNode(tag, tests[0].recipe)
+    test_node.set_objects_from_net(objects[-1])
+    graph.nodes = [test_node]
+    graph.parse_shared_root_from_object_roots(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: True)
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("%s complete", verb[3])
@@ -695,7 +696,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
                 param.ParsedDict(config["param_dict"]).reportable_form().rstrip("\n"))
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
-    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    flat_net = l.parse_net_from_object_strs("net1", config["vm_strs"])
     graph.objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for test_object in graph.objects:
         if test_object.key != "vms":
@@ -706,14 +707,13 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
 
         setup_dict = config["param_dict"].copy()
         setup_dict.update(param_dict)
-        setup_str = param.re_str("all..internal..manage.unchanged")
-        test_node = l.parse_node_from_object(net, setup_dict, setup_str, prefix=tag)
+        test_node = l.parse_node_from_object(net, "all..internal..manage.unchanged", prefix=tag, params=setup_dict)
         # TODO: traversal relies explicitly on object_suffix which only indicates
         # where a parent node was parsed from, i.e. which test object of the child node
         test_node.params["object_suffix"] = test_object.long_suffix
         graph.nodes += [test_node]
 
-    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    graph.parse_shared_root_from_object_roots(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: slot not in self.workers)
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished %s", operation)

@@ -66,15 +66,16 @@ def develop(config, tag=""):
 
     setup_dict = config["param_dict"].copy()
     setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
-    setup_str = param.re_str("all..manual..develop.%s" % mode)
-    tests, objects = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
+    tests, objects = l.parse_object_nodes("all..manual..develop.%s" % mode, tag, config["vm_strs"], params=setup_dict)
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
 
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
     graph.objects = objects
-    graph.nodes = [TestNode(tag, tests[0].config, objects[-1])]
-    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
+    test_node = TestNode(tag, tests[0].recipe)
+    test_node.set_objects_from_net(objects[-1])
+    graph.nodes = [test_node]
+    graph.parse_shared_root_from_object_roots(config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: True)
 
     r.run_workers(graph, config["param_dict"])

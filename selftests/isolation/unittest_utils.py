@@ -54,8 +54,8 @@ class DummyTestRun(object):
         if not hasattr(self.job, "result"):
             self.job.result = mock.MagicMock()
             self.job.result.tests = []
-        # define ID-s and other useful parameter filtering
-        node.get_runnable()
+        # provide ID-s and other node attributes as meta-parameters for assertion
+        node.params["_long_prefix"] = node.long_prefix
         node.params["_uid"] = node.id_test.uid
         # small enough not to slow down our tests too much for a test timeout of 300 but
         # large enough to surpass the minimal occupation waiting timeout for more realism
@@ -92,7 +92,7 @@ class DummyStateControl(object):
                 do_sources = do_source.split()
                 for do_source in do_sources:
                     # TODO: currently we cannot fully test additional state sources
-                    if not do_source.startswith("/:"):
+                    if not do_source.endswith("shared"):
                         continue
                     if do == "check":
                         if not self.asserted_states[do][do_state][do_source] and len(do_sources) == 1:

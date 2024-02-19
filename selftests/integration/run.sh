@@ -65,10 +65,8 @@ coverage run --append --source=avocado_i2n $(which avocado) manu setup=run slots
 echo
 echo "Check graph verbosity after the complete test suite run"
 test -f "$test_results"/latest/cg_*.svg || (echo "Missing minimal main graph dump" && exit 1)
-test -d "$test_results"/latest/graph_parse || (echo "Missing graph parsing dump directory" && exit 1)
-find "$test_results"/latest/graph_parse/cg_*.svg > /dev/null || (echo "Missing graph parsing dumps" && exit 1)
-test -d "$test_results"/latest/graph_traverse || (echo "Missing graph traversal dump directory" && exit 1)
-find "$test_results"/latest/graph_traverse/cg_*.svg > /dev/null || (echo "Missing graph traversal dumps" && exit 1)
+test -d "$test_results"/latest/graph_* || (echo "Missing graph dump directory" && exit 1)
+find "$test_results"/latest/graph_*/cg_*.svg > /dev/null || (echo "Missing detailed graph dumps" && exit 1)
 
 echo
 echo "Check if all containers have identical and synced states after the run"
