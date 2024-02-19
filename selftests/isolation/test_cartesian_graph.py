@@ -13,6 +13,7 @@ from unittest_utils import DummyTestRun, DummyStateControl
 from avocado_i2n import params_parser as param
 from avocado_i2n.loader import CartesianLoader
 from avocado_i2n.runner import CartesianRunner
+from avocado_i2n.cartgraph import *
 
 
 class CartesianWorkerTest(Test):
@@ -27,21 +28,71 @@ class CartesianWorkerTest(Test):
         self.prefix = ""
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
-        self.runner = CartesianRunner()
+
+    def test_parse_flat_vm1(self):
+        """Test for correctly parsed objects of different object variants from a restriction."""
+        test_objects = self.loader.parse_flat_objects("vm1", "vms")
+        self.assertEqual(len(test_objects), 2)
+        self.assertRegex(test_objects[1].params["name"], r"vms.vm1\.qemu_kvm_centos.*CentOS.*")
+        self.assertEqual(test_objects[1].params["vms"], "vm1")
+        self.assertEqual(test_objects[1].params["os_variant"], "el8")
+        self.assertRegex(test_objects[0].params["name"], r"vms.vm1\.qemu_kvm_fedora.*Fedora.*")
+        self.assertEqual(test_objects[0].params["vms"], "vm1")
+        self.assertEqual(test_objects[0].params["os_variant"], "f33")
+
+    def test_parse_flat_net1(self):
+        """Test for correctly parsed objects of different object variants from a restriction."""
+        test_objects = self.loader.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(test_objects), 1)
+        self.assertRegex(test_objects[0].params["name"], r"nets\.net1\.cluster1")
+        self.assertEqual(test_objects[0].params["nets"], "net1")
+        self.assertEqual(test_objects[0].params["cid"], "1")
+
+    def test_params(self):
+        """Test for correctly parsed and regenerated test worker parameters."""
+        self.config["param_dict"]["slots"] = "1 2 3 4 5"
+        test_workers = self.loader.parse_workers(self.config["param_dict"])
+        self.assertEqual(len(test_workers), 5)
+        test_worker = test_workers[0]
+        for key in test_worker.params.keys():
+            self.assertEqual(test_worker.net.params[key], test_worker.params[key],
+                            f"The values of key {key} {test_worker.net.params[key]}={test_worker.params[key]} must be the same")
+            self.assertEqual(test_worker.params["nets_gateway"], "")
+            self.assertEqual(test_worker.params["nets_host"], "c1")
+            self.assertEqual(test_worker.params["nets_spawner"], "lxc")
+
+    def test_params_slots(self):
+        """Test environment setting and validation."""
+        self.config["param_dict"]["slots"] = "1 remote.com/2 "
+        test_workers = self.loader.parse_workers(self.config["param_dict"])
+        self.assertEqual(len(test_workers), 5)
+        test_workers = [w for w in test_workers if "runtime_str" in w.params]
+        self.assertEqual(len(test_workers), 3)
+        self.assertEqual(test_workers[0].params["nets_gateway"], "")
+        self.assertEqual(test_workers[0].params["nets_host"], "c1")
+        self.assertEqual(test_workers[0].params["nets_spawner"], "lxc")
+        self.assertEqual(test_workers[1].params["nets_gateway"], "remote.com")
+        self.assertEqual(test_workers[1].params["nets_host"], "2")
+        self.assertEqual(test_workers[1].params["nets_spawner"], "remote")
+        self.assertEqual(test_workers[2].params["nets_gateway"], "")
+        self.assertEqual(test_workers[2].params["nets_host"], "")
+        self.assertEqual(test_workers[2].params["nets_spawner"], "process")
+        self.assertEqual(TestWorker.run_slots, {"": {"": "process", "c1": "lxc"}, "remote.com": {"2": "remote"}})
 
     def test_sanity_in_graph(self):
         """Test generic usage and composition."""
-        self.config["param_dict"] = {"slots": "1"}
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        graph.new_workers("c1")
-        self.assertEqual(len(graph.workers), 1)
-
-        test_worker = graph.workers[0]
-        self.assertEqual("c1", test_worker.id)
-        self.assertIn("[worker]", str(test_worker))
+        self.assertEqual(len(graph.workers), 5)
+        for i, worker_id in enumerate(graph.workers):
+            self.assertEqual(f"net{i+1}", worker_id)
+            worker = graph.workers[worker_id]
+            self.assertEqual(worker_id, worker.id)
+            self.assertIn("[worker]", str(worker))
+            graph.new_workers(worker.net)
+        self.assertEqual(len(graph.workers), 5)
 
 
 class CartesianObjectTest(Test):
@@ -57,12 +108,9 @@ class CartesianObjectTest(Test):
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
 
-    def test_parse_object_variants_vm1(self):
+    def test_parse_composite_objects_vm1(self):
         """Test for correctly parsed vm objects from a vm string restriction."""
-        self.config["param_dict"] = {"object_suffix": "vm1", "object_type": "vms"}
-        self.config["vm_strs"] = {"vm1": ""}
-        test_objects = self.loader.parse_object_variants(self.config["param_dict"],
-                                                         self.config["vm_strs"])
+        test_objects = self.loader.parse_composite_objects("vm1", "vms", "")
         self.assertEqual(len(test_objects), 2)
         self.assertRegex(test_objects[1].params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*")
         self.assertEqual(test_objects[1].params["vms"], "vm1")
@@ -73,10 +121,9 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_objects[0].params["main_vm"], "vm1")
         self.assertEqual(test_objects[0].params["os_variant"], "f33")
 
-    def test_parse_object_variants_net1(self):
+    def test_parse_composite_objects_net1(self):
         """Test for a correctly parsed net object from joined vm string restrictions."""
-        test_objects = self.loader.parse_object_variants(self.config["param_dict"],
-                                                         self.config["vm_strs"])
+        test_objects = self.loader.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
         self.assertEqual(len(test_objects), 1)
         test_object = test_objects[0]
         self.assertRegex(test_object.params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*")
@@ -90,30 +137,20 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object.params["os_variant_vm2"], "win10")
         self.assertEqual(test_object.params["os_variant_vm3"], "ubuntutrusty")
 
-    def test_parse_object_from_objects(self):
-        """Test for a correctly parsed net composite object from already parsed vm component objects."""
-        vms = []
-        for vm_name, vm_restriction in self.config["vm_strs"].items():
-            vms += self.loader.parse_object_variants({"object_suffix": vm_name, "object_type": "vms"},
-                                                     {vm_name: vm_restriction})
-        net = self.loader.parse_object_from_objects(vms, self.config["param_dict"])
-        self.assertEqual(net.components, vms)
-        for vm in vms:
-            self.assertEqual(vm.composites, [net])
-            # besides object composition we should expect the joined component variants
-            self.assertIn(vm.params["name"], net.params["name"])
-            # each joined component variant must be traceable back to the component object id
-            self.assertEqual(vm.id, net.params[f"object_id_{vm.suffix}"])
+    def test_parse_composite_objects_net1_unrestricted(self):
+        """Test for a correctly parsed net object from empty joined vm string restrictions."""
+        test_objects = self.loader.parse_composite_objects("net1", "nets", "")
+        # TODO: bug in the Cartesian parser, they must be 6!
+        self.assertEqual(len(test_objects), 4)
+        for i, test_object in enumerate(test_objects):
+            self.assertEqual(test_object.dict_index, i)
 
-    def test_parse_objects_vms(self):
-        """Test for correctly parsed vm objects composition if multiple variants."""
+    def test_parse_suffix_objects_vms(self):
+        """Test for correctly parsed vm objects of all suffices."""
         self.config["vm_strs"] = {"vm1": "", "vm2": "", "vm3": ""}
-        test_objects = self.loader.parse_objects(self.config["param_dict"],
-                                                 self.config["vm_strs"],
-                                                 skip_nets=True)
+        test_objects = self.loader.parse_suffix_objects("vms", self.config["vm_strs"], self.config["param_dict"])
         vms = [o for o in test_objects if o.key == "vms"]
-        images = [o for o in test_objects if o.key == "images"]
-        self.assertEqual(len(test_objects), len(vms) + len(images))
+        self.assertEqual(len(test_objects), len(vms))
         self.assertEqual(len(vms), 6)
         vms_vm1 = [vm for vm in vms if vm.long_suffix == "vm1"]
         self.assertEqual(len(vms_vm1), 2)
@@ -122,16 +159,52 @@ class CartesianObjectTest(Test):
         self.assertNotEqual(vms_vm1[0].id, vms_vm1[1].id)
         self.assertEqual(len([vm for vm in vms if vm.long_suffix == "vm2"]), 2)
         self.assertEqual(len([vm for vm in vms if vm.long_suffix == "vm3"]), 2)
-        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm1"]), 2)
-        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm2"]), 2)
-        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm3"]), 2)
 
-    def test_parse_objects_nets(self):
-        """Test for correctly parsed net objects composition if multiple variants."""
-        self.config["vm_strs"] = {"vm1": "", "vm2": "", "vm3": ""}
-        test_objects = self.loader.parse_objects(self.config["param_dict"],
-                                                 self.config["vm_strs"],
-                                                 skip_nets=False)
+    def test_parse_suffix_objects_nets_flat(self):
+        """Test for correctly parsed net objects of all suffices."""
+        self.config["net_strs"] = {"net1": "", "net2": ""}
+        test_objects = self.loader.parse_suffix_objects("nets", self.config["net_strs"], self.config["param_dict"], flat=True)
+        nets = [o for o in test_objects if o.key == "nets"]
+        self.assertEqual(len(test_objects), len(nets))
+        self.assertEqual(len(nets), 2)
+        self.assertEqual(nets[0].suffix, "net1")
+        self.assertEqual(nets[0].long_suffix, "net1")
+        self.assertEqual(nets[1].suffix, "net2")
+        self.assertEqual(nets[1].long_suffix, "net2")
+
+    def test_parse_object_from_vms(self):
+        """Test for a correctly parsed net composite object from already parsed vm component objects."""
+        vms = []
+        for vm_name, vm_restriction in self.config["vm_strs"].items():
+            vms += self.loader.parse_composite_objects(vm_name, "vms", vm_restriction)
+        net = self.loader.parse_object_from_objects("net1", "nets", vms)
+        self.assertEqual(net.components, vms)
+        for vm in vms:
+            self.assertEqual(vm.composites, [net])
+            # besides object composition we should expect the joined component variants
+            self.assertIn(vm.component_form, net.params["name"])
+            # each joined component variant must be traceable back to the component object id
+            self.assertEqual(vm.id, net.params[f"object_id_{vm.suffix}"])
+
+    def test_parse_components_for_vm(self):
+        """Test for correctly parsed image components with unflattened vm."""
+        flat_vm = self.loader.parse_flat_objects("vm1", "vms")[0]
+        test_objects = self.loader.parse_components_for_object(flat_vm, "vms", unflatten=True)
+        vms = [o for o in test_objects if o.key == "vms"]
+        images = [o for o in test_objects if o.key == "images"]
+        self.assertEqual(len(test_objects), len(vms) + len(images))
+        self.assertEqual(len(vms), 2)
+        vms_vm1 = [vm for vm in vms if vm.long_suffix == "vm1"]
+        self.assertEqual(len(vms_vm1), 2)
+        self.assertEqual(vms_vm1[0].suffix, vms_vm1[1].suffix)
+        self.assertEqual(vms_vm1[0].long_suffix, vms_vm1[1].long_suffix)
+        self.assertNotEqual(vms_vm1[0].id, vms_vm1[1].id)
+        self.assertEqual(len([image for image in images if image.long_suffix == "image1_vm1"]), 1)
+
+    def test_parse_components_for_net(self):
+        """Test for correctly parsed vm components with unflattened net."""
+        flat_net = self.loader.parse_flat_objects("net1", "nets")[0]
+        test_objects = self.loader.parse_components_for_object(flat_net, "nets", unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 8)
         # TODO: typically we should test for some of this in the net1 object variants cases above but due to limitation of the Cartesian parser and lack of
@@ -154,8 +227,7 @@ class CartesianObjectTest(Test):
 
     def test_params(self):
         """Test for correctly parsed and regenerated test object parameters."""
-        test_objects = self.loader.parse_object_variants(self.config["param_dict"],
-                                                         self.config["vm_strs"])
+        test_objects = self.loader.parse_composite_objects("net1", "nets", "", self.config["vm_strs"], params=self.config["param_dict"])
         self.assertEqual(len(test_objects), 1)
         test_object = test_objects[0]
         regenerated_params = test_object.object_typed_params(test_object.config.get_params())
@@ -266,8 +338,8 @@ class CartesianNodeTest(Test):
 
     def test_parse_node_from_object(self):
         """Test for a correctly parsed node from an already parsed net object."""
-        test_objects = self.loader.parse_objects(self.config["param_dict"],
-                                                 self.config["vm_strs"])
+        flat_net = self.loader.parse_net_from_object_strs(self.config["vm_strs"])
+        test_objects = self.loader.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 1)
         net = nets[0]
@@ -288,8 +360,8 @@ class CartesianNodeTest(Test):
 
     def test_parse_node_from_object_invalid_object_type(self):
         """Test correctly parsed node is not possible from an already parsed vm object."""
-        test_objects = self.loader.parse_objects(self.config["param_dict"],
-                                                 {"vm1": self.config["vm_strs"]["vm1"]})
+        flat_net = self.loader.parse_net_from_object_strs({"vm1": self.config["vm_strs"]["vm1"]})
+        test_objects = self.loader.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         vms = [o for o in test_objects if o.key == "vms"]
         self.assertEqual(len(vms), 1)
         vm = vms[0]
@@ -298,8 +370,8 @@ class CartesianNodeTest(Test):
 
     def test_parse_node_from_object_invalid_object_mix(self):
         """Test correctly parsed node is not possible from incompatible vm variants."""
-        test_objects = self.loader.parse_objects(self.config["param_dict"],
-                                                 {"vm1": self.config["vm_strs"]["vm1"], "vm2": "only Win7\n"})
+        flat_net = self.loader.parse_net_from_object_strs({"vm1": self.config["vm_strs"]["vm1"], "vm2": "only Win7\n"})
+        test_objects = self.loader.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         nets = [o for o in test_objects if o.key == "nets"]
         self.assertEqual(len(nets), 1)
         net = nets[0]
@@ -366,7 +438,7 @@ class CartesianNodeTest(Test):
         graph.nodes = []
         test_objects = graph.objects
 
-        nets = [o for o in test_objects if o.key == "nets" if "vm1." in o.params["name"] and "vm2." in o.params["name"]]
+        nets = [o for o in test_objects if o.key == "nets" and "vm1." in o.params["name"] and "vm2." in o.params["name"]]
         self.assertEqual(len(nets), 4)
         self.assertRegex(nets[0].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_10")
         self.assertRegex(nets[1].params["name"], "qemu_kvm_centos.+qemu_kvm_windows_7")
@@ -472,26 +544,6 @@ class CartesianNodeTest(Test):
         self.assertEqual(test_node.params["images_vm2"], default_object_param,
                          "The second %s of %s should be preserved" % (default_object_param, test_node.prefix))
 
-    @mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
-    def test_set_environment(self):
-        """Test environment setting and validation."""
-        self.config["param_dict"]["slots"] = "1 remote.com/2 "
-        self.config["tests_str"] += "only tutorial1\n"
-        graph = self.loader.parse_object_trees(self.config["param_dict"],
-                                               self.config["tests_str"], self.config["vm_strs"],
-                                               prefix=self.prefix)
-
-        # should run a leaf test node visited for the first time
-        test_node = graph.get_node_by(param_val="tutorial1")
-        mock_job = mock.MagicMock()
-        mock_job.config = self.config
-        test_node.set_environment(mock_job, "1")
-        self.assertEqual(test_node.all_workers, {"": {"": "process", "c1": "lxc"}, "remote.com": {"2": "remote"}})
-        test_node.set_environment(mock_job, "remote.com/2")
-        test_node.set_environment(mock_job, "")
-        with self.assertRaises(RuntimeError):
-            test_node.set_environment(mock_job, "3")
-
     @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
     @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
     def test_default_run_decision(self):
@@ -501,29 +553,32 @@ class CartesianNodeTest(Test):
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
 
+        worker1 = mock.MagicMock(id="net1", params={"runtime_str": "1"})
+        worker2 = mock.MagicMock(id="net2", params={"runtime_str": "2"})
+
         # should run a leaf test node visited for the first time
         test_node = graph.get_node_by(param_val="tutorial1")
-        self.assertTrue(test_node.default_run_decision("1"))
+        self.assertTrue(test_node.default_run_decision(worker1))
 
         # should run an internal test node without available setup
         DummyStateControl.asserted_states["check"] = {"install": {self.shared_pool: False}}
         test_node = graph.get_node_by(param_val="install")
         test_node.add_location(self.shared_pool)
         test_node.params["nets_host"], test_node.params["nets_gateway"] = "1", ""
-        self.assertTrue(test_node.default_run_decision("1"))
+        self.assertTrue(test_node.default_run_decision(worker1))
         # should not run an internal test node with available setup
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
-        self.assertFalse(test_node.default_run_decision("1"))
+        self.assertFalse(test_node.default_run_decision(worker1))
 
         # should not run already visited internal test node by the same worker
-        test_node.workers.add("1")
-        self.assertFalse(test_node.default_run_decision("1"))
+        test_node.workers.add(worker1)
+        self.assertFalse(test_node.default_run_decision(worker1))
         # should not run already visited leaf test node by the same worker
         test_node = graph.get_node_by(param_val="tutorial1")
-        test_node.workers.add("1")
-        self.assertFalse(test_node.default_run_decision("1"))
+        test_node.workers.add(worker1)
+        self.assertFalse(test_node.default_run_decision(worker1))
         # should not run a leaf test node if run by other worker
-        self.assertFalse(test_node.default_run_decision("2"))
+        self.assertFalse(test_node.default_run_decision(worker2))
 
     @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
     def test_default_clean_decision(self):
@@ -534,24 +589,27 @@ class CartesianNodeTest(Test):
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
 
+        worker1 = mock.MagicMock(id="net1", params={"runtime_str": "1"})
+        worker2 = mock.MagicMock(id="net2", params={"runtime_str": "2"})
+
         # should clean a test node that is not reversible
         test_node = graph.get_node_by(param_val="explicit_clicked")
-        self.assertTrue(test_node.default_clean_decision("1"))
+        self.assertTrue(test_node.default_clean_decision(worker1))
 
         # should not clean a reversible test node that is not globally cleanup ready
         test_node = graph.get_node_by(param_val="explicit_noop")
-        test_node.all_workers = {"": {"1": "lxc", "2": "lxc"}}
-        self.assertFalse(test_node.default_clean_decision("1"))
-        test_node.workers.add("1")
-        self.assertFalse(test_node.default_clean_decision("1"))
+        TestWorker.run_slots = {"": {"1": "lxc", "2": "lxc"}}
+        self.assertFalse(test_node.default_clean_decision(worker1))
+        test_node.workers.add(worker1)
+        self.assertFalse(test_node.default_clean_decision(worker1))
         # should clean a reversible test node that is globally cleanup ready
-        test_node.workers.add("2")
-        self.assertTrue(test_node.default_clean_decision("1"))
+        test_node.workers.add(worker2)
+        self.assertTrue(test_node.default_clean_decision(worker1))
 
 
 @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
-@mock.patch('avocado_i2n.cartgraph.node.SpawnerDispatcher', mock.MagicMock())
+@mock.patch('avocado_i2n.runner.SpawnerDispatcher', mock.MagicMock())
 @mock.patch.object(CartesianRunner, 'run_test_task', DummyTestRun.mock_run_test_task)
 class CartesianGraphTest(Test):
 
@@ -585,13 +643,12 @@ class CartesianGraphTest(Test):
         self.job.config = self.config
         self.runner = CartesianRunner()
         self.runner.job = self.job
-        # TODO: migrate run slots to official workers composition as graph attributes
-        self.runner.slots = ["1"]
         self.runner.status_server = self.job
 
     def _run_traversal(self, graph, params):
         loop = asyncio.get_event_loop()
-        to_traverse = [self.runner.run_traversal(graph, params, s) for s in self.runner.slots]
+        slot_workers = sorted(list(graph.workers.values()), key=lambda x: x.params["name"])
+        to_traverse = [self.runner.run_traversal(graph, params, s) for s in slot_workers if "runtime_str" in s.params]
         loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse), None))
 
     def test_object_node_incompatible(self):
@@ -682,8 +739,7 @@ class CartesianGraphTest(Test):
 
     def test_one_leaf_serial(self):
         """Test traversal path of one test without any reusable setup and with a serial unisolated run."""
-        self.runner.slots = [""]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = ""
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -700,8 +756,7 @@ class CartesianGraphTest(Test):
 
     def test_one_leaf_with_setup(self):
         """Test traversal path of one test with a reusable setup."""
-        self.runner.slots = [f"{i+1}" for i in range(4)]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -753,7 +808,7 @@ class CartesianGraphTest(Test):
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
-        test_object = graph.get_object_by(param_key="object_suffix", param_val="^vm1$")
+        test_object = [o for o in graph.objects if o.suffix == "vm1"][0]
         test_node = graph.get_node_by(param_val="tutorial1")
         self.assertIn(test_object, test_node.objects)
         test_node.validate()
@@ -775,15 +830,14 @@ class CartesianGraphTest(Test):
 
     def test_one_leaf_with_occupation_timeout(self):
         """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
-        self.runner.slots += ["dead"]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] += " dead"
         self.config["param_dict"]["test_timeout"] = 1
         self.config["tests_str"] += "only tutorial1\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
         test_node = graph.get_node_by(param_val="tutorial1")
-        test_node.set_environment(self.job, "dead")
+        test_node.set_environment(graph.workers["net2"])
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
@@ -807,8 +861,7 @@ class CartesianGraphTest(Test):
 
     def test_two_objects_without_setup(self):
         """Test a two-object test run without a reusable setup."""
-        self.runner.slots = [f"{i+1}" for i in range(4)]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -838,8 +891,7 @@ class CartesianGraphTest(Test):
 
     def test_two_objects_with_setup(self):
         """Test a two-object test run with reusable setup."""
-        self.runner.slots = [f"{i+1}" for i in range(4)]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] += "only tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -860,8 +912,7 @@ class CartesianGraphTest(Test):
 
     def test_diverging_paths_with_external_setup(self):
         """Test a multi-object test run with reusable setup of diverging workers and shared pool or previous runs."""
-        self.runner.slots = [f"{i+1}" for i in range(4)]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] += "only tutorial1,tutorial3\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
@@ -896,8 +947,7 @@ class CartesianGraphTest(Test):
 
     def test_diverging_paths_with_swarm_setup(self):
         """Test a multi-object test run where the workers will run multiple tests reusing their own local swarm setup."""
-        self.runner.slots = [f"{i+1}" for i in range(4)]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
@@ -938,13 +988,19 @@ class CartesianGraphTest(Test):
 
     def test_diverging_paths_with_remote_setup(self):
         """Test a multi-object test run where the workers will run multiple tests reusing also remote swarm setup."""
-        self.runner.slots = [f"{i+1}" for i in range(2)] + [f"host1/{i+1}" for i in range(2)] + [f"host2/22"]
-        self.config["param_dict"]["slots"] = " ".join(self.runner.slots)
+        self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(2)] + [f"host1/{i+1}" for i in range(2)] + [f"host2/22"])
         self.config["tests_str"] = "only leaves\n"
         self.config["tests_str"] += "only tutorial2,tutorial_gui\n"
         graph = self.loader.parse_object_trees(self.config["param_dict"],
                                                self.config["tests_str"], self.config["vm_strs"],
                                                prefix=self.prefix)
+        workers = sorted(list(graph.workers.values()), key=lambda x: x.params["name"])
+        self.assertEqual(workers[0].params["nets_spawner"], "lxc")
+        self.assertEqual(workers[1].params["nets_spawner"], "lxc")
+        self.assertEqual(workers[2].params["nets_spawner"], "remote")
+        self.assertEqual(workers[3].params["nets_spawner"], "remote")
+        self.assertEqual(workers[4].params["nets_spawner"], "remote")
+
         # this is not what we test but simply a means to remove some initial nodes for simpler testing
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
@@ -1024,7 +1080,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$"},
             {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$"},
             # first (noop) parent GUI setup dependency through vm2
-            {"shortname": "^tutorial_gui.client_noop.vm1.virtio_blk.smp2.virtio_net.CentOS.8.0.x86_64.vm2.smp2.Win10.x86_64", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
+            {"shortname": "^tutorial_gui.client_noop.vm1.+CentOS.8.0.+vm2.+Win10", "vms": "^vm1 vm2$", "set_state_images_vm2": "guisetup.noop"},
             # extra dependency dependency through vm1
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$"},
             # first (noop) explicit actual test
@@ -1481,7 +1537,8 @@ class CartesianGraphTest(Test):
         self.config["param_dict"]["retry_attempts"] = "2"
         self.config["param_dict"]["retry_stop"] = ""
 
-        test_objects = self.loader.parse_objects(self.config["param_dict"], self.config["vm_strs"])
+        flat_net = self.loader.parse_net_from_object_strs(self.config["vm_strs"])
+        test_objects = self.loader.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         net = test_objects[-1]
         test_node = self.loader.parse_node_from_object(net, self.config["param_dict"].copy(),
                                                        param.re_str("normal..tutorial1"))

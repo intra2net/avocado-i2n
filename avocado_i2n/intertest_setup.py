@@ -115,7 +115,6 @@ def new_job(config):
         loader, runner = config["graph"].l, config["graph"].r
         loader.logdir = job_instance.logdir
         runner.job = job_instance
-        runner.slots = config["param_dict"].get("slots", "").split(" ")
 
         yield job_instance
 
@@ -220,7 +219,8 @@ def update(config, tag=""):
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
     graph = TestGraph()
-    initial_objects = l.parse_objects(config["param_dict"], config["vm_strs"])
+    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    initial_objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for i, vm_name in enumerate(selected_vms):
         vm_params = config["vms_params"].object_params(vm_name)
         from_state = vm_params.get("from_state", "install")
@@ -242,7 +242,7 @@ def update(config, tag=""):
         # install only on first image as RAID and other configurations are customizations
         image = vm.components[0]
         # parse individual net only for the current vm
-        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
+        net = l.parse_object_from_objects("net1", "nets", [vm], params=config["param_dict"])
 
         logging.info(f"Parsing a standard initial graph for '{to_state}'")
         setup_dict = config["param_dict"].copy()
@@ -311,13 +311,12 @@ def update(config, tag=""):
                 raise ValueError(f"Could not identify a test node from {vm_name}'s from_state='{from_state}', "
                                  f"is it compatible with the default or specified remove_set?")
 
+        graph.new_workers(l.parse_workers(config["param_dict"]))
         graph.objects += vm_graph.objects
         graph.nodes += vm_graph.nodes
 
     l.parse_shared_root_from_object_trees(graph, config["param_dict"])
-    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
-    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                                 r.job.timeout or None))
+    r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished updating cache")
 
 
@@ -569,7 +568,8 @@ def unset(config, tag=""):
 
     l, r = config["graph"].l, config["graph"].r
     setup_dict = config["param_dict"].copy()
-    for test_object in l.parse_objects(config["param_dict"], config["vm_strs"]):
+    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    for test_object in l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True):
         if test_object.key != "vms":
             continue
         vm = test_object
@@ -669,13 +669,12 @@ def _parse_one_node_for_all_objects(config, tag, verb):
     tests, objects = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
     assert len(tests) == 1, "There must be exactly one %s test variant from %s" % (verb[2], tests)
     graph = TestGraph()
+    graph.new_workers(l.parse_workers(config["param_dict"]))
     graph.objects = objects
     graph.nodes = [TestNode(tag, tests[0].config, objects[-1])]
     l.parse_shared_root_from_object_trees(graph, config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: True)
-    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
-    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                                 r.job.timeout or None))
+    r.run_workers(graph, config["param_dict"])
     LOG_UI.info("%s complete", verb[3])
 
 
@@ -695,13 +694,15 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
                 ", ".join(selected_vms), os.path.basename(r.job.logdir),
                 param.ParsedDict(config["param_dict"]).reportable_form().rstrip("\n"))
     graph = TestGraph()
-    graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
+    graph.new_workers(l.parse_workers(config["param_dict"]))
+    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    graph.objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for test_object in graph.objects:
         if test_object.key != "vms":
             continue
         vm = test_object
         # parse individual net only for the current vm
-        net = l.parse_object_from_objects([vm], param_dict=param_dict)
+        net = l.parse_object_from_objects("net1", "nets", [vm], params=config["param_dict"])
 
         setup_dict = config["param_dict"].copy()
         setup_dict.update(param_dict)
@@ -714,9 +715,7 @@ def _parse_all_objects_then_iterate_for_nodes(config, tag, param_dict, operation
 
     l.parse_shared_root_from_object_trees(graph, config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: slot not in self.workers)
-    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
-    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                                 r.job.timeout or None))
+    r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished %s", operation)
 
 

@@ -71,10 +71,9 @@ def custom_configs_dir():
     return os.path.join(suite_path, "configs")
 
 
-_tests_ovrwrt_file = "avocado_overwrite_tests.cfg"
 def tests_ovrwrt_file():
     """Overwrite config file for all tests (nodes)."""
-    ovrwrt_file = os.path.join(os.environ['HOME'], _tests_ovrwrt_file)
+    ovrwrt_file = os.path.join(os.environ['HOME'], "avocado_overwrite_tests.cfg")
     if not os.path.exists(ovrwrt_file):
         logging.warning("Generating a file to use for overwriting the original test parameters")
         with open(ovrwrt_file, "w") as handle:
@@ -83,15 +82,25 @@ def tests_ovrwrt_file():
     return ovrwrt_file
 
 
-_vms_ovrwrt_file = "avocado_overwrite_vms.cfg"
 def vms_ovrwrt_file():
-    """Overwrite config file for all vms (objects)."""
-    ovrwrt_file = os.path.join(os.environ['HOME'], _vms_ovrwrt_file)
+    """Overwrite config file for all vms (a category of objects)."""
+    ovrwrt_file = os.path.join(os.environ['HOME'], "avocado_overwrite_vms.cfg")
     if not os.path.exists(ovrwrt_file):
         logging.warning("Generating a file to use for overwriting the original vm parameters")
         with open(ovrwrt_file, "w") as handle:
             handle.write("# Use this config to override with test objects configuration\n"
                          "include " + os.path.join(custom_configs_dir(), "objects-overwrite.cfg") + "\n")
+    return ovrwrt_file
+
+
+def ovrwrt_file(category: str):
+    """Overwrite config file for all objects."""
+    ovrwrt_file = os.path.join(os.environ['HOME'], f"avocado_overwrite_{category}.cfg")
+    if not os.path.exists(ovrwrt_file):
+        logging.warning(f"Generating a file to use for overwriting the original {category} parameters")
+        with open(ovrwrt_file, "w") as handle:
+            handle.write("# Use this config to override with test objects configuration\n"
+                         "include " + os.path.join(custom_configs_dir(), f"{category}-overwrite.cfg") + "\n")
     return ovrwrt_file
 
 
@@ -338,7 +347,7 @@ class Reparsable():
 
         return parser
 
-    def get_params(self, list_of_keys=None,
+    def get_params(self, list_of_keys=None, dict_index=0,
                    show_restriction=False, show_dictionaries=False,
                    show_dict_fullname=False, show_dict_contents=False):
         """
@@ -349,6 +358,7 @@ class Reparsable():
 
         :param list_of_keys: list of parameters key in the final selection
         :type list_of_keys: [str] or None
+        :param int dict_index: index of the dictionary to use as parameters
         :returns: first variant dictionary from all current parsed steps
         :rtype: :py:class:`Params`
         :raises: :py:class:`AssertionError` if the parameter dictionary is not unique
@@ -362,9 +372,11 @@ class Reparsable():
                                  show_empty_cartesian_product=True)
 
         for i, d in enumerate(parser.get_dicts()):
-            if i == 0:
+            if i == dict_index:
                 default_params = d
-            assert i < 1, "There must be at most one configuration for the restriction:\n%s" % self.print_parsed()
+                break
+        else:
+            raise ValueError("There must be a configuration for the restriction:\n%s" % self.print_parsed())
 
         if list_of_keys is None:
             selected_params = default_params

@@ -51,6 +51,30 @@ class ParamsParserTest(Test):
         for key in params.keys():
             self.assertEqual(params[key], d[key], "The %s parameter must coincide: %s != %s" % (key, params[key], d[key]))
 
+    def test_params_dict_index(self):
+        """Test that parameters obtained via an additional dictionary index are the correct ones."""
+        self.base_str = "only all..tutorial2\n"
+        config = param.Reparsable()
+        config.parse_next_batch(base_file=self.base_file,
+                                base_str=self.base_str,
+                                base_dict=self.base_dict)
+        parser = config.get_parser(show_restriction=False,
+                                   show_dictionaries=False,
+                                   show_dict_fullname=False,
+                                   show_dict_contents=False)
+        params = config.get_params(dict_index=1,
+                                   show_restriction=False,
+                                   show_dictionaries=False,
+                                   show_dict_fullname=False,
+                                   show_dict_contents=False)
+        for i, d in enumerate(parser.get_dicts()):
+            if i == 1:
+                for key in params.keys():
+                    self.assertEqual(params[key], d[key], "The %s parameter must coincide: %s != %s" % (key, params[key], d[key]))
+
+        with self.assertRaises(ValueError):
+            config.get_params(dict_index=2)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -23,6 +23,7 @@ import os
 import asyncio
 
 from avocado.core.output import LOG_UI, LOG_JOB as logging
+
 from avocado_i2n import params_parser as param
 from avocado_i2n.cartgraph import TestGraph
 from avocado_i2n.intertest_setup import with_cartesian_graph
@@ -52,13 +53,15 @@ def permubuntu(config, tag=""):
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
     graph = TestGraph()
-    graph.objects = l.parse_objects(config["param_dict"], config["vm_strs"])
+    graph.new_workers(l.parse_workers(config["param_dict"]))
+    flat_net = l.parse_net_from_object_strs(config["vm_strs"])
+    graph.objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
     for test_object in graph.objects:
         if test_object.key != "vms":
             continue
         vm = test_object
         # parse individual net only for the current vm
-        net = l.parse_object_from_objects([vm], param_dict=config["param_dict"])
+        net = l.parse_object_from_objects("net1", "nets", [vm], params=config["param_dict"])
         logging.info("Performing extra setup for the permanent %s", vm.suffix)
 
         # consider this as a special kind of state converting test which concerns
@@ -75,7 +78,5 @@ def permubuntu(config, tag=""):
         graph.nodes += [test_node]
 
     l.parse_shared_root_from_object_trees(graph, config["param_dict"])
-    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
-    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                                 r.job.timeout or None))
+    r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished permanent vm setup")

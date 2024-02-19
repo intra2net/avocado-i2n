@@ -34,6 +34,7 @@ import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 import collections
 
+from . import TestObject, TestNode, TestWorker
 
 
 def set_graph_logging_level(level=20):
@@ -93,7 +94,7 @@ class TestGraph(object):
         """Construct the test graph."""
         self.objects = []
         self.nodes = []
-        self.workers = []
+        self.workers = {}
 
     def __repr__(self):
         dump = "[cartgraph] objects='%s' nodes='%s'" % (len(self.objects), len(self.nodes))
@@ -103,12 +104,11 @@ class TestGraph(object):
             dump = "%s\n\t%s" % (dump, str(test_node))
         return dump
 
-    def new_objects(self, objects):
+    def new_objects(self, objects: list[TestObject] or TestObject) -> None:
         """
         Add new objects excluding (old) repeating ones as ID.
 
         :param objects: candidate test objects
-        :type objects: [:py:class:`TestObject`] or :py:class:`TestObject`
         """
         if not isinstance(objects, list):
             objects = [objects]
@@ -118,12 +118,11 @@ class TestGraph(object):
                 continue
             self.objects.append(test_object)
 
-    def new_nodes(self, nodes):
+    def new_nodes(self, nodes: list[TestNode] or TestNode) -> None:
         """
         Add new nodes excluding (old) repeating ones as ID.
 
         :param nodes: candidate test nodes
-        :type nodes: [:py:class:`TestNode`] or :py:class:`TestNode`
         """
         if not isinstance(nodes, list):
             nodes = [nodes]
@@ -133,20 +132,16 @@ class TestGraph(object):
                 continue
             self.nodes.append(test_node)
 
-    def new_workers(self, workers: list[str] or str) -> None:
+    def new_workers(self, workers: list[TestWorker] or TestWorker) -> None:
         """
-        Add new nodes excluding (old) repeating ones as ID.
+        Add new workers excluding (old) repeating ones as ID.
 
-        :param workers: IDs for test workers
+        :param workers: candidate test workers
         """
         if not isinstance(workers, list):
             workers = [workers]
-        for test_worker in workers:
-            # TODO: need to produce workers from initial parsing itself
-            if isinstance(test_worker, str):
-                from .worker import TestWorker
-                test_worker = TestWorker(test_worker)
-            self.workers.append(test_worker)
+        for worker in workers:
+            self.workers[worker.params["shortname"]] = worker
 
     """dumping functionality"""
     def load_setup_list(self, dump_dir, filename="setup_list"):

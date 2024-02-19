@@ -47,6 +47,10 @@ class TestObject(object):
         return self.config.steps[-1].parsable_form()
     final_restr = property(fget=final_restr)
 
+    def component_form(self):
+        return self.params["name"].replace(self.key + ".", "")
+    component_form = property(fget=component_form)
+
     def long_suffix(self):
         """Sufficiently unique suffix to identify a variantless test object."""
         return self._long_suffix
@@ -69,12 +73,16 @@ class TestObject(object):
         self._long_suffix = suffix
         self.config = config
         self._params_cache = None
+        # TODO: Cartesian parser needs support for restrictions after join operations
+        self.dict_index = 0
 
         # TODO: integrate these features better
         self.current_state = "unknown"
 
         self.composites = []
         self.components = []
+
+        self.key = "objects"
 
     def __repr__(self):
         shortname = self.params.get("shortname", "<unknown>")
@@ -110,12 +118,18 @@ class TestObject(object):
 
         :param bool verbose: whether to show generated parameter dictionaries
         """
-        generic_params = self.config.get_params(show_dictionaries=verbose)
+        generic_params = self.config.get_params(dict_index=self.dict_index,
+                                                show_dictionaries=verbose)
         self._params_cache = self.object_typed_params(generic_params)
 
 
 class NetObject(TestObject):
     """A Net wrapper for a test object used in one or more test nodes."""
+
+    def component_form(self):
+        # TODO: an unexpected order of joining in the Cartesian config requires us to override base property
+        return self.params["name"]
+    component_form = property(fget=component_form)
 
     def __init__(self, name, config):
         """
@@ -180,6 +194,10 @@ class ImageObject(TestObject):
         assert len(self.composites) == 1, "Image objects need a unique composite"
         return self.long_suffix + "-" + self.composites[0].params["name"]
     id = property(fget=id)
+
+    def component_form(self):
+        return self.composites[0].component_form
+    component_form = property(fget=component_form)
 
     def __init__(self, name, config):
         """

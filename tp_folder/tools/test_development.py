@@ -24,10 +24,6 @@ import contextlib
 import asyncio
 from collections import namedtuple
 
-from avocado.core import job
-from avocado.core import output
-from avocado.core import data_dir
-from avocado.core import dispatcher
 from avocado.core.output import LOG_UI
 
 from avocado_i2n import params_parser as param
@@ -75,11 +71,11 @@ def develop(config, tag=""):
     assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
 
     graph = TestGraph()
+    graph.new_workers(l.parse_workers(config["param_dict"]))
     graph.objects = objects
     graph.nodes = [TestNode(tag, tests[0].config, objects[-1])]
     l.parse_shared_root_from_object_trees(graph, config["param_dict"])
     graph.flag_children(flag_type="run", flag=lambda self, slot: True)
-    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
-    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                                 r.job.timeout or None))
+
+    r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Development complete")

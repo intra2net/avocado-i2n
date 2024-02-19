@@ -44,9 +44,10 @@ from avocado.core.status.server import StatusServer
 from avocado.core.teststatus import STATUSES_MAPPING
 from avocado.core.task.runtime import RuntimeTask, PreRuntimeTask, PostRuntimeTask
 from avocado.core.task.statemachine import TaskStateMachine, Worker
+from avocado.core.dispatcher import SpawnerDispatcher
 
 from . import params_parser as param
-from .cartgraph import TestGraph, TestNode
+from .cartgraph import TestGraph, TestWorker, TestNode
 
 
 class CartesianRunner(RunnerInterface):
@@ -69,7 +70,6 @@ class CartesianRunner(RunnerInterface):
     def __init__(self):
         """Construct minimal attributes for the Cartesian runner."""
         self.tasks = []
-        self.slots = []
 
         self.status_repo = None
         self.status_server = None
@@ -106,9 +106,8 @@ class CartesianRunner(RunnerInterface):
         spawner = node.params["nets_spawner"]
         logging.debug(f"Running {node.id} on {gateway}/{host} using {spawner} isolation")
 
-        if not node.is_occupied():
-            logging.warning("Environment not set, assuming serial unisolated test runs")
-            node.set_environment(self.job, "")
+        if node.worker.spawner is None:
+            raise RuntimeError(f"Worker {node.worker} cannot spawn tasks")
         if not self.status_repo:
             self.status_repo = StatusRepo(self.job.unique_id)
             self.status_server = StatusServer(self.job.config.get('run.status_server_listen'),
@@ -155,7 +154,7 @@ class CartesianRunner(RunnerInterface):
         # TODO: use a single state machine for all test nodes when we are able
         # to at least add requested tasks to it safely (using its locks)
         await Worker(state_machine=TaskStateMachine(tasks, self.status_repo),
-                     spawner=node.spawner, max_running=1,
+                     spawner=node.worker.spawner, max_running=1,
                      task_timeout=self.job.config.get('task.timeout.running')).run()
 
     async def run_test_node(self, node):
@@ -234,16 +233,14 @@ class CartesianRunner(RunnerInterface):
         else:
             return True
 
-    async def run_traversal(self, graph, params, slot):
+    async def run_traversal(self, graph: TestGraph, params: dict[str, str], slot: TestWorker) -> None:
         """
         Run all user and system defined tests optimizing the setup reuse and
         minimizing the repetition of demanded tests.
 
         :param graph: test graph to traverse
-        :type graph: :py:class:`TestGraph`
         :param params: runtime parameters used for extra customization
-        :type params: {str, str}
-        :param str slot: id name for the worker traversing the graph
+        :param slot: worker traversing the graph
         :raises: :py:class:`AssertionError` if some traversal assertions are violated
 
         The highest priority is at the setup tests (parents) since the test cannot be
@@ -255,7 +252,7 @@ class CartesianRunner(RunnerInterface):
         Of course all possible children are restricted by the user-defined "only" and
         the number of internal test nodes is minimized for achieving this goal.
         """
-        logging.debug(f"Worker {slot} starting complete graph traversal with parameters {params}")
+        logging.debug(f"Worker {slot.id} starting complete graph traversal with parameters {params}")
         shared_roots = graph.get_nodes_by("shared_root", "yes")
         assert len(shared_roots) == 1, "There can be only exactly one starting node (shared root)"
         root = shared_roots[0]
@@ -282,24 +279,24 @@ class CartesianRunner(RunnerInterface):
                 occupied_timeout = round(max(test_duration/1000, 0.1), 2)
                 if next == occupied_at:
                     if occupied_wait > test_duration:
-                        raise RuntimeError(f"Worker {slot} spent {occupied_wait:.2f} seconds waiting for "
+                        raise RuntimeError(f"Worker {slot.id} spent {occupied_wait:.2f} seconds waiting for "
                                            f"occupied node of maximum test duration {test_duration:.2f}")
                     occupied_wait += occupied_timeout
                 else:
                     # reset as we are waiting for a different node now
                     occupied_wait = 0.0
                 occupied_at = next
-                logging.debug(f"Worker {slot} stepping back from already occupied test node {next} for "
+                logging.debug(f"Worker {slot.id} stepping back from already occupied test node {next} for "
                               f"a period of {occupied_timeout} seconds (total time spent: {occupied_wait:.2f})")
                 traverse_path.pop()
                 await asyncio.sleep(occupied_timeout)
                 continue
 
             logging.debug("Worker %s at test node %s which is %sready with setup and %sready with cleanup",
-                          slot, next.params["shortname"],
+                          slot.id, next.params["shortname"],
                           "not " if not next.is_setup_ready(slot) else "",
                           "not " if not next.is_cleanup_ready(slot) else "")
-            logging.debug("Current traverse path/stack for %s:\n%s", slot,
+            logging.debug("Current traverse path/stack for %s:\n%s", slot.id,
                           "\n".join([n.params["shortname"] for n in traverse_path]))
             # if previous in path is the child of the next, then the path is reversed
             # looking for setup so if the next is setup ready and already run, remove
@@ -335,7 +332,24 @@ class CartesianRunner(RunnerInterface):
                 raise AssertionError("Discontinuous path in the test dependency graph detected")
 
             if log.getLogger('graph').level <= log.DEBUG:
-                graph.visualize(traverse_dir, f"{time.time():.4f}_{slot}")
+                graph.visualize(traverse_dir, f"{time.time():.4f}_{slot.id}")
+
+    def run_workers(self, graph: TestGraph, params: dict[str, str]) -> None:
+        """
+        Run all workers in parallel travesing the graph for each.
+
+        :param graph: test graph to traverse
+        :param params: runtime parameters used for extra customization
+        """
+        for worker in graph.workers.values():
+            if not worker.spawner:
+                worker.spawner = SpawnerDispatcher(self.job.config, self.job)[worker.params["nets_spawner"]].obj
+            if "runtime_str" in worker.params and not worker.set_up():
+                raise RuntimeError(f"Failed to start environment {worker.id}")
+        slot_workers = sorted([*graph.workers.values()], key=lambda x: x.params["name"])
+        to_traverse = [self.run_traversal(graph, params, s) for s in slot_workers if "runtime_str" in s.params]
+        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
+                                                                     self.job.timeout or None))
 
     def run_suite(self, job, test_suite):
         """
@@ -395,19 +409,10 @@ class CartesianRunner(RunnerInterface):
                     if test_details["status"].lower() not in replay_status and test_details["name"] not in self.skip_tests:
                         self.skip_tests += [test_details["name"]]
 
-        self.slots = params.get("slots", "").split(" ")
-        graph.new_workers(self.slots)
-        for worker in graph.workers:
-            if not worker.set_up():
-                raise RuntimeError(f"Failed to start environment {worker.id}")
-
         graph.visualize(self.job.logdir)
 
         try:
-            to_traverse = [self.run_traversal(graph, params, s) for s in self.slots]
-            loop.run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                     self.job.timeout or None))
-
+            self.run_workers(graph, params)
             if not self.all_tests_ok:
                 # the summary is a set so only a single failed test is enough
                 summary.add('FAIL')
@@ -451,15 +456,13 @@ class CartesianRunner(RunnerInterface):
         return summary
 
     """custom nodes"""
-    async def run_terminal_node(self, graph, object_name, params, slot):
+    async def run_terminal_node(self, graph: TestGraph, object_name: str, params: dict[str, str], slot: TestWorker) -> bool:
         """
         Run the set of tests necessary for creating a given test object.
 
         :param graph: test graph to run create node from
-        :type graph: :py:class:`TestGraph`
-        :param str object_name: name of the test object to be created
+        :param object_name: name of the test object to be created
         :param params: runtime parameters used for extra customization
-        :type params: {str, str}
         :raises: :py:class:`NotImplementedError` if using incompatible installation variant
 
         The current implementation with implicit knowledge on the types of test objects
@@ -496,7 +499,7 @@ class CartesianRunner(RunnerInterface):
                                         ovrwrt_str=param.re_str("all..noop"),
                                         ovrwrt_dict=setup_dict)
         pre_node = TestNode("0t", install_config, test_node.objects[0])
-        pre_node.set_environment(self.job, slot)
+        pre_node.set_environment(slot)
         status = await self.run_test_node(pre_node)
         if not status:
             logging.error("Could not configure the installation for %s on %s", object_vm, object_image)
@@ -507,10 +510,10 @@ class CartesianRunner(RunnerInterface):
         return await self.run_test_node(test_node)
 
     """internals"""
-    async def _traverse_test_node(self, graph, test_node, params, slot):
+    async def _traverse_test_node(self, graph: TestGraph, test_node: TestNode, params: dict[str, str], slot: TestWorker) -> None:
         """Run a single test according to user defined policy and state availability."""
         if not test_node.is_occupied():
-            test_node.set_environment(self.job, slot)
+            test_node.set_environment(slot)
         else:
             return
 
@@ -529,7 +532,7 @@ class CartesianRunner(RunnerInterface):
                 logging.info("Running a dry %s", test_node.params["shortname"])
                 status = False
             elif test_node.is_shared_root():
-                logging.debug("Test run on %s started from the shared root", slot)
+                logging.debug(f"Test run on {slot.id} started from the shared root")
                 status = False
             elif test_node.is_object_root():
                 status = await self.run_terminal_node(graph, test_node.params["object_root"], params, slot)
@@ -553,19 +556,19 @@ class CartesianRunner(RunnerInterface):
             if status:
                 self._update_reusable_trail(test_node)
         else:
-            logging.debug("Skipping test %s on %s", test_node.params["shortname"], slot)
+            logging.debug(f"Skipping test {slot.id} on %s", test_node.params["shortname"])
 
         # free the node for traversal by other workers
         test_node.workers.add(slot)
-        test_node.spawner = None
+        test_node.worker = None
 
-    async def _reverse_test_node(self, graph, test_node, params, slot):
+    async def _reverse_test_node(self, graph: TestGraph, test_node: TestNode, params: dict[str, str], slot: TestWorker) -> None:
         """
         Clean up any states that could be created by this node (will be skipped
         by default but the states can be removed with "unset_mode=f.").
         """
         if not test_node.is_occupied():
-            test_node.set_environment(self.job, slot)
+            test_node.set_environment(slot)
         else:
             return
         if test_node.should_clean(slot):
@@ -573,14 +576,14 @@ class CartesianRunner(RunnerInterface):
             if params.get("dry_run", "no") == "yes":
                 logging.info("Cleaning a dry %s", test_node.params["shortname"])
             elif test_node.is_shared_root():
-                logging.debug("Test run on %s ended at the shared root", slot)
+                logging.debug(f"Test run on {slot.id} ended at the shared root")
 
             elif test_node.produces_setup():
                 test_node.sync_states(params)
 
         else:
-            logging.debug("The test %s should not be cleaned up on %s", test_node.params["shortname"], slot)
-        test_node.spawner = None
+            logging.debug(f"The test %s should not be cleaned up on {slot.id}", test_node.params["shortname"])
+        test_node.worker = None
 
     def _update_reusable_trail(self, test_node):
         """Update the graph nodes with traversal information on new reusable trails."""

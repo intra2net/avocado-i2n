@@ -38,7 +38,8 @@ from aexpect import remote
 from aexpect import remote_door as door
 from avocado.core.test_id import TestID
 from avocado.core.nrunner.runnable import Runnable
-from avocado.core.dispatcher import SpawnerDispatcher
+
+from . import TestWorker
 
 
 door.DUMP_CONTROL_DIR = "/tmp"
@@ -103,9 +104,8 @@ class TestNode(object):
         self.should_run = self.default_run_decision
         self.should_clean = self.default_clean_decision
 
-        self.all_workers = {}
         self.workers = set()
-        self.spawner = None
+        self.worker = None
 
         # flattened list of objects (in composition) involved in the test
         self.objects = [object]
@@ -162,60 +162,23 @@ class TestNode(object):
 
         return Runnable('avocado-vt', uri, **vt_params)
 
-    def set_environment(self, job, env_id=""):
+    def set_environment(self, worker: TestWorker) -> None:
         """
         Set the environment for executing the test node.
 
-        :param job: job that includes the test suite
-        :type job: :py:class:`avocado.core.job.Job`
-        :param str env_id: name or ID to uniquely identify the environment, empty
-                           for unisolated process spawners
+        :param worker: set an optional worker or run serially if none given
+                       for unisolated process spawners
 
         This isolating environment could be a container, a virtual machine, or
         a less-isolated process and is managed by a specialized spawner.
         """
-        def slot_attributes(env_id):
-            env_tuple = tuple(env_id.split("/"))
-            if len(env_tuple) == 1:
-                env_net = ""
-                env_name = "c" + env_tuple[0] if env_tuple[0] else ""
-                # NOTE: at present handle empty environment id (lack of slots) as an indicator
-                # of using non-isolated serial runs via the old process environment spawner
-                env_type = "lxc" if env_name else "process"
-            elif len(env_tuple) == 2:
-                env_net = env_tuple[0]
-                env_name = env_tuple[1]
-                env_type = "remote"
-            else:
-                raise ValueError(f"Environment ID {env_id} could not be parsed for {self}")
-            return env_net, env_name, env_type
-
-        if not self.all_workers:
-            slots = job.config["param_dict"].get("slots", "").split(" ")
-            for slot in slots:
-                env_net, env_name, env_type = slot_attributes(slot)
-                if env_net not in self.all_workers:
-                    self.all_workers[env_net] = {}
-                self.all_workers[env_net][env_name] = env_type
-        env_net, env_name, env_type = slot_attributes(env_id)
-        if env_net not in self.all_workers:
-            raise RuntimeError(f"Invalid environment net found: {env_net} not among the initially "
-                                f"defined {', '.join(self.all_workers.keys())}")
-        if env_name not in self.all_workers[env_net]:
-            raise RuntimeError(f"Invalid environment name found: {env_name} not among the initially "
-                                f"defined {', '.join(self.all_workers[env_net].keys())}")
-        if env_type != self.all_workers[env_net][env_name]:
-            raise RuntimeError(f"Invalid environment type: {env_type} not same as the initially "
-                                f"defined {self.all_workers[env_net][env_type]} for {env_net}/{env_type}")
-        self.params["nets_gateway"] = env_net
-        self.params["nets_host"] = env_name
-        self.params["nets_spawner"] = env_type
-
-        # TODO: drop params from runner and use unified job config for slots and all other run operations
-        self.spawner = SpawnerDispatcher(job.config, job)[self.params["nets_spawner"]].obj
+        self.params["nets_gateway"] = worker.params["nets_gateway"]
+        self.params["nets_host"] = worker.params["nets_host"]
+        self.params["nets_spawner"] = worker.params["nets_spawner"]
+        self.worker = worker
 
     def is_occupied(self):
-        return self.spawner is not None
+        return self.worker is not None
 
     def is_scan_node(self):
         """Check if the test node is the root of all test nodes for all test objects."""
@@ -237,18 +200,18 @@ class TestNode(object):
         """Check if the test node is not defined with any test object."""
         return len(self.objects) == 0 or self.params["vms"] == ""
 
-    def is_setup_ready(self, worker):
+    def is_setup_ready(self, worker: TestWorker) -> bool:
         """
         Check if all dependencies of the test were run or there were none.
 
-        :param str worker: relative setup readiness with respect to a worker ID
+        :param worker: relative setup readiness with respect to a worker ID
         """
         for node in self.setup_nodes:
             if worker not in self.visited_setup_nodes.get(node, set()):
                 return False
         return True
 
-    def is_cleanup_ready(self, worker):
+    def is_cleanup_ready(self, worker: TestWorker) -> bool:
         """
         Check if all dependent tests were run or there were none.
 
@@ -259,12 +222,12 @@ class TestNode(object):
                 return False
         return True
 
-    def is_eagerly_finished(self, worker=None):
+    def is_eagerly_finished(self, worker: TestWorker = None) -> bool:
         """
         The test was run by at least one worker of all or some scopes.
 
         :param worker: evaluate with respect to an optional worker ID scope or globally if none given
-        :type worker: str or None
+        :returns: whether the test was run by at least one worker of all or some scopes
 
         This happens in an eager manner so that any already available
         setup nodes are considered finished. If we instead wait for
@@ -273,36 +236,36 @@ class TestNode(object):
         """
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
             # is finished separately by each worker
-            return worker.split("/")[-1] in set(worker for worker in self.workers)
+            return worker.params["runtime_str"].split("/")[-1] in set(worker for worker in self.workers)
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             # is finished for an entire swarm by at least one of its workers
-            return worker.split("/")[0] in set(worker.split("/")[0] for worker in self.workers)
+            return worker.params["runtime_str"].split("/")[0] in set(worker.params["runtime_str"].split("/")[0] for worker in self.workers)
         else:
             # is finished globally by at least one worker
             return len(self.workers) > 0
 
-    def is_fully_finished(self, worker=None):
+    def is_fully_finished(self, worker: TestWorker = None) -> bool:
         """
         The test was run by all workers of a given scope.
 
         :param worker: evaluate with respect to an optional worker ID scope or globally if none given
-        :type worker: str or None
+        :returns: whether the test was run all workers of a given scope
 
         The consideration here is for fully traversed node by all workers
         unless restricted within some scope of setup reuse.
         """
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
             # is finished separately by each worker and for all workers
-            return worker.split("/")[-1] in set(worker for worker in self.workers)
+            return worker.params["runtime_str"].split("/")[-1] in set(worker for worker in self.workers)
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             # is finished for an entire swarm by all of its workers
-            slot_cluster = worker.split("/")[0]
-            all_cluster_hosts = set(host for host in self.all_workers[slot_cluster])
-            node_cluster_hosts = set(worker.split("/")[1] for worker in self.workers if worker.split("/")[0] == slot_cluster)
+            slot_cluster = worker.params["runtime_str"].split("/")[0]
+            all_cluster_hosts = set(host for host in TestWorker.run_slots[slot_cluster])
+            node_cluster_hosts = set(worker.params["runtime_str"].split("/")[1] for worker in self.workers if worker.params["runtime_str"].split("/")[0] == slot_cluster)
             return all_cluster_hosts == node_cluster_hosts
         else:
             # is finished globally by all workers
-            return len(self.workers) == sum([len([w for w in self.all_workers[s]]) for s in self.all_workers])
+            return len(self.workers) == sum([len([w for w in TestWorker.run_slots[s]]) for s in TestWorker.run_slots])
 
     def is_terminal_node_for(self):
         """
@@ -354,20 +317,30 @@ class TestNode(object):
                     return True
         return False
 
-    def default_run_decision(self, slot):
-        """Default decision policy on whether a test node should be run or skipped."""
+    def default_run_decision(self, worker: TestWorker) -> bool:
+        """
+        Default decision policy on whether a test node should be run or skipped.
+
+        :param worker: worker which makes the run decision
+        :returns: whether the worker should run the test node
+        """
         if not self.produces_setup():
             # most standard stateless behavior is to run each test node by exactly one worker
             should_run = len(self.workers) == 0
         else:
             # scanning will be triggered once for each worker on internal nodes
-            should_scan = slot not in self.workers
+            should_scan = worker not in self.workers
             should_run = self.scan_states() if should_scan else False
 
         return should_run
 
-    def default_clean_decision(self, slot):
-        """Default decision policy on whether a test node should be cleaned or skipped."""
+    def default_clean_decision(self, worker: TestWorker) -> bool:
+        """
+        Default decision policy on whether a test node should be cleaned or skipped.
+
+        :param worker: worker which makes the clean decision
+        :returns: whether the worker should clean the test node
+        """
         # no support for parallelism within reversible nodes since we might hit a race condition
         # whereby a node will be run for missing setup but its parent will be reversed before it
         # gets any parent-provided states
@@ -382,7 +355,7 @@ class TestNode(object):
             return True
         else:
             # last one of a given scope should "close the door" for that scope
-            return self.is_fully_finished(slot)
+            return self.is_fully_finished(worker)
 
     @classmethod
     def prefix_priority(cls, prefix1, prefix2):
@@ -465,45 +438,44 @@ class TestNode(object):
 
         return cls.prefix_priority(node1.long_prefix, node2.long_prefix)
 
-    def pick_parent(self, slot):
+    def pick_parent(self, worker: TestWorker) -> "TestNode":
         """
         Pick the next available parent based on some priority.
 
+        :param worker: worker for which the parent is selected
         :returns: the next parent node
-        :rtype: :py:class:`TestNode`
         :raises: :py:class:`RuntimeError`
 
         The current order will prioritize less traversed test paths.
         """
-        available_nodes = [n for n in self.setup_nodes if slot not in self.visited_setup_nodes.get(n, set())]
+        available_nodes = [n for n in self.setup_nodes if worker not in self.visited_setup_nodes.get(n, set())]
         nodes = sorted(available_nodes, key=cmp_to_key(TestNode.setup_priority))
         if len(nodes) == 0:
             raise RuntimeError("Picked a parent of a node without remaining parents")
         return nodes[0]
 
-    def pick_child(self, slot):
+    def pick_child(self, worker: TestWorker) -> "TestNode":
         """
         Pick the next available child based on some priority.
 
+        :param worker: worker for which the child is selected
         :returns: the next child node
-        :rtype: :py:class:`TestNode`
         :raises: :py:class:`RuntimeError`
 
         The current order will prioritize less traversed test paths.
         """
-        available_nodes = [n for n in self.cleanup_nodes if slot not in self.visited_cleanup_nodes.get(n, set())]
+        available_nodes = [n for n in self.cleanup_nodes if worker not in self.visited_cleanup_nodes.get(n, set())]
         nodes = sorted(available_nodes, key=cmp_to_key(TestNode.cleanup_priority))
         if len(nodes) == 0:
             raise RuntimeError("Picked a child of a node without remaining children")
         return nodes[0]
 
-    def visit_parent(self, test_node, worker):
+    def visit_parent(self, test_node: "TestNode", worker: TestWorker) -> None:
         """
         Add a parent node to the set of visited nodes for this test.
 
         :param test_node: visited node
-        :type test_node: TestNode object
-        :param str worker: slot ID of worker visiting the node
+        :param worker: worker visiting the node
         :raises: :py:class:`ValueError` if visited node is not directly dependent
         """
         if test_node not in self.setup_nodes:
@@ -512,13 +484,12 @@ class TestNode(object):
         visitors.add(worker)
         self.visited_setup_nodes[test_node] = visitors
 
-    def visit_child(self, test_node, worker):
+    def visit_child(self, test_node: "TestNode", worker: TestWorker) -> None:
         """
         Add a child node to the set of visited nodes for this test.
 
         :param test_node: visited node
-        :type test_node: TestNode object
-        :param str worker: slot ID of worker visiting the node
+        :param worker: worker visiting the node
         :raises: :py:class:`ValueError` if visited node is not directly dependent
         """
         if test_node not in self.cleanup_nodes:
@@ -535,7 +506,7 @@ class TestNode(object):
                              location where the format must be "gateway/host:path"
         """
         # TODO: networks need further refactoring possibly as node environments
-        object_suffix = self.params["object_suffix"]
+        object_suffix = self.params.get("object_suffix", "net1")
         # discard parameters if we are not talking about any specific non-net object
         object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
         source_suffix = "_" + location
