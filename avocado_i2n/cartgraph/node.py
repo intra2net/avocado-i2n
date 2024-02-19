@@ -189,6 +189,7 @@ class TestNode(Runnable):
 
         self.workers = set()
         self.worker = None
+        self.results = []
 
         self.objects = []
 
@@ -321,7 +322,7 @@ class TestNode(Runnable):
         """
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
             # is finished separately by each worker
-            return worker.params["runtime_str"].split("/")[-1] in set(worker for worker in self.workers)
+            return worker in self.workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             # is finished for an entire swarm by at least one of its workers
             return worker.params["runtime_str"].split("/")[0] in set(worker.params["runtime_str"].split("/")[0] for worker in self.workers)
@@ -341,7 +342,7 @@ class TestNode(Runnable):
         """
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
             # is finished separately by each worker and for all workers
-            return worker.params["runtime_str"].split("/")[-1] in set(worker for worker in self.workers)
+            return worker in self.workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             # is finished for an entire swarm by all of its workers
             slot_cluster = worker.params["runtime_str"].split("/")[0]
@@ -402,6 +403,85 @@ class TestNode(Runnable):
                     return True
         return False
 
+    def should_rerun(self) -> bool:
+        """
+        Check if the test node should be rerun based on some retry criteria.
+
+        :returns: whether the test node should be retried
+
+        The retry parameters are `max_tries` and `rerun_status` or `stop_status`. The
+        first is the maximum number of tries, and the second two indicate when to continue
+        or stop retrying in terms of encountered test status and can be a list of statuses.
+        """
+        if self.params.get("dry_run", "no") == "yes":
+            logging.info(f"Should not rerun via dry test run {self}")
+            return False
+        elif self.is_flat():
+            logging.debug(f"Should not rerun a flat node {self}")
+            return False
+        elif self.is_shared_root():
+            logging.debug(f"Should not rerun the shared root")
+            return False
+
+        all_statuses = ["fail", "error", "pass", "warn", "skip", "cancel", "interrupted"]
+        if self.params.get("replay"):
+            rerun_status = self.params.get_list("rerun_status", "fail,error,warn", delimiter=",")
+        else:
+            rerun_status = self.params.get_list("rerun_status", []) or all_statuses
+        stop_status = self.params.get_list("stop_status", [])
+        for status, status_type in [(rerun_status, "rerun"), (stop_status, "stop")]:
+            disallowed_status = {*status} - {*all_statuses}
+            if len(disallowed_status) > 0:
+                raise ValueError(f"Value of {status_type} status must be a valid test status,"
+                                 f" found {', '.join(disallowed_status)}")
+
+        # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
+        max_tries = self.params.get_numeric("max_tries", 2 if self.params.get("replay") else 1)
+        # do not log when the user is not using the retry feature
+        if max_tries > 1:
+            stop_condition = ", ".join(stop_status) if stop_status else "NONE"
+            rerun_condition = ", ".join(rerun_status) if rerun_status else "NONE"
+            logging.debug(f"Could rerun {self} with stop condition {stop_condition}, a rerun condition "
+                          f"{rerun_condition}, and a maximum of {max_tries} tries")
+        if max_tries < 0:
+           raise ValueError("Number of max_tries cannot be less than zero")
+
+        # analyzing rerun and stop status conditions
+        test_statuses = [r["status"].lower() for r in self.results]
+        rerun_statuses_violated = {*test_statuses} - {*rerun_status}
+        if len(rerun_statuses_violated) > 0:
+            logging.debug(f"Stopping test tries due to violated rerun test statuses: {rerun_status}")
+            return False
+        stop_statuses_found = {*stop_status} & {*test_statuses}
+        if len(stop_statuses_found) > 0:
+            logging.info(f"Stopping test tries due to obtained stop test statuses: {', '.join(stop_statuses_found)}")
+            return False
+
+        # implicitly this means that setting >1 retries will be done on tests actually collecting results (no flat nodes, dry runs, etc.)
+        reruns_left = 0 if max_tries == 1 else max_tries - len(test_statuses)
+        if reruns_left > 0:
+            logging.debug(f"Still have {reruns_left} allowed reruns left and should rerun {self}")
+            return True
+        logging.debug(f"Should not rerun {self}")
+        return False
+
+    def should_scan(self, worker: TestWorker = None) -> bool:
+        """
+        Check if the test node should scan for reusable states based on scope criteria.
+
+        :param worker: evaluate with respect to an optional worker ID scope or globally if none given
+        :returns: whether the test node should scan for states
+        """
+        if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
+            # is scanned separately by each worker
+            return worker not in self.workers
+        elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
+            # is scanned for an entire swarm by just one of its workers
+            return worker.params["runtime_str"].split("/")[0] not in set(worker.params["runtime_str"].split("/")[0] for worker in self.workers)
+        else:
+            # should scan globally by just one worker
+            return len(self.workers) == 0
+
     def default_run_decision(self, worker: TestWorker) -> bool:
         """
         Default decision policy on whether a test node should be run or skipped.
@@ -410,12 +490,21 @@ class TestNode(Runnable):
         :returns: whether the worker should run the test node
         """
         if not self.produces_setup():
-            # most standard stateless behavior is to run each test node by exactly one worker
-            should_run = len(self.workers) == 0
+            # most standard stateless behavior is to run each test node once then rerun if needed
+            should_run = len(self.results) == 0 or self.should_rerun()
+
         else:
-            # scanning will be triggered once for each worker on internal nodes
-            should_scan = worker not in self.workers
-            should_run = self.scan_states() if should_scan else False
+            should_run_from_scan = False
+            should_scan = self.should_scan(worker)
+            if should_scan:
+                should_run_from_scan = self.scan_states()
+                logging.debug(f"Should{' ' if should_run_from_scan else ' not '}run from scan {self}")
+            # rerunning of test from previous jobs is never intended
+            if len(self.results) == 0 and not should_run_from_scan:
+                self.should_rerun = lambda : False
+
+            should_run = should_run_from_scan if should_scan else False
+            should_run = should_run or self.should_rerun()
 
         return should_run
 

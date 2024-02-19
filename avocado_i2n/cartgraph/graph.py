@@ -1273,6 +1273,7 @@ class TestGraph(object):
                                         ovrwrt_str=param.re_str("all..noop"),
                                         ovrwrt_dict=setup_dict)
         pre_node = TestNode("0t", install_config)
+        pre_node.results = list(test_node.results)
         pre_node.set_objects_from_net(test_node.objects[0])
         pre_node.set_environment(worker)
         status = await self.runner.run_test_node(pre_node)
@@ -1297,15 +1298,17 @@ class TestGraph(object):
         else:
             return
 
+        # add pre-existing shared pool locations
         if not test_node.is_shared_root() and not test_node.is_flat():
             shared_locations = test_node.params.get_list("shared_pool", ["/:."])
             for location in shared_locations:
                 test_node.add_location(location)
+        # add previous results if traversed for the first time (could be parsed on demand)
+        if len(test_node.results) == 0:
+            test_name = test_node.params["name"]
+            test_node.results += [r for r in self.runner.previous_results if r["name"] == test_name]
 
-        replay_skip = test_node.params["name"] in self.runner.skip_tests
-        if replay_skip:
-            logging.debug(f"Test {test_node.params['shortname']} was found in a previous job")
-        if test_node.should_run(worker) and (not replay_skip or test_node.produces_setup()):
+        if test_node.should_run(worker):
 
             # the primary setup nodes need special treatment
             if params.get("dry_run", "no") == "yes":
@@ -1324,7 +1327,7 @@ class TestGraph(object):
 
             else:
                 # finally, good old running of an actual test
-                logging.debug(f"Worker {worker.id} running the test node {test_node}")
+                logging.info(f"Worker {worker.id} running the test node {test_node}")
                 status = await self.runner.run_test_node(test_node)
                 if not status:
                     logging.error(f"Worker {worker.id} got nonzero status from the test {test_node}")
@@ -1451,7 +1454,7 @@ class TestGraph(object):
 
             if next.is_occupied() and next.params.get_boolean("wait_for_occupied", True):
                 # ending with an occupied node would mean we wait for a permill of its duration
-                test_duration = next.params.get_numeric("test_timeout", 3600) * (next.params.get_numeric("retry_attempts", 0) + 1)
+                test_duration = next.params.get_numeric("test_timeout", 3600) * next.params.get_numeric("max_tries", 1)
                 occupied_timeout = round(max(test_duration/1000, 0.1), 2)
                 if next == occupied_at:
                     if occupied_wait > test_duration:
@@ -1480,8 +1483,9 @@ class TestGraph(object):
             if previous in next.cleanup_nodes:
 
                 if next.is_setup_ready(worker):
-                    previous.visit_parent(next, worker)
                     await self.traverse_node(next, worker, params)
+                    if next == root or not next.should_rerun():
+                        previous.visit_parent(next, worker)
                     traverse_path.pop()
                 else:
                     # inverse DFS
@@ -1494,6 +1498,10 @@ class TestGraph(object):
                     continue
                 else:
                     await self.traverse_node(next, worker, params)
+                    # cleanup nodes that should be retried postpone traversal down
+                    if next.should_rerun():
+                        traverse_path.pop()
+                        continue
 
                 if next.is_cleanup_ready(worker):
                     for setup in next.setup_nodes:

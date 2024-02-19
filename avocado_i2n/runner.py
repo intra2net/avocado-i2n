@@ -57,27 +57,15 @@ class CartesianRunner(RunnerInterface):
     name = 'traverser'
     description = 'Runs tests through a Cartesian graph traversal'
 
-    @property
-    def all_tests_ok(self):
-        """
-        Evaluate if all tests run under this runner have an ok status.
-
-        :returns: whether all tests ended with acceptable status
-        :rtype: bool
-        """
-        mapped_status = {STATUSES_MAPPING[t["status"]] for t in self.job.result.tests}
-        return all(mapped_status)
-
     def __init__(self):
         """Construct minimal attributes for the Cartesian runner."""
         self.tasks = []
 
         self.status_repo = None
         self.status_server = None
+        self.previous_results = []
 
-        self.skip_tests = []
-
-    """running functionality"""
+    """results functionality"""
     async def _update_status(self):
         message_handler = MessageHandler()
         while True:
@@ -95,6 +83,41 @@ class CartesianRunner(RunnerInterface):
             task = tasks_by_id.get(task_id)
             message_handler.process_message(message, task, self.job)
 
+    def all_results_ok(self):
+        """
+        Evaluate if all tests run under this runner have an ok status.
+
+        :returns: whether all tests ended with acceptable status
+        :rtype: bool
+
+        ..todo:: There might be repeated tests here that have eventually
+            passed so we might need to return an overall "pass" status.
+        """
+        mapped_status = {STATUSES_MAPPING[t["status"]] for t in self.job.result.tests}
+        return all(mapped_status)
+
+    def results_from_previous_jobs(self) -> None:
+        """Parse results from previous job to add to all traversed graph nodes."""
+        params = self.job.config["param_dict"]
+        # TODO: we could really benefit from using an appropriate params object here
+        replay_jobs = params.get("replay", "").split(" ")
+        for replay_job in replay_jobs:
+            if not replay_job:
+                continue
+            replay_dir = self.job.config.get("datadir.paths.logs_dir", ".")
+            replay_results = os.path.join(replay_dir, replay_job, "results.json")
+            if not os.path.isfile(replay_results):
+                raise RuntimeError("Cannot find replay job results file %s" % replay_results)
+            with open(replay_results) as json_file:
+                logging.info(f"Parsing previous results to replay {replay_results}")
+                data = json.load(json_file)
+                if 'tests' not in data:
+                    raise RuntimeError(f"Cannot find tests to replay against in {replay_results}")
+                for test_details in data["tests"]:
+                    logging.info(f"Updating with previous test results {test_details}")
+                    self.previous_results += [test_details]
+
+    """running functionality"""
     async def run_test_task(self, node):
         """
         Run a test instance inside a subprocess.
@@ -159,78 +182,58 @@ class CartesianRunner(RunnerInterface):
                      spawner=node.worker.spawner, max_running=1,
                      task_timeout=self.job.config.get('task.timeout.running')).run()
 
-    async def run_test_node(self, node):
+    async def run_test_node(self, node: TestNode, status_timeout: int = 10) -> bool:
         """
-        Run a node once, and optionally re-run it depending on the parameters.
+        Run a test node with a potential retry prefix modification.
 
         :param node: test node to run
-        :type node: :py:class:`TestNode`
-        :returns: run status of :py:meth:`run_test_task`
-        :rtype: bool
+        :returns: whether the test succeeded as a simple boolean test result status
         :raises: :py:class:`AssertionError` if the ran test node contains no objects
-
-        The retry parameters are `retry_attempts` and `retry_stop`. The first is
-        the maximum number of retries, and the second indicates when to stop retrying
-        in terms of encountered test status and can be a list of statuses to stop on.
-
-        Only tests with the status of pass, warning, error or failure will be retried.
-        Other statuses will be ignored and the test will run only once.
-
-        This method also works as a convenience wrapper around :py:meth:`run_test`,
-        providing some default arguments.
         """
         if node.is_objectless():
             raise AssertionError("Cannot run test nodes not using any test objects, here %s" % node)
 
-        retry_stop = node.params.get_list("retry_stop", [])
-        # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
-        runs_left = 1 + node.params.get_numeric("retry_attempts", 0)
-        # do not log when the user is not using the retry feature
-        if runs_left > 1:
-            logging.debug(f"Running test with retry_stop={', '.join(retry_stop)} and retry_attempts={runs_left}")
-        if runs_left < 1:
-            raise ValueError("Value of retry_attempts cannot be less than zero")
-        disallowed_status = set(retry_stop).difference(set(["fail", "error", "pass", "warn", "skip"]))
-        if len(disallowed_status) > 0:
-            raise ValueError(f"Value of retry_stop must be a valid test status,"
-                             f" found {', '.join(disallowed_status)}")
-
         original_prefix = node.prefix
-        for r in range(runs_left):
-            # appending a suffix to retries so we can tell them apart
-            if r > 0:
-                node.prefix = original_prefix + f"r{r}"
-            uid = node.id_test.uid
-            name = node.params["name"]
+        # appending a suffix to retries so we can tell them apart
+        run_times = len(node.results)
+        if run_times > 0:
+            node.prefix = original_prefix + f"r{run_times}"
+        uid = node.id_test.uid
+        name = node.params["name"]
 
-            await self.run_test_task(node)
+        await self.run_test_task(node)
 
-            for i in range(10):
-                try:
-                    test_result = next((x for x in self.job.result.tests if x["name"].name == name and x["name"].uid == uid))
-                    test_status = test_result["status"]
-                    break
-                except StopIteration:
-                    await asyncio.sleep(30)
-                    logging.warning(f"Test result {uid} wasn't yet found and could not be extracted")
-                    test_status = "ERROR"
-            else:
-                logging.error(f"Test result {uid} for {name} could not be found and extracted, defaulting to ERROR")
-            if test_status not in ["PASS", "WARN", "ERROR", "FAIL"]:
-                # it doesn't make sense to retry with other status
-                logging.info(f"Will not attempt to retry test with status {test_status}")
+        for i in range(status_timeout):
+            try:
+                test_result = next((x for x in self.job.result.tests if x["name"].name == name and x["name"].uid == uid))
+                if len(node.results) > 0:
+                    # TODO: avocado's choice of result attributes is not uniform for past and current results
+                    get_duration = lambda x: float(x.get('time_elapsed', x['time']))
+                    duration = get_duration(test_result)
+                    max_allowed = max([get_duration(r) for r in node.results if r["status"] == "PASS"], default=duration)
+                    logging.info(f"Validating test duration {duration} is within usual bounds ({max_allowed})")
+                    if float(duration) > 1.25 * max_allowed:
+                        logging.warning(f"Test result {uid} was obtained but test took much longer ({duration}) than usual")
+                        # TODO: could we replace with WARN before the status is announced to the status server?
+                        test_result["status"] = "WARN"
+                node.results += [test_result]
+                test_status = test_result["status"].lower()
                 break
-            if test_status.lower() in retry_stop:
-                logging.info(f"Stop retrying after test status {test_status.lower()}")
-                break
+            except StopIteration:
+                await asyncio.sleep(30)
+                logging.warning(f"Test result {uid} wasn't yet found and could not be extracted ({i}/{status_timeout})")
+                test_status = "error"
+        else:
+            logging.error(f"Test result {uid} for {name} could not be found and extracted, defaulting to ERROR")
         node.prefix = original_prefix
-        logging.info(f"Finished running test with status {test_status}")
+
+        logging.info(f"Finished running test with status {test_status.upper()}")
         # no need to log when test was not repeated
-        if runs_left > 1:
-            logging.info(f"Finished running test {r+1} times")
+        if run_times > 0:
+            logging.info(f"Finished running test {run_times+1} times")
 
         # FIX: as VT's retval is broken (always True), we fix its handling here
-        if test_status in ["ERROR", "FAIL"]:
+        if test_status in ["error", "fail"]:
             return False
         else:
             return True
@@ -254,6 +257,7 @@ class CartesianRunner(RunnerInterface):
             raise TypeError(f"Unknown test suite type for {type(test_suite)}, must be a Cartesian graph or an Avocado test suite")
 
         graph.visualize(self.job.logdir)
+        self.results_from_previous_jobs()
         graph.runner = self
 
         for worker in graph.workers.values():
@@ -296,33 +300,9 @@ class CartesianRunner(RunnerInterface):
         asyncio.ensure_future(self._update_status())
 
         params = self.job.config["param_dict"]
-
-        # TODO: we could really benefit from using an appropriate params object here
-        replay_jobs = params.get("replay", "").split(" ")
-        replay_status = params.get("replay_status", "fail,error,warn").split(",")
-        disallowed_status = set(replay_status).difference(set(["fail", "error", "pass", "warn", "skip"]))
-        if len(disallowed_status) > 0:
-            raise ValueError(f"Value of replay_status must be a valid test status,"
-                             f" found {', '.join(disallowed_status)}")
-        for replay_job in replay_jobs:
-            if not replay_job:
-                continue
-            replay_dir = self.job.config.get("datadir.paths.logs_dir", ".")
-            replay_results = os.path.join(replay_dir, replay_job, "results.json")
-            if not os.path.isfile(replay_results):
-                raise RuntimeError("Cannot find replay job results file %s" % replay_results)
-            with open(replay_results) as json_file:
-                logging.info(f"Parsing previous results to replay {replay_results}")
-                data = json.load(json_file)
-                if 'tests' not in data:
-                    raise RuntimeError(f"Cannot find tests to replay against in {replay_results}")
-                for test_details in data["tests"]:
-                    if test_details["status"].lower() not in replay_status and test_details["name"] not in self.skip_tests:
-                        self.skip_tests += [test_details["name"]]
-
         try:
             self.run_workers(test_suite, params)
-            if not self.all_tests_ok:
+            if not self.all_results_ok():
                 # the summary is a set so only a single failed test is enough
                 summary.add('FAIL')
         except (KeyboardInterrupt, asyncio.TimeoutError) as error:
