@@ -446,6 +446,22 @@ def all_objects(key="vms", composites=None):
     return params.objects(key)
 
 
+def all_suffixes_by_restriction(restriction, key="nets"):
+    """
+    Return all object suffixes via restriction of their variants.
+
+    :param: str restriction: restriction of the suffix variants
+    :param: str key: key to describe the parametric object type
+    :returns: all restricted (from configuration) object suffixes of a given type
+    :rtype: [str]
+    """
+    rep = Reparsable()
+    rep.parse_next_file(f"{key}.cfg")
+    rep.parse_next_str(restriction)
+    parser = rep.get_parser()
+    return [d["shortname"] for d in parser.get_dicts()]
+
+
 def main_vm():
     """
     Return the default main vm that can be passed for any test configuration.
@@ -470,13 +486,13 @@ def re_str(variant_str, base_str="", tag=""):
     :rtype: str
     """
     if tag != "":
-        variant_str = "variants:\n    - %s:\n        only %s\n" % (tag, variant)
+        variant_str = "variants:\n    - %s:\n        only %s\n" % (tag, variant_str)
     else:
         variant_str = "only %s\n" % variant_str
     return base_str + variant_str
 
 
-def join_str(variant_strs, base_str=""):
+def join_str(variant_strs, sort_key, base_str=""):
     """
     Join all object variant restrictions over the base string.
 
@@ -487,9 +503,16 @@ def join_str(variant_strs, base_str=""):
     :rtype: str
     """
     objects, variant_str = "", ""
-    for suffix, variant in variant_strs.items():
+    available_objects = all_objects(sort_key)
+    for suffix in available_objects:
+        if suffix not in variant_strs.keys():
+            continue
+        variant = variant_strs[suffix]
         subvariant = "".join(["    " + l + "\n" for l in variant.rstrip("\n").split("\n")])
         variant_str += "%s:\n%s" % (suffix, subvariant)
         objects += " " + suffix
+    if objects == "":
+        raise ValueError(f"Could not find some of {list(variant_strs.keys())} among "
+                         f"the available {available_objects}")
     variant_str += "join" + objects + "\n"
     return base_str + variant_str

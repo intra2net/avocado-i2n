@@ -41,9 +41,10 @@ class DummyTestRun(object):
         return status not in ["ERROR", "FAIL"]
 
     def add_test_result(self, uid, name, status, time, logdir="."):
-        mocktestid = mock.MagicMock(uid=uid, name=name)
-        # have to set actual name attribute
-        mocktestid.name = name
+        mocktestid = type("Mock", (), {"uid": uid, "name": name})()
+        # or else have to set name attribute separately since "name" is reserved by MagicMock
+        # mocktestid = mock.MagicMock(uid=uid, name=name)
+        # mocktestid.name = name
         self.test_results.append({
             "name": mocktestid,
             "status": status,
@@ -59,6 +60,8 @@ class DummyTestRun(object):
         # provide ID-s and other node attributes as meta-parameters for assertion
         node.params["_long_prefix"] = node.long_prefix
         node.params["_uid"] = node.id_test.uid
+        assert node.started_worker is not None, f"{node} was not properly started by any worker"
+        assert "UNKNOWN" in [r["status"] for r in node.results], f"{node} does not have current UNKNOWN result"
         # small enough not to slow down our tests too much for a test timeout of 300 but
         # large enough to surpass the minimal occupation waiting timeout for more realism
         await asyncio.sleep(0.1)

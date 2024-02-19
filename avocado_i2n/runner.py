@@ -130,8 +130,10 @@ class CartesianRunner(RunnerInterface):
         spawner = node.params["nets_spawner"]
         logging.debug(f"Running {node.id} on {gateway}/{host} using {spawner} isolation")
 
-        if node.worker.spawner is None:
-            raise RuntimeError(f"Worker {node.worker} cannot spawn tasks")
+        if node.started_worker is None:
+            raise RuntimeError(f"No worker is running {node}")
+        if node.started_worker.spawner is None:
+            raise RuntimeError(f"Worker {node.started_worker} cannot spawn tasks")
         if not self.status_repo:
             self.status_repo = StatusRepo(self.job.unique_id)
             self.status_server = StatusServer(self.job.config.get('run.status_server_listen'),
@@ -173,13 +175,13 @@ class CartesianRunner(RunnerInterface):
             if spawner == "lxc":
                 task.spawner_handle = host
             elif spawner == "remote":
-                task.spawner_handle = node.get_session_to_net()
+                task.spawner_handle = node.started_worker.get_session()
         self.tasks += tasks
 
         # TODO: use a single state machine for all test nodes when we are able
         # to at least add requested tasks to it safely (using its locks)
         await Worker(state_machine=TaskStateMachine(tasks, self.status_repo),
-                     spawner=node.worker.spawner, max_running=1,
+                     spawner=node.started_worker.spawner, max_running=1,
                      task_timeout=self.job.config.get('task.timeout.running')).run()
 
     async def run_test_node(self, node: TestNode, status_timeout: int = 10) -> bool:
@@ -190,17 +192,19 @@ class CartesianRunner(RunnerInterface):
         :returns: whether the test succeeded as a simple boolean test result status
         :raises: :py:class:`AssertionError` if the ran test node contains no objects
         """
-        if node.is_objectless():
+        if node.is_flat():
             raise AssertionError("Cannot run test nodes not using any test objects, here %s" % node)
 
         original_prefix = node.prefix
         # appending a suffix to retries so we can tell them apart
-        run_times = len(node.results)
+        run_times = len(node.shared_results)
         if run_times > 0:
             node.prefix = original_prefix + f"r{run_times}"
         uid = node.id_test.uid
         name = node.params["name"]
 
+        node_result = {"name": name, "status": "UNKNOWN"}
+        node.results += [node_result]
         await self.run_test_task(node)
 
         for i in range(status_timeout):
@@ -216,7 +220,11 @@ class CartesianRunner(RunnerInterface):
                         logging.warning(f"Test result {uid} was obtained but test took much longer ({duration}) than usual")
                         # TODO: could we replace with WARN before the status is announced to the status server?
                         test_result["status"] = "WARN"
-                node.results += [test_result]
+                # job and local results as interpreted by us have only serializable easy to use data
+                job_result = {key: value for key, value in test_result.items()}
+                job_result["name"] = test_result["name"].name
+                node.results += [job_result]
+                node.results.remove(node_result)
                 test_status = test_result["status"].lower()
                 break
             except StopIteration:
@@ -248,6 +256,11 @@ class CartesianRunner(RunnerInterface):
         """
         if isinstance(test_suite, TestSuite):
             graph = TestGraph()
+            graph.restrs.update(self.job.config["vm_strs"])
+            for node in test_suite.tests:
+                assert isinstance(node, TestNode), f"Invalid test type fo test suite to run workers on for {node}"
+                # apply default_only or user overwritten restriction
+                node.update_restrs(self.job.config["vm_strs"])
             graph.new_nodes(test_suite.tests)
             graph.parse_shared_root_from_object_roots(params)
             graph.new_workers(TestGraph.parse_workers(params))
@@ -263,10 +276,10 @@ class CartesianRunner(RunnerInterface):
         for worker in graph.workers.values():
             if not worker.spawner:
                 worker.spawner = SpawnerDispatcher(self.job.config, self.job)[worker.params["nets_spawner"]].obj
-            if "runtime_str" in worker.params and not worker.set_up():
+            if not worker.start():
                 raise RuntimeError(f"Failed to start environment {worker.id}")
         slot_workers = sorted([*graph.workers.values()], key=lambda x: x.params["name"])
-        to_traverse = [graph.traverse_object_trees(s, params) for s in slot_workers if "runtime_str" in s.params]
+        to_traverse = [graph.traverse_object_trees(s, params) for s in slot_workers]
         asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
                                                                      self.job.timeout or None))
 
@@ -311,7 +324,7 @@ class CartesianRunner(RunnerInterface):
             summary.add('INTERRUPTED')
 
         # clean up any test node session cache
-        for session in TestNode._session_cache.values():
+        for session in TestWorker._session_cache.values():
             session.close()
 
         # TODO: The avocado implementation needs a workaround here:

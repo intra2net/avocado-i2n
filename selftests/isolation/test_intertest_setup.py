@@ -31,21 +31,21 @@ def new_job(config):
 
 
 @mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
-@mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
+@mock.patch('avocado_i2n.cartgraph.worker.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
-@mock.patch('avocado_i2n.cartgraph.worker.TestWorker.set_up', mock.MagicMock())
+@mock.patch('avocado_i2n.cartgraph.worker.TestWorker.start', mock.MagicMock())
 @mock.patch('avocado_i2n.runner.SpawnerDispatcher', mock.MagicMock())
 @mock.patch.object(CartesianRunner, 'run_test_task', DummyTestRun.mock_run_test_task)
 class IntertestSetupTest(Test):
 
     def setUp(self):
         DummyTestRun.asserted_tests = []
-        self.shared_pool = "/:/mnt/local/images/shared"
+        self.shared_pool = ":/mnt/local/images/shared"
 
         self.config = {}
         self.config["available_vms"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
         self.config["available_restrictions"] = ["leaves", "normal", "minimal"]
-        self.config["param_dict"] = {"slots": "1"}
+        self.config["param_dict"] = {"nets": "net1"}
         self.config["vm_strs"] = self.config["available_vms"].copy()
         self.config["tests_str"] = {}
         self.config["tests_params"] = utils_params.Params()
@@ -65,6 +65,38 @@ class IntertestSetupTest(Test):
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
             {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-8.*\.iso$"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
+            {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$", "type": "^shared_configure_install$"},
+            {"shortname": "^original.unattended_install", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
+            {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$"},
+        ]
+        intertest_setup.update(self.config, tag="1r")
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        # states along the updated path are not be removed
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["install"][self.shared_pool], 0)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["customize"][self.shared_pool], 0)
+        # states after the updated path will be removed (default remove set is the entire graph)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["on_customize"][self.shared_pool], 2)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["connect"][self.shared_pool], 1)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.clicked"][self.shared_pool], 1)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.clicked"][self.shared_pool], 1)
+
+    def test_update_retry(self):
+        """Test that the manual update-cache tool considers retried setup tests."""
+        self.config["param_dict"]["max_tries"] = "2"
+        self.config["param_dict"]["stop_status"] = "pass"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
+        DummyStateControl.asserted_states["unset"] = {"install": {self.shared_pool: 0},
+                                                      "customize": {self.shared_pool: 0}, "on_customize": {self.shared_pool: 0},
+                                                      "connect": {self.shared_pool: 0},
+                                                      "linux_virtuser": {self.shared_pool: 0}, "windows_virtuser": {self.shared_pool: 0},
+                                                      "guisetup.noop": {self.shared_pool: 0}, "guisetup.clicked": {self.shared_pool: 0},
+                                                      "getsetup.noop": {self.shared_pool: 0}, "getsetup.guisetup.noop": {self.shared_pool: 0},
+                                                      "getsetup.clicked": {self.shared_pool: 0}, "getsetup.guisetup.clicked": {self.shared_pool: 0}}
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-8.*\.iso$"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "_status": "FAIL"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "_status": "PASS"},
             {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$", "type": "^shared_configure_install$"},
             {"shortname": "^original.unattended_install", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
             {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$"},
@@ -110,13 +142,14 @@ class IntertestSetupTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["connect"][self.shared_pool], 0)
         # states after the updated path will be removed (default remove set is the entire graph)
         # TODO: states derived from all nodes along the path must be removed and not just from the end of the path (need 2 on_customize)
+        # (we need 2 on_customize states to be cleaned up but vm1 only gets states derived from connect cleaned up)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["on_customize"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.clicked"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.clicked"][self.shared_pool], 1)
 
     def test_update_custom_parallel(self):
         """Test the state customized usage of the manual update-cache tool."""
-        self.config["param_dict"]["slots"] = "1 2"
+        self.config["param_dict"]["nets"] = "net1 net2"
         self.config["vms_params"]["from_state_vm1"] = "customize"
         self.config["vms_params"]["from_state_vm2"] = "install"
         self.config["vms_params"]["to_state_vm1"] = "connect"
@@ -130,11 +163,11 @@ class IntertestSetupTest(Test):
                                                       "getsetup.noop": {self.shared_pool: 0}, "getsetup.guisetup.noop": {self.shared_pool: 0},
                                                       "getsetup.clicked": {self.shared_pool: 0}, "getsetup.guisetup.clicked": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_images": "^install$", "nets_host": "^c1$"},
-            {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$", "type": "^shared_configure_install$", "nets_host": "^c2$"},
-            {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "nets_host": "^c1$"},
-            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$", "nets_host": "^c2$"},
-            {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$", "get_state_images": "^install$", "nets_host": "^c2$"},
+            {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_images": "^install$", "nets": "^net1$"},
+            {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$", "type": "^shared_configure_install$", "nets": "^net2$"},
+            {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "nets": "^net1$"},
+            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$", "nets": "^net2$"},
+            {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$", "get_state_images": "^install$", "nets": "^net2$"},
         ]
         intertest_setup.update(self.config, tag="1r")
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
@@ -144,10 +177,11 @@ class IntertestSetupTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["customize"][self.shared_pool], 0)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["connect"][self.shared_pool], 0)
         # states after the updated path will be removed (default remove set is the entire graph)
-        # TODO: states derived from all nodes along the path must be removed and not just from the end of the path (need 4 on_customize)
-        self.assertEqual(DummyStateControl.asserted_states["unset"]["on_customize"][self.shared_pool], 2)
-        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.clicked"][self.shared_pool], 2)
-        self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.clicked"][self.shared_pool], 2)
+        # TODO: states derived from all nodes along the path must be removed and not just from the end of the path
+        # (we need 4 on_customize states to be cleaned up but vm1 only gets states derived from connect cleaned up)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["on_customize"][self.shared_pool], 1*2)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.clicked"][self.shared_pool], 1*2)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.clicked"][self.shared_pool], 1*2)
 
     def test_update_install(self):
         """Test the install-only state customized usage of the manual update-cache tool."""
@@ -233,65 +267,98 @@ class IntertestSetupTest(Test):
             intertest_setup.update(self.config, tag="0")
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
-    def test_boot(self):
-        """Test the general usage of the manual boot tool."""
-        self.config["param_dict"]["slots"] = "1 2"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
+    def test_update_restrictions(self):
+        """Test object variant restrictions with the manual update-cache tool."""
+        self.config["param_dict"]["nets"] = "net1 net2 net5"
+        self.config["vms_params"]["remove_set"] = "all..tutorial_gui..client_clicked"
+        self.config["vms_params"]["from_state_vm2"] = "customize"
+        self.config["vm_strs"] = {"vm1": "", "vm2": "only Win7\n"}
+        # TODO: consider simplifying the fact that the cleanup graph will use all available vms
+        self.config["available_vms"] = self.config["vm_strs"].copy()
+        DummyStateControl.asserted_states["unset"] = {"install": {self.shared_pool: 0},
+                                                      "customize": {self.shared_pool: 0}, "on_customize": {self.shared_pool: 0},
+                                                      "connect": {self.shared_pool: 0},
+                                                      "linux_virtuser": {self.shared_pool: 0}, "windows_virtuser": {self.shared_pool: 0},
+                                                      "guisetup.noop": {self.shared_pool: 0}, "guisetup.clicked": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.stateless.manage.start", "start_vm": "^yes$", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
-            {"shortname": "^internal.stateless.manage.start", "start_vm": "^yes$", "vms": "^vm1 vm2$", "nets_host": "^c2$"},
+            {"shortname": "^internal.stateless.noop.vm1.+CentOS", "vms": "^vm1$", "type": "^shared_configure_install$", "nets": "^net1$"},
+            {"shortname": "^internal.stateless.noop.vm1.+Fedora", "vms": "^vm1$", "type": "^shared_configure_install$", "nets": "^net2$"},
+            {"shortname": "^original.unattended_install.*vm1.+CentOS", "vms": "^vm1$", "cdrom_cd1": ".*CentOS.*\.iso$", "nets": "^net1$"},
+            {"shortname": "^original.unattended_install.*vm1.+Fedora", "vms": "^vm1$", "cdrom_cd1": ".*Fedora.*\.iso$", "nets": "^net2$"},
+            {"shortname": "^internal.automated.customize.vm1.+CentOS", "vms": "^vm1$", "get_state_images": "^install$", "nets": "^net1$"},
+            {"shortname": "^internal.automated.customize.vm1.+Fedora", "vms": "^vm1$", "get_state_images": "^install$", "nets": "^net2$"},
+            {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$", "get_state_images": "^install$", "nets": "^net1$"},
         ]
-        intertest_setup.boot(self.config, tag="0")
+        intertest_setup.update(self.config, tag="1r")
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        # states before the updated path are not be removed
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["install"][self.shared_pool], 0)
+        # states along the updated path are not be removed
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["customize"][self.shared_pool], 0)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["connect"][self.shared_pool], 0)
+        # states after the updated path will be removed (default remove set is the entire graph)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["linux_virtuser"][self.shared_pool], 2*2)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["windows_virtuser"][self.shared_pool], 1*2)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.clicked"][self.shared_pool], 1*2)
 
-    def test_download(self):
-        """Test the general usage of the manual download tool."""
-        self.config["param_dict"]["slots"] = "1 2"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.stateless.manage.download", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
-            {"shortname": "^internal.stateless.manage.download", "vms": "^vm1 vm2$", "nets_host": "^c2$"},
-        ]
-        intertest_setup.download(self.config, tag="0")
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+    def test_net_manipulation(self):
+        """Test the general usage of all net manipulation tools."""
+        self.config["param_dict"]["nets"] = "net1 net2 net5"
+        for vm_action in ["start", "stop"]:
+            with self.subTest(f"Net {vm_action}"):
+                setup_func = getattr(intertest_setup, vm_action)
+                from avocado_i2n.cartgraph import TestWorker
+                operation = mock.MagicMock()
+                with mock.patch.object(TestWorker, vm_action, operation):
+                    setup_func(self.config, tag="0")
+                operation.assert_called()
 
-    def test_upload(self):
-        """Test the general usage of the manual upload tool."""
-        self.config["param_dict"]["slots"] = "1 2"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.stateless.manage.upload", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
-            {"shortname": "^internal.stateless.manage.upload", "vms": "^vm1 vm2$", "nets_host": "^c2$"},
-        ]
-        intertest_setup.upload(self.config, tag="0")
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+    def test_multi_vm_manipulation(self):
+        """Test the general usage of all multi-vm manipulation tools."""
+        self.config["param_dict"]["nets"] = "net1 net2 net5"
+        self.config["vm_strs"] = {"vm2": "only Win7\n", "vm3": "only Ubuntu\n"}
+        for vm_action in ["boot", "download", "upload", "shutdown"]:
+            variant_action = "start" if vm_action == "boot" else "stop" if vm_action == "shutdown" else vm_action
+            with self.subTest(f"Multi-vm {vm_action} ({variant_action})"):
+                DummyTestRun.asserted_tests = [
+                    # the order does not diverge (which is desirable here) since similar nodes are not bridged
+                    {"shortname": "^internal.stateless.manage.%s.vm2.+.vm3.+Ubuntu" % variant_action, "vms": "^vm2 vm3$", "nets": "^net1$",
+                     "vm_action": "^%s$" % vm_action},
+                    {"shortname": "^internal.stateless.manage.%s.vm2.+.vm3.+Ubuntu" % variant_action, "vms": "^vm2 vm3$", "nets": "^net2$",
+                    "skip_image_processing": "^yes$", "vm_action": "^%s$" % vm_action},
+                ]
+                setup_func = getattr(intertest_setup, vm_action)
+                setup_func(self.config, tag="0")
+                self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
-    def test_shutdown(self):
-        """Test the general usage of the manual shutdown tool."""
-        self.config["param_dict"]["slots"] = "1 2"
-        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^internal.stateless.manage.stop", "vms": "^vm1 vm2$", "nets_host": "^c1$"},
-            {"shortname": "^internal.stateless.manage.stop", "vms": "^vm1 vm2$", "nets_host": "^c2$"},
-        ]
-        intertest_setup.shutdown(self.config, tag="0")
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        # multi-vm tools cannot be used on multiple vm variants at the same time
+        self.config["vm_strs"] = {"vm3": ""}
+        for vm_action in ["boot", "download", "upload", "shutdown"]:
+            variant_action = "start" if vm_action == "boot" else "stop" if vm_action == "shutdown" else vm_action
+            with self.subTest(f"Multi-vm {vm_action} ({variant_action})"):
+                with self.assertRaises(RuntimeError):
+                    setup_func = getattr(intertest_setup, vm_action)
+                    setup_func(self.config, tag="0")
 
     def test_manual_state_manipulation(self):
         """Test the general usage of all state manipulation tools."""
-        self.config["param_dict"]["slots"] = "1 2"
-        self.config["vm_strs"] = {"vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
+        self.config["param_dict"]["nets"] = "net1 net5"
+        self.config["vm_strs"] = {"vm2": "only Win7\n", "vm3": ""}
         for state_action in ["check", "pop", "push", "get", "set", "unset"]:
             with self.subTest(f"Manual state {state_action}"):
                 DummyStateControl.asserted_states["get"] = {"root": {self.shared_pool: 0}}
                 DummyTestRun.asserted_tests = [
-                    {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c1$",
+                    # the order does not diverge (which is desirable here) since similar nodes are not bridged
+                    {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets": "^net1$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c2$",
+                    # vm2 is incompatible with net5 so skipped
+                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Kali", "vms": "^vm3$", "nets": "^net5$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c2$",
+                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Kali", "vms": "^vm3$", "nets": "^net1$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c1$",
+                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Ubuntu", "vms": "^vm3$", "nets": "^net5$",
+                    "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
+                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Ubuntu", "vms": "^vm3$", "nets": "^net1$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
                 ]
                 setup_func = getattr(intertest_setup, state_action)
@@ -303,13 +370,16 @@ class IntertestSetupTest(Test):
             operation = "get" if state_action == "collect" else operation
             with self.subTest(f"Manual state {state_action}"):
                 DummyTestRun.asserted_tests = [
-                    {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c1$",
+                    # the order does not diverge (which is desirable here) since similar nodes are not bridged
+                    {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets": "^net1$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c2$",
+                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Kali", "vms": "^vm3$", "nets": "^net5$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets_host": "^c2$",
+                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Kali", "vms": "^vm3$", "nets": "^net1$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm3", "vms": "^vm3$", "nets_host": "^c1$",
+                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Ubuntu", "vms": "^vm3$", "nets": "^net5$",
+                    "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
+                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Ubuntu", "vms": "^vm3$", "nets": "^net1$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
                 ]
                 for test_dict in DummyTestRun.asserted_tests:
@@ -343,7 +413,6 @@ class IntertestSetupTest(Test):
             {"shortname": "^internal.stateless.manage.start.vm3", "vms": "^vm3$", "set_state_vms": "^ready$"},
         ]
         intertest_setup.load_addons_tools()
-        intertest_setup.update(self.config, tag="0")
         intertest_setup.permubuntu(self.config, tag="0")
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
 
