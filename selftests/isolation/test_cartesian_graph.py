@@ -118,10 +118,12 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_objects[1].params["vms"], "vm1")
         self.assertEqual(test_objects[1].params["main_vm"], "vm1")
         self.assertEqual(test_objects[1].params["os_variant"], "el8")
+        self.assertEqual(test_objects[1].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertRegex(test_objects[0].params["name"], r"vm1\.qemu_kvm_fedora.*Fedora.*")
         self.assertEqual(test_objects[0].params["vms"], "vm1")
         self.assertEqual(test_objects[0].params["main_vm"], "vm1")
         self.assertEqual(test_objects[0].params["os_variant"], "f33")
+        self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertNotIn("only", test_objects[0].params)
 
     def test_parse_composite_objects_net1(self):
@@ -139,6 +141,7 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object.params["os_variant_vm1"], "el8")
         self.assertEqual(test_object.params["os_variant_vm2"], "win10")
         self.assertEqual(test_object.params["os_variant_vm3"], "ubuntutrusty")
+        self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertNotIn("only", test_object.params)
         self.assertNotIn("only_vm1", test_object.params)
         self.assertNotIn("only_vm2", test_object.params)
@@ -225,6 +228,7 @@ class CartesianObjectTest(Test):
             self.assertEqual(test_object.params["os_variant_vm1"], vm1_os)
             self.assertEqual(test_object.params["os_variant_vm2"], vm2_os)
             self.assertEqual(test_object.params["os_variant_vm3"], vm3_os)
+            self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         assertVariant(nets[0], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "f33", "win7", "ubuntutrusty")
         assertVariant(nets[1], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_kali.*Kali.*", "f33", "win7", "kl")
         assertVariant(nets[2], r"vm1\.qemu_kvm_fedora.*Fedora.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "f33", "win10", "ubuntutrusty")
@@ -513,6 +517,7 @@ class CartesianNodeTest(Test):
         self.assertEqual(node.params["os_variant_vm1"], net.params["os_variant_vm1"])
         self.assertEqual(node.params["os_variant_vm2"], net.params["os_variant_vm2"])
         self.assertEqual(node.params["os_variant_vm3"], net.params["os_variant_vm3"])
+        self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
 
     def test_parse_node_from_object_invalid_object_type(self):
         """Test correctly parsed node is not possible from an already parsed vm object."""
@@ -536,8 +541,6 @@ class CartesianNodeTest(Test):
 
     def test_parse_composite_nodes(self):
         """Test for correctly parsed composite nodes from graph retrievable test objects."""
-        self.config["tests_str"] += "only tutorial1,tutorial2\n"
-
         flat_objects = TestGraph.parse_flat_objects("net1", "nets")
         self.assertEqual(len(flat_objects), 1)
         flat_object = flat_objects[0]
@@ -549,18 +552,23 @@ class CartesianNodeTest(Test):
         graph = TestGraph()
         graph.objects = test_objects
 
-        nodes = graph.parse_composite_nodes(self.config["tests_str"], flat_object, params=self.config["param_dict"])
+        nodes = graph.parse_composite_nodes("normal..tutorial1,normal..tutorial2", flat_object)
         self.assertEqual(len(nodes), 4)
         self.assertIn(nodes[0].objects[0], nets)
-        self.assertEqual(nodes[0].params["nets"], "net1")
         self.assertEqual(len(nodes[0].objects[0].components), 1)
         self.assertEqual(len(nodes[0].objects[0].components[0].components), 1)
         self.assertIn(nodes[1].objects[0], nets)
-        self.assertEqual(nodes[1].params["nets"], "net1")
         self.assertIn(nodes[2].objects[0], nets)
-        self.assertEqual(nodes[2].params["nets"], "net1")
         self.assertIn(nodes[3].objects[0], nets)
-        self.assertEqual(nodes[3].params["nets"], "net1")
+        for node in nodes:
+            self.assertEqual(node.params["nets"], "net1")
+            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+
+        nodes = graph.parse_composite_nodes("normal..tutorial3", flat_object)
+        self.assertEqual(len(nodes), 4)
+        for node in nodes:
+            self.assertEqual(node.params["nets"], "net1")
+            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
 
     def test_parse_composite_nodes_compatibility_complete(self):
         """Test for correctly parsed test nodes from compatible graph retrievable test objects."""
@@ -689,6 +697,78 @@ class CartesianNodeTest(Test):
         self.assertTrue(node.is_setup_ready(worker))
         self.assertTrue(node.is_cleanup_ready(worker))
 
+    def test_is_started_or_finished(self):
+        """Test that a test node is eagerly to fully started or finished in different scopes."""
+        test_workers = TestGraph.parse_workers({"slots": "a/1 a/2 a/3 b/1 b/2",
+                                                "pool_scope": "own swarm cluster shared"})
+
+        # flat node is always started and finished with any threshold
+        nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
+        self.assertEqual(len(nodes), 1)
+        flat_node = nodes[0]
+        for worker in test_workers:
+            flat_node.started_worker = worker
+            self.assertTrue(flat_node.is_flat())
+            self.assertFalse(flat_node.is_started(worker, 1))
+            self.assertFalse(flat_node.is_started(worker, 2))
+            self.assertFalse(flat_node.is_started(worker, -1))
+            flat_node.finished_worker = worker
+            self.assertTrue(flat_node.is_flat())
+            self.assertTrue(flat_node.is_finished(worker, 1))
+            self.assertTrue(flat_node.is_finished(worker, 2))
+            self.assertTrue(flat_node.is_finished(worker, -1))
+
+        full_nodes = []
+        for worker in test_workers:
+            new_node = TestGraph.parse_node_from_object(worker.net, "normal..tutorial1", prefix="1")
+            for bridge in full_nodes:
+                new_node.bridge_node(bridge)
+            full_nodes += [new_node]
+
+        # most eager threshold is satisfied with at least one worker
+        full_nodes[0].started_worker = test_workers[0]
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_started(worker, 1))
+                self.assertFalse(node.is_started(worker, 2))
+                self.assertFalse(node.is_started(worker, -1))
+        full_nodes[1].finished_worker = test_workers[1]
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_finished(worker, 1))
+                self.assertFalse(node.is_finished(worker, 2))
+                self.assertFalse(node.is_finished(worker, -1))
+
+        # less eager threshold is satisfied with at more workers
+        full_nodes[1].started_worker = test_workers[1]
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_started(worker, 1))
+                self.assertTrue(node.is_started(worker, 2))
+                self.assertFalse(node.is_started(worker, -1))
+        full_nodes[0].finished_worker = test_workers[0]
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_finished(worker, 1))
+                self.assertTrue(node.is_finished(worker, 2))
+                self.assertFalse(node.is_finished(worker, -1))
+
+        # fullest threshold is satisfied only with all workers
+        for node, worker in zip(full_nodes, test_workers):
+            node.started_worker = worker
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_started(worker, 1))
+                self.assertTrue(node.is_started(worker, 2))
+                self.assertTrue(node.is_started(worker, -1))
+        for node, worker in zip(full_nodes, test_workers):
+            node.finished_worker = worker
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_finished(worker, 1))
+                self.assertTrue(node.is_finished(worker, 2))
+                self.assertTrue(node.is_finished(worker, -1))
+
     def test_params(self):
         """Test for correctly parsed test node parameters."""
         flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
@@ -726,35 +806,36 @@ class CartesianNodeTest(Test):
         test_node2 = nodes[0]
         test_node1.bridge_node(test_node2)
 
-        self.assertEqual(test_node1.workers, set())
-        self.assertEqual(test_node1.workers, test_node2.workers)
-        self.assertEqual(test_node1.shared_workers, set())
-        self.assertEqual(test_node1.shared_workers, test_node2.shared_workers)
+        self.assertEqual(test_node1.finished_worker, None)
+        self.assertEqual(test_node1.finished_worker, test_node2.finished_worker)
+        self.assertEqual(test_node1.shared_finished_workers, set())
+        self.assertEqual(test_node1.shared_finished_workers, test_node2.shared_finished_workers)
 
         worker1 = mock.MagicMock(id="net1", params={"runtime_str": "1"})
-        test_node1.workers.add(worker1)
-        self.assertEqual(test_node1.workers, {worker1})
-        self.assertEqual(test_node2.workers, set())
-        self.assertEqual(test_node1.shared_workers, {worker1})
-        self.assertEqual(test_node1.shared_workers, test_node2.shared_workers)
+        test_node1.finished_worker = worker1
+        self.assertEqual(test_node1.finished_worker, worker1)
+        self.assertEqual(test_node2.finished_worker, None)
+        self.assertEqual(test_node1.shared_finished_workers, {worker1})
+        self.assertEqual(test_node1.shared_finished_workers, test_node2.shared_finished_workers)
         worker2 = mock.MagicMock(id="net2", params={"runtime_str": "2"})
-        test_node2.workers.add(worker2)
-        self.assertEqual(test_node1.workers, {worker1})
-        self.assertEqual(test_node2.workers, {worker2})
-        self.assertEqual(test_node1.shared_workers, {worker1, worker2})
-        self.assertEqual(test_node2.shared_workers, {worker1, worker2})
+        test_node2.finished_worker = worker2
+        self.assertEqual(test_node1.finished_worker, worker1)
+        self.assertEqual(test_node2.finished_worker, worker2)
+        self.assertEqual(test_node1.shared_finished_workers, {worker1, worker2})
+        self.assertEqual(test_node2.shared_finished_workers, {worker1, worker2})
 
+        # validate trivial behavior for flat nodes
         nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
         self.assertEqual(len(nodes), 1)
         test_node3 = nodes[0]
-        self.assertEqual(test_node3.workers, set())
-        self.assertEqual(test_node3.shared_workers, set())
-        test_node3.workers.add(worker1)
-        self.assertEqual(test_node3.workers, {worker1})
-        self.assertEqual(test_node3.shared_workers, test_node3.workers)
-        test_node3.workers.add(worker2)
-        self.assertEqual(test_node3.workers, {worker1, worker2})
-        self.assertEqual(test_node3.shared_workers, test_node3.workers)
+        self.assertEqual(test_node3.finished_worker, None)
+        self.assertEqual(test_node3.shared_finished_workers, set())
+        test_node3.finished_worker = worker1
+        self.assertEqual(test_node3.finished_worker, worker1)
+        self.assertEqual(test_node3.shared_finished_workers, {test_node3.finished_worker})
+        test_node3.finished_worker = worker2
+        self.assertEqual(test_node3.finished_worker, worker2)
+        self.assertEqual(test_node3.shared_finished_workers, {test_node3.finished_worker})
 
     def test_shared_results(self):
         """Test for correctly shared results across bridged nodes."""
@@ -987,18 +1068,18 @@ class CartesianNodeTest(Test):
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         self.assertFalse(test_node1.default_run_decision(worker1))
         # should not run already visited internal test node by the same worker
-        test_node1.workers.add(worker1)
+        test_node1.finished_worker = worker1
         test_node1.results += [{"status": "PASS"}]
         self.assertFalse(test_node1.default_run_decision(worker1))
         # should not run an internal test node if needed reruns and setup from past runs
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         test_node1.should_rerun = lambda _: True
-        test_node1.workers = set()
+        test_node1.finished_worker = None
         test_node1.results = []
         self.assertFalse(test_node1.default_run_decision(worker1))
         # should run an internal test node if needed reruns and setup from current runs
         test_node1.should_rerun = lambda _: True
-        test_node1.workers = set()
+        test_node1.finished_worker = None
         test_node1.results = [{"status": "PASS"}]
         self.assertTrue(test_node1.default_run_decision(worker1))
 
@@ -1034,11 +1115,11 @@ class CartesianNodeTest(Test):
         TestWorker.run_slots = {"": {"1": "lxc", "2": "lxc"}}
         self.assertFalse(test_node1.default_clean_decision(worker1))
         self.assertFalse(test_node2.default_clean_decision(worker2))
-        test_node1.workers.add(worker1)
+        test_node1.finished_worker = worker1
         self.assertFalse(test_node1.default_clean_decision(worker1))
         self.assertFalse(test_node2.default_clean_decision(worker2))
         # should clean a reversible test node that is globally cleanup ready
-        test_node2.workers.add(worker2)
+        test_node2.finished_worker = worker2
         self.assertTrue(test_node1.default_clean_decision(worker1))
         self.assertTrue(test_node2.default_clean_decision(worker2))
         # should never clean an internal test node meant for other worker despite the above
@@ -1276,7 +1357,8 @@ class CartesianGraphTest(Test):
         )
 
         graph.flag_children(flag_type="run", flag=lambda self, slot: False)
-        graph.flag_children(node_name="customize", flag_type="run", flag=lambda self, slot: slot not in self.workers)
+        graph.flag_children(node_name="customize", flag_type="run",
+                            flag=lambda self, slot: not self.is_finished(slot))
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^nonleaves.internal.automated.connect.vm1", "vms": "^vm1$"},
@@ -1391,6 +1473,7 @@ class CartesianGraphTest(Test):
         flat_object = flat_objects[0]
         self.assertNotIn("only_vm1", flat_object.params)
         flat_object.params["only_vm1"] = "CentOS"
+        flat_object.params["nets_some_key"] = "some_value"
         get_objects, parse_objects = graph.parse_and_get_objects_for_node_and_object(flat_node, flat_object)
         self.assertEqual(len(get_objects), 0)
         test_objects = parse_objects
@@ -1403,6 +1486,8 @@ class CartesianGraphTest(Test):
         self.assertIn("CentOS", test_objects[0].components[0].id)
         self.assertEqual(len(test_objects[0].components[0].components), 1)
         self.assertEqual(test_objects[0].components[0].components[0].long_suffix, "image1_vm1")
+        self.assertEqual(test_objects[0].params["nets_some_key"], flat_object.params["nets_some_key"])
+        self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
 
     def test_parse_and_get_objects_for_node_and_object_full(self):
         """Test default parsing and retrieval of objects for a flat test node and full test object."""
@@ -1416,6 +1501,7 @@ class CartesianGraphTest(Test):
         # TODO: limitation in the Cartesian config
         self.assertNotIn("object_only_vm1", full_object.params)
         full_object.params["object_only_vm1"] = "CentOS"
+        full_object.params["nets_some_key"] = "some_value"
         get_objects, parse_objects = graph.parse_and_get_objects_for_node_and_object(flat_node, full_object)
         self.assertEqual(len(get_objects), 0)
         test_objects = parse_objects
@@ -1428,6 +1514,8 @@ class CartesianGraphTest(Test):
         self.assertIn("CentOS", test_objects[0].components[0].id)
         self.assertEqual(len(test_objects[0].components[0].components), 1)
         self.assertEqual(test_objects[0].components[0].components[0].long_suffix, "image1_vm1")
+        self.assertEqual(test_objects[0].params["nets_some_key"], full_object.params["nets_some_key"])
+        self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
 
     def test_object_node_incompatible(self):
         """Test incompatibility of parsed tests and pre-parsed available objects."""
@@ -1478,13 +1566,18 @@ class CartesianGraphTest(Test):
 
         self.assertEqual(len([o for o in objects if o.key == "vms"]), 1)
         full_vm = [o for o in objects if o.key == "vms"][0]
+        self.assertEqual(full_vm.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_vm)
         self.assertEqual(len(get_nodes), 0)
         self.assertEqual(len(parse_nodes), 1)
+        new_node = parse_nodes[0]
+        self.assertEqual(new_node.params["nets"], "net1")
+        self.assertEqual(new_node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         graph.new_nodes(parse_nodes)
         get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(full_node, full_vm)
         self.assertEqual(len(get_nodes), 1)
         self.assertEqual(len(parse_nodes), 0)
+        self.assertEqual(get_nodes[0], new_node)
 
         self.assertEqual(len([o for o in objects if o.key == "images"]), 1)
         full_image = [o for o in objects if o.key == "images"][0]
@@ -2030,18 +2123,20 @@ class CartesianGraphTest(Test):
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$"},
         ]
 
-        self._run_traversal(graph, {"max_tries": "3", "stop_status": "pass"})
+        self._run_traversal(graph, {"max_concurrent_tries": "1", "max_tries": "3", "stop_status": "pass"})
 
     def test_traverse_one_leaf_with_occupation_timeout(self):
         """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
         graph = TestGraph()
-        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1", {"test_timeout": "1"}))
-        graph.parse_shared_root_from_object_roots()
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1"))
         graph.new_workers(TestGraph.parse_workers({"slots": "1 dead",
                                                    "only_vm1": "CentOS"}))
+        graph.new_nodes(graph.parse_composite_nodes("normal..tutorial1", graph.workers["net2"].net))
+        graph.parse_shared_root_from_object_roots()
 
-        test_node = graph.get_node_by(param_val="tutorial1")
-        test_node.set_environment(graph.workers["net2"])
+        test_node = graph.get_node_by(param_val="tutorial1.+net2")
+        test_node.started_worker = graph.workers["net2"]
+        del graph.workers["net2"]
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets_host": "^c1$"},
@@ -2049,7 +2144,7 @@ class CartesianGraphTest(Test):
         ]
 
         with self.assertRaisesRegex(RuntimeError, r"^Worker .+ spent [\d\.]+ seconds waiting for occupied node"):
-            self._run_traversal(graph, self.config["param_dict"])
+            self._run_traversal(graph, {"test_timeout": "1"})
 
     def test_traverse_two_objects_without_setup(self):
         """Test a two-object test traversal without a reusable setup."""
@@ -2731,7 +2826,7 @@ class CartesianGraphTest(Test):
                 graph.traverse_node.assert_any_call(root, worker, mock.ANY)
                 self.assertNotIn(mock.call(root, worker, mock.ANY), reverse_calls)
 
-    def test_rerun_max_times(self):
+    def test_rerun_max_times_serial(self):
         """Test that the test is tried `max_tries` times if no status is not specified."""
         self.config["tests_str"] += "only tutorial1\n"
         self.config["param_dict"]["max_tries"] = "3"
@@ -2756,6 +2851,26 @@ class CartesianGraphTest(Test):
             {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$"},
             {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$"},
             {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$"},
+        ]
+        self._run_traversal(graph)
+
+    def test_rerun_max_times_parallel(self):
+        """Test that the test is tried `max_tries` times if no status is not specified."""
+        self.config["tests_str"] += "only tutorial1\n"
+        self.config["param_dict"]["max_tries"] = "3"
+        self.config["param_dict"]["slots"] = "1 2"
+        self.config["param_dict"]["nets"] = "net1 net2"
+        graph = TestGraph.parse_object_trees(
+            None, self.config["tests_str"],
+            "", self.config["vm_strs"],
+            self.config["param_dict"],
+        )
+        DummyStateControl.asserted_states["check"] = {"root": {self.shared_pool: True}, "install": {self.shared_pool: True},
+                                                      "customize": {self.shared_pool: True}, "on_customize": {self.shared_pool: True}}
+        DummyTestRun.asserted_tests = [
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "nets_host": "^c1$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r1-vm1$", "nets_host": "^c2$"},
+            {"shortname": r"^normal.nongui.quicktest.tutorial1.vm1", "vms": r"^vm1$", "_long_prefix": r"^[a\d]+r2-vm1$", "nets_host": "^c1$"},
         ]
         self._run_traversal(graph)
 
@@ -3014,6 +3129,7 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status": "PASS", "_time": "10"},
         ]
+        test_node.started_worker = "some-worker-since-only-traversal-allowed"
         to_run = self.runner.run_test_node(test_node)
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         self.assertTrue(status)
@@ -3033,6 +3149,7 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
         ]
+        test_node.started_worker = "some-worker-since-only-traversal-allowed"
         to_run = self.runner.run_test_node(test_node)
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         # all runs succeed - status must be True

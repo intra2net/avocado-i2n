@@ -183,13 +183,27 @@ class TestNode(Runnable):
         return self._params_cache
     params = property(fget=params)
 
-    def shared_workers(self):
-        """Workers that have previously finished traversing this node (incl. leaves and others)."""
-        workers = {*self.workers}
+    def shared_started_workers(self):
+        """Workers that have previously started traversing this node (incl. leaves and others)."""
+        workers = set()
+        if self.started_worker is not None:
+            workers.add(self.started_worker)
         for bridged_node in self._bridged_nodes:
-            workers |= bridged_node.workers
+            if bridged_node.started_worker is not None:
+                workers.add(bridged_node.started_worker)
         return workers
-    shared_workers = property(fget=shared_workers)
+    shared_started_workers = property(fget=shared_started_workers)
+
+    def shared_finished_workers(self):
+        """Workers that have previously finished traversing this node (incl. leaves and others)."""
+        workers = set()
+        if self.finished_worker is not None:
+            workers.add(self.finished_worker)
+        for bridged_node in self._bridged_nodes:
+            if bridged_node.finished_worker is not None:
+                workers.add(bridged_node.finished_worker)
+        return workers
+    shared_finished_workers = property(fget=shared_finished_workers)
 
     def shared_results(self):
         """Test results shared across all bridged nodes."""
@@ -266,8 +280,8 @@ class TestNode(Runnable):
         self.should_run = self.default_run_decision
         self.should_clean = self.default_clean_decision
 
-        self.workers = set()
-        self.worker = None
+        self.finished_worker = None
+        self.started_worker = None
         self.results = []
         self._bridged_nodes = []
 
@@ -284,21 +298,6 @@ class TestNode(Runnable):
     def __repr__(self):
         shortname = self.params.get("shortname", "<unknown>")
         return f"[node] longprefix='{self.long_prefix}', shortname='{shortname}'"
-
-    def set_environment(self, worker: TestWorker) -> None:
-        """
-        Set the environment for executing the test node.
-
-        :param worker: set an optional worker or run serially if none given
-                       for unisolated process spawners
-
-        This isolating environment could be a container, a virtual machine, or
-        a less-isolated process and is managed by a specialized spawner.
-        """
-        self.params["nets_gateway"] = worker.params["nets_gateway"]
-        self.params["nets_host"] = worker.params["nets_host"]
-        self.params["nets_spawner"] = worker.params["nets_spawner"]
-        self.worker = worker
 
     def set_objects_from_net(self, net: NetObject) -> None:
         """
@@ -327,11 +326,16 @@ class TestNode(Runnable):
                     image.composites.append(test_object)
                     self.objects += [image]
 
-    def is_occupied(self):
-        for bridged_node in self._bridged_nodes:
-            if bridged_node.worker is not None:
-                return True
-        return self.worker is not None
+    def is_occupied(self, worker: TestWorker = None) -> bool:
+        """
+        Check if the test node is sufficiently occupied with respect to a given worker in various scopes.
+
+        :param worker: test worker with respect to which to consider various scopes
+        """
+        # by default only reentrancy of 1 is allowed independently of previous results
+        max_concurrent_tries = self.params.get_numeric("max_concurrent_tries",
+                                                       self.params.get_numeric("max_tries", 1))
+        return self.is_started(worker, max(max_concurrent_tries, 1))
 
     def is_flat(self):
         """Check if the test node is flat and does not yet have objects and dependencies to evaluate."""
@@ -393,50 +397,78 @@ class TestNode(Runnable):
                 return False
         return True
 
-    def is_eagerly_finished(self, worker: TestWorker = None) -> bool:
+    def is_started(self, worker: TestWorker = None, threshold: int = 1) -> bool:
         """
-        The test was run by at least one worker of all or some scopes.
+        The test is currently traversed by at least N (-1 for all) workers of all or some scopes.
 
         :param worker: evaluate with respect to an optional worker ID scope or globally if none given
+        :param threshold: how eagerly the node is considered started in terms of number of
+                          required workers to use as a threshold (1 for most eagerly, -1 for most fully)
+        :returns: whether the test was run by at least N workers of all or some scopes (N=threshold)
+        """
+        if self.is_flat():
+            return False
+        if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
+            # is started separately by each worker (doesn't matter eager of full)
+            return worker in self.shared_started_workers
+        elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
+            own_cluster = worker.params["runtime_str"].split("/")[0]
+            own_cluster_started_hosts = {worker.params["runtime_str"].split("/")[1] for worker in self.shared_started_workers if worker.params["runtime_str"].split("/")[0] == own_cluster}
+            if threshold == -1:
+                # is started for an entire swarm by all of its workers
+                own_cluster_all_hosts = {*TestWorker.run_slots[own_cluster]}
+                return len(own_cluster_all_hosts) == len(own_cluster_started_hosts)
+            # is started for an entire swarm by at least N of its workers
+            return len(own_cluster_started_hosts) >= threshold
+            # alternative implementation for threshold = 1
+            # started_clusters = {worker.params["runtime_str"].split("/")[0] for worker in self.shared_started_workers}
+            # return own_cluster in started_clusters
+        else:
+            if threshold == -1:
+                # is started globally by all workers
+                return len(self.shared_started_workers) == sum([len([w for w in TestWorker.run_slots[s]]) for s in TestWorker.run_slots])
+            # is started globally by at least N workers (down to at least one worker)
+            return len(self.shared_started_workers) >= threshold
+
+    def is_finished(self, worker: TestWorker = None, threshold: int = 1) -> bool:
+        """
+        The test was ever traversed by at least N (-1 for all) workers of all or some scopes.
+
+        :param worker: evaluate with respect to an optional worker ID scope or globally if none given
+        :param threshold: how eagerly the node is considered started in terms of number of
+                          required workers to use as a threshold (1 for most eagerly, -1 for most fully)
         :returns: whether the test was run by at least one worker of all or some scopes
 
-        This happens in an eager manner so that any already available
-        setup nodes are considered finished. If we instead wait for
-        this setup to be cleaned up or synced, this would count most
+        Threshold of 1 is the most eager manner so that any already available setup nodes are considered
+        finished. If we instead wait for this setup to be cleaned up or synced, this would count most
         of the setup as finished in the very end of the traversal.
+
+        Threshold of -1 is for fully traversed node by all workers unless restricted within some scope
+        of setup reuse.
         """
+        if self.is_flat():
+            return True
         if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
-            # is finished separately by each worker
-            return worker in self.shared_workers
+            # is finished separately by each worker (doesn't matter eager of full)
+            return worker in self.shared_finished_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
-            # is finished for an entire swarm by at least one of its workers
-            return worker.params["runtime_str"].split("/")[0] in set(worker.params["runtime_str"].split("/")[0] for worker in self.shared_workers)
+            own_cluster = worker.params["runtime_str"].split("/")[0]
+            own_cluster_finished_hosts = {worker.params["runtime_str"].split("/")[1] for worker in self.shared_finished_workers if worker.params["runtime_str"].split("/")[0] == own_cluster}
+            if threshold == -1:
+                # is finished for an entire swarm by all of its workers
+                own_cluster_all_hosts = {*TestWorker.run_slots[own_cluster]}
+                return len(own_cluster_all_hosts) == len(own_cluster_finished_hosts)
+            # is finished for an entire swarm by at least N of its workers
+            return len(own_cluster_finished_hosts) >= threshold
+            # alternative implementation for threshold = 1
+            # finished_clusters = {worker.params["runtime_str"].split("/")[0] for worker in self.shared_finished_workers}
+            # return own_cluster in finished_clusters
         else:
-            # is finished globally by at least one worker
-            return len(self.shared_workers) > 0
-
-    def is_fully_finished(self, worker: TestWorker = None) -> bool:
-        """
-        The test was run by all workers of a given scope.
-
-        :param worker: evaluate with respect to an optional worker ID scope or globally if none given
-        :returns: whether the test was run all workers of a given scope
-
-        The consideration here is for fully traversed node by all workers
-        unless restricted within some scope of setup reuse.
-        """
-        if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
-            # is finished separately by each worker and for all workers
-            return worker in self.shared_workers
-        elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
-            # is finished for an entire swarm by all of its workers
-            slot_cluster = worker.params["runtime_str"].split("/")[0]
-            all_cluster_hosts = set(host for host in TestWorker.run_slots[slot_cluster])
-            node_cluster_hosts = set(worker.params["runtime_str"].split("/")[1] for worker in self.shared_workers if worker.params["runtime_str"].split("/")[0] == slot_cluster)
-            return all_cluster_hosts == node_cluster_hosts
-        else:
-            # is finished globally by all workers
-            return len(self.shared_workers) == sum([len([w for w in TestWorker.run_slots[s]]) for s in TestWorker.run_slots])
+            if threshold == -1:
+                # is finished globally by all workers
+                return len(self.shared_finished_workers) == sum([len([w for w in TestWorker.run_slots[s]]) for s in TestWorker.run_slots])
+            # is finished globally by at least N workers (down to at least one worker)
+            return len(self.shared_finished_workers) >= threshold
 
     def is_terminal_node_for(self):
         """
@@ -511,7 +543,7 @@ class TestNode(Runnable):
         elif worker and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not consider rerunning {self}")
 
-        all_statuses = ["fail", "error", "pass", "warn", "skip", "cancel", "interrupted"]
+        all_statuses = ["fail", "error", "pass", "warn", "skip", "cancel", "interrupted", "unknown"]
         if self.params.get("replay"):
             rerun_status = self.params.get_list("rerun_status", "fail,error,warn", delimiter=",")
         else:
@@ -545,30 +577,15 @@ class TestNode(Runnable):
             logging.info(f"Stopping test tries due to obtained stop test statuses: {', '.join(stop_statuses_found)}")
             return False
 
+        # the runs total also considers UNKNOWN statuses from currently occupied test nodes minus currently traversed/evaluated case
+        total_runs = len(test_statuses)
         # implicitly this means that setting >1 retries will be done on tests actually collecting results (no flat nodes, dry runs, etc.)
-        reruns_left = 0 if max_tries == 1 else max_tries - len(test_statuses)
+        reruns_left = 0 if max_tries == 1 else max_tries - total_runs
         if reruns_left > 0:
             logging.debug(f"Still have {reruns_left} allowed reruns left and should rerun {self}")
             return True
         logging.debug(f"Should not rerun {self}")
         return False
-
-    def should_scan(self, worker: TestWorker = None) -> bool:
-        """
-        Check if the test node should scan for reusable states based on scope criteria.
-
-        :param worker: evaluate with respect to an optional worker ID scope or globally if none given
-        :returns: whether the test node should scan for states
-        """
-        if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
-            # is scanned separately by each worker
-            return worker not in self.shared_workers
-        elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
-            # is scanned for an entire swarm by just one of its workers
-            return worker.params["runtime_str"].split("/")[0] not in set(worker.params["runtime_str"].split("/")[0] for worker in self.shared_workers)
-        else:
-            # should scan globally by just one worker
-            return len(self.shared_workers) == 0
 
     def default_run_decision(self, worker: TestWorker) -> bool:
         """
@@ -586,7 +603,7 @@ class TestNode(Runnable):
 
         else:
             should_run_from_scan = False
-            should_scan = self.should_scan(worker)
+            should_scan = not self.is_finished(worker, 1)
             if should_scan:
                 should_run_from_scan = self.scan_states()
                 logging.debug(f"Should{' ' if should_run_from_scan else ' not '}run from scan {self}")
@@ -624,7 +641,7 @@ class TestNode(Runnable):
             return True
         else:
             # last one of a given scope should "close the door" for that scope
-            return self.is_fully_finished(worker)
+            return self.is_finished(worker, -1)
 
     @classmethod
     def prefix_priority(cls, prefix1, prefix2):

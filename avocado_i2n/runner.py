@@ -130,8 +130,8 @@ class CartesianRunner(RunnerInterface):
         spawner = node.params["nets_spawner"]
         logging.debug(f"Running {node.id} on {gateway}/{host} using {spawner} isolation")
 
-        if node.worker.spawner is None:
-            raise RuntimeError(f"Worker {node.worker} cannot spawn tasks")
+        if node.started_worker.spawner is None:
+            raise RuntimeError(f"Worker {node.started_worker} cannot spawn tasks")
         if not self.status_repo:
             self.status_repo = StatusRepo(self.job.unique_id)
             self.status_server = StatusServer(self.job.config.get('run.status_server_listen'),
@@ -179,7 +179,7 @@ class CartesianRunner(RunnerInterface):
         # TODO: use a single state machine for all test nodes when we are able
         # to at least add requested tasks to it safely (using its locks)
         await Worker(state_machine=TaskStateMachine(tasks, self.status_repo),
-                     spawner=node.worker.spawner, max_running=1,
+                     spawner=node.started_worker.spawner, max_running=1,
                      task_timeout=self.job.config.get('task.timeout.running')).run()
 
     async def run_test_node(self, node: TestNode, status_timeout: int = 10) -> bool:
@@ -201,6 +201,8 @@ class CartesianRunner(RunnerInterface):
         uid = node.id_test.uid
         name = node.params["name"]
 
+        node_result = {"name": name, "status": "UNKNOWN"}
+        node.results += [node_result]
         await self.run_test_task(node)
 
         for i in range(status_timeout):
@@ -217,6 +219,7 @@ class CartesianRunner(RunnerInterface):
                         # TODO: could we replace with WARN before the status is announced to the status server?
                         test_result["status"] = "WARN"
                 node.results += [test_result]
+                node.results.remove(node_result)
                 test_status = test_result["status"].lower()
                 break
             except StopIteration:
