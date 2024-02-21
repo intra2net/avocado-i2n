@@ -85,7 +85,7 @@ class TransferOps():
         :type params: {str, str}
         """
         hosts, path = pool_path.split(":")
-        if hosts != "/":
+        if hosts != "":
             return cls.list_remote(pool_path, params)
         elif ";" in path:
             return cls.list_link(path.replace(";", ""), params)
@@ -103,7 +103,7 @@ class TransferOps():
         :type params: {str, str}
         """
         hosts, path = pool_path.split(":")
-        if hosts != "/":
+        if hosts != "":
             return cls.compare_remote(cache_path, pool_path, params)
         elif ";" in path:
             return cls.compare_link(cache_path, path.replace(";", ""), params)
@@ -121,7 +121,7 @@ class TransferOps():
         :type params: {str, str}
         """
         hosts, path = pool_path.split(":")
-        if hosts != "/":
+        if hosts != "":
             cls.download_remote(cache_path, pool_path, params)
         elif ";" in path:
             cls.download_link(cache_path, path.replace(";", ""), params)
@@ -139,7 +139,7 @@ class TransferOps():
         :type params: {str, str}
         """
         hosts, path = pool_path.split(":")
-        if hosts != "/":
+        if hosts != "":
             cls.upload_remote(cache_path, pool_path, params)
         elif ";" in path:
             cls.upload_link(cache_path, path.replace(";", ""), params)
@@ -156,7 +156,7 @@ class TransferOps():
         :type params: {str, str}
         """
         hosts, path = pool_path.split(":")
-        if hosts != "/":
+        if hosts != "":
             cls.delete_remote(pool_path, params)
         elif ";" in path:
             cls.delete_link(path.replace(";", ""), params)
@@ -442,7 +442,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params["shared_pool"]
+        shared_pool = ":" + params["shared_pool"]
         image_base_name = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.debug(f"Checking for shared {vm_name}/{image_name} existence"
@@ -467,7 +467,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params["shared_pool"]
+        shared_pool = ":" + params["shared_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Downloading shared {vm_name}/{image_name} "
@@ -485,7 +485,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params["shared_pool"]
+        shared_pool = ":" + params["shared_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Uploading shared {vm_name}/{image_name} "
@@ -503,7 +503,7 @@ class QCOW2ImageTransfer(StateBackend):
         vm_name = params["vms"]
         image_name = params["image_name"]
         target_image = cls.get_image_path(params)
-        shared_pool = params["shared_pool"]
+        shared_pool = ":" + params["shared_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
         logging.info(f"Removing shared {vm_name}/{image_name} "
@@ -741,7 +741,7 @@ class RootSourcedStateBackend(StateBackend):
                     image_filename = image_params["image_name"]
                     cache_path = os.path.join(image_params["vms_base_dir"], vm_name, image_filename + ".qcow2")
                     pool_path = os.path.join(image_params.get("shared_pool", ""), vm_name, image_filename + ".qcow2")
-                    if not cls.transport.ops.compare(cache_path, pool_path, image_params):
+                    if not cls.transport.ops.compare(cache_path, ":" + pool_path, image_params):
                         logging.warning(f"The image {image_name} is different between cache {cache_path} and pool {pool_path}")
                         cache_valid = False
                         break
@@ -801,29 +801,39 @@ class SourcedStateBackend(StateBackend):
         :param params: parameters for the current state manipulation
         :type params: {str, str}
         """
-        own_id = params["nets_gateway"] + "/" + params["nets_host"] + ":" + params["swarm_pool"]
-        own_tuple = own_id.split("/")
-        own_max = len(own_tuple)
-        own_proximity = lambda x: sum([int(own_tuple[i]==xi)*10**(own_max-i) for i,xi in enumerate(x.split("/")[:own_max])])
-        return sorted(params.objects(f"{do}_location"), key=own_proximity, reverse=True)
+        def proximity(source):
+            score = 0
+            source_net, source_path = source.split(":")
+            source_params = params.object_params(source_net) if source_net else params
+            if params["nets_gateway"] == source_params["nets_gateway"]:
+                score += 1000
+            if params["nets_host"] == source_params["nets_host"]:
+                score += 100
+            if params["swarm_pool"] == source_path:
+                score += 10
+            else:
+                score += 1
+            return score
+
+        return sorted(params.objects(f"{do}_location"), key=proximity, reverse=True)
 
     @classmethod
-    def get_source_scope(cls, source, params):
+    def get_source_scope(cls, source_path, source_params, own_params):
         """
         Get the currently permitted pool and state reuse scope.
 
-        :param str source: source identifier inclusive of all scopes
-        :param params: parameters for the current state manipulation
-        :type params: {str, str}
+        :param str source_net: source identifier inclusive of all scopes
+        :param str source_path: source identifier inclusive of all scopes
+        :param own_params: parameters for the current state manipulation
+        :type own_params: {str, str}
         """
-        own_id = params["nets_gateway"] + "/" + params["nets_host"] + ":" + params["swarm_pool"]
-        own_tuple = own_id.split("/")
-        source_tuple = source.split("/")
-        if own_tuple[0] != source_tuple[0]:
+        if own_params["nets_gateway"] != source_params["nets_gateway"]:
             return "cluster"
-        elif own_tuple[1] != source_tuple[1]:
+        elif own_params["nets_host"] != source_params["nets_host"]:
             return "swarm"
-        elif own_tuple == source_tuple:
+        elif own_params["shared_pool"].lstrip(":") == source_path:
+            return "shared"
+        elif own_params["swarm_pool"] == source_path:
             return "own"
         else:
             return "shared"
@@ -845,11 +855,12 @@ class SourcedStateBackend(StateBackend):
         pool_states = set()
         for source in sources:
             logging.debug(f"Next show source to consider is {source}")
-            source_params = params.object_params(source)
+            source_net, source_path = source.split(":")
+            source_params = params.object_params(source_net) if source_net else params.copy()
             source_params["show_location"] = source
 
             # filtering stage where we may disallow certain data transport
-            source_scope = cls.get_source_scope(source, params)
+            source_scope = cls.get_source_scope(source_path, source_params, params)
             if source_scope == "own" or source_scope not in scopes:
                 continue
             logging.debug(f"Choosing {source} as the show source to use")
@@ -872,11 +883,12 @@ class SourcedStateBackend(StateBackend):
         # get from best available source (assuming from best to worst until filters permit it, then breaking)
         for source in sources:
             logging.debug(f"Next get source to consider is {source}")
-            source_params = params.object_params(source)
+            source_net, source_path = source.split(":")
+            source_params = params.object_params(source_net) if source_net else params.copy()
             source_params["get_location"] = source
 
             # filtering stage where we may disallow certain data transport
-            source_scope = cls.get_source_scope(source, params)
+            source_scope = cls.get_source_scope(source_path, source_params, params)
             if source_scope == "own" or source_scope not in scopes:
                 continue
             logging.debug(f"Choosing {source} as the get source to use")
@@ -917,11 +929,12 @@ class SourcedStateBackend(StateBackend):
         # set from best available source (assuming from best to worst until filters permit it, then breaking)
         for source in sources:
             logging.debug(f"Next set source to consider is {source}")
-            source_params = params.object_params(source)
+            source_net, source_path = source.split(":")
+            source_params = params.object_params(source_net) if source_net else params.copy()
             source_params["set_location"] = source
 
             # filtering stage where we may disallow certain data transport
-            source_scope = cls.get_source_scope(source, params)
+            source_scope = cls.get_source_scope(source_path, source_params, params)
             if source_scope == "own" or source_scope not in scopes:
                 continue
             logging.debug(f"Choosing {source} as the set source to use")
@@ -943,11 +956,12 @@ class SourcedStateBackend(StateBackend):
         # unset from best available source (assuming from best to worst until filters permit it, then breaking)
         for source in sources:
             logging.debug(f"Next unset source to consider is {source}")
-            source_params = params.object_params(source)
+            source_net, source_path = source.split(":")
+            source_params = params.object_params(source_net) if source_net else params.copy()
             source_params["unset_location"] = source
 
             # filtering stage where we may disallow certain data transport
-            source_scope = cls.get_source_scope(source, params)
+            source_scope = cls.get_source_scope(source_path, source_params, params)
             if source_scope == "own" or source_scope not in scopes:
                 continue
             logging.debug(f"Choosing {source} as the unset source to use")

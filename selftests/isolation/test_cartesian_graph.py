@@ -20,8 +20,7 @@ class CartesianWorkerTest(Test):
 
     def setUp(self):
         self.config = {}
-        self.shared_pool = shared_pool = "/:/mnt/local/images/shared"
-        self.config["param_dict"] = {"test_timeout": 100, "shared_pool": shared_pool}
+        self.config["param_dict"] = {"test_timeout": 100, "shared_pool": "/mnt/local/images/shared"}
         self.config["tests_str"] = "only normal\n"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
 
@@ -46,7 +45,7 @@ class CartesianWorkerTest(Test):
         self.assertEqual(len(test_objects), 1)
         self.assertRegex(test_objects[0].params["name"], r"nets\.net1\.cluster1")
         self.assertEqual(test_objects[0].params["nets"], "net1")
-        self.assertEqual(test_objects[0].params["cid"], "1")
+        self.assertEqual(test_objects[0].params["cid"], "101")
 
     def test_params(self):
         """Test for correctly parsed and regenerated test worker parameters."""
@@ -101,8 +100,7 @@ class CartesianObjectTest(Test):
 
     def setUp(self):
         self.config = {}
-        self.shared_pool = shared_pool = "/:/mnt/local/images/shared"
-        self.config["param_dict"] = {"test_timeout": 100, "shared_pool": shared_pool}
+        self.config["param_dict"] = {"test_timeout": 100, "shared_pool": "/mnt/local/images/shared"}
         self.config["tests_str"] = "only normal\n"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
 
@@ -352,14 +350,15 @@ class CartesianNodeTest(Test):
 
     def setUp(self):
         self.config = {}
-        self.shared_pool = shared_pool = "/:/mnt/local/images/shared"
-        self.config["param_dict"] = {"test_timeout": 100, "shared_pool": shared_pool}
+        self.config["param_dict"] = {"test_timeout": 100, "shared_pool": "/mnt/local/images/shared"}
         self.config["tests_str"] = "only normal\n"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
 
         self.prefix = ""
 
         self.loader = CartesianLoader(config=self.config, extra_params={})
+
+        self.shared_pool = ":" + self.config["param_dict"]["shared_pool"]
 
     def test_prefix_tree_contains(self):
         """Test that a prefix tree contains the right variants."""
@@ -837,8 +836,8 @@ class CartesianNodeTest(Test):
         self.assertEqual(test_node3.finished_worker, worker2)
         self.assertEqual(test_node3.shared_finished_workers, {test_node3.finished_worker})
 
-    def test_shared_results(self):
-        """Test for correctly shared results across bridged nodes."""
+    def test_shared_results_and_worker_ids(self):
+        """Test for correctly shared results and result-based worker ID-s across bridged nodes."""
         flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
         self.assertEqual(len(flat_nets), 1)
         flat_net1 = flat_nets[0]
@@ -859,17 +858,31 @@ class CartesianNodeTest(Test):
         self.assertEqual(test_node1.shared_results, [])
         self.assertEqual(test_node1.shared_results, test_node2.shared_results)
 
-        node2_results = [{"status": "PASS"}]
+        node2_results = [{"name": "tutorial1.net2", "status": "PASS"}]
         test_node2.results += node2_results
         self.assertEqual(test_node1.results, [])
         self.assertEqual(test_node1.shared_results, node2_results)
         self.assertEqual(test_node2.shared_results, node2_results)
+        self.assertEqual(test_node1.shared_result_worker_ids, {"net2"})
+        self.assertEqual(test_node2.shared_result_worker_ids, test_node1.shared_result_worker_ids)
 
-        node1_results = [{"status": "FAIL"}, {"status": "PASS"}]
+        node1_results = [{"name": "tutorial1.net1", "status": "FAIL"}]
         test_node1.results += node1_results
         self.assertEqual(test_node2.results, node2_results)
         self.assertEqual(test_node1.shared_results, node1_results + node2_results)
         self.assertEqual(test_node2.shared_results, node2_results + node1_results)
+        # only net2 succeeded and can provide any tutorial1 setup
+        self.assertEqual(test_node1.shared_result_worker_ids, {"net2"})
+        self.assertEqual(test_node2.shared_result_worker_ids, test_node1.shared_result_worker_ids)
+
+        node1_extra_results = [{"name": "tutorial1.net1", "status": "PASS"}]
+        test_node1.results += node1_extra_results
+        self.assertEqual(test_node2.results, node2_results)
+        self.assertEqual(test_node1.shared_results, node1_results + node1_extra_results + node2_results)
+        self.assertEqual(test_node2.shared_results, node2_results + node1_results + node1_extra_results)
+        # now net1 succeeded too and can provide any tutorial1 setup
+        self.assertEqual(test_node1.shared_result_worker_ids, {"net1", "net2"})
+        self.assertEqual(test_node2.shared_result_worker_ids, test_node1.shared_result_worker_ids)
 
     def test_setless_form(self):
         """Test the general use and purpose of the node setless form."""
@@ -1054,6 +1067,8 @@ class CartesianNodeTest(Test):
 
         test_node1 = graph.get_node_by(param_val="install.+net1")
         test_node2 = graph.get_node_by(param_val="install.+net2")
+        # run decisions involving scans require a started worker which is typically assumed
+        test_node1.started_worker = worker1
         # should never run an internal test node meant for other worker
         with self.assertRaises(RuntimeError):
             test_node1.default_run_decision(worker2)
@@ -1062,7 +1077,6 @@ class CartesianNodeTest(Test):
         # should run an internal test node without available setup
         DummyStateControl.asserted_states["check"] = {"install": {self.shared_pool: False}}
         test_node1.params["nets_host"], test_node1.params["nets_gateway"] = "1", ""
-        test_node1.add_location(self.shared_pool)
         self.assertTrue(test_node1.default_run_decision(worker1))
         # should not run an internal test node with available setup
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
@@ -1273,6 +1287,92 @@ class CartesianNodeTest(Test):
         self.assertEqual(node1._dropped_setup_nodes.get_workers(node13), {worker2.id})
         self.assertEqual(node2._dropped_setup_nodes.get_workers(node23), {worker2.id})
 
+    def test_pull_locations(self):
+        """Test that all setup get locations for a node are properly updated."""
+        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_nets), 1)
+        flat_net = flat_nets[0]
+        full_nets = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
+        self.assertEqual(len(full_nets), 1)
+        net = full_nets[0]
+
+        node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"])
+        parent_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"])
+        # nets host is a runtime parameter
+        parent_node.params["object_suffix"] = "vm1"
+        worker = TestWorker(flat_net)
+        worker.params["nets_host"] = "some_host"
+        parent_node.finished_worker = worker
+        # parent nodes was parsed as dependency of node via its vm1 object
+        parent_node.results = [{"name": "tutorial1.net1",
+                                "status": "PASS", "time": 3}]
+        node.setup_nodes = [parent_node]
+
+        node.pull_locations()
+        get_locations = node.params.objects("get_location_vm1")
+        self.assertEqual(len(get_locations), 2)
+        self.assertEqual(get_locations[0], ":" + node.params["shared_pool"])
+        self.assertEqual(get_locations[1], worker.id + ":" + node.params["swarm_pool"])
+        # parameters to access the worker location should also be provided for the test
+        self.assertEqual(node.params[f"nets_host_{worker.id}"], worker.params[f"nets_host"])
+
+        # finished workers should not get out of sync with previous results
+        parent_node.results = [{"name": "tutorial1.net2",
+                                "status": "PASS", "time": 3}]
+        with self.assertRaises(RuntimeError):
+            node.pull_locations()
+
+    def test_pull_locations_bridged(self):
+        """Test that all setup get locations for a node are properly updated."""
+        flat_nets = TestGraph.parse_flat_objects("net1", "nets")
+        self.assertEqual(len(flat_nets), 1)
+        flat_net1 = flat_nets[0]
+        flat_nets = TestGraph.parse_flat_objects("net2", "nets")
+        self.assertEqual(len(flat_nets), 1)
+        flat_net2 = flat_nets[0]
+        full_nets = TestGraph.parse_composite_objects("net1", "nets", "", self.config["vm_strs"])
+        self.assertEqual(len(full_nets), 1)
+        net1 = full_nets[0]
+        full_nets = TestGraph.parse_composite_objects("net2", "nets", "", self.config["vm_strs"])
+        self.assertEqual(len(full_nets), 1)
+        net2 = full_nets[0]
+
+        node1 = TestGraph.parse_node_from_object(net1, "normal..tutorial1", params=self.config["param_dict"])
+        node2 = TestGraph.parse_node_from_object(net2, "normal..tutorial1", params=self.config["param_dict"])
+        parent_node1 = TestGraph.parse_node_from_object(net1, "normal..tutorial1", params=self.config["param_dict"])
+        parent_node2 = TestGraph.parse_node_from_object(net2, "normal..tutorial1", params=self.config["param_dict"])
+        # nets host is a runtime parameter
+        parent_node1.params["object_suffix"] = "vm1"
+        parent_node2.params["object_suffix"] = "vm1"
+        worker1 = TestWorker(flat_net1)
+        worker2 = TestWorker(flat_net2)
+        # parent nodes were parsed as dependency of node via its vm1 object
+        worker1.params["nets_host"] = "some_host"
+        worker2.params["nets_host"] = "other_host"
+        parent_node1.finished_worker = worker1
+        parent_node1.results = [{"name": "tutorial1.net1",
+                                 "status": "PASS", "time": 3}]
+        node1.setup_nodes = [parent_node1]
+        node2.setup_nodes = [parent_node2]
+        node1.bridge_node(node2)
+        parent_node1.bridge_node(parent_node2)
+
+        node1.pull_locations()
+        get_locations = node1.params.objects("get_location_vm1")
+        self.assertEqual(len(get_locations), 2)
+        self.assertEqual(get_locations[0], ":" + node1.params["shared_pool"])
+        self.assertEqual(get_locations[1], worker1.id + ":" + node1.params["swarm_pool"])
+        # parameters to access the worker location should also be provided for the test
+        self.assertEqual(node1.params[f"nets_host_{worker1.id}"], worker1.params[f"nets_host"])
+
+        node2.pull_locations()
+        get_locations = node2.params.objects("get_location_vm1")
+        self.assertEqual(len(get_locations), 2)
+        self.assertEqual(get_locations[0], ":" + node1.params["shared_pool"])
+        self.assertEqual(get_locations[1], worker1.id + ":" + node1.params["swarm_pool"])
+        # parameters to access the worker location should also be provided for the test
+        self.assertEqual(node2.params[f"nets_host_{worker1.id}"], worker1.params[f"nets_host"])
+
 
 @mock.patch('avocado_i2n.cartgraph.node.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
@@ -1281,21 +1381,9 @@ class CartesianNodeTest(Test):
 class CartesianGraphTest(Test):
 
     def setUp(self):
-        DummyTestRun.asserted_tests = []
-        self.shared_pool = shared_pool = "/:/mnt/local/images/shared"
-        DummyStateControl.asserted_states = {"check": {}, "get": {}, "set": {}, "unset": {}}
-        DummyStateControl.asserted_states["check"] = {"install": {shared_pool: False},
-                                                      "customize": {shared_pool: False}, "on_customize": {shared_pool: False},
-                                                      "connect": {shared_pool: False},
-                                                      "linux_virtuser": {shared_pool: False}, "windows_virtuser": {shared_pool: False}}
-        DummyStateControl.asserted_states["get"] = {"install": {shared_pool: 0},
-                                                    "customize": {shared_pool: 0}, "on_customize": {shared_pool: 0},
-                                                    "connect": {shared_pool: 0},
-                                                    "linux_virtuser": {shared_pool: 0}, "windows_virtuser": {shared_pool: 0}}
-
         self.config = {}
         # TODO: migrate run slots to official workers composition as graph attributes
-        self.config["param_dict"] = {"test_timeout": 100, "shared_pool": shared_pool, "slots": "1"}
+        self.config["param_dict"] = {"test_timeout": 100, "shared_pool": "/mnt/local/images/shared", "slots": "1"}
         self.config["tests_str"] = "only normal\n"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
 
@@ -1311,6 +1399,18 @@ class CartesianGraphTest(Test):
         self.runner = CartesianRunner()
         self.runner.job = self.job
         self.runner.status_server = self.job
+
+        DummyTestRun.asserted_tests = []
+        self.shared_pool = ":" + self.config["param_dict"]["shared_pool"]
+        DummyStateControl.asserted_states = {"check": {}, "get": {}, "set": {}, "unset": {}}
+        DummyStateControl.asserted_states["check"] = {"install": {self.shared_pool: False},
+                                                      "customize": {self.shared_pool: False}, "on_customize": {self.shared_pool: False},
+                                                      "connect": {self.shared_pool: False},
+                                                      "linux_virtuser": {self.shared_pool: False}, "windows_virtuser": {self.shared_pool: False}}
+        DummyStateControl.asserted_states["get"] = {"install": {self.shared_pool: 0},
+                                                    "customize": {self.shared_pool: 0}, "on_customize": {self.shared_pool: 0},
+                                                    "connect": {self.shared_pool: 0},
+                                                    "linux_virtuser": {self.shared_pool: 0}, "windows_virtuser": {self.shared_pool: 0}}
 
     def _run_traversal(self, graph, params=None):
         params = params or {"test_timeout": 100}
@@ -2229,7 +2329,7 @@ class CartesianGraphTest(Test):
         self._run_traversal(graph)
         for action in ["get"]:
             for state in ["install", "customize"]:
-                # called once by worker for for each of two vms (no self-sync as setup is from previous run or shared pool)
+                # called once by worker for for each of two vms (no self-sync skip as setup is from previous run or shared pool)
                 # NOTE: any such use cases assume the previous setup is fully synced across all workers, if this is not the case
                 # it must be due to interrupted run in which case the setup is not guaranteed to be reusable on the first place
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 8)
@@ -2238,26 +2338,26 @@ class CartesianGraphTest(Test):
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
 
-    def test_diverging_paths_external(self):
+    def test_trace_work_external(self):
         """Test a multi-object test run with reusable setup of diverging workers and shared pool or previous runs."""
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1,normal..tutorial3"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)]),
                                                    "only_vm1": "CentOS", "only_vm2": "Win10",
-                                                   "shared_pool": self.shared_pool}))
+                                                   "shared_pool": self.config["param_dict"]["shared_pool"]}))
 
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyStateControl.asserted_states["check"]["customize"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets_host": "^c1$",
-             "get_location_image1_vm1": "/:/mnt/local/images/shared"},
+             "get_location_image1_vm1": ":/mnt/local/images/shared"},
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "nets_host": "^c2$",
-             "get_location_image1_vm1": "/:/mnt/local/images/shared"},
+             "get_location_image1_vm1": ":/mnt/local/images/shared"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "nets_host": "^c1$",
-             "get_location_vm1": "/:/mnt/local/images/shared /c1:/mnt/local/images/swarm"},
+             "get_location_vm1": ":/mnt/local/images/shared net1:/mnt/local/images/swarm"},
             {"shortname": "^normal.nongui.tutorial3", "vms": "^vm1 vm2$", "nets_host": "^c2$",
-             "get_location_image1_vm1": "/:/mnt/local/images/shared /c2:/mnt/local/images/swarm"},
+             "get_location_image1_vm1": ":/mnt/local/images/shared net2:/mnt/local/images/swarm"},
         ]
 
         self._run_traversal(graph, self.config["param_dict"])
@@ -2275,15 +2375,14 @@ class CartesianGraphTest(Test):
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
 
-    @skip("Needs setup location generalization to bridged nodes")
-    def test_diverging_paths_swarm(self):
+    def test_trace_work_swarm(self):
         """Test a multi-object test run where the workers will run multiple tests reusing their own local swarm setup."""
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2,leaves..tutorial_gui"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"{i+1}" for i in range(4)]),
                                                    "only_vm1": "CentOS", "only_vm2": "Win10",
-                                                   "shared_pool": self.shared_pool}))
+                                                   "shared_pool": self.config["param_dict"]["shared_pool"]}))
 
         workers = sorted(list(graph.workers.values()), key=lambda x: x.params["name"])
         self.assertEqual(workers[0].params["nets_spawner"], "lxc")
@@ -2300,30 +2399,34 @@ class CartesianGraphTest(Test):
         DummyStateControl.asserted_states["get"]["guisetup.clicked"] = {self.shared_pool: 0}
         DummyStateControl.asserted_states["unset"] = {"guisetup.noop": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
+            # c1 starts from first tutorial2 variant and provides vm1 setup
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c1$"},
             # c2 starts from second tutorial variant and waits for its single (same) setup to be provided
+            # c3 starts from first gui test and provides vm1 setup
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c3$"},
-            # c4 picks the newly available waiting setup directly from the shared node
+            # c4 starts from second gui test and provides vm2 setup
             {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c4$"},
             # c1 now moves on to its planned test
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c1$",
-             "get_location_vm1": "[\w:/]+ /c1:/mnt/local/images/swarm"},
+             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm"},
             # c2 no longer waits and picks its planned tests reusing setup from c1
             {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c2$",
-             "get_location_vm1": "[\w:/]+ /c1:/mnt/local/images/swarm"},
-            # c3 is done with 1/2 of the setup for client_noop and waits for c4 to provide the other half
-            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$",
-             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c4$",
-             "get_location_image1_vm1": "[\w:/]+ /c3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ /c4:/mnt/local/images/swarm"},
-            # continuing with c1 after last considering c4 (starting from first worker again)
+             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm"},
+            # c3 is done with half of the setup for client_noop and waits for c4 to provide the other half
+            # c4 now moves on to its planned test
             {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$",
-             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c1$",
-             "get_location_image1_vm1": "[\w:/]+ /c3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ /c4:/mnt/local/images/swarm"},
+             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c4$",
+             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm"},
+            # c1 picks unattended install from shared root since all flat nodes were traversed (postponed full tutorial2 cleanup) waiting for c2
+            # c2 picks the first gui test before c3's turn
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$",
+             "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c2$",
+             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm"},
         ]
 
         self._run_traversal(graph, self.config["param_dict"])
@@ -2331,15 +2434,14 @@ class CartesianGraphTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
 
-    @skip("Needs setup location generalization to bridged nodes")
-    def test_diverging_paths_remote(self):
+    def test_trace_work_remote(self):
         """Test a multi-object test run where the workers will run multiple tests reusing also remote swarm setup."""
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2,leaves..tutorial_gui"))
         graph.parse_shared_root_from_object_roots()
         graph.new_workers(TestGraph.parse_workers({"slots": " ".join([f"host1/{i+1}" for i in range(2)] + [f"host2/{i+1}" for i in range(2)]),
                                                    "only_vm1": "CentOS", "only_vm2": "Win10",
-                                                   "shared_pool": self.shared_pool}))
+                                                   "shared_pool": self.config["param_dict"]["shared_pool"]}))
 
         workers = sorted(list(graph.workers.values()), key=lambda x: x.params["name"])
         self.assertEqual(workers[0].params["nets_spawner"], "remote")
@@ -2357,34 +2459,44 @@ class CartesianGraphTest(Test):
         DummyStateControl.asserted_states["unset"] = {"guisetup.noop": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
             # TODO: localhost is not acceptable when we mix hosts
+            # host1/1 starts from first tutorial2 variant and provides vm1 setup
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$",
              "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^1$"},
-            # c2 starts from second tutorial variant and waits for its single (same) setup to be provided
+            # host1/2 starts from second tutorial variant and waits for its single (same) setup to be provided
+            # host2/1 starts from first gui test and provides vm1 setup
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$",
              "nets_spawner": "remote", "nets_gateway": "^host2$", "nets_host": "^1$"},
-            # c4 picks the newly available waiting setup directly from the shared node
+            # host2/2 starts from second gui test and provides vm2 setup
             {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$",
              "nets_spawner": "remote", "nets_gateway": "^host2$", "nets_host": "^2$"},
-            # c1 now moves on to its planned test
+            # host1/1 now moves on to its planned test
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$",
              "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^1$",
-             "get_location_vm1": "[\w:/]+ host1/1:/mnt/local/images/swarm",
-             "nets_shell_port_host1/1:/mnt/local/images/swarm_vm1": "22"},
-            # c2 no longer waits and picks its planned tests reusing setup from c1
+             # TODO: no full support for cluster variants yet, this must have been "cluster1.net1" instead of "net1"
+             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
+             "nets_shell_host_net1": "192.168.254.101", "nets_shell_port_net1": "22"},
+            # host1/2 no longer waits and picks its planned tests reusing setup from c1
             {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$",
              "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^2$",
-             "get_location_vm1": "[\w:/]+ host1/1:/mnt/local/images/swarm",
-             "nets_shell_port_host1/1:/mnt/local/images/swarm_vm1": "22"},
-            # c3 is done with 1/2 of the setup for client_noop and waits for c4 to provide the other half
-            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$",
-             "nets_spawner": "remote", "nets_gateway": "^host2$", "nets_host": "^2$",
-             "get_location_image1_vm1": "[\w:/]+ host2/1:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ host2/2:/mnt/local/images/swarm",
-             "nets_shell_port_host2/1:/mnt/local/images/swarm_image1_vm1": "221", "nets_shell_port_host2/2:/mnt/local/images/swarm_image1_vm2": "222"},
-            # continuing with c1 after last considering c4 (starting from first worker again)
+             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
+             "nets_shell_host_net1": "192.168.254.101", "nets_shell_port_net1": "22"},
+            # host2/1 is done with half of the setup for client_noop and waits for host2/2 to provide the other half
+            # host2/2 now moves on to its planned test
             {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$",
-             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^1$",
-             "get_location_image1_vm1": "[\w:/]+ host2/1:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ host2/2:/mnt/local/images/swarm",
-             "nets_shell_port_host2/1:/mnt/local/images/swarm_image1_vm1": "221", "nets_shell_port_host2/2:/mnt/local/images/swarm_image1_vm2": "222"},
+             "nets_spawner": "remote", "nets_gateway": "^host2$", "nets_host": "^2$",
+             # TODO: no full support for cluster variants yet, this must have been "cluster2.net1" instead of "net3"
+             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm",
+             # TODO: special ports like 221 must be added to the cluster configuration, currently expect simpler 22
+             "nets_shell_host_net3": "192.168.254.103", "nets_shell_host_net4": "192.168.254.104",
+             "nets_shell_port_net3": "22", "nets_shell_port_net4": "22"},
+            # host1/1 picks unattended install from shared root since all flat nodes were traversed (postponed full tutorial2 cleanup) waiting for host1/2
+            # host1/2 picks the first gui test before host2/1's turn
+            {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$",
+             "nets_spawner": "remote", "nets_gateway": "^host1$", "nets_host": "^2$",
+             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm",
+             # TODO: special ports like 221 must be added to the cluster configuration, currently expect simpler 22
+             "nets_shell_host_net3": "192.168.254.103", "nets_shell_host_net4": "192.168.254.104",
+             "nets_shell_port_net3": "22", "nets_shell_port_net4": "22"},
         ]
 
         self._run_traversal(graph, self.config["param_dict"])
@@ -2392,8 +2504,7 @@ class CartesianGraphTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
 
-    @skip("Needs setup location generalization to bridged nodes")
-    def test_diverging_paths_preparsed(self):
+    def test_trace_work_preparsed(self):
         """Test a multi-object parsed in advance test run where the workers will run multiple tests reusing their setup."""
         self.config["param_dict"]["nets"] = "net1 net2 net3 net4"
         self.config["param_dict"]["slots"] = " ".join([f"{i+1}" for i in range(4)])
@@ -2419,16 +2530,16 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets_host": "^c3$"},
             # c4 would step back from already occupied on_customize (by c1) for the time being
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets_host": "^c1$",
-             "get_location_vm1": "[\w:/]+ /c1:/mnt/local/images/swarm"},
+             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm"},
             # c2 would step back from already occupied linux_virtuser (by c3) and c3 proceeds from most distant path
             {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets_host": "^c3$",
-             "get_location_image1_vm1": "[\w:/]+ /c3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ /c2:/mnt/local/images/swarm"},
+             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net2:/mnt/local/images/swarm"},
             # c4 now picks up available setup and tests from its own reentered branch
             {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets_host": "^c4$",
-             "get_location_image1_vm1": "[\w:/]+ /c3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ /c2:/mnt/local/images/swarm"},
+             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net2:/mnt/local/images/swarm"},
             # c1 would now pick its second local tutorial2.names
             {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets_host": "^c1$",
-             "get_location_vm1": "[\w:/]+ /c1:/mnt/local/images/swarm"},
+             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm"},
             # all others now step back from already occupied tutorial2.names (by c1)
         ]
         self._run_traversal(graph, self.config["param_dict"])
@@ -2446,8 +2557,7 @@ class CartesianGraphTest(Test):
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial_get"))
         graph.parse_shared_root_from_object_roots()
-        graph.new_workers(TestGraph.parse_workers({"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu",
-                                                   "shared_pool": self.shared_pool}))
+        graph.new_workers(TestGraph.parse_workers({"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"}))
 
         DummyStateControl.asserted_states["check"]["root"] = {self.shared_pool: True}
         DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
@@ -2506,8 +2616,7 @@ class CartesianGraphTest(Test):
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial_get,leaves..tutorial_gui"))
         graph.parse_shared_root_from_object_roots()
-        graph.new_workers(TestGraph.parse_workers({"only_vm1": "", "only_vm2": "", "only_vm3": "Ubuntu",
-                                                   "shared_pool": self.shared_pool}))
+        graph.new_workers(TestGraph.parse_workers({"only_vm1": "", "only_vm2": "", "only_vm3": "Ubuntu"}))
 
         DummyStateControl.asserted_states["check"]["root"] = {self.shared_pool: True}
         DummyStateControl.asserted_states["check"].update({"guisetup.noop": {self.shared_pool: False}, "guisetup.clicked": {self.shared_pool: False},
@@ -2904,7 +3013,11 @@ class CartesianGraphTest(Test):
                 self.assertEqual(len(graph.get_node_by(param_val="tutorial1").results), 4)
                 # also assert the correct results were registered
                 self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status] * 4)
-                self.assertEqual(self.runner.job.result.tests, graph.get_node_by(param_val="tutorial1").results)
+                registered_results = []
+                for result in self.runner.job.result.tests:
+                    result["name"] = result["name"].name
+                    registered_results.append(result)
+                self.assertEqual(registered_results, graph.get_node_by(param_val="tutorial1").results)
                 # the test graph and thus the test node is recreated
                 self.runner.job.result.tests.clear()
 
@@ -2936,7 +3049,11 @@ class CartesianGraphTest(Test):
                 self.assertEqual(len(graph.get_node_by(param_val="tutorial1").results), 1)
                 # also assert the correct results were registered
                 self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status])
-                self.assertEqual(self.runner.job.result.tests, graph.get_node_by(param_val="tutorial1").results)
+                registered_results = []
+                for result in self.runner.job.result.tests:
+                    result["name"] = result["name"].name
+                    registered_results.append(result)
+                self.assertEqual(registered_results, graph.get_node_by(param_val="tutorial1").results)
                 # the test graph and thus the test node is recreated
                 self.runner.job.result.tests.clear()
 
@@ -2969,7 +3086,11 @@ class CartesianGraphTest(Test):
                 self.assertEqual(len(graph.get_node_by(param_val="tutorial1").results), 2)
                 # also assert the correct results were registered
                 self.assertEqual([x["status"] for x in self.runner.job.result.tests], [status, "INTERRUPTED"])
-                self.assertEqual(self.runner.job.result.tests, graph.get_node_by(param_val="tutorial1").results)
+                registered_results = []
+                for result in self.runner.job.result.tests:
+                    result["name"] = result["name"].name
+                    registered_results.append(result)
+                self.assertEqual(registered_results, graph.get_node_by(param_val="tutorial1").results)
                 # the test graph and thus the test node is recreated
                 self.runner.job.result.tests.clear()
 
@@ -3011,7 +3132,11 @@ class CartesianGraphTest(Test):
         self.assertEqual([x["status"] for x in self.runner.job.result.tests], ["PASS"])
         self.assertEqual([x["status"] for x in node1.results], ["PASS"])
         self.assertEqual([x["status"] for x in node2.results], ["FAIL", "PASS"])
-        self.assertEqual(self.runner.job.result.tests, node2.results[1:])
+        registered_results = []
+        for result in self.runner.job.result.tests:
+            result["name"] = result["name"].name
+            registered_results.append(result)
+        self.assertEqual(registered_results, node2.results[1:])
 
     def test_rerun_previous_job_status(self):
         """Test that rerunning a previous job gives more tries and works reasonably."""
@@ -3053,7 +3178,11 @@ class CartesianGraphTest(Test):
         self.assertEqual([x["status"] for x in self.runner.job.result.tests], ["PASS", "PASS"])
         self.assertEqual([x["status"] for x in node1.results], ["PASS", "PASS"])
         self.assertEqual([x["status"] for x in node2.results], ["FAIL"])
-        self.assertEqual(self.runner.job.result.tests[1:], node1.results[1:])
+        registered_results = []
+        for result in self.runner.job.result.tests:
+            result["name"] = result["name"].name
+            registered_results.append(result)
+        self.assertEqual(registered_results[1:], node1.results[1:])
 
     def test_rerun_invalid(self):
         """Test if an exception is thrown with invalid retry parameter values."""

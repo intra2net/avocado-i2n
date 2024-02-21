@@ -1296,9 +1296,6 @@ class TestGraph(object):
 
         logging.info("Configuring creation/installation for %s on %s", object_vm, object_image)
         setup_dict = test_node.params.copy()
-        for key in list(setup_dict.keys()):
-            if "/" in key:
-                del setup_dict[key]
         setup_dict.update({} if params is None else params.copy())
         setup_dict.update({"type": "shared_configure_install", "check_mode": "rr",  # explicit root handling
                            # overwrite some params inherited from the modified install node
@@ -1333,28 +1330,22 @@ class TestGraph(object):
             return
         test_node.started_worker = worker
 
-        # add pre-existing shared pool locations
-        if not test_node.is_shared_root() and not test_node.is_flat():
-            shared_locations = test_node.params.get_list("shared_pool", ["/:."])
-            for location in shared_locations:
-                test_node.add_location(location)
         # add previous results if traversed for the first time (could be parsed on demand)
         if len(test_node.results) == 0:
             test_name = test_node.params["name"]
             test_node.results += [r for r in self.runner.previous_results if r["name"] == test_name]
+        # add shared pool and result based setup locations
+        test_node.pull_locations()
 
         if test_node.should_run(worker):
 
             # the primary setup nodes need special treatment
             if params.get("dry_run", "no") == "yes":
                 logging.info(f"Worker {worker.id} skipping via dry test run {test_node}")
-                status = False
             elif test_node.is_flat():
                 logging.debug(f"Worker {worker.id} skipping a flat node {test_node}")
-                status = False
             elif test_node.is_shared_root():
                 logging.debug(f"Worker {worker.id} starting from the shared root")
-                status = False
             elif test_node.is_object_root():
                 status = await self.traverse_terminal_node(test_node.params["object_root"], worker, params)
                 if not status:
@@ -1373,23 +1364,6 @@ class TestGraph(object):
                 object_state = object_params.get("set_state", object_params.get("get_state"))
                 if object_state is not None and object_state != "":
                     test_object.current_state = object_state
-
-            # node is not shared and with owned setup that is not yet claimed
-            if status:
-                setup_host = test_node.params["nets_host"]
-                setup_gateway = test_node.params["nets_gateway"]
-                setup_spawner = test_node.params["nets_spawner"]
-                setup_path = test_node.params.get("swarm_pool", test_node.params["vms_base_dir"])
-                # TODO: add support for local copy and lxc containers?
-                if setup_spawner == "process":
-                    if setup_host != "" or setup_gateway != "":
-                        raise RuntimeError("Serial process test runs cannot be isolated via hosts")
-                    # separate symmetric and asymmetric sharing
-                    if test_node.params.get_boolean("use_symlink"):
-                        setup_path += ";"
-
-                setup_source = setup_gateway + "/" + setup_host + ":" + setup_path
-                test_node.add_location(setup_source)
 
         else:
             logging.debug(f"Worker {worker.id} skipping test {test_node}")

@@ -205,13 +205,29 @@ class TestNode(Runnable):
         return workers
     shared_finished_workers = property(fget=shared_finished_workers)
 
-    def shared_results(self):
+    def shared_results(self) -> list[dict[str, str]]:
         """Test results shared across all bridged nodes."""
         results = list(self.results)
         for bridged_node in self._bridged_nodes:
             results += bridged_node.results
         return results
     shared_results = property(fget=shared_results)
+
+    def shared_result_worker_ids(self) -> set[str]:
+        """ID-s of workers that produced the shared results."""
+        workers = set()
+        for result in self.shared_results:
+            if result["status"] != "PASS":
+                continue
+            # TODO: all nets and thus worker parameters are not provided to each node
+            # for net_suffix in self.params.objects("nets"):
+            from .. import params_parser as param
+            for net_suffix in param.all_objects("nets"):
+                if net_suffix in result["name"]:
+                    workers.add(net_suffix)
+                    break
+        return workers
+    shared_result_worker_ids = property(fget=shared_result_worker_ids)
 
     def final_restr(self):
         """Final restriction to make the object parsing variant unique."""
@@ -774,53 +790,41 @@ class TestNode(Runnable):
             self._picked_by_cleanup_nodes = test_node._picked_by_cleanup_nodes
             self._dropped_cleanup_nodes = test_node._dropped_cleanup_nodes
 
-    def add_location(self, location: str) -> None:
-        """
-        Add a setup reuse location information to the current node.
-
-        :param str location: a special format string containing all information on the
-                             location where the format must be "gateway/host:path"
-        """
-        def ip_and_port_from_location(location):
-            location_tuple = location.split(":")
-            gateway, host = ("", "") if len(location_tuple) <= 1 else location_tuple[0].split("/")
-            ip, port = NetObject.get_session_ip_port(host, gateway,
-                                                    self.params['nets_ip_prefix'],
-                                                    self.params["nets_shell_port"])
-            return ip, port
-
-        if self.params.get("set_location"):
-            if location not in self.params["set_location"]:
-                self.params["set_location"] += " " + location
-        else:
-            self.params["set_location"] = location
-        source_suffix = "_" + location
-        ip, port = ip_and_port_from_location(location)
-        self.params[f"nets_shell_host{source_suffix}"] = ip
-        self.params[f"nets_shell_port{source_suffix}"] = port
-        self.params[f"nets_file_transfer_port{source_suffix}"] = port
-
+    def pull_locations(self) -> None:
+        """Update all setup locations for the current node."""
+        if self.is_shared_root() or self.is_flat():
+            return
+        setup_path = self.params.get("swarm_pool", self.params["vms_base_dir"])
         for node in self.setup_nodes:
-            # TODO: networks need further refactoring possibly as node environments
-            object_suffix = node.params.get("object_suffix", "net1")
-            # discard parameters if we are not talking about any specific non-net object
-            object_suffix = "_" + object_suffix if object_suffix != "net1" else "_none"
-            setup_locations = node.params.get_list("set_location", [])
+            setup_locations = [":" + self.params.get("shared_pool", ".")]
+            for net_suffix in node.shared_result_worker_ids:
+                setup_locations += [net_suffix + ":" + setup_path]
 
-            if self.params.get(f"get_location{object_suffix}"):
-                for setup_location in setup_locations:
-                    if setup_location not in self.params[f"get_location{object_suffix}"]:
-                        self.params[f"get_location{object_suffix}"] += " " + setup_location
-            else:
-                self.params[f"get_location{object_suffix}"] = " ".join(setup_locations)
-
+            # update test parameters at runtime with worker parameters of its setup
             for setup_location in setup_locations:
-                source_suffix = "_" + setup_location
-                source_object_suffix = source_suffix + object_suffix
-                ip, port = ip_and_port_from_location(setup_location)
-                self.params[f"nets_shell_host{source_object_suffix}"] = ip
-                self.params[f"nets_shell_port{source_object_suffix}"] = port
-                self.params[f"nets_file_transfer_port{source_object_suffix}"] = port
+                wid, _ = setup_location.split(":")
+
+                object_suffix = "_" + node.params.get("object_suffix", "none")
+                # discard parameters if we are not talking about any specific non-net object
+                object_suffix = "_none" if object_suffix == f"_{wid}" else object_suffix
+                if setup_location in self.params.get(f"get_location{object_suffix}", ""):
+                    continue
+                if self.params.get(f"get_location{object_suffix}"):
+                    self.params[f"get_location{object_suffix}"] += " " + setup_location
+                else:
+                    self.params[f"get_location{object_suffix}"] = setup_location
+
+                # no additional parameters needed for shared (local) locations
+                if not wid:
+                    continue
+                for worker in node.shared_finished_workers:
+                    if worker.id == wid:
+                        source_suffix = "_" + wid
+                        for key in worker.params:
+                            self.params[f"{key}{source_suffix}"] = worker.params[key]
+                        break
+                else:
+                    raise RuntimeError(f"Could not pull setup location {setup_location} for {self}")
 
     def regenerate_params(self, verbose=False):
         """
@@ -914,7 +918,7 @@ class TestNode(Runnable):
             # ultimate consideration of whether the state is actually present
             object_suffix = f"_{test_object.key}_{test_object.long_suffix}"
             node_params[f"check_state{object_suffix}"] = object_state
-            node_params[f"show_location{object_suffix}"] = object_params["set_location"]
+            node_params[f"show_location{object_suffix}"] = ":" + object_params["shared_pool"]
             node_params[f"check_mode{object_suffix}"] = object_params.get("check_mode", "rf")
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that
@@ -991,7 +995,7 @@ class TestNode(Runnable):
             suffixes = f"_{test_object.key}_{test_object.suffix}"
             suffixes += f"_{vm_name}" if test_object.key == "images" else ""
             # spread the state setup for the given test object
-            location = object_params["set_location"]
+            location = ":" + object_params["shared_pool"]
             if unset_policy[0] == "f":
                 # reverse the state setup for the given test object
                 # NOTE: we are forcing the unset_mode to be the one defined for the test node because
@@ -1010,8 +1014,8 @@ class TestNode(Runnable):
                 node_params[f"pool_scope{suffixes}"] = object_params.get("pool_scope", "swarm cluster shared")
                 # NOTE: "own" may not be removed because we skip "own" scope here which is done for both
                 # speed and the fact that it is not equivalent to reflexive download (actually getting a state)
-                for sync_source in location.split():
-                    if sync_source.startswith(slothost + '/' + slot):
+                for worker_id in self.shared_result_worker_ids:
+                    if worker_id == self.started_worker.id:
                         logging.info(f"No need to sync {self} from {slot} to itself")
                         should_clean = False
                         break

@@ -41,7 +41,7 @@ class IntertestSetupTest(Test):
 
     def setUp(self):
         DummyTestRun.asserted_tests = []
-        self.shared_pool = "/:/mnt/local/images/shared"
+        self.shared_pool = ":/mnt/local/images/shared"
 
         self.config = {}
         self.config["available_vms"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}

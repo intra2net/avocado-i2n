@@ -41,9 +41,10 @@ class DummyTestRun(object):
         return status not in ["ERROR", "FAIL"]
 
     def add_test_result(self, uid, name, status, time, logdir="."):
-        mocktestid = mock.MagicMock(uid=uid, name=name)
-        # have to set actual name attribute
-        mocktestid.name = name
+        mocktestid = type("Mock", (), {"uid": uid, "name": name})()
+        # or else have to set name attribute separately since "name" is reserved by MagicMock
+        # mocktestid = mock.MagicMock(uid=uid, name=name)
+        # mocktestid.name = name
         self.test_results.append({
             "name": mocktestid,
             "status": status,

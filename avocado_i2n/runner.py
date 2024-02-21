@@ -218,7 +218,10 @@ class CartesianRunner(RunnerInterface):
                         logging.warning(f"Test result {uid} was obtained but test took much longer ({duration}) than usual")
                         # TODO: could we replace with WARN before the status is announced to the status server?
                         test_result["status"] = "WARN"
-                node.results += [test_result]
+                # job and local results as interpreted by us have only serializable easy to use data
+                job_result = {key: value for key, value in test_result.items()}
+                job_result["name"] = test_result["name"].name
+                node.results += [job_result]
                 node.results.remove(node_result)
                 test_status = test_result["status"].lower()
                 break
