@@ -622,7 +622,6 @@ class TestNode(Runnable):
             should_scan = not self.is_finished(worker, 1)
             if should_scan:
                 should_run_from_scan = self.scan_states()
-                logging.debug(f"Should{' ' if should_run_from_scan else ' not '}run from scan {self}")
             # rerunning of test from previous jobs is never intended
             if len(self.shared_results) == 0 and not should_run_from_scan:
                 self.should_rerun = lambda _: False
@@ -898,7 +897,6 @@ class TestNode(Runnable):
         should_run = True
         node_params = self.params.copy()
 
-        slot, slothost = self.params["nets_host"], self.params["nets_gateway"]
         is_leaf = True
         for test_object in self.objects:
             object_params = test_object.object_typed_params(self.params)
@@ -940,8 +938,7 @@ class TestNode(Runnable):
                     should_run = True
                 else:
                     raise RuntimeError("Could not complete state scan due to control file error")
-        logging.info(f"The test node {self} %s run from a scan on {slothost + '/' + slot}",
-                     "should" if should_run else "should not")
+        logging.info(f"Should{' ' if should_run else ' not '}run from scan {self} by {self.started_worker.id}")
         return should_run
 
     def sync_states(self, params):
@@ -952,7 +949,6 @@ class TestNode(Runnable):
                 del node_params[key]
 
         # the sync cleanup will be performed if at least one selected object has a cleanable state
-        slot, slothost = self.params["nets_host"], self.params["nets_gateway"]
         should_clean = False
         for test_object in self.objects:
             object_params = test_object.object_typed_params(self.params)
@@ -1006,7 +1002,7 @@ class TestNode(Runnable):
                                     f"unset_mode{suffixes}": object_params.get("unset_mode", "ri"),
                                     f"pool_scope": "own"})
                 do = "unset"
-                logging.info(f"Need to clean up {self} on {slot}")
+                logging.info(f"Need to clean up {self} by {self.started_worker.id}")
             else:
                 # spread the state setup for the given test object
                 node_params.update({f"get_state{suffixes}": object_state,
@@ -1016,11 +1012,11 @@ class TestNode(Runnable):
                 # speed and the fact that it is not equivalent to reflexive download (actually getting a state)
                 for worker_id in self.shared_result_worker_ids:
                     if worker_id == self.started_worker.id:
-                        logging.info(f"No need to sync {self} from {slot} to itself")
+                        logging.info(f"No need to sync {self} from {self.started_worker.id} to itself")
                         should_clean = False
                         break
                 else:
-                    logging.info(f"Need to sync {self} from {location.join(',')} to {slot}")
+                    logging.info(f"Need to sync {self} from {location.join(',')} to {self.started_worker.id}")
                 do = "get"
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that
@@ -1030,7 +1026,7 @@ class TestNode(Runnable):
 
         if should_clean:
             action = "Cleaning up" if unset_policy[0] == "f" else "Syncing"
-            logging.info(f"{action} {self} on {slot}")
+            logging.info(f"{action} {self} for {self.started_worker.id}")
             session = self.get_session_to_net()
             control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
             mod_control_path = door.set_subcontrol_parameter(control_path, "action", do)
@@ -1038,10 +1034,10 @@ class TestNode(Runnable):
             try:
                 door.run_subcontrol(session, mod_control_path)
             except ShellCmdError as error:
-                logging.warning(f"{action} {self} on {slot} could not be completed "
+                logging.warning(f"{action} {self} for {self.started_worker.id} could not be completed "
                                 f"due to control file error: {error}")
         else:
-            logging.info(f"No need to clean up or sync {self} on {slot}")
+            logging.info(f"No need to clean up or sync {self} for {self.started_worker.id}")
 
     def validate(self):
         """Validate the test node for sane attribute-parameter correspondence."""
