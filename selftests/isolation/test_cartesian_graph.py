@@ -1294,6 +1294,41 @@ class CartesianNodeTest(Test):
         self.assertEqual(test_node1.shared_result_worker_ids, {"net1", "net2"})
         self.assertEqual(test_node2.shared_result_worker_ids, test_node1.shared_result_worker_ids)
 
+    def test_shared_results_filter(self):
+        """Test for correctly shared but filtered results across bridged nodes."""
+        flat_net1 = TestGraph.parse_flat_objects("cluster1.net6", "nets", params={"only_vm1": "CentOS"}, unique=True)
+        flat_net2 = TestGraph.parse_flat_objects("cluster2.net6", "nets", params={"only_vm1": "CentOS"}, unique=True)
+        worker1, worker2 = TestWorker(flat_net1), TestWorker(flat_net2)
+        swarm1, swarm2 = TestSwarm("localhost", [worker1]), TestSwarm("localhost", [worker2])
+        TestSwarm.run_swarms = {swarm1.id: swarm1, swarm2.id: swarm2}
+        graph = TestGraph()
+        test_node1 = graph.parse_composite_nodes("normal..tutorial1", flat_net1, unique=True, params={"pool_scope": "own swarm shared"})
+        test_node2 = graph.parse_composite_nodes("normal..tutorial1", flat_net2, unique=True, params={"pool_scope": "own swarm shared"})
+        test_node1.started_worker = worker1
+        test_node2.started_worker = worker2
+        test_node1.bridge_with_node(test_node2)
+
+        self.assertEqual(test_node1.results, [])
+        self.assertEqual(test_node1.results, test_node2.results)
+        self.assertEqual(test_node1.shared_filtered_results, [])
+        self.assertEqual(test_node1.shared_filtered_results, test_node2.shared_filtered_results)
+
+        node2_results = [{"name": "tutorial1.cluster2.net6", "status": "PASS"}]
+        test_node2.results += node2_results
+        self.assertEqual(test_node1.results, [])
+        self.assertEqual(test_node1.shared_results, node2_results)
+        self.assertEqual(test_node2.shared_results, node2_results)
+        self.assertEqual(test_node1.shared_filtered_results, [])
+        self.assertEqual(test_node2.shared_filtered_results, node2_results)
+
+        node1_results = [{"name": "tutorial1.cluster1.net6", "status": "FAIL"}]
+        test_node1.results += node1_results
+        self.assertEqual(test_node2.results, node2_results)
+        self.assertEqual(test_node1.shared_results, node1_results + node2_results)
+        self.assertEqual(test_node2.shared_results, node2_results + node1_results)
+        self.assertEqual(test_node1.shared_filtered_results, node1_results)
+        self.assertEqual(test_node2.shared_filtered_results, node2_results)
+
     def test_setless_form(self):
         """Test the general use and purpose of the node setless form."""
         flat_net = TestGraph.parse_flat_objects("net1", "nets",
@@ -1643,11 +1678,11 @@ class CartesianNodeTest(Test):
         with self.assertRaises(RuntimeError):
             test_node2.default_run_decision(worker1)
         # should not run already visited leaf test node
-        test_node1.results += [{"status": "PASS"}]
+        test_node1.results += [{"name": "tutorial1.net1", "status": "PASS"}]
         self.assertFalse(test_node1.default_run_decision(worker1))
         # should not run already visited bridged test node
         test_node1.results = []
-        test_node2.results += [{"status": "PASS"}]
+        test_node2.results += [{"name": "tutorial1.net2", "status": "PASS"}]
         self.assertIn(test_node2, test_node1.bridged_nodes)
         self.assertEqual(test_node1.shared_results, test_node2.results)
         self.assertFalse(test_node1.default_run_decision(worker1))
@@ -1673,7 +1708,7 @@ class CartesianNodeTest(Test):
         self.assertFalse(test_node1.default_run_decision(worker1))
         # should not run already visited internal test node by the same worker
         test_node1.finished_worker = worker1
-        test_node1.results += [{"status": "PASS"}]
+        test_node1.results += [{"name": "install.net1", "status": "PASS"}]
         self.assertFalse(test_node1.default_run_decision(worker1))
         # should not run an internal test node if needed reruns and setup from past runs
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
@@ -1684,7 +1719,7 @@ class CartesianNodeTest(Test):
         # should run an internal test node if needed reruns and setup from current runs
         test_node1.should_rerun = lambda _: True
         test_node1.finished_worker = None
-        test_node1.results = [{"status": "PASS"}]
+        test_node1.results = [{"name": "install.net2", "status": "PASS"}]
         self.assertTrue(test_node1.default_run_decision(worker1))
 
     @mock.patch('avocado_i2n.cartgraph.worker.remote.wait_for_login', mock.MagicMock())
@@ -2954,7 +2989,7 @@ class CartesianGraphTest(Test):
         async def delayed_traverse_wrapper(*args, **kwards):
             test_node, worker = args[0], args[1]
             test_node.finished_worker = worker
-            test_node.results = [{"status": "PASS", "time": 3}]
+            test_node.results = [{"name": "test", "status": "PASS", "time": 3}]
             await asyncio.sleep(0.01)
         async def reverse_wrapper(*args, **kwards):
             pass

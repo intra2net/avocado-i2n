@@ -236,6 +236,25 @@ class TestNode(Runnable):
         return results
     shared_results = property(fget=shared_results)
 
+    def shared_filtered_results(self) -> list[dict[str, str]]:
+        """Test results shared across all bridged nodes."""
+        all_results = self.shared_results
+        if self.started_worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
+            # has separate results for each worker (doesn't matter eager of full)
+            scope_filter = self.started_worker.swarm_id + "." + self.started_worker.id
+        elif self.started_worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
+            # has results for an entire swarm by at least N of its workers
+            scope_filter = self.started_worker.swarm_id
+        else:
+            # has fully globally shared results
+            scope_filter = ""
+        results = []
+        for result in all_results:
+            if scope_filter in result["name"]:
+                results += [result]
+        return results
+    shared_filtered_results = property(fget=shared_filtered_results)
+
     def shared_result_worker_ids(self) -> set[str]:
         """ID-s of workers that produced the shared results."""
         workers = set()
@@ -631,7 +650,15 @@ class TestNode(Runnable):
            raise ValueError("Number of max_tries cannot be less than zero")
 
         # analyzing rerun and stop status conditions
-        test_statuses = [r["status"].lower() for r in self.shared_results]
+        if len(self.get_stateful_objects()) == 0:
+            test_statuses = [r["status"].lower() for r in self.shared_results]
+        else:
+            # TODO: the started worker method is implicit and we need a proper function
+            old_started_worker = self.started_worker
+            self.started_worker = old_started_worker or worker
+            # setup tests can be filtered across swarms
+            test_statuses = [r["status"].lower() for r in self.shared_filtered_results]
+            self.started_worker = old_started_worker
         rerun_statuses_violated = {*test_statuses} - {*rerun_status}
         if len(rerun_statuses_violated) > 0:
             logging.debug(f"Stopping test tries due to violated rerun test statuses: {rerun_status}")
@@ -670,17 +697,15 @@ class TestNode(Runnable):
         elif worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not try to run {self}")
 
-        if not len(self.get_stateful_objects()) > 0:
+        if len(self.get_stateful_objects()) == 0:
             # most standard stateless behavior is to run each test node once then rerun if needed
             should_run = len(self.shared_results) == 0 or self.should_rerun(worker)
 
         else:
-            should_run_from_scan = False
             should_scan = not self.is_finished(worker, 1)
-            if should_scan:
-                should_run_from_scan = self.scan_states()
+            should_run_from_scan = self.scan_states() if should_scan else False
             # rerunning of test from previous jobs is never intended
-            if len(self.shared_results) == 0 and not should_run_from_scan:
+            if len(self.shared_filtered_results) == 0 and not should_run_from_scan:
                 self.should_rerun = lambda _: False
 
             should_run = should_run_from_scan if should_scan else False
