@@ -886,6 +886,7 @@ class CartesianNodeTest(Test):
 
         flat_node.params["shared_root"] = "yes"
         self.assertTrue(flat_node.is_unrolled(TestWorker(flat_object)))
+        del flat_node.params["shared_root"]
 
         incompatible_worker = TestWorker(flat_object)
         flat_node.incompatible_workers.add(incompatible_worker)
@@ -1088,6 +1089,75 @@ class CartesianNodeTest(Test):
             self.assertTrue(flat_node.is_finished(worker, 2))
             self.assertTrue(flat_node.is_finished(worker, -1))
 
+    def test_is_started_or_finished_incompatible(self):
+        """Test that a test node is eagerly to fully started or finished in different scopes."""
+        nets = " ".join(param.all_suffixes_by_restriction("only cluster1,cluster2\nno cluster2.net8,net9\n"))
+        test_workers = TestGraph.parse_workers({"nets": nets})
+        incompatible_workers = [test_workers[0], test_workers[3]]
+        test_workers = sorted({*test_workers} - {*incompatible_workers}, key= lambda x: x.id)
+        full_nodes = []
+        for worker in test_workers:
+            new_node = TestGraph().parse_composite_nodes("normal..tutorial1", worker.net, prefix="1")[0]
+            for bridge in full_nodes:
+                new_node.bridge_node(bridge)
+            full_nodes += [new_node]
+
+        flat_nodes = TestGraph.parse_flat_nodes("leaves..tutorial1")
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
+        for node in full_nodes:
+            node.setup_nodes += [flat_node]
+            flat_node.cleanup_nodes += [node]
+
+        flat_node.incompatible_workers |= {*incompatible_workers}
+
+        # normal operation when not fully finished
+        full_nodes[0].started_worker = test_workers[1]
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertFalse(node.is_started(worker, -1))
+        full_nodes[0].finished_worker = test_workers[1]
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertFalse(node.is_finished(worker, -1))
+
+        # fully finished in consideration with incompatible workers
+        for node, worker in zip(full_nodes, test_workers):
+            node.started_worker = worker
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_started(worker, -1))
+        for node, worker in zip(full_nodes, test_workers):
+            node.finished_worker = worker
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_finished(worker, -1))
+
+        for node, worker in zip(full_nodes, test_workers):
+            node.started_worker = None
+            node.finished_worker = None
+            node.params["pool_scope"] = "own swarm shared"
+
+        # normal swarm operation when not fully finished
+        full_nodes[0].started_worker = test_workers[1]
+        for node, worker in zip(full_nodes, test_workers):
+            self.assertFalse(node.is_started(worker, -1))
+        full_nodes[0].finished_worker = test_workers[1]
+        for node, worker in zip(full_nodes, test_workers):
+            self.assertFalse(node.is_finished(worker, -1))
+
+        # fully finished in consideration with incompatible swarm workers
+        for node, worker in zip(full_nodes, test_workers):
+            node.started_worker = worker
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_started(worker, -1))
+        for node, worker in zip(full_nodes, test_workers):
+            node.finished_worker = worker
+        for node in full_nodes:
+            for worker in test_workers:
+                self.assertTrue(node.is_finished(worker, -1))
+
     def test_params(self):
         """Test for correctly parsed test node parameters."""
         flat_nets = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS"})
@@ -1206,6 +1276,49 @@ class CartesianNodeTest(Test):
         test_node3.finished_worker = worker2
         self.assertEqual(test_node3.finished_worker, worker2)
         self.assertEqual(test_node3.shared_finished_workers, {test_node3.finished_worker})
+
+    def test_shared_incompatible_workers(self):
+        """Test for correctly shared incompatible workers across flat parent node."""
+        flat_nodes = TestGraph.parse_flat_nodes("leaves..explicit_noop")
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
+
+        flat_nets = TestGraph.parse_flat_objects("net1", "nets",
+                                                 params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
+        self.assertEqual(len(flat_nets), 1)
+        flat_net1 = flat_nets[0]
+        flat_nets = TestGraph.parse_flat_objects("net2", "nets",
+                                                 params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
+        self.assertEqual(len(flat_nets), 1)
+        flat_net2 = flat_nets[0]
+        graph = TestGraph()
+        nodes = graph.parse_composite_nodes("leaves..explicit_noop", flat_net1)
+        self.assertEqual(len(nodes), 1)
+        test_node1 = nodes[0]
+        nodes = graph.parse_composite_nodes("leaves..explicit_noop", flat_net2)
+        self.assertEqual(len(nodes), 1)
+        test_node2 = nodes[0]
+        test_node1.bridge_node(test_node2)
+
+        test_node1.setup_nodes += [flat_node]
+        flat_node.cleanup_nodes += [test_node1]
+        test_node2.setup_nodes += [flat_node]
+        flat_node.cleanup_nodes += [test_node2]
+
+        self.assertEqual(flat_node.shared_incompatible_workers, set())
+        self.assertEqual(test_node1.shared_incompatible_workers, set())
+        self.assertEqual(test_node2.shared_incompatible_workers, set())
+
+        worker1 = TestWorker(flat_net1)
+        worker2 = TestWorker(flat_net2)
+        flat_node.incompatible_workers.add(worker1)
+        self.assertEqual(flat_node.shared_incompatible_workers, {worker1})
+        self.assertEqual(test_node1.shared_incompatible_workers, {worker1})
+        self.assertEqual(test_node2.shared_incompatible_workers, {worker1})
+        flat_node.incompatible_workers.add(worker2)
+        self.assertEqual(flat_node.shared_incompatible_workers, {worker1, worker2})
+        self.assertEqual(test_node1.shared_incompatible_workers, {worker1, worker2})
+        self.assertEqual(test_node2.shared_incompatible_workers, {worker1, worker2})
 
     def test_shared_results_and_worker_ids(self):
         """Test for correctly shared results and result-based worker ID-s across bridged nodes."""
@@ -1446,6 +1559,11 @@ class CartesianNodeTest(Test):
             test_node1.default_clean_decision(worker2)
         with self.assertRaises(RuntimeError):
             test_node2.default_clean_decision(worker1)
+
+        # should not clean a reversible test node with still rerunning workers
+        test_node1.results += [{"name": "explicit_noop.+net1", "status": "UNKNOWN"}]
+        self.assertFalse(test_node1.default_clean_decision(worker1))
+        self.assertFalse(test_node2.default_clean_decision(worker2))
 
     def test_pick_priority_prefix(self):
         """Test that pick priority prioritizes workers and then secondary criteria."""
@@ -3172,7 +3290,7 @@ class CartesianGraphTest(Test):
         for node in flat_residue:
             for i in range(2):
                 worker = graph.workers[f"net{i+1}"]
-                self.assertIn(worker.id, node.incompatible_workers)
+                self.assertIn(worker, node.incompatible_workers)
 
     def test_traversing_in_isolation(self):
         """Test that actual traversing (not just test running) works as expected."""

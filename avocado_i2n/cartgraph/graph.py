@@ -1547,7 +1547,7 @@ class TestGraph(object):
                     if current == next:
                         if len(siblings) == 0:
                             logging.warning(f"Could not compose flat node {next} due to test object incompatibility")
-                            next.incompatible_workers.add(worker.id)
+                            next.incompatible_workers.add(worker)
                     for parent in parents:
                         if parent.is_object_root():
                             parent.setup_nodes.append(root)

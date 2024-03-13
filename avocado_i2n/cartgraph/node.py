@@ -182,7 +182,7 @@ class TestNode(Runnable):
         return self._params_cache
     params = property(fget=params)
 
-    def shared_started_workers(self):
+    def shared_started_workers(self) -> set[TestWorker]:
         """Workers that have previously started traversing this node (incl. leaves and others)."""
         workers = set()
         if self.started_worker is not None:
@@ -193,7 +193,7 @@ class TestNode(Runnable):
         return workers
     shared_started_workers = property(fget=shared_started_workers)
 
-    def shared_finished_workers(self):
+    def shared_finished_workers(self) -> set[TestWorker]:
         """Workers that have previously finished traversing this node (incl. leaves and others)."""
         workers = set()
         if self.finished_worker is not None:
@@ -203,6 +203,16 @@ class TestNode(Runnable):
                 workers.add(bridged_node.finished_worker)
         return workers
     shared_finished_workers = property(fget=shared_finished_workers)
+
+    def shared_incompatible_workers(self) -> set[TestWorker]:
+        """Workers incompatible with bridged full nodes."""
+        if self.is_flat():
+            return self.incompatible_workers
+        for node in self.setup_nodes:
+            if node.is_flat() and not node.is_shared_root():
+                return node.incompatible_workers
+        return set()
+    shared_incompatible_workers = property(fget=shared_incompatible_workers)
 
     def shared_results(self) -> list[dict[str, str]]:
         """Test results shared across all bridged nodes."""
@@ -369,7 +379,7 @@ class TestNode(Runnable):
             return True
         elif not self.is_flat():
             raise RuntimeError(f"Only flat nodes can be unrolled, {self} is not flat")
-        elif worker.id in self.incompatible_workers:
+        elif worker in self.incompatible_workers:
             return True
         for node in self.cleanup_nodes:
             if self.setless_form in node.id and worker.id in node.id:
@@ -419,16 +429,18 @@ class TestNode(Runnable):
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             own_cluster = worker.swarm_id
             own_cluster_started_hosts = {w.id for w in self.shared_started_workers if w.swarm_id == own_cluster}
+            own_cluster_incompatible_hosts = {w.id for w in self.shared_incompatible_workers if w.swarm_id == own_cluster}
             if threshold == -1:
                 # is started for an entire swarm by all of its workers
                 own_cluster_all_hosts = {*TestSwarm.run_swarms[own_cluster].workers}
-                return len(own_cluster_all_hosts) == len(own_cluster_started_hosts)
+                return len(own_cluster_started_hosts) + len(own_cluster_incompatible_hosts) == len(own_cluster_all_hosts)
             # is started for an entire swarm by at least N of its workers
             return len(own_cluster_started_hosts) >= threshold
         else:
             if threshold == -1:
                 # is started globally by all workers
-                return len(self.shared_started_workers) == sum([len([w for w in TestSwarm.run_swarms[s].workers]) for s in TestSwarm.run_swarms])
+                total_workers = sum([len([w for w in TestSwarm.run_swarms[s].workers]) for s in TestSwarm.run_swarms])
+                return len(self.shared_started_workers) + len(self.shared_incompatible_workers) == total_workers
             # is started globally by at least N workers (down to at least one worker)
             return len(self.shared_started_workers) >= threshold
 
@@ -456,16 +468,18 @@ class TestNode(Runnable):
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             own_cluster = worker.swarm_id
             own_cluster_finished_hosts = {w.id for w in self.shared_finished_workers if w.swarm_id == own_cluster}
+            own_cluster_incompatible_hosts = {w.id for w in self.shared_incompatible_workers if w.swarm_id == own_cluster}
             if threshold == -1:
                 # is finished for an entire swarm by all of its workers
                 own_cluster_all_hosts = {*TestSwarm.run_swarms[own_cluster].workers}
-                return len(own_cluster_all_hosts) == len(own_cluster_finished_hosts)
+                return len(own_cluster_finished_hosts) + len(own_cluster_incompatible_hosts) == len(own_cluster_all_hosts)
             # is finished for an entire swarm by at least N of its workers
             return len(own_cluster_finished_hosts) >= threshold
         else:
             if threshold == -1:
                 # is finished globally by all workers
-                return len(self.shared_finished_workers) == sum([len([w for w in TestSwarm.run_swarms[s].workers]) for s in TestSwarm.run_swarms])
+                total_workers = sum([len([w for w in TestSwarm.run_swarms[s].workers]) for s in TestSwarm.run_swarms])
+                return len(self.shared_finished_workers) + len(self.shared_incompatible_workers) == total_workers
             # is finished globally by at least N workers (down to at least one worker)
             return len(self.shared_finished_workers) >= threshold
 
@@ -636,7 +650,9 @@ class TestNode(Runnable):
             return True
         else:
             # last one of a given scope should "close the door" for that scope
-            return self.is_finished(worker, -1)
+            test_statuses = [r["status"].lower() for r in self.shared_results]
+            still_rerunning = "unknown" in test_statuses
+            return self.is_finished(worker, -1) and not still_rerunning
 
     @classmethod
     def prefix_priority(cls, prefix1, prefix2):
