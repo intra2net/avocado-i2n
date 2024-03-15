@@ -38,7 +38,7 @@ from aexpect import remote_door as door
 from avocado.core.test_id import TestID
 from avocado.core.nrunner.runnable import Runnable
 
-from . import TestSwarm, TestWorker, NetObject
+from . import TestSwarm, TestWorker, TestObject, NetObject
 
 
 door.DUMP_CONTROL_DIR = "/tmp"
@@ -175,6 +175,17 @@ class TestNode(Runnable):
     objects and dependencies to/from other test nodes (setup/cleanup).
     """
 
+    class ReadOnlyDict(dict):
+        def _readonly(self, *args, **kwargs):
+            raise RuntimeError("Cannot modify read-only dictionary")
+        __setitem__ = _readonly
+        __delitem__ = _readonly
+        pop = _readonly
+        popitem = _readonly
+        clear = _readonly
+        update = _readonly
+        setdefault = _readonly
+
     #: digit: 0 for object root, >0 for everything else
     #: letter: "a" (autosetup), "b" (byproduct), "c" (cleanup), "d" (duplicate)
     prefix_pattern = re.compile(r"^(\d+)([abcd]?)(.+)")
@@ -191,7 +202,7 @@ class TestNode(Runnable):
         workers = set()
         if self.started_worker is not None:
             workers.add(self.started_worker)
-        for bridged_node in self._bridged_nodes:
+        for bridged_node in self.bridged_nodes:
             if bridged_node.started_worker is not None:
                 workers.add(bridged_node.started_worker)
         return workers
@@ -202,7 +213,7 @@ class TestNode(Runnable):
         workers = set()
         if self.finished_worker is not None:
             workers.add(self.finished_worker)
-        for bridged_node in self._bridged_nodes:
+        for bridged_node in self.bridged_nodes:
             if bridged_node.finished_worker is not None:
                 workers.add(bridged_node.finished_worker)
         return workers
@@ -221,7 +232,7 @@ class TestNode(Runnable):
     def shared_results(self) -> list[dict[str, str]]:
         """Test results shared across all bridged nodes."""
         results = list(self.results)
-        for bridged_node in self._bridged_nodes:
+        for bridged_node in self.bridged_nodes:
             results += bridged_node.results
         return results
     shared_results = property(fget=shared_results)
@@ -239,6 +250,26 @@ class TestNode(Runnable):
                     break
         return workers
     shared_result_worker_ids = property(fget=shared_result_worker_ids)
+
+    def bridged_nodes(self) -> list["TestNode"]:
+        """Read-only list of bridged nodes."""
+        return tuple(self._bridged_nodes)
+    bridged_nodes = property(fget=bridged_nodes)
+
+    def cloned_nodes(self) -> list["TestNode"]:
+        """Read-only list of cloned nodes."""
+        return tuple(self._cloned_nodes)
+    cloned_nodes = property(fget=cloned_nodes)
+
+    def setup_nodes(self) -> dict["TestNode", TestObject]:
+        """Read-only dict of setup nodes."""
+        return TestNode.ReadOnlyDict(self._setup_nodes)
+    setup_nodes = property(fget=setup_nodes)
+
+    def cleanup_nodes(self) -> dict["TestNode", TestObject]:
+        """Read-only dict of cleanup nodes."""
+        return TestNode.ReadOnlyDict(self._cleanup_nodes)
+    cleanup_nodes = property(fget=cleanup_nodes)
 
     def setless_form(self):
         """Test set invariant form of the test node name."""
@@ -300,14 +331,15 @@ class TestNode(Runnable):
         self.started_worker = None
 
         self._bridged_nodes = []
+        self._cloned_nodes = []
         self.incompatible_workers = set()
 
         self.objects = []
         self.results = []
 
         # lists of parent and children test nodes
-        self.setup_nodes = []
-        self.cleanup_nodes = []
+        self._setup_nodes = {}
+        self._cleanup_nodes = {}
         self._picked_by_setup_nodes = EdgeRegister()
         self._picked_by_cleanup_nodes = EdgeRegister()
         self._dropped_setup_nodes = EdgeRegister()
@@ -378,7 +410,7 @@ class TestNode(Runnable):
             return True
         elif not self.is_flat():
             raise RuntimeError(f"Only flat nodes can be unrolled, {self} is not flat")
-        elif worker in self.incompatible_workers:
+        elif worker.net.long_suffix in self.incompatible_workers:
             return True
         for node in self.cleanup_nodes:
             if self.setless_form in node.id and worker.id in node.id:
@@ -482,55 +514,59 @@ class TestNode(Runnable):
             # is finished globally by at least N workers (down to at least one worker)
             return len(self.shared_finished_workers) >= threshold
 
-    def is_terminal_node_for(self):
+    def get_terminal_object(self, key: str = "object_root") -> "TestObject|None":
         """
         Determine any object that this node is a root of.
 
-        :returns: object that this node is a root of if any
-        :rtype: :py:class:`TestObject` or None
+        :param key: parameter key to use to determine the object root
+        :returns: object that this node is a root of if any or None otherwise
         """
-        object_root = self.params.get("object_root")
+        object_root = self.params.get(key)
         if not object_root:
-            return object_root
+            return None
         for test_object in self.objects:
             if test_object.id == object_root:
                 return test_object
+        return None
 
-    def produces_setup(self):
+    def get_stateful_objects(self, do: str = "set") -> list[TestObject]:
         """
         Check if the test node produces any reusable setup state.
 
-        :returns: whether there are setup states to reuse from the test
-        :rtype: bool
+        :param do: state reuse or creation, one of "get" or "set"
+        :returns: any test objects that this node produces setup for
         """
+        setup_objects = []
         for test_object in self.objects:
             object_params = test_object.object_typed_params(self.params)
-            object_state = object_params.get("set_state")
+            object_state = object_params.get(f"{do}_state")
             if object_state:
-                return True
-        return False
+                setup_objects += [test_object]
+        return setup_objects
 
-    def has_dependency(self, state, test_object):
+    def get_dependency(self, restriction: str, test_object: TestObject) -> "TestNode":
         """
         Check if the test node has a dependency parsed and available.
 
-        :param str state: name of the dependency (state or parent test set)
+        :param restriction: name of the dependency (state or parent test set)
         :param test_object: object used for the dependency
-        :type test_object: :py:class:`TestObject`
         :returns: whether the dependency was already found among the setup nodes
-        :rtype: bool
+
+        ..todo:: Type annotation does not support "|" with string type hint.
         """
+        # TODO: use new attribute
         for test_node in self.setup_nodes:
-            # TODO: direct object compairson will not work for dynamically
+            # TODO: direct object comparison will not work for dynamically
             # (within node) created objects like secondary images
             node_object_suffices = [t.long_suffix for t in test_node.objects]
             if test_object in test_node.objects or test_object.long_suffix in node_object_suffices:
-                if re.search("(\.|^)" + state + "(\.|$)", test_node.params.get("name")):
-                    return True
+                # search is done here to not match repeating restriction for a different object
+                if re.search("(\.|^)" + restriction + "(\.|$)", test_node.params.get("name")):
+                    return test_node
                 setup_object_params = test_object.object_typed_params(test_node.params)
-                if state == setup_object_params.get("set_state"):
-                    return True
-        return False
+                if restriction == setup_object_params.get("set_state"):
+                    return test_node
+        return None
 
     def should_rerun(self, worker: TestWorker = None) -> bool:
         """
@@ -548,6 +584,9 @@ class TestNode(Runnable):
             return False
         elif self.is_flat():
             logging.debug(f"Should not rerun a flat node {self}")
+            return False
+        elif len(self.cloned_nodes) > 0:
+            logging.debug(f"Should not rerun a cloned node {self}")
             return False
         elif worker and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not consider rerunning {self}")
@@ -605,8 +644,11 @@ class TestNode(Runnable):
         """
         if not self.is_flat() and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not try to run {self}")
+        elif len(self.cloned_nodes) > 0:
+            logging.debug(f"Should not run a cloned node {self}")
+            return False
 
-        if not self.produces_setup():
+        if not len(self.get_stateful_objects()) > 0:
             # most standard stateless behavior is to run each test node once then rerun if needed
             should_run = len(self.shared_results) == 0 or self.should_rerun(worker)
 
@@ -633,6 +675,9 @@ class TestNode(Runnable):
         """
         if not self.is_flat() and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not try to clean {self}")
+        elif len(self.cloned_nodes) > 0:
+            logging.debug(f"Should not clean a cloned node {self}")
+            return False
 
         # no support for parallelism within reversible nodes since we might hit a race condition
         # whereby a node will be run for missing setup but its parent will be reversed before it
@@ -772,7 +817,17 @@ class TestNode(Runnable):
             raise ValueError(f"Invalid child to drop: {test_node} not a child of {self}")
         self._dropped_cleanup_nodes.register(test_node, worker)
 
-    def bridge_node(self, test_node: "TestNode") -> None:
+    def descend_from_node(self, test_node: "TestNode", test_object: TestObject) -> None:
+        """
+        Turn the current node into a child of a parent node for a given object.
+
+        :param test_node: parent node the current node is a child of
+        :param test_object: test object via which the dependency is determined
+        """
+        self._setup_nodes[test_node] = self._setup_nodes.get(test_node, set()) | {test_object}
+        test_node._cleanup_nodes[self] = test_node._cleanup_nodes.get(self, set()) | {test_object}
+
+    def bridge_with_node(self, test_node: "TestNode") -> None:
         """
         Bridge current node with equivalent node for a different worker.
 
@@ -794,6 +849,15 @@ class TestNode(Runnable):
             self._picked_by_cleanup_nodes = test_node._picked_by_cleanup_nodes
             self._dropped_cleanup_nodes = test_node._dropped_cleanup_nodes
 
+    def clone_as_source(self, test_nodes: list["TestNode"]) -> None:
+        """
+        Convert the node to a clone source for a list of its clones.
+
+        :param test_nodes: clones to register as a clone source to
+        """
+        self.prefix = "0" + self.prefix
+        self._cloned_nodes = test_nodes
+
     def pull_locations(self) -> None:
         """Update all setup locations for the current node."""
         if self.is_flat():
@@ -808,15 +872,17 @@ class TestNode(Runnable):
             for setup_location in setup_locations:
                 wid, _ = setup_location.split(":")
 
-                object_suffix = "_" + node.params.get("dep_suffix", "none")
-                # discard parameters if we are not talking about any specific non-net object
-                object_suffix = "_none" if object_suffix == f"_{wid}" else object_suffix
-                if setup_location in self.params.get(f"get_location{object_suffix}", ""):
-                    continue
-                if self.params.get(f"get_location{object_suffix}"):
-                    self.params[f"get_location{object_suffix}"] += " " + setup_location
-                else:
-                    self.params[f"get_location{object_suffix}"] = setup_location
+                for component in node.cleanup_nodes[self]:
+                    # discard parameters if we are not talking about any specific non-net object
+                    if component.key == "nets":
+                        continue
+                    object_suffix = "_" + component.long_suffix
+                    if setup_location in self.params.get(f"get_location{object_suffix}", ""):
+                        continue
+                    if self.params.get(f"get_location{object_suffix}"):
+                        self.params[f"get_location{object_suffix}"] += " " + setup_location
+                    else:
+                        self.params[f"get_location{object_suffix}"] = setup_location
 
                 # no additional parameters needed for shared (local) locations
                 if not wid:
@@ -1026,6 +1092,14 @@ class TestNode(Runnable):
 
     def validate(self):
         """Validate the test node for sane attribute-parameter correspondence."""
+        logging.info(f"Validating {self}")
+
+        if self in self.setup_nodes or self in self.cleanup_nodes:
+            raise ValueError("Detected reflexive dependency of %s to itself" % self)
+
+        if self.is_flat():
+            return
+
         param_nets = self.params.objects("nets")
         attr_nets = list(o.suffix for o in self.objects if o.key == "nets")
         if len(attr_nets) > 1 or len(param_nets) > 1:
@@ -1045,5 +1119,21 @@ class TestNode(Runnable):
 
         # TODO: images can currently be ad-hoc during run and thus cannot be validated
 
-        if self in self.setup_nodes or self in self.cleanup_nodes:
-            raise ValueError("Detected reflexive dependency of %s to itself" % self)
+        for node in self.setup_nodes:
+            if node.is_flat():
+                continue
+            object_set = self.setup_nodes[node]
+            spurious_objects = object_set - set(self.objects)
+            if len(spurious_objects) > 0:
+                raise ValueError(f"Detected spurious objects {spurious_objects} for dependency {node}")
+            for dependency_object in object_set:
+                object_params = dependency_object.object_typed_params(node.params)
+                object_state = object_params.get("set_state")
+                if not object_state:
+                    raise ValueError(f"Detected stateless dependency via {dependency_object} of {self}")
+                object_params = dependency_object.object_typed_params(self.params)
+                # cloned nodes don't have an explicit get_state parameter for the object
+                if object_params["get_state"] == "0root":
+                    continue
+                if object_state != object_params["get_state"]:
+                    raise ValueError(f"Detected incompatible dependency {object_state} via {dependency_object} of {self}")
