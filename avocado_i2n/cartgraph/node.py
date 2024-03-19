@@ -390,6 +390,8 @@ class TestNode(Runnable):
         self.restrs = {}
 
         self.should_run = self.default_run_decision
+        # TODO: customizable should rerun or rather a merge with should run?
+        # self.should_rerun = self.default_run_decision
         self.should_clean = self.default_clean_decision
 
         self.finished_worker = None
