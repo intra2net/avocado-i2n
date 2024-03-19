@@ -114,13 +114,10 @@ class TestGraph(object):
                     clone.regenerate_params()
 
                     # clone setup with the exception of unique parent copy
-                    for clone_setup in clone_source.setup_nodes:
-                        if clone_setup == parents[0]:
-                            clone.setup_nodes.append(parent)
-                            parent.cleanup_nodes.append(clone)
-                        else:
-                            clone.setup_nodes.append(clone_setup)
-                            clone_setup.cleanup_nodes.append(clone)
+                    for clone_setup, clone_components in clone_source.setup_nodes.items():
+                        descend_source = parent if clone_setup == parents[0] else clone_setup
+                        for clone_component in clone_components:
+                            clone.descend_from_node(descend_source, clone_component)
 
                     child = clone
                     clones.append(child)
@@ -137,7 +134,7 @@ class TestGraph(object):
                 # child has been modified for cloning and needs re-bridging with other such nodes
                 bridges = self.get_nodes_by("name", child.bridged_form)
                 for bridge in bridges:
-                    child.bridge_node(bridge)
+                    child.bridge_with_node(bridge)
                 child.params["get_state" + state_suffixes] = parent_state
                 child_object_params = copy_object.object_typed_params(child.params)
                 child_state = child_object_params.get("set_state", "")
@@ -1190,14 +1187,13 @@ class TestGraph(object):
             get_children, parse_children = self.parse_and_get_composite_nodes("", test_node, test_object, test_node.prefix, params=params)
             # both parsed and reused leaf composite nodes should be traversed as children of the leaf flat node
             for child in get_children + parse_children:
-                child.setup_nodes.append(test_node)
-                test_node.cleanup_nodes.append(child)
+                child.descend_from_node(test_node, test_object)
             children = parse_children
         else:
             # TODO: cannot get nodes by (prefix tree index) name due to current limitations in the bridged form
             old_bridges = self.get_nodes_by("name", test_node.bridged_form)
             for bridge in old_bridges:
-                test_node.bridge_node(bridge)
+                test_node.bridge_with_node(bridge)
             children = [test_node]
 
         parents = []
@@ -1216,8 +1212,7 @@ class TestGraph(object):
                 if len(more_parents) > 0:
                     assert more_parents[0] not in child.setup_nodes, f"{more_parents[0]} not in {child.setup_nodes}"
                     assert child not in more_parents[0].cleanup_nodes, f"{child} not in {more_parents[0].cleanup_nodes}"
-                    child.setup_nodes.append(more_parents[0])
-                    more_parents[0].cleanup_nodes.append(child)
+                    child.descend_from_node(more_parents[0], component)
                 if len(more_parents) > 1:
                     children += self._clone_branch(child, component, more_parents)
 
@@ -1251,12 +1246,14 @@ class TestGraph(object):
         :param params: runtime parameters used for extra customization
         :returns: parsed shared root node of all object trees
         """
-        object_roots = []
+        object_roots = {}
         for test_node in self.nodes:
             if len(test_node.setup_nodes) == 0:
                 if not test_node.is_object_root():
                     logging.warning(f"{test_node} is not an object root but will be treated as such")
-                object_roots.append(test_node)
+                    object_roots[test_node] = TestObject("shared", test_node.recipe)
+                else:
+                    object_roots[test_node] = test_node.get_terminal_object()
 
         setup_dict = {} if params is None else params.copy()
         setup_dict.update({"shared_root" : "yes"})
@@ -1266,9 +1263,8 @@ class TestGraph(object):
         logging.debug(f"Parsed shared root {root_for_all.params['shortname']}")
         self.new_nodes(root_for_all)
 
-        for root_for_object in object_roots:
-            root_for_object.setup_nodes = [root_for_all]
-            root_for_all.cleanup_nodes.append(root_for_object)
+        for root_for_object, root_object in object_roots.items():
+            root_for_object.descend_from_node(root_for_all, root_object)
         root_for_all.should_run = lambda x: False
 
         return root_for_all
@@ -1356,11 +1352,11 @@ class TestGraph(object):
 
             for test_node in leaves:
                 for _, _, current in graph.parse_paths_to_object_roots(test_node, worker.net, params):
+                    current.validate()
 
                     if log.getLogger('graph').level <= log.DEBUG:
                         step += 1
                         graph.visualize(parse_dir, str(step))
-                    current.validate()
 
         if with_shared_root:
             graph.parse_shared_root_from_object_roots(params)
@@ -1552,8 +1548,8 @@ class TestGraph(object):
                             next.incompatible_workers.add(worker)
                     for parent in parents:
                         if parent.is_object_root():
-                            parent.setup_nodes.append(root)
-                            root.cleanup_nodes.append(parent)
+                            parent.descend_from_node(root, parent.get_terminal_object())
+                    current.validate()
 
             if next.is_occupied(worker):
                 # ending with an occupied node would mean we wait for a permill of its duration

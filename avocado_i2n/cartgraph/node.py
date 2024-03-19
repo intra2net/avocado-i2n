@@ -38,7 +38,7 @@ from aexpect import remote_door as door
 from avocado.core.test_id import TestID
 from avocado.core.nrunner.runnable import Runnable
 
-from . import TestSwarm, TestWorker, NetObject
+from . import TestSwarm, TestWorker, TestObject, NetObject
 
 
 door.DUMP_CONTROL_DIR = "/tmp"
@@ -306,8 +306,8 @@ class TestNode(Runnable):
         self.results = []
 
         # lists of parent and children test nodes
-        self.setup_nodes = []
-        self.cleanup_nodes = []
+        self.setup_nodes = {}
+        self.cleanup_nodes = {}
         self._picked_by_setup_nodes = EdgeRegister()
         self._picked_by_cleanup_nodes = EdgeRegister()
         self._dropped_setup_nodes = EdgeRegister()
@@ -482,16 +482,15 @@ class TestNode(Runnable):
             # is finished globally by at least N workers (down to at least one worker)
             return len(self.shared_finished_workers) >= threshold
 
-    def is_terminal_node_for(self):
+    def get_terminal_object(self) -> "TestObject|None":
         """
         Determine any object that this node is a root of.
 
         :returns: object that this node is a root of if any
-        :rtype: :py:class:`TestObject` or None
         """
         object_root = self.params.get("object_root")
         if not object_root:
-            return object_root
+            return None
         for test_object in self.objects:
             if test_object.id == object_root:
                 return test_object
@@ -772,7 +771,17 @@ class TestNode(Runnable):
             raise ValueError(f"Invalid child to drop: {test_node} not a child of {self}")
         self._dropped_cleanup_nodes.register(test_node, worker)
 
-    def bridge_node(self, test_node: "TestNode") -> None:
+    def descend_from_node(self, test_node: "TestNode", test_object: TestObject) -> None:
+        """
+        Turn the current node into a child of a parent node for a given object.
+
+        :param test_node: parent node the current node is a child of
+        :param test_object: test object via which the dependency is determined
+        """
+        self.setup_nodes[test_node] = self.setup_nodes.get(test_node, set()) | {test_object}
+        test_node.cleanup_nodes[self] = test_node.cleanup_nodes.get(self, set()) | {test_object}
+
+    def bridge_with_node(self, test_node: "TestNode") -> None:
         """
         Bridge current node with equivalent node for a different worker.
 
@@ -808,15 +817,17 @@ class TestNode(Runnable):
             for setup_location in setup_locations:
                 wid, _ = setup_location.split(":")
 
-                object_suffix = "_" + node.params.get("dep_suffix", "none")
-                # discard parameters if we are not talking about any specific non-net object
-                object_suffix = "_none" if object_suffix == f"_{wid}" else object_suffix
-                if setup_location in self.params.get(f"get_location{object_suffix}", ""):
-                    continue
-                if self.params.get(f"get_location{object_suffix}"):
-                    self.params[f"get_location{object_suffix}"] += " " + setup_location
-                else:
-                    self.params[f"get_location{object_suffix}"] = setup_location
+                for component in node.cleanup_nodes[self]:
+                    # discard parameters if we are not talking about any specific non-net object
+                    if component.key == "nets":
+                        continue
+                    object_suffix = "_" + component.long_suffix
+                    if setup_location in self.params.get(f"get_location{object_suffix}", ""):
+                        continue
+                    if self.params.get(f"get_location{object_suffix}"):
+                        self.params[f"get_location{object_suffix}"] += " " + setup_location
+                    else:
+                        self.params[f"get_location{object_suffix}"] = setup_location
 
                 # no additional parameters needed for shared (local) locations
                 if not wid:
@@ -1026,6 +1037,14 @@ class TestNode(Runnable):
 
     def validate(self):
         """Validate the test node for sane attribute-parameter correspondence."""
+        logging.info(f"Validating {self}")
+
+        if self in self.setup_nodes or self in self.cleanup_nodes:
+            raise ValueError("Detected reflexive dependency of %s to itself" % self)
+
+        if self.is_flat():
+            return
+
         param_nets = self.params.objects("nets")
         attr_nets = list(o.suffix for o in self.objects if o.key == "nets")
         if len(attr_nets) > 1 or len(param_nets) > 1:
@@ -1045,5 +1064,21 @@ class TestNode(Runnable):
 
         # TODO: images can currently be ad-hoc during run and thus cannot be validated
 
-        if self in self.setup_nodes or self in self.cleanup_nodes:
-            raise ValueError("Detected reflexive dependency of %s to itself" % self)
+        for node in self.setup_nodes:
+            if node.is_flat():
+                continue
+            object_set = self.setup_nodes[node]
+            spurious_objects = object_set - set(self.objects)
+            if len(spurious_objects) > 0:
+                raise ValueError(f"Detected spurious objects {spurious_objects} for dependency {node}")
+            for dependency_object in object_set:
+                object_params = dependency_object.object_typed_params(node.params)
+                object_state = object_params.get("set_state")
+                if not object_state:
+                    raise ValueError(f"Detected stateless dependency via {dependency_object} of {self}")
+                object_params = dependency_object.object_typed_params(self.params)
+                # cloned nodes don't have an explicit get_state parameter for the object
+                if object_params["get_state"] == "0root":
+                    continue
+                if object_state != object_params["get_state"]:
+                    raise ValueError(f"Detected incompatible dependency {object_state} via {dependency_object} of {self}")

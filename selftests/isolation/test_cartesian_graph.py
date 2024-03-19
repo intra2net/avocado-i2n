@@ -870,7 +870,7 @@ class CartesianNodeTest(Test):
         composite_nodes = graph.parse_composite_nodes("normal..tutorial1", flat_object)
         self.assertEqual(len(composite_nodes), 2)
         for node in composite_nodes:
-            flat_node.cleanup_nodes.append(node)
+            node.descend_from_node(flat_node, flat_object)
         self.assertTrue(flat_node.is_unrolled(TestWorker(flat_object)))
         more_flat_objects = TestGraph.parse_flat_objects("net2", "nets")
         self.assertEqual(len(more_flat_objects), 1)
@@ -905,8 +905,8 @@ class CartesianNodeTest(Test):
         node = TestGraph.parse_node_from_object(full_net, "normal..tutorial1")
         node1 = TestGraph.parse_node_from_object(full_net, "normal..tutorial1", prefix="1")
         node2 = TestGraph.parse_node_from_object(full_net, "normal..tutorial2", prefix="2")
-        node.setup_nodes = [node1, node2]
-        node.cleanup_nodes = [node1, node2]
+        node.setup_nodes = {node1: {0}, node2: {0}}
+        node.cleanup_nodes = {node1: {0}, node2: {0}}
 
         # not ready by default
         self.assertFalse(node.is_setup_ready(worker))
@@ -934,8 +934,8 @@ class CartesianNodeTest(Test):
 
         # a flat setup/cleanup node can affect the second worker
         node3 = TestGraph.parse_flat_nodes("normal..tutorial2")[0]
-        node.setup_nodes += [node3]
-        node.cleanup_nodes += [node3]
+        node.setup_nodes[node3] = {0}
+        node.cleanup_nodes[node3] = {0}
         self.assertFalse(node.is_setup_ready(worker))
         self.assertFalse(node.is_cleanup_ready(worker))
         self.assertFalse(node.is_setup_ready(worker2))
@@ -961,7 +961,7 @@ class CartesianNodeTest(Test):
         for worker in test_workers:
             new_node = TestGraph().parse_composite_nodes("normal..tutorial1", worker.net, prefix="1")[0]
             for bridge in full_nodes:
-                new_node.bridge_node(bridge)
+                new_node.bridge_with_node(bridge)
             full_nodes += [new_node]
 
         # most eager threshold is satisfied with at least one worker
@@ -1017,7 +1017,7 @@ class CartesianNodeTest(Test):
             new_node = TestGraph().parse_composite_nodes("normal..tutorial1", worker.net,
                                                          prefix="1", params={"pool_scope": "own swarm shared"})[0]
             for bridge in full_nodes:
-                new_node.bridge_node(bridge)
+                new_node.bridge_with_node(bridge)
             full_nodes += [new_node]
 
         # most eager threshold is satisfied with at least one worker per swarm
@@ -1099,16 +1099,14 @@ class CartesianNodeTest(Test):
         for worker in test_workers:
             new_node = TestGraph().parse_composite_nodes("normal..tutorial1", worker.net, prefix="1")[0]
             for bridge in full_nodes:
-                new_node.bridge_node(bridge)
+                new_node.bridge_with_node(bridge)
             full_nodes += [new_node]
 
         flat_nodes = TestGraph.parse_flat_nodes("leaves..tutorial1")
         self.assertEqual(len(flat_nodes), 1)
         flat_node = flat_nodes[0]
-        for node in full_nodes:
-            node.setup_nodes += [flat_node]
-            flat_node.cleanup_nodes += [node]
-
+        for node, worker in zip(full_nodes, test_workers):
+            node.descend_from_node(flat_node, worker.net)
         flat_node.incompatible_workers |= {*incompatible_workers}
 
         # normal operation when not fully finished
@@ -1244,7 +1242,7 @@ class CartesianNodeTest(Test):
         nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net2)
         self.assertEqual(len(nodes), 1)
         test_node2 = nodes[0]
-        test_node1.bridge_node(test_node2)
+        test_node1.bridge_with_node(test_node2)
 
         self.assertEqual(test_node1.finished_worker, None)
         self.assertEqual(test_node1.finished_worker, test_node2.finished_worker)
@@ -1298,12 +1296,10 @@ class CartesianNodeTest(Test):
         nodes = graph.parse_composite_nodes("leaves..explicit_noop", flat_net2)
         self.assertEqual(len(nodes), 1)
         test_node2 = nodes[0]
-        test_node1.bridge_node(test_node2)
+        test_node1.bridge_with_node(test_node2)
 
-        test_node1.setup_nodes += [flat_node]
-        flat_node.cleanup_nodes += [test_node1]
-        test_node2.setup_nodes += [flat_node]
-        flat_node.cleanup_nodes += [test_node2]
+        test_node1.descend_from_node(flat_node, flat_net1)
+        test_node2.descend_from_node(flat_node, flat_net2)
 
         self.assertEqual(flat_node.shared_incompatible_workers, set())
         self.assertEqual(test_node1.shared_incompatible_workers, set())
@@ -1337,7 +1333,7 @@ class CartesianNodeTest(Test):
         nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net2)
         self.assertEqual(len(nodes), 1)
         test_node2 = nodes[0]
-        test_node1.bridge_node(test_node2)
+        test_node1.bridge_with_node(test_node2)
 
         self.assertEqual(test_node1.results, [])
         self.assertEqual(test_node1.results, test_node2.results)
@@ -1441,7 +1437,7 @@ class CartesianNodeTest(Test):
         nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net)
         self.assertEqual(len(nodes), 1)
         test_node = nodes[0]
-        test_node.setup_nodes.append(test_node)
+        test_node.setup_nodes[test_node] = {0}
         with self.assertRaisesRegex(ValueError, r"^Detected reflexive dependency of"):
             test_node.validate()
 
@@ -1649,7 +1645,7 @@ class CartesianNodeTest(Test):
         node1.setup_nodes = node2.setup_nodes = node3.setup_nodes = [node]
         node1.cleanup_nodes = node2.cleanup_nodes = node3.cleanup_nodes = [node]
         worker = TestWorker(flat_net)
-        node1.bridge_node(node2)
+        node1.bridge_with_node(node2)
 
         # lesser node1 by prefix to begin with
         picked_child = node.pick_child(worker)
@@ -1726,8 +1722,8 @@ class CartesianNodeTest(Test):
         # not picking or dropping any parent results in empty but equal registers
         node1.setup_nodes = [node13]
         node2.setup_nodes = [node23]
-        node1.bridge_node(node2)
-        node13.bridge_node(node23)
+        node1.bridge_with_node(node2)
+        node13.bridge_with_node(node23)
         self.assertEqual(node23._picked_by_cleanup_nodes, node13._picked_by_cleanup_nodes)
         self.assertEqual(node2._dropped_setup_nodes, node1._dropped_setup_nodes)
 
@@ -1751,8 +1747,6 @@ class CartesianNodeTest(Test):
 
         node = TestGraph.parse_node_from_object(full_net, "normal..tutorial1", params=self.config["param_dict"])
         parent_node = TestGraph.parse_node_from_object(full_net, "normal..tutorial1", params=self.config["param_dict"])
-        # parent nodes was parsed as dependency of node via its vm1 object
-        parent_node.params["dep_suffix"] = "vm1"
         worker = TestWorker(flat_net)
         swarm = TestSwarm("localhost", [worker])
         TestSwarm.run_swarms = {swarm.id: swarm}
@@ -1761,7 +1755,8 @@ class CartesianNodeTest(Test):
         # could also be result from a previous job, not determined here
         parent_node.results = [{"name": "tutorial1.net1",
                                 "status": "PASS", "time": 3}]
-        node.setup_nodes = [parent_node]
+        # parent nodes was parsed as dependency of node via its vm1 object
+        node.descend_from_node(parent_node, mock.MagicMock(long_suffix="vm1"))
 
         node.pull_locations()
         get_locations = node.params.objects("get_location_vm1")
@@ -1798,9 +1793,6 @@ class CartesianNodeTest(Test):
         node2 = TestGraph.parse_node_from_object(full_net2, "normal..tutorial1", params=self.config["param_dict"])
         parent_node1 = TestGraph.parse_node_from_object(full_net1, "normal..tutorial1", params=self.config["param_dict"])
         parent_node2 = TestGraph.parse_node_from_object(full_net2, "normal..tutorial1", params=self.config["param_dict"])
-        # parent nodes were parsed as dependency of node via its vm1 object
-        parent_node1.params["dep_suffix"] = "vm1"
-        parent_node2.params["dep_suffix"] = "vm1"
         worker1 = TestWorker(flat_net1)
         worker2 = TestWorker(flat_net2)
         swarm = TestSwarm("localhost", [worker1, worker2])
@@ -1811,10 +1803,11 @@ class CartesianNodeTest(Test):
         # could also be result from a previous job, not determined here
         parent_node1.results = [{"name": "tutorial1.net1",
                                  "status": "PASS", "time": 3}]
-        node1.setup_nodes = [parent_node1]
-        node2.setup_nodes = [parent_node2]
-        node1.bridge_node(node2)
-        parent_node1.bridge_node(parent_node2)
+        # parent nodes was parsed as dependency of node via its vm1 object
+        node1.descend_from_node(parent_node1, mock.MagicMock(long_suffix="vm1"))
+        node2.descend_from_node(parent_node2, mock.MagicMock(long_suffix="vm1"))
+        node1.bridge_with_node(node2)
+        parent_node1.bridge_with_node(parent_node2)
 
         node1.pull_locations()
         get_locations = node1.params.objects("get_location_vm1")
@@ -2453,8 +2446,8 @@ class CartesianGraphTest(Test):
         graph.new_nodes(grandchildren)
         self.assertEqual(len(grandchildren), 2)
         for i in (0, 1):
-            grandchildren[i].setup_nodes = [composite_nodes[i]]
-            composite_nodes[i].cleanup_nodes = [grandchildren[i]]
+            grandchildren[i].setup_nodes = {composite_nodes[i]: {0}}
+            composite_nodes[i].cleanup_nodes = {grandchildren[i]: {0}}
         graph.parse_branches_for_node_and_object(composite_nodes[0], flat_object1)
         graph.parse_branches_for_node_and_object(composite_nodes[1], flat_object1)
         self.assertEqual(composite_nodes[0]._bridged_nodes, [composite_nodes[1]])
@@ -2581,7 +2574,7 @@ class CartesianGraphTest(Test):
             raise AssertionError("No shared root nodes found in graph")
         for node in graph.nodes:
             if node.is_object_root():
-                self.assertEqual(node.setup_nodes, [shared_root_node])
+                self.assertEqual(list(node.setup_nodes.keys()), [shared_root_node])
 
     def test_graph_sanity(self):
         """Test generic usage of the complete test graph."""
