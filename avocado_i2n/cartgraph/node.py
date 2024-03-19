@@ -482,54 +482,59 @@ class TestNode(Runnable):
             # is finished globally by at least N workers (down to at least one worker)
             return len(self.shared_finished_workers) >= threshold
 
-    def get_terminal_object(self) -> "TestObject|None":
+    def get_terminal_object(self, key: str = "object_root") -> "TestObject|None":
         """
         Determine any object that this node is a root of.
 
-        :returns: object that this node is a root of if any
+        :param key: parameter key to use to determine the object root
+        :returns: object that this node is a root of if any or None otherwise
         """
-        object_root = self.params.get("object_root")
+        object_root = self.params.get(key)
         if not object_root:
             return None
         for test_object in self.objects:
             if test_object.id == object_root:
                 return test_object
+        return None
 
-    def produces_setup(self):
+    def get_stateful_objects(self, do: str = "set") -> list[TestObject]:
         """
         Check if the test node produces any reusable setup state.
 
-        :returns: whether there are setup states to reuse from the test
-        :rtype: bool
+        :param do: state reuse or creation, one of "get" or "set"
+        :returns: any test objects that this node produces setup for
         """
+        setup_objects = []
         for test_object in self.objects:
             object_params = test_object.object_typed_params(self.params)
-            object_state = object_params.get("set_state")
+            object_state = object_params.get(f"{do}_state")
             if object_state:
-                return True
-        return False
+                setup_objects += [test_object]
+        return setup_objects
 
-    def has_dependency(self, state, test_object):
+    def get_dependency(self, restriction: str, test_object: TestObject) -> "TestNode":
         """
         Check if the test node has a dependency parsed and available.
 
-        :param str state: name of the dependency (state or parent test set)
+        :param restriction: name of the dependency (state or parent test set)
         :param test_object: object used for the dependency
-        :type test_object: :py:class:`TestObject`
         :returns: whether the dependency was already found among the setup nodes
-        :rtype: bool
+
+        ..todo:: Type annotation does not support "|" with string type hint.
         """
+        # TODO: use new attribute
         for test_node in self.setup_nodes:
-            # TODO: direct object compairson will not work for dynamically
+            # TODO: direct object comparison will not work for dynamically
             # (within node) created objects like secondary images
             node_object_suffices = [t.long_suffix for t in test_node.objects]
             if test_object in test_node.objects or test_object.long_suffix in node_object_suffices:
-                if re.search("(\.|^)" + state + "(\.|$)", test_node.params.get("name")):
-                    return True
+                # search is done here to not match repeating restriction for a different object
+                if re.search("(\.|^)" + restriction + "(\.|$)", test_node.params.get("name")):
+                    return test_node
                 setup_object_params = test_object.object_typed_params(test_node.params)
-                if state == setup_object_params.get("set_state"):
-                    return True
-        return False
+                if restriction == setup_object_params.get("set_state"):
+                    return test_node
+        return None
 
     def should_rerun(self, worker: TestWorker = None) -> bool:
         """
@@ -605,7 +610,7 @@ class TestNode(Runnable):
         if not self.is_flat() and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not try to run {self}")
 
-        if not self.produces_setup():
+        if not len(self.get_stateful_objects()) > 0:
             # most standard stateless behavior is to run each test node once then rerun if needed
             should_run = len(self.shared_results) == 0 or self.should_rerun(worker)
 

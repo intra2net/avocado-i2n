@@ -2594,7 +2594,7 @@ class CartesianGraphTest(Test):
         )
         self.assertEqual({o.suffix for o in graph.objects if o.suffix not in ["net2", "net3", "net4", "net5"]},
                          {o.suffix for o in objects})
-        self.assertEqual({n.prefix for n in graph.nodes if not n.produces_setup()},
+        self.assertEqual({n.prefix for n in graph.nodes if len(n.get_stateful_objects()) == 0},
                          {n.prefix for n in nodes})
 
         repr = str(graph)

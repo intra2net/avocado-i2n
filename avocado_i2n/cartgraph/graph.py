@@ -1129,7 +1129,7 @@ class TestGraph(object):
             return [], []
         # TODO: partially loaded nodes are supposed to be already handled
         # handle partially loaded nodes with already satisfied dependency
-        if len(test_node.setup_nodes) > 0 and test_node.has_dependency(object_dependency, test_object):
+        if len(test_node.setup_nodes) > 0 and test_node.get_dependency(object_dependency, test_object):
             logging.debug("Dependency already parsed through duplication or partial dependency resolution")
             return [], []
 
@@ -1491,7 +1491,7 @@ class TestGraph(object):
             elif params.get("dry_run", "no") == "yes":
                 logging.info(f"Worker {worker.id} not cleaning via dry test run {test_node}")
 
-            elif test_node.produces_setup():
+            elif len(test_node.get_stateful_objects()) > 0:
                 test_node.sync_states(params)
 
         else:
