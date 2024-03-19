@@ -2232,6 +2232,18 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(get_nodes), 2)
         self.assertEqual(len(parse_nodes), 0)
 
+        # clones are reusable from retrieving the original clone sources
+        graph.new_nodes(full_node)
+        clones = graph._clone_branch(full_node, full_image, get_nodes)
+        graph.new_nodes(clones)
+        final_nodes = graph.parse_composite_nodes("leaves..tutorial_finale", full_node.objects[0])
+        self.assertEqual(len(final_nodes), 1)
+        final_node = final_nodes[0]
+        get_nodes, parse_nodes = graph.parse_and_get_nodes_for_node_and_object(final_node, full_image)
+        self.assertEqual(len(get_nodes), 2)
+        self.assertEqual(len(parse_nodes), 0)
+        self.assertEqual(get_nodes, clones)
+
     def test_parse_branches_for_node_and_object(self):
         """Test default parsing and retrieval of branches for a pair of test node and object."""
         graph = TestGraph()
@@ -2344,9 +2356,9 @@ class CartesianGraphTest(Test):
         full_images = [o for o in graph.objects if o.key == "images"]
         self.assertEqual(len(full_images), 6)
 
-        self.assertEqual(len(children), 2)
+        self.assertEqual(len(children), 3)
         # extra duplicated clone
-        self.assertEqual([n.prefix for n in children], ["1", "1d1"])
+        self.assertEqual([n.prefix for n in children], ["01", "1", "1d1"])
         for i in range(len(children)):
             self.assertIn(children[i].objects[0], full_nets)
             self.assertTrue(set(children[i].objects[0].components) <= set(full_vms))
@@ -2391,12 +2403,13 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(full_images), 6)
 
         # the two Fedora children are excluded
-        self.assertEqual(len(children), 2**(4-1))
-        self.assertEqual(len([c for c in children if "implicit_both" in c.id]), 2**(4-1))
-        self.assertEqual(len([c for c in children if "implicit_both" in c.id and "guisetup.noop" in c.id]), 2**(4-1-1))
-        self.assertEqual(len([c for c in children if "implicit_both" in c.id and "guisetup.clicked" in c.id]), 2**(4-1-1))
+        self.assertEqual(len(children), 3*2**(3-1))
+        self.assertEqual(len([c for c in children if "implicit_both" in c.id]), 3*2**(3-1))
+        self.assertEqual(len([c for c in children if "implicit_both" in c.id and "guisetup.noop" in c.id]), 2**(3-1))
+        self.assertEqual(len([c for c in children if "implicit_both" in c.id and "guisetup.clicked" in c.id]), 2**(3-1))
         # four byproducts followed by four duplications
-        self.assertEqual([n.prefix for n in children], ["1", "1b1", "1b2", "1b3", "1d1", "1b1d1", "1b2d1", "1b3d1"])
+        self.assertEqual([n.prefix for n in children], ["01", "01b1", "01b2", "01b3",
+                                                        "1", "1d1", "1b1", "1b1d1", "1b2", "1b2d1", "1b3", "1b3d1"])
         for i in range(len(children)):
             self.assertIn(children[i].objects[0], full_nets)
             self.assertTrue(set(children[i].objects[0].components) <= set(full_vms))
@@ -2423,10 +2436,10 @@ class CartesianGraphTest(Test):
 
         parents1, children1 = graph.parse_branches_for_node_and_object(flat_node, flat_object1)
         self.assertEqual(len([p for p in parents1 if "tutorial_gui" in p.id]), 2)
-        self.assertEqual(len(children1), 2)
+        self.assertEqual(len(children1), 3)
         parents2, children2 = graph.parse_branches_for_node_and_object(flat_node, flat_object2)
         self.assertEqual(len([p for p in parents2 if "tutorial_gui" in p.id]), 2)
-        self.assertEqual(len(children2), 2)
+        self.assertEqual(len(children2), 3)
         for child1, child2 in zip(children1, children2):
             graph.parse_branches_for_node_and_object(child1, flat_object1)
             self.assertEqual(len(child1._bridged_nodes), 1)
@@ -2452,8 +2465,21 @@ class CartesianGraphTest(Test):
         graph.parse_branches_for_node_and_object(composite_nodes[1], flat_object1)
         self.assertEqual(composite_nodes[0]._bridged_nodes, [composite_nodes[1]])
         self.assertEqual(composite_nodes[1]._bridged_nodes, [composite_nodes[0]])
-        self.assertEqual(grandchildren[0]._bridged_nodes, [grandchildren[1]])
-        self.assertEqual(grandchildren[1]._bridged_nodes, [grandchildren[0]])
+        cloned_grandchildren = graph.get_nodes_by(param_val="tutorial_finale.getsetup")
+        self.assertEqual(len(cloned_grandchildren), 4)
+        self.assertEqual(grandchildren[0]._cloned_nodes, [cloned_grandchildren[0], cloned_grandchildren[1]])
+        self.assertEqual(grandchildren[1]._cloned_nodes, [cloned_grandchildren[2], cloned_grandchildren[3]])
+        self.assertEqual(cloned_grandchildren[0]._bridged_nodes, [cloned_grandchildren[2]])
+        self.assertEqual(cloned_grandchildren[1]._bridged_nodes, [cloned_grandchildren[3]])
+        # make sure grandchildren descend from children properly
+        for grandchild in cloned_grandchildren:
+            self.assertEqual(len(grandchild.setup_nodes), 1)
+            child = list(grandchild.setup_nodes.keys())[0]
+            variant = "noop" if "noop" in child.id else "clicked"
+            self.assertRegex(child.params["name"], f".implicit_both.+{variant}")
+            self.assertEqual(grandchild.setup_nodes[child], {0})
+        # grandchildren must be cached too
+        self.assertEqual(len(set(cloned_grandchildren) - set(graph.nodes)), 0)
 
     def test_parse_paths_to_object_roots(self):
         """Test correct expectation of parsing graph dependency paths from a leaf to all their object roots."""
@@ -2496,7 +2522,7 @@ class CartesianGraphTest(Test):
 
         generator = graph.parse_paths_to_object_roots(flat_node, flat_object)
         flat_parents, flat_children, _ = next(generator)
-        self.assertEqual(len(flat_children), 2)
+        self.assertEqual(len(flat_children), 3)
         self.assertEqual(len([p for p in flat_parents if "tutorial_gui" in p.id]), 2)
         leaf_parents1, leaf_children1, leaf_node1 = next(generator)
         self.assertIn(leaf_node1, flat_children)
@@ -2506,6 +2532,10 @@ class CartesianGraphTest(Test):
         self.assertIn(leaf_node2, flat_children)
         self.assertEqual(len(leaf_children2), 0)
         self.assertEqual(len(leaf_parents2), 0)
+        leaf_parents3, leaf_children3, leaf_node3 = next(generator)
+        self.assertIn(leaf_node3, flat_children)
+        self.assertEqual(len(leaf_children3), 0)
+        self.assertEqual(len(leaf_parents3), 0)
 
         next_parents1, next_children1, parent_node1 = next(generator)
         self.assertIn(parent_node1, flat_parents)

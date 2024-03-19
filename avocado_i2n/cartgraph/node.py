@@ -300,6 +300,7 @@ class TestNode(Runnable):
         self.started_worker = None
 
         self._bridged_nodes = []
+        self._cloned_nodes = []
         self.incompatible_workers = set()
 
         self.objects = []
@@ -553,6 +554,9 @@ class TestNode(Runnable):
         elif self.is_flat():
             logging.debug(f"Should not rerun a flat node {self}")
             return False
+        elif len(self._cloned_nodes) > 0:
+            logging.debug(f"Should not rerun a cloned node {self}")
+            return False
         elif worker and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not consider rerunning {self}")
 
@@ -609,6 +613,9 @@ class TestNode(Runnable):
         """
         if not self.is_flat() and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not try to run {self}")
+        elif len(self._cloned_nodes) > 0:
+            logging.debug(f"Should not run a cloned node {self}")
+            return False
 
         if not len(self.get_stateful_objects()) > 0:
             # most standard stateless behavior is to run each test node once then rerun if needed
@@ -637,6 +644,9 @@ class TestNode(Runnable):
         """
         if not self.is_flat() and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not try to clean {self}")
+        elif len(self._cloned_nodes) > 0:
+            logging.debug(f"Should not clean a cloned node {self}")
+            return False
 
         # no support for parallelism within reversible nodes since we might hit a race condition
         # whereby a node will be run for missing setup but its parent will be reversed before it
