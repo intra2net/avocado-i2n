@@ -84,6 +84,9 @@ def develop(config, tag=""):
         graph.new_nodes(nodes[0])
 
     graph.parse_shared_root_from_object_roots(config["param_dict"])
-    graph.flag_children(flag_type="run", flag=lambda self, slot: True)
+    graph.flag_children(
+        flag_type="run",
+        flag=lambda self, slot: not self.is_shared_root() and slot not in self.shared_finished_workers,
+    )
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Development complete")

@@ -656,11 +656,17 @@ class TestNode(Runnable):
         :param worker: worker which makes the run decision
         :returns: whether the worker should run the test node
         """
-        if not self.is_flat() and worker.id not in self.params["name"]:
-            raise RuntimeError(f"Worker {worker.id} should not try to run {self}")
+        if self.params.get("dry_run", "no") == "yes":
+            logging.info(f"Should not run via dry test run {self}")
+            return False
+        elif self.is_flat():
+            logging.debug(f"Should not run a flat node {self}")
+            return False
         elif len(self.cloned_nodes) > 0:
             logging.debug(f"Should not run a cloned node {self}")
             return False
+        elif worker.id not in self.params["name"]:
+            raise RuntimeError(f"Worker {worker.id} should not try to run {self}")
 
         if not len(self.get_stateful_objects()) > 0:
             # most standard stateless behavior is to run each test node once then rerun if needed
@@ -687,11 +693,17 @@ class TestNode(Runnable):
         :param worker: worker which makes the clean decision
         :returns: whether the worker should clean the test node
         """
-        if not self.is_flat() and worker.id not in self.params["name"]:
-            raise RuntimeError(f"Worker {worker.id} should not try to clean {self}")
+        if self.params.get("dry_run", "no") == "yes":
+            logging.info(f"Should not clean via dry test run {self}")
+            return False
+        elif self.is_flat():
+            logging.debug(f"Should not clean a flat node {self}")
+            return False
         elif len(self.cloned_nodes) > 0:
             logging.debug(f"Should not clean a cloned node {self}")
             return False
+        elif worker.id not in self.params["name"]:
+            raise RuntimeError(f"Worker {worker.id} should not try to clean {self}")
 
         # no support for parallelism within reversible nodes since we might hit a race condition
         # whereby a node will be run for missing setup but its parent will be reversed before it

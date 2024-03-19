@@ -3675,7 +3675,20 @@ class CartesianGraphTest(Test):
         self.config["param_dict"]["images_vm2"] = custom_object_param2
         graph = self._load_for_parsing("leaves..explicit_clicked", {"nets": "net1"})
 
+        # wrap within a mock to introduce delays
+        graph.traverse_node = mock.MagicMock()
+        graph.reverse_node = mock.MagicMock()
+        async def traverse_wrapper(*args, **kwards):
+            test_node, worker = args[0], args[1]
+            test_node.finished_worker = worker
+            test_node.results = [{"status": "PASS", "time": 3}]
+        async def reverse_wrapper(*args, **kwards):
+            pass
+        graph.traverse_node.side_effect = traverse_wrapper
+        graph.reverse_node.side_effect = reverse_wrapper
+
         async def interrupted_wrapper(*args, **kwards):
+            args[0].finished_worker = args[1]
             await asyncio.sleep(0.01)
         graph.traverse_node = mock.MagicMock()
         graph.traverse_node.side_effect = interrupted_wrapper

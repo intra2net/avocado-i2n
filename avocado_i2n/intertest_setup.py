@@ -307,7 +307,7 @@ def update(config, tag=""):
                 )
             clean_graph.flag_intersection(
                 run_graph, flag_type="run",
-                flag=lambda self, slot: not self.is_finished(slot),
+                flag=lambda self, slot: not self.is_finished(slot) or self.should_rerun(slot),
                 skip_shared_root=True
             )
 
@@ -327,7 +327,7 @@ def update(config, tag=""):
                     try:
                         clean_graph.flag_children(
                             from_state, vm_name, vm_object.component_form + r".*" + worker.id,
-                            flag_type="run", flag=lambda self, slot: not self.is_finished(slot),
+                            flag_type="run", flag=lambda self, slot: not self.is_finished(slot) or self.should_rerun(slot),
                             skip_children=True,
                         )
                     except AssertionError as error:
@@ -751,7 +751,10 @@ def _parse_one_node_for_all_objects_per_worker(config, tag, verb):
         graph.new_nodes(nodes[0])
 
     graph.parse_shared_root_from_object_roots(config["param_dict"])
-    graph.flag_children(flag_type="run", flag=lambda self, slot: True)
+    graph.flag_children(
+        flag_type="run",
+        flag=lambda self, slot: not self.is_shared_root() and slot not in self.shared_finished_workers,
+    )
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("%s complete", verb[3])
 
@@ -800,7 +803,10 @@ def _parse_and_iterate_for_objects_and_workers(config, tag, param_dict, operatio
 
     graph.parse_shared_root_from_object_roots(config["param_dict"])
     # as each worker's traversal will be restricted only to its nodes the run policy is also simpler
-    graph.flag_children(flag_type="run", flag=lambda self, slot: True)
+    graph.flag_children(
+        flag_type="run",
+        flag=lambda self, slot: not self.is_shared_root() and slot not in self.shared_finished_workers,
+    )
     r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Finished %s", operation)
 

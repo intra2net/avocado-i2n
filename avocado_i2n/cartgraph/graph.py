@@ -1511,11 +1511,7 @@ class TestGraph(object):
 
         if test_node.should_run(worker):
 
-            if test_node.is_flat():
-                logging.debug(f"Worker {worker.id} skipping a flat node {test_node}")
-            elif params.get("dry_run", "no") == "yes":
-                logging.info(f"Worker {worker.id} skipping via dry test run {test_node}")
-            elif test_node.is_object_root():
+            if test_node.is_object_root():
                 status = await self.traverse_terminal_node(test_node.params["object_root"], worker, params)
                 if not status:
                     logging.error(f"Worker {worker.id} could not perform installation from {test_node}")
@@ -1535,7 +1531,7 @@ class TestGraph(object):
                     test_object.current_state = object_state
 
         else:
-            logging.debug(f"Worker {worker.id} skipping test {test_node}")
+            logging.debug(f"Worker {worker.id} skipping test {test_node} as it should not run")
 
         # register workers that have traversed (and not necessarily run which uses results) both leaf
         # and internal nodes (and not necessarily setup from above cases which could use picked children)
@@ -1558,12 +1554,7 @@ class TestGraph(object):
         test_node.started_worker = worker
         if test_node.should_clean(worker):
 
-            if test_node.is_flat():
-                logging.debug(f"Worker {worker.id} not cleaning a flat node {test_node}")
-            elif params.get("dry_run", "no") == "yes":
-                logging.info(f"Worker {worker.id} not cleaning via dry test run {test_node}")
-
-            elif len(test_node.get_stateful_objects()) > 0:
+            if len(test_node.get_stateful_objects()) > 0:
                 test_node.sync_states(params)
 
         else:
@@ -1657,7 +1648,7 @@ class TestGraph(object):
 
                 if next.is_setup_ready(worker):
                     await self.traverse_node(next, worker, params)
-                    if not next.should_rerun(worker):
+                    if not next.should_run(worker):
                         previous.drop_parent(next, worker)
                     traverse_path.pop()
                 else:
@@ -1672,7 +1663,7 @@ class TestGraph(object):
                 else:
                     await self.traverse_node(next, worker, params)
                     # cleanup nodes that should be retried postpone traversal down
-                    if next.should_rerun(worker):
+                    if next.should_run(worker):
                         traverse_path.pop()
                         continue
 
