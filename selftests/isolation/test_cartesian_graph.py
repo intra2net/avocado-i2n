@@ -876,9 +876,12 @@ class CartesianNodeTest(Test):
         self.assertEqual(len(more_flat_objects), 1)
         self.assertFalse(flat_node.is_unrolled(TestWorker(more_flat_objects[0])))
 
+        flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
+        self.assertEqual(len(flat_nodes), 1)
+        flat_node = flat_nodes[0]
         more_composite_nodes = graph.parse_composite_nodes("normal..tutorial2", flat_object)
         self.assertGreater(len(more_composite_nodes), 0)
-        flat_node.cleanup_nodes = [more_composite_nodes[0]]
+        more_composite_nodes[0].descend_from_node(flat_node, flat_object)
         self.assertFalse(flat_node.is_unrolled(TestWorker(flat_object)))
 
         with self.assertRaises(RuntimeError):
@@ -905,8 +908,10 @@ class CartesianNodeTest(Test):
         node = TestGraph.parse_node_from_object(full_net, "normal..tutorial1")
         node1 = TestGraph.parse_node_from_object(full_net, "normal..tutorial1", prefix="1")
         node2 = TestGraph.parse_node_from_object(full_net, "normal..tutorial2", prefix="2")
-        node.setup_nodes = {node1: {0}, node2: {0}}
-        node.cleanup_nodes = {node1: {0}, node2: {0}}
+        node.descend_from_node(node1, flat_net)
+        node.descend_from_node(node2, flat_net)
+        node1.descend_from_node(node, flat_net)
+        node2.descend_from_node(node, flat_net)
 
         # not ready by default
         self.assertFalse(node.is_setup_ready(worker))
@@ -934,8 +939,8 @@ class CartesianNodeTest(Test):
 
         # a flat setup/cleanup node can affect the second worker
         node3 = TestGraph.parse_flat_nodes("normal..tutorial2")[0]
-        node.setup_nodes[node3] = {0}
-        node.cleanup_nodes[node3] = {0}
+        node.descend_from_node(node3, flat_net)
+        node3.descend_from_node(node, flat_net)
         self.assertFalse(node.is_setup_ready(worker))
         self.assertFalse(node.is_cleanup_ready(worker))
         self.assertFalse(node.is_setup_ready(worker2))
@@ -1437,7 +1442,7 @@ class CartesianNodeTest(Test):
         nodes = graph.parse_composite_nodes("normal..tutorial1", flat_net)
         self.assertEqual(len(nodes), 1)
         test_node = nodes[0]
-        test_node.setup_nodes[test_node] = {0}
+        test_node.descend_from_node(test_node, flat_net)
         with self.assertRaisesRegex(ValueError, r"^Detected reflexive dependency of"):
             test_node.validate()
 
@@ -1497,7 +1502,7 @@ class CartesianNodeTest(Test):
         # should not run already visited bridged test node
         test_node1.results = []
         test_node2.results += [{"status": "PASS"}]
-        self.assertIn(test_node2, test_node1._bridged_nodes)
+        self.assertIn(test_node2, test_node1.bridged_nodes)
         self.assertEqual(test_node1.shared_results, test_node2.results)
         self.assertFalse(test_node1.default_run_decision(worker1))
         # should run leaf if more reruns are needed
@@ -1600,10 +1605,10 @@ class CartesianNodeTest(Test):
         node = TestGraph.parse_node_from_object(full_net, "normal..tutorial1")
         node1 = TestGraph.parse_node_from_object(full_net, "normal..tutorial1", prefix="1")
         node2 = TestGraph.parse_node_from_object(full_net, "normal..tutorial2", prefix="2")
-        node.setup_nodes = [node1, node2]
-        node.cleanup_nodes = [node1, node2]
-        node1.setup_nodes = node2.setup_nodes = [node]
-        node1.cleanup_nodes = node2.cleanup_nodes = [node]
+        node.descend_from_node(node1, flat_net)
+        node.descend_from_node(node2, flat_net)
+        node1.descend_from_node(node, flat_net)
+        node2.descend_from_node(node, flat_net)
         worker = TestWorker(flat_net)
 
         # prefix based lesser node1 since node1 < node2 at prefix
@@ -1640,10 +1645,12 @@ class CartesianNodeTest(Test):
         node1 = TestGraph.parse_node_from_object(full_net, "normal..tutorial1", prefix="1")
         node2 = TestGraph.parse_node_from_object(full_net, "normal..tutorial1", prefix="2")
         node3 = TestGraph.parse_node_from_object(full_net, "normal..tutorial2", prefix="3")
-        node.setup_nodes = [node1, node2, node3]
-        node.cleanup_nodes = [node1, node2, node3]
-        node1.setup_nodes = node2.setup_nodes = node3.setup_nodes = [node]
-        node1.cleanup_nodes = node2.cleanup_nodes = node3.cleanup_nodes = [node]
+        node.descend_from_node(node1, flat_net)
+        node.descend_from_node(node2, flat_net)
+        node.descend_from_node(node3, flat_net)
+        node1.descend_from_node(node, flat_net)
+        node2.descend_from_node(node, flat_net)
+        node3.descend_from_node(node, flat_net)
         worker = TestWorker(flat_net)
         node1.bridge_with_node(node2)
 
@@ -1672,9 +1679,8 @@ class CartesianNodeTest(Test):
         node = TestGraph.parse_node_from_object(full_net, "normal..tutorial1")
         child_node1 = TestGraph.parse_node_from_object(full_net, "normal..tutorial1", prefix="1")
         child_node2 = TestGraph.parse_node_from_object(full_net, "normal..tutorial2", prefix="2")
-        node.cleanup_nodes = [child_node1, child_node2]
-        child_node1.setup_nodes = [node]
-        child_node2.setup_nodes = [node]
+        child_node1.descend_from_node(node, flat_net)
+        child_node2.descend_from_node(node, flat_net)
         worker = TestWorker(flat_net)
 
         picked_child = node.pick_child(worker)
@@ -1720,8 +1726,8 @@ class CartesianNodeTest(Test):
         node23 = nodes[0]
 
         # not picking or dropping any parent results in empty but equal registers
-        node1.setup_nodes = [node13]
-        node2.setup_nodes = [node23]
+        node1.descend_from_node(node13, flat_net1)
+        node2.descend_from_node(node23, flat_net2)
         node1.bridge_with_node(node2)
         node13.bridge_with_node(node23)
         self.assertEqual(node23._picked_by_cleanup_nodes, node13._picked_by_cleanup_nodes)
@@ -2234,7 +2240,7 @@ class CartesianGraphTest(Test):
 
         # clones are reusable from retrieving the original clone sources
         graph.new_nodes(full_node)
-        clones = graph._clone_branch(full_node, full_image, get_nodes)
+        clones = graph.parse_cloned_branches_for_node_and_object(full_node, full_image, get_nodes)
         graph.new_nodes(clones)
         final_nodes = graph.parse_composite_nodes("leaves..tutorial_finale", full_node.objects[0])
         self.assertEqual(len(final_nodes), 1)
@@ -2243,6 +2249,50 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(get_nodes), 2)
         self.assertEqual(len(parse_nodes), 0)
         self.assertEqual(get_nodes, clones)
+
+    def test_parse_cloned_branches_for_node_and_object(self):
+        """Test default parsing and retrieval of cloned branches for a set of parent test nodes."""
+        graph = TestGraph()
+        flat_objects = TestGraph.parse_flat_objects("net1", "nets", params={"only_vm1": "CentOS", "only_vm2": "Win10", "only_vm3": "Ubuntu"})
+        self.assertEqual(len(flat_objects), 1)
+        flat_object = flat_objects[0]
+        full_parents = graph.parse_composite_nodes("normal..tutorial_gui", flat_object)
+        self.assertEqual(len(full_parents), 2)
+        full_nodes = graph.parse_composite_nodes("leaves..tutorial_get..implicit_both", flat_object)
+        self.assertEqual(len(full_nodes), 1)
+        full_node = full_nodes[0]
+        # the clone source setup has to be fully defined to clone it as setup for the clones
+        full_node.descend_from_node(full_parents[0], flat_object)
+
+        clones = graph.parse_cloned_branches_for_node_and_object(full_node, flat_object, full_parents)
+        self.assertEqual(len(clones), 2)
+        self.assertTrue(full_node.prefix.startswith("0"))
+        self.assertEqual(full_node.cloned_nodes, tuple(clones))
+        for child, parent in zip(clones, full_parents):
+            if child != clones[0]:
+                self.assertIn("d", child.prefix)
+            self.assertNotEqual(full_node.recipe, child.recipe)
+            # the parametrization of clones is still already covered at the next scope
+            self.assertIn(parent, child.setup_nodes)
+            self.assertIn(child, parent.cleanup_nodes)
+            self.assertEqual(child.bridged_nodes, full_node.bridged_nodes)
+
+        # deeper cloning must also restore bridging among grandchildren
+        grandchildren = graph.parse_composite_nodes("leaves..tutorial_finale", flat_object)
+        self.assertEqual(len(grandchildren), 1)
+        grandchild = grandchildren[0]
+        grandchild.descend_from_node(full_node, flat_object)
+        clones = graph.parse_cloned_branches_for_node_and_object(full_node, flat_object, full_parents)
+        self.assertEqual(len(clones), 2)
+        self.assertTrue(grandchild.prefix.startswith("0"))
+        self.assertEqual(len(grandchild.cloned_nodes), 2)
+        for child, parent in zip(grandchild.cloned_nodes, clones):
+            if child != grandchild.cloned_nodes[0]:
+                self.assertIn("d", child.prefix)
+            self.assertNotEqual(grandchild.recipe, child.recipe)
+            self.assertEqual(len(set(child.setup_nodes) - set(clones)), 0)
+            self.assertEqual(len(set(parent.cleanup_nodes) - set(grandchild.cloned_nodes)), 0)
+            self.assertEqual(child.bridged_nodes, grandchild.bridged_nodes)
 
     def test_parse_branches_for_node_and_object(self):
         """Test default parsing and retrieval of branches for a pair of test node and object."""
@@ -2315,17 +2365,17 @@ class CartesianGraphTest(Test):
         _, children = graph.parse_branches_for_node_and_object(full_node1, flat_object1)
         self.assertEqual(len(children), 1)
         self.assertIn(full_node1, children)
-        self.assertEqual(len(full_node1._bridged_nodes), 0)
+        self.assertEqual(len(full_node1.bridged_nodes), 0)
 
         graph.new_nodes(graph.parse_composite_nodes("normal..tutorial1", flat_object2))
         full_node2 = graph.get_node_by(param_val="tutorial1.+net2")
         _, children = graph.parse_branches_for_node_and_object(full_node2, flat_object2)
         self.assertEqual(len(children), 1)
         self.assertIn(full_node2, children)
-        self.assertEqual(len(full_node2._bridged_nodes), 1)
-        self.assertEqual(len(full_node1._bridged_nodes), 1)
-        self.assertIn(full_node1, full_node2._bridged_nodes)
-        self.assertIn(full_node2, full_node1._bridged_nodes)
+        self.assertEqual(len(full_node2.bridged_nodes), 1)
+        self.assertEqual(len(full_node1.bridged_nodes), 1)
+        self.assertIn(full_node1, full_node2.bridged_nodes)
+        self.assertIn(full_node2, full_node1.bridged_nodes)
 
     def test_parse_branches_for_node_and_object_with_cloning(self):
         """Test default parsing and retrieval of branches for a pair of cloned test node and object."""
@@ -2442,10 +2492,10 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(children2), 3)
         for child1, child2 in zip(children1, children2):
             graph.parse_branches_for_node_and_object(child1, flat_object1)
-            self.assertEqual(len(child1._bridged_nodes), 1)
-            self.assertEqual(child1._bridged_nodes[0], child2)
-            self.assertEqual(len(child2._bridged_nodes), 1)
-            self.assertEqual(child2._bridged_nodes[0], child1)
+            self.assertEqual(len(child1.bridged_nodes), 1)
+            self.assertEqual(child1.bridged_nodes[0], child2)
+            self.assertEqual(len(child2.bridged_nodes), 1)
+            self.assertEqual(child2.bridged_nodes[0], child1)
 
         graph = TestGraph()
 
@@ -2459,25 +2509,25 @@ class CartesianGraphTest(Test):
         graph.new_nodes(grandchildren)
         self.assertEqual(len(grandchildren), 2)
         for i in (0, 1):
-            grandchildren[i].setup_nodes = {composite_nodes[i]: {0}}
-            composite_nodes[i].cleanup_nodes = {grandchildren[i]: {0}}
+            grandchildren[i].descend_from_node(composite_nodes[i], flat_object1 if i == 0 else flat_object2)
         graph.parse_branches_for_node_and_object(composite_nodes[0], flat_object1)
         graph.parse_branches_for_node_and_object(composite_nodes[1], flat_object1)
-        self.assertEqual(composite_nodes[0]._bridged_nodes, [composite_nodes[1]])
-        self.assertEqual(composite_nodes[1]._bridged_nodes, [composite_nodes[0]])
+        self.assertEqual(composite_nodes[0].bridged_nodes, (composite_nodes[1], ))
+        self.assertEqual(composite_nodes[1].bridged_nodes, (composite_nodes[0], ))
         cloned_grandchildren = graph.get_nodes_by(param_val="tutorial_finale.getsetup")
         self.assertEqual(len(cloned_grandchildren), 4)
-        self.assertEqual(grandchildren[0]._cloned_nodes, [cloned_grandchildren[0], cloned_grandchildren[1]])
-        self.assertEqual(grandchildren[1]._cloned_nodes, [cloned_grandchildren[2], cloned_grandchildren[3]])
-        self.assertEqual(cloned_grandchildren[0]._bridged_nodes, [cloned_grandchildren[2]])
-        self.assertEqual(cloned_grandchildren[1]._bridged_nodes, [cloned_grandchildren[3]])
+        self.assertEqual(grandchildren[0].cloned_nodes, (cloned_grandchildren[0], cloned_grandchildren[1]))
+        self.assertEqual(grandchildren[1].cloned_nodes, (cloned_grandchildren[2], cloned_grandchildren[3]))
+        self.assertEqual(cloned_grandchildren[0].bridged_nodes, (cloned_grandchildren[2], ))
+        self.assertEqual(cloned_grandchildren[1].bridged_nodes, (cloned_grandchildren[3], ))
         # make sure grandchildren descend from children properly
         for grandchild in cloned_grandchildren:
             self.assertEqual(len(grandchild.setup_nodes), 1)
             child = list(grandchild.setup_nodes.keys())[0]
             variant = "noop" if "noop" in child.id else "clicked"
             self.assertRegex(child.params["name"], f".implicit_both.+{variant}")
-            self.assertEqual(grandchild.setup_nodes[child], {0})
+            dependency_object = flat_object1 if cloned_grandchildren.index(grandchild) in (0, 1) else flat_object2
+            self.assertEqual(grandchild.setup_nodes[child], {dependency_object})
         # grandchildren must be cached too
         self.assertEqual(len(set(cloned_grandchildren) - set(graph.nodes)), 0)
 

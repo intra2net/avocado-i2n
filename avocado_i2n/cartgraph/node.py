@@ -175,6 +175,17 @@ class TestNode(Runnable):
     objects and dependencies to/from other test nodes (setup/cleanup).
     """
 
+    class ReadOnlyDict(dict):
+        def _readonly(self, *args, **kwargs):
+            raise RuntimeError("Cannot modify read-only dictionary")
+        __setitem__ = _readonly
+        __delitem__ = _readonly
+        pop = _readonly
+        popitem = _readonly
+        clear = _readonly
+        update = _readonly
+        setdefault = _readonly
+
     #: digit: 0 for object root, >0 for everything else
     #: letter: "a" (autosetup), "b" (byproduct), "c" (cleanup), "d" (duplicate)
     prefix_pattern = re.compile(r"^(\d+)([abcd]?)(.+)")
@@ -191,7 +202,7 @@ class TestNode(Runnable):
         workers = set()
         if self.started_worker is not None:
             workers.add(self.started_worker)
-        for bridged_node in self._bridged_nodes:
+        for bridged_node in self.bridged_nodes:
             if bridged_node.started_worker is not None:
                 workers.add(bridged_node.started_worker)
         return workers
@@ -202,7 +213,7 @@ class TestNode(Runnable):
         workers = set()
         if self.finished_worker is not None:
             workers.add(self.finished_worker)
-        for bridged_node in self._bridged_nodes:
+        for bridged_node in self.bridged_nodes:
             if bridged_node.finished_worker is not None:
                 workers.add(bridged_node.finished_worker)
         return workers
@@ -221,7 +232,7 @@ class TestNode(Runnable):
     def shared_results(self) -> list[dict[str, str]]:
         """Test results shared across all bridged nodes."""
         results = list(self.results)
-        for bridged_node in self._bridged_nodes:
+        for bridged_node in self.bridged_nodes:
             results += bridged_node.results
         return results
     shared_results = property(fget=shared_results)
@@ -239,6 +250,26 @@ class TestNode(Runnable):
                     break
         return workers
     shared_result_worker_ids = property(fget=shared_result_worker_ids)
+
+    def bridged_nodes(self) -> list["TestNode"]:
+        """Read-only list of bridged nodes."""
+        return tuple(self._bridged_nodes)
+    bridged_nodes = property(fget=bridged_nodes)
+
+    def cloned_nodes(self) -> list["TestNode"]:
+        """Read-only list of cloned nodes."""
+        return tuple(self._cloned_nodes)
+    cloned_nodes = property(fget=cloned_nodes)
+
+    def setup_nodes(self) -> dict["TestNode", TestObject]:
+        """Read-only dict of setup nodes."""
+        return TestNode.ReadOnlyDict(self._setup_nodes)
+    setup_nodes = property(fget=setup_nodes)
+
+    def cleanup_nodes(self) -> dict["TestNode", TestObject]:
+        """Read-only dict of cleanup nodes."""
+        return TestNode.ReadOnlyDict(self._cleanup_nodes)
+    cleanup_nodes = property(fget=cleanup_nodes)
 
     def setless_form(self):
         """Test set invariant form of the test node name."""
@@ -307,8 +338,8 @@ class TestNode(Runnable):
         self.results = []
 
         # lists of parent and children test nodes
-        self.setup_nodes = {}
-        self.cleanup_nodes = {}
+        self._setup_nodes = {}
+        self._cleanup_nodes = {}
         self._picked_by_setup_nodes = EdgeRegister()
         self._picked_by_cleanup_nodes = EdgeRegister()
         self._dropped_setup_nodes = EdgeRegister()
@@ -554,7 +585,7 @@ class TestNode(Runnable):
         elif self.is_flat():
             logging.debug(f"Should not rerun a flat node {self}")
             return False
-        elif len(self._cloned_nodes) > 0:
+        elif len(self.cloned_nodes) > 0:
             logging.debug(f"Should not rerun a cloned node {self}")
             return False
         elif worker and worker.id not in self.params["name"]:
@@ -613,7 +644,7 @@ class TestNode(Runnable):
         """
         if not self.is_flat() and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not try to run {self}")
-        elif len(self._cloned_nodes) > 0:
+        elif len(self.cloned_nodes) > 0:
             logging.debug(f"Should not run a cloned node {self}")
             return False
 
@@ -644,7 +675,7 @@ class TestNode(Runnable):
         """
         if not self.is_flat() and worker.id not in self.params["name"]:
             raise RuntimeError(f"Worker {worker.id} should not try to clean {self}")
-        elif len(self._cloned_nodes) > 0:
+        elif len(self.cloned_nodes) > 0:
             logging.debug(f"Should not clean a cloned node {self}")
             return False
 
@@ -793,8 +824,8 @@ class TestNode(Runnable):
         :param test_node: parent node the current node is a child of
         :param test_object: test object via which the dependency is determined
         """
-        self.setup_nodes[test_node] = self.setup_nodes.get(test_node, set()) | {test_object}
-        test_node.cleanup_nodes[self] = test_node.cleanup_nodes.get(self, set()) | {test_object}
+        self._setup_nodes[test_node] = self._setup_nodes.get(test_node, set()) | {test_object}
+        test_node._cleanup_nodes[self] = test_node._cleanup_nodes.get(self, set()) | {test_object}
 
     def bridge_with_node(self, test_node: "TestNode") -> None:
         """
@@ -817,6 +848,15 @@ class TestNode(Runnable):
             self._dropped_setup_nodes = test_node._dropped_setup_nodes
             self._picked_by_cleanup_nodes = test_node._picked_by_cleanup_nodes
             self._dropped_cleanup_nodes = test_node._dropped_cleanup_nodes
+
+    def clone_as_source(self, test_nodes: list["TestNode"]) -> None:
+        """
+        Convert the node to a clone source for a list of its clones.
+
+        :param test_nodes: clones to register as a clone source to
+        """
+        self.prefix = "0" + self.prefix
+        self._cloned_nodes = test_nodes
 
     def pull_locations(self) -> None:
         """Update all setup locations for the current node."""

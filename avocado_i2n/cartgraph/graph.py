@@ -87,78 +87,6 @@ class TestGraph(object):
         return objects
     suffixes = property(fget=suffixes)
 
-    def _clone_branch(self, copy_node, copy_object, copy_parents):
-        """
-        Clone a test node and all of its descendants as a branch path within the graph.
-
-        This is done to provide each parent node with a unique successor.
-        """
-        test_nodes = []
-        to_copy = [(copy_node, copy_parents, copy_parents[0])]
-
-        while len(to_copy) > 0:
-            clone_source, parents, parent_source = to_copy.pop()
-            clones = []
-
-            logging.debug("Duplicating test node %s for multiple parents:\n%s",
-                          clone_source.params["shortname"],
-                          "\n".join([p.params["shortname"] for p in parents]))
-            for i, parent in enumerate(parents):
-                clone_name = clone_source.prefix + "d" + str(i) if i > 0 else clone_source.prefix
-                clone_config = clone_source.recipe.get_copy()
-                child = TestNode(clone_name, clone_config)
-                child.set_objects_from_net(clone_source.objects[0])
-                child.regenerate_params()
-
-                state_suffixes = f"_{copy_object.key}_{copy_object.suffix}"
-                state_suffixes += f"_{copy_object.composites[0].suffix}" if copy_object.key == "images" else ""
-                # make clone unique with respect to the parent it descends from
-                parent_object_params = copy_object.object_typed_params(parent.params)
-                parent_state = parent_object_params.get("set_state", "")
-                variants = child.params["name"].split(".")
-                delimiter = variants[variants.index("vms")-1]
-                child.params["shortname"] = child.params["shortname"].replace(delimiter, delimiter + "." + parent_state, 1)
-                child.params["name"] = child.params["name"].replace(delimiter, delimiter + "." + parent_state, 1)
-                child.params["get_state" + state_suffixes] = parent_state
-                child_object_params = copy_object.object_typed_params(child.params)
-                child_state = child_object_params.get("set_state", "")
-                if child_state:
-                    child.params["set_state" + state_suffixes] = child_state + "." + parent_state
-
-                old_clones = self.get_nodes_by_name(child.setless_form)
-                assert len(old_clones) <= 1, f"Cloned test node not uniquely reusable among {old_clones}"
-                if len(old_clones) > 0:
-                    # child should be reused from previous cloning
-                    old_clone = old_clones[0]
-                    logging.debug(f"Found old cloned node {old_clone.params['shortname']}")
-                    child = old_clone
-                else:
-                    # clone setup with the exception of a unique selected parent per clone
-                    for clone_setup, clone_components in clone_source.setup_nodes.items():
-                        descend_source = parent if clone_setup == parent_source else clone_setup
-                        for clone_component in clone_components:
-                            child.descend_from_node(descend_source, clone_component)
-                    # new clone needs re-bridging with other such nodes
-                    old_bridges = self.get_nodes_by("name", child.bridged_form)
-                    for old_bridge in old_bridges:
-                        child.bridge_with_node(old_bridge)
-
-                clones.append(child)
-
-            # NOTE: the graph and node index are purely additive and node could be parsed again
-            clone_source.prefix = "0" + clone_source.prefix
-            clone_source._cloned_nodes = clones
-            # queue in grandchildren for cloning next
-            for grandchild in clone_source.cleanup_nodes:
-                to_copy.append((grandchild, clones, clone_source))
-            # add roots of overall cloned branches to the returned children
-            if clone_source == copy_node:
-                test_nodes.extend(clones)
-            else:
-                self.new_nodes(clones)
-
-        return test_nodes
-
     def __init__(self):
         """Construct the test graph."""
         self.objects = []
@@ -1044,10 +972,10 @@ class TestGraph(object):
         for new_node in new_nodes:
             old_nodes = self.get_nodes_by_name(new_node.setless_form)
             for old_node in old_nodes:
-                if len(old_node._cloned_nodes) > 0:
+                if len(old_node.cloned_nodes) > 0:
                     logging.debug(f"Found old clone source node {old_node.params['shortname']} for "
                                   f"{restriction} through object {test_object.suffix}")
-                    nodes_to_add = old_node._cloned_nodes
+                    nodes_to_add = old_node.cloned_nodes
                 else:
                     logging.debug(f"Found old parsed node {old_node.params['shortname']} for "
                                   f"{restriction} through object {test_object.suffix}")
@@ -1175,7 +1103,7 @@ class TestGraph(object):
                                                    subset=filtered_parents)
                 filtered_parents = object_parents if len(object_parents) > 0 else filtered_parents
             # TODO: returning some found parents as if they were all needed parents like this violates expectations
-            if len(filtered_parents) > 0 and not any(len(p._cloned_nodes) > 0 for p in filtered_parents):
+            if len(filtered_parents) > 0 and not any(len(p.cloned_nodes) > 0 for p in filtered_parents):
                 logging.debug(f"Reusing {len(filtered_parents)} parent nodes for {test_node}")
                 return filtered_parents, []
         if len(filtered_parents) == 1:
@@ -1193,6 +1121,79 @@ class TestGraph(object):
         if len(filtered_parents) == 0:
             return [], self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], setup_prefix, params=setup_dict)
         return self.parse_and_get_composite_nodes("all.." + setup_restr, None, test_node.objects[0], setup_prefix, params=setup_dict)
+
+    def parse_cloned_branches_for_node_and_object(self, test_node: TestNode, test_object: TestObject, test_nodes: list[TestNode]) -> list[TestNode]:
+        """
+        Clone a test node and all of its descendants with one branch for each parent test node.
+
+        :param test_node: node to use as first round clone source
+        :param test_object: stateful object whose state will be modified for cloning
+        :param test_nodes: nodes to clone the source for as first round parents
+        """
+        to_clone = [(test_node, test_nodes, test_nodes[0])]
+        test_nodes = []
+
+        while len(to_clone) > 0:
+            clone_source, parents, parent_source = to_clone.pop()
+            clones = []
+
+            logging.debug("Duplicating test node %s for multiple parents:\n%s",
+                          clone_source.params["shortname"],
+                          "\n".join([p.params["shortname"] for p in parents]))
+            for i, parent in enumerate(parents):
+                clone_name = clone_source.prefix + "d" + str(i) if i > 0 else clone_source.prefix
+                clone_config = clone_source.recipe.get_copy()
+                child = TestNode(clone_name, clone_config)
+                child.set_objects_from_net(clone_source.objects[0])
+                child.regenerate_params()
+
+                state_suffixes = f"_{test_object.key}_{test_object.suffix}"
+                state_suffixes += f"_{test_object.composites[0].suffix}" if test_object.key == "images" else ""
+                # make clone unique with respect to the parent it descends from
+                parent_object_params = test_object.object_typed_params(parent.params)
+                parent_state = parent_object_params.get("set_state", "")
+                variants = child.params["name"].split(".")
+                delimiter = variants[variants.index("vms")-1]
+                child.params["shortname"] = child.params["shortname"].replace(delimiter, delimiter + "." + parent_state, 1)
+                child.params["name"] = child.params["name"].replace(delimiter, delimiter + "." + parent_state, 1)
+                child.params["get_state" + state_suffixes] = parent_state
+                child_object_params = test_object.object_typed_params(child.params)
+                child_state = child_object_params.get("set_state", "")
+                if child_state:
+                    child.params["set_state" + state_suffixes] = child_state + "." + parent_state
+
+                old_clones = self.get_nodes_by_name(child.setless_form)
+                assert len(old_clones) <= 1, f"Cloned test node not uniquely reusable among {old_clones}"
+                if len(old_clones) > 0:
+                    # child should be reused from previous cloning
+                    old_clone = old_clones[0]
+                    logging.debug(f"Found old cloned node {old_clone.params['shortname']}")
+                    child = old_clone
+                else:
+                    # clone setup with the exception of a unique selected parent per clone
+                    for clone_setup, clone_components in clone_source.setup_nodes.items():
+                        descend_source = parent if clone_setup == parent_source else clone_setup
+                        for clone_component in clone_components:
+                            child.descend_from_node(descend_source, clone_component)
+                    # new clone needs re-bridging with other such nodes
+                    old_bridges = self.get_nodes_by("name", child.bridged_form)
+                    for old_bridge in old_bridges:
+                        child.bridge_with_node(old_bridge)
+
+                clones.append(child)
+
+            # NOTE: the graph and node index are purely additive and node could be parsed again
+            clone_source.clone_as_source(clones)
+            # queue in grandchildren for cloning next
+            for grandchild in clone_source.cleanup_nodes:
+                to_clone.append((grandchild, clones, clone_source))
+            # add roots of overall cloned branches to the returned children
+            if clone_source == test_node:
+                test_nodes.extend(clones)
+            else:
+                self.new_nodes(clones)
+
+        return test_nodes
 
     def parse_branches_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
                                            params: dict[str, str] = None) -> tuple[list[TestNode], list[TestNode], list[TestNode]]:
@@ -1234,7 +1235,7 @@ class TestGraph(object):
                 if len(more_parents) > 0:
                     child.descend_from_node(more_parents[0], component)
                 if len(more_parents) > 1:
-                    children += self._clone_branch(child, component, more_parents)
+                    children += self.parse_cloned_branches_for_node_and_object(child, component, more_parents)
 
         self.new_nodes(children if test_node.is_flat() else [c for c in children if c != test_node])
         return parents, children
