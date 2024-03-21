@@ -256,6 +256,7 @@ class CartesianRunner(RunnerInterface):
         """
         if isinstance(test_suite, TestSuite):
             graph = TestGraph()
+            graph.restrs.update(self.job.config["vm_strs"])
             for node in test_suite.tests:
                 assert isinstance(node, TestNode), f"Invalid test type fo test suite to run workers on for {node}"
                 # apply default_only or user overwritten restriction

@@ -95,6 +95,7 @@ class TestGraph(object):
 
         self.nodes_index = PrefixTree()
 
+        self.restrs = {}
         # TODO: these attributes must interface with jobs and runners
         self.logdir = TestGraph.logdir
         self.runner = None
@@ -928,6 +929,60 @@ class TestGraph(object):
 
         return test_nodes
 
+    def parse_and_get_nodes_from_flat_node_and_object(self, test_node: TestNode = None, test_object: TestObject = None, prefix: str = "",
+                                                      params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestNode]]:
+        """
+        Parse new composite nodes and reuse already cached ones for a flat node.
+
+        :param restriction: single or multi-line restriction to use
+        :param test_node: optional flat test node to use instead of a string restriction
+        :param test_object: possibly flat test object to compose the node on top of, typically a test net
+        :param prefix: extra name identifier for the test to be run
+        :param params: runtime parameters used for extra customization
+        :param verbose: whether to print extra messages or not
+        :returns: a tuple of all reused and newly parsed test nodes
+        """
+        get_nodes, parse_nodes = [], []
+
+        setup_restr = test_node.setless_form
+        setup_obj_restr = test_object.component_form
+        filtered_children = self.get_nodes_by_name(setup_restr)
+        filtered_children = self.get_nodes_by("name", f"(\.|^){setup_obj_restr}(\.|$)",
+                                              subset=filtered_children)
+        # prevent reflexive retrieval and consider only composite nodes
+        filtered_children = [n for n in filtered_children if not n.is_flat()]
+        # have to consider only user restrictions here for default as nodes can have their own
+        unique_new_node = len(self.restrs) > 0
+        for suffix in self.restrs:
+            if self.restrs[suffix].rstrip() == "":
+                unique_new_node = False
+                break
+        unique_new_node = test_node.params.get_boolean("unique_nodes_from_flat", unique_new_node)
+        if unique_new_node and len(filtered_children) == 1:
+            logging.debug(f"Reusing a unique child node {filtered_children[0]} for the flat {test_node}")
+            return filtered_children, []
+
+        new_nodes = self.parse_nodes_from_flat_node_and_object(test_node, test_object, prefix, params=params, verbose=verbose)
+        for new_node in new_nodes:
+            old_nodes = self.get_nodes_by_name(new_node.setless_form)
+            for old_node in old_nodes:
+                if len(old_node.cloned_nodes) > 0:
+                    logging.debug(f"Found old clone source node {old_node.params['shortname']} for "
+                                  f"{test_node.params['shortname']} through object {test_object.suffix}")
+                    nodes_to_add = old_node.cloned_nodes
+                else:
+                    logging.debug(f"Found old parsed node {old_node.params['shortname']} for "
+                                  f"{test_node.params['shortname']} through object {test_object.suffix}")
+                    nodes_to_add = [old_node]
+                for node_to_add in nodes_to_add:
+                    if node_to_add not in get_nodes:
+                        get_nodes.append(node_to_add)
+            if len(old_nodes) == 0:
+                logging.debug(f"Found new node {new_node.params['shortname']} for "
+                              f"{test_node.params['shortname']} through object {test_object.suffix}")
+                parse_nodes.append(new_node)
+        return get_nodes, parse_nodes
+
     def parse_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
                               params: dict[str, str] = None, verbose: bool = False) -> list[TestNode]:
         """
@@ -951,13 +1006,12 @@ class TestGraph(object):
             test_nodes += self.parse_nodes_from_flat_node_and_object(node, test_object, prefix + str(i+1), params, verbose)
         return test_nodes
 
-    def parse_and_get_composite_nodes(self, restriction: str = "", test_node: TestNode = None, test_object: TestObject = None, prefix: str = "",
+    def parse_and_get_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
                                       params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestNode]]:
         """
         Parse new composite nodes and reuse already cached ones instead of overlapping new ones.
 
         :param restriction: single or multi-line restriction to use
-        :param test_node: optional flat test node to use instead of a string restriction
         :param test_object: possibly flat test object to compose the node on top of, typically a test net
         :param prefix: extra name identifier for the test to be run
         :param params: runtime parameters used for extra customization
@@ -965,29 +1019,84 @@ class TestGraph(object):
         :returns: a tuple of all reused and newly parsed test nodes
         """
         get_nodes, parse_nodes = [], []
-        if test_node is None:
-            new_nodes = self.parse_composite_nodes(restriction, test_object, prefix, params=params, verbose=verbose)
-        else:
-            new_nodes = self.parse_nodes_from_flat_node_and_object(test_node, test_object, prefix, params=params, verbose=verbose)
-        for new_node in new_nodes:
-            old_nodes = self.get_nodes_by_name(new_node.setless_form)
-            for old_node in old_nodes:
-                if len(old_node.cloned_nodes) > 0:
-                    logging.debug(f"Found old clone source node {old_node.params['shortname']} for "
-                                  f"{restriction} through object {test_object.suffix}")
-                    nodes_to_add = old_node.cloned_nodes
-                else:
-                    logging.debug(f"Found old parsed node {old_node.params['shortname']} for "
-                                  f"{restriction} through object {test_object.suffix}")
-                    nodes_to_add = [old_node]
-                for node_to_add in nodes_to_add:
-                    if node_to_add not in get_nodes:
-                        get_nodes.append(node_to_add)
-            if len(old_nodes) == 0:
-                logging.debug(f"Found new node {new_node.params['shortname']} for "
-                              f"{restriction} through object {test_object.suffix}")
-                parse_nodes.append(new_node)
+        # prepare initial parser as starting configuration and get through tests
+        for i, node in enumerate(self.parse_flat_nodes(restriction, params=params)):
+            more_get_nodes, more_parse_nodes = self.parse_and_get_nodes_from_flat_node_and_object(node, test_object,
+                                                                                                  prefix + str(i+1), params, verbose)
+            get_nodes += more_get_nodes
+            parse_nodes += more_parse_nodes
         return get_nodes, parse_nodes
+
+    def parse_and_get_nodes_from_composite_node_and_object(self, test_node: TestNode, test_object: TestObject,
+                                                           params: dict[str, str] = None) -> tuple[list[TestNode], list[TestNode]]:
+        """
+        Parse new composite nodes and reuse already cached ones for a composite node.
+
+        :param test_node: fully parsed test node to check the dependencies from
+        :param test_object: fully parsed test object to identify a unique node dependency
+        :param params: runtime parameters used for extra customization
+        :returns: a tuple of all reused and newly parsed test nodes
+
+        The use of test object here is different than that of a flat node. While for a
+        flat node a typical test object is a flat net to relate with a worker, for
+        a composite node the typical test object is instead a current stateful object
+        from the component objects of the node. Its net as well as other restriction
+        criteria could be inferred from its attributes as it is already full composed.
+
+        This includes the terminal test node used for the object creation.
+        """
+        object_params = test_object.object_typed_params(test_node.params)
+        object_dependency = object_params.get("get")
+        # handle nodes without dependency for the given object
+        if not object_dependency:
+            return [], []
+        unique_new_node = test_node.params.get_boolean("unique_nodes_from_full", object_params.get("get_state") != "0root")
+        # reuse already satisfied dependency for nodes with only some parsed setup nodes
+        # (useful for nodes that have multiple objects depending on the same already parsed parent node)
+        # (returning already attached setup as cache is only compatible with a unique new node or a clone source)
+        if (len(test_node.cloned_nodes) > 0 or unique_new_node) and len(test_node.setup_nodes) > 0:
+            dep_node = test_node.get_dependency(object_dependency, test_object)
+            if dep_node:
+                logging.debug("Dependency already parsed through duplication or partial dependency resolution")
+                return [dep_node], []
+
+        # objects can appear within a test without any prior dependencies
+        setup_restr = object_params["get"]
+        setup_obj_restr = test_object.component_form
+        setup_net_restr = test_node.objects[0].suffix
+        logging.debug(f"Cartesian setup of {test_object.long_suffix} uses restriction {setup_restr} "
+                      f"for dependency for {test_node}")
+        # speedup for handling already parsed unique parent cases
+        filtered_parents = self.get_nodes_by_name(setup_restr)
+        filtered_parents = self.get_nodes_by("name", f"(\.|^){setup_obj_restr}(\.|$)",
+                                             subset=filtered_parents)
+        filtered_parents = self.get_nodes_by("name", f"(\.|^){setup_net_restr}(\.|$)",
+                                             subset=filtered_parents)
+        # the vm whose dependency we are parsing may not be restrictive enough so reuse optional other
+        # objects variants of the current test node - cloning is only supported in the node restriction
+        if len(filtered_parents) > 1:
+            for test_object in test_node.objects:
+                object_parents = self.get_nodes_by("name", f"(\.|^){test_object.component_form}(\.|$)",
+                                                   subset=filtered_parents)
+                filtered_parents = object_parents if len(object_parents) > 0 else filtered_parents
+        if len(filtered_parents) == 1:
+            if len(filtered_parents[0].cloned_nodes) > 0:
+                return filtered_parents[0].cloned_nodes, []
+            if unique_new_node and len(filtered_parents) == 1:
+                logging.debug(f"Reusing a unique parent node {filtered_parents[0]} for the composite {test_node}")
+                return filtered_parents, []
+
+        # main parsing entry point for the parents
+        setup_dict = {} if params is None else params.copy()
+        # TODO: improve the API further to just past the test object determining the dependency
+        setup_dict.update({"dep_suffix": test_object.long_suffix,
+                           "dep_type": test_object.key,
+                           "dep_id": test_object.id,
+                           "require_existence": "yes"})
+        setup_prefix = test_node.prefix + "a"
+        if len(filtered_parents) == 0:
+            return [], self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], setup_prefix, params=setup_dict)
+        return self.parse_and_get_composite_nodes("all.." + setup_restr, test_node.objects[0], setup_prefix, params=setup_dict)
 
     @staticmethod
     def parse_object_nodes(worker: TestWorker = None, restriction: str = "", prefix: str = "", object_restrs: dict[str, str] = None,
@@ -1056,71 +1165,6 @@ class TestGraph(object):
             print("%s selected vm variant(s)" % len([t for t in test_objects if t.key == "vms"]))
 
         return test_nodes, test_objects
-
-    def parse_and_get_nodes_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
-                                                params: dict[str, str] = None) -> tuple[list[TestNode], list[TestNode]]:
-        """
-        Generate or reuse all parent test nodes for a given test node and test object.
-
-        This includes the terminal test used for the object creation.
-
-        :param test_node: fully parsed test node to check the dependencies from
-        :param test_object: fully parsed test object to identify a unique node dependency
-        :param params: runtime parameters used for extra customization
-        :returns: a tuple of all reused and newly parsed test nodes
-        """
-        object_params = test_object.object_typed_params(test_node.params)
-        object_dependency = object_params.get("get")
-        # handle nodes without dependency for the given object
-        if not object_dependency:
-            return [], []
-        # reuse already satisfied dependency for nodes with only some parsed setup nodes
-        # (useful for nodes that have multiple objects depending on the same already parsed parent node)
-        if len(test_node.setup_nodes) > 0:
-            dep_node = test_node.get_dependency(object_dependency, test_object)
-            if dep_node:
-                logging.debug("Dependency already parsed through duplication or partial dependency resolution")
-                return [dep_node], []
-
-        # objects can appear within a test without any prior dependencies
-        setup_restr = object_params["get"]
-        setup_obj_restr = test_object.component_form
-        setup_net_restr = test_node.objects[0].suffix
-        logging.debug(f"Cartesian setup of {test_object.long_suffix} for {test_node.params['shortname']} "
-                      f"uses restriction {setup_restr}")
-
-        # speedup for handling already parsed unique parent cases
-        filtered_parents = self.get_nodes_by_name(setup_restr)
-        filtered_parents = self.get_nodes_by("name", f"(\.|^){setup_obj_restr}(\.|$)",
-                                             subset=filtered_parents)
-        filtered_parents = self.get_nodes_by("name", f"(\.|^){setup_net_restr}(\.|$)",
-                                             subset=filtered_parents)
-        # the vm whose dependency we are parsing may not be restrictive enough so reuse optional other
-        # objects variants of the current test node - cloning is only supported in the node restriction
-        if len(filtered_parents) > 1:
-            for test_object in test_node.objects:
-                object_parents = self.get_nodes_by("name", f"(\.|^){test_object.component_form}(\.|$)",
-                                                   subset=filtered_parents)
-                filtered_parents = object_parents if len(object_parents) > 0 else filtered_parents
-            # TODO: returning some found parents as if they were all needed parents like this violates expectations
-            if len(filtered_parents) > 0 and not any(len(p.cloned_nodes) > 0 for p in filtered_parents):
-                logging.debug(f"Reusing {len(filtered_parents)} parent nodes for {test_node}")
-                return filtered_parents, []
-        if len(filtered_parents) == 1:
-            logging.debug(f"Reusing a unique parent node {filtered_parents[0]} for {test_node}")
-            return filtered_parents, []
-
-        # main parsing entry point for the parents
-        setup_dict = {} if params is None else params.copy()
-        # TODO: improve the API further to just past the test object determining the dependency
-        setup_dict.update({"dep_suffix": test_object.long_suffix,
-                           "dep_type": test_object.key,
-                           "dep_id": test_object.id,
-                           "require_existence": "yes"})
-        setup_prefix = test_node.prefix + "a"
-        if len(filtered_parents) == 0:
-            return [], self.parse_composite_nodes("all.." + setup_restr, test_node.objects[0], setup_prefix, params=setup_dict)
-        return self.parse_and_get_composite_nodes("all.." + setup_restr, None, test_node.objects[0], setup_prefix, params=setup_dict)
 
     def parse_cloned_branches_for_node_and_object(self, test_node: TestNode, test_object: TestObject, test_nodes: list[TestNode]) -> list[TestNode]:
         """
@@ -1207,7 +1251,8 @@ class TestGraph(object):
         """
         if test_node.is_flat():
             logging.debug(f"Will newly expand flat {test_node.params['shortname']} for {test_object.long_suffix}")
-            get_children, parse_children = self.parse_and_get_composite_nodes("", test_node, test_object, test_node.prefix, params=params)
+            get_children, parse_children = self.parse_and_get_nodes_from_flat_node_and_object(test_node, test_object,
+                                                                                              test_node.prefix, params=params)
             # both parsed and reused leaf composite nodes should be traversed as children of the leaf flat node
             for child in get_children + parse_children:
                 child.descend_from_node(test_node, test_object)
@@ -1225,7 +1270,7 @@ class TestGraph(object):
                 logging.debug(f"Parsing dependencies of {child.params['shortname']} "
                               f"for object {component.long_suffix}")
 
-                get_parents, parse_parents = self.parse_and_get_nodes_for_node_and_object(child, component, params)
+                get_parents, parse_parents = self.parse_and_get_nodes_from_composite_node_and_object(child, component, params)
                 # the graph node cache has to be updated as early as possible to avoid redundancy
                 self.new_nodes(parse_parents)
                 parents += parse_parents
@@ -1346,6 +1391,7 @@ class TestGraph(object):
         and independent graph copy for each worker.
         """
         graph = TestGraph()
+        graph.restrs = object_restrs
         if not worker:
             graph.new_workers(TestGraph.parse_workers(params))
             workers = graph.workers.values()
