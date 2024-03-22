@@ -219,15 +219,12 @@ class TestNode(Runnable):
         return workers
     shared_finished_workers = property(fget=shared_finished_workers)
 
-    def shared_incompatible_workers(self) -> set[TestWorker]:
-        """Workers incompatible with bridged full nodes."""
-        if self.is_flat():
-            return self.incompatible_workers
-        for node in self.setup_nodes:
-            if node.is_flat() and not node.is_shared_root():
-                return node.incompatible_workers
-        return set()
-    shared_incompatible_workers = property(fget=shared_incompatible_workers)
+    def shared_involved_workers(self) -> set[TestWorker]:
+        """Workers that picked up the node and possibly have continued to either its setup or cleanup."""
+        worker_ids = self._picked_by_setup_nodes.get_workers() | self._picked_by_cleanup_nodes.get_workers()
+        workers = [w for s in TestSwarm.run_swarms for w in TestSwarm.run_swarms[s].workers if w.id in worker_ids]
+        return set(workers)
+    shared_involved_workers = property(fget=shared_involved_workers)
 
     def shared_results(self) -> list[dict[str, str]]:
         """Test results shared across all bridged nodes."""
@@ -459,19 +456,17 @@ class TestNode(Runnable):
             return worker in self.shared_started_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             own_cluster = worker.swarm_id
-            own_cluster_started_hosts = {w.id for w in self.shared_started_workers if w.swarm_id == own_cluster}
-            own_cluster_incompatible_hosts = {w.id for w in self.shared_incompatible_workers if w.swarm_id == own_cluster}
+            own_cluster_started_hosts = {w for w in self.shared_started_workers if w.swarm_id == own_cluster}
             if threshold == -1:
-                # is started for an entire swarm by all of its workers
-                own_cluster_all_hosts = {*TestSwarm.run_swarms[own_cluster].workers}
-                return len(own_cluster_started_hosts) + len(own_cluster_incompatible_hosts) == len(own_cluster_all_hosts)
+                # is started for an entire swarm by all of its workers that have already picked that node
+                own_cluster_all_hosts = self.shared_involved_workers & {*TestSwarm.run_swarms[own_cluster].workers}
+                return own_cluster_started_hosts == own_cluster_all_hosts
             # is started for an entire swarm by at least N of its workers
             return len(own_cluster_started_hosts) >= threshold
         else:
             if threshold == -1:
-                # is started globally by all workers
-                total_workers = sum([len([w for w in TestSwarm.run_swarms[s].workers]) for s in TestSwarm.run_swarms])
-                return len(self.shared_started_workers) + len(self.shared_incompatible_workers) == total_workers
+                # is started globally by all workers that have already picked that node
+                return self.shared_started_workers == self.shared_involved_workers
             # is started globally by at least N workers (down to at least one worker)
             return len(self.shared_started_workers) >= threshold
 
@@ -498,19 +493,17 @@ class TestNode(Runnable):
             return worker in self.shared_finished_workers
         elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
             own_cluster = worker.swarm_id
-            own_cluster_finished_hosts = {w.id for w in self.shared_finished_workers if w.swarm_id == own_cluster}
-            own_cluster_incompatible_hosts = {w.id for w in self.shared_incompatible_workers if w.swarm_id == own_cluster}
+            own_cluster_finished_hosts = {w for w in self.shared_finished_workers if w.swarm_id == own_cluster}
             if threshold == -1:
-                # is finished for an entire swarm by all of its workers
-                own_cluster_all_hosts = {*TestSwarm.run_swarms[own_cluster].workers}
-                return len(own_cluster_finished_hosts) + len(own_cluster_incompatible_hosts) == len(own_cluster_all_hosts)
+                # is finished for an entire swarm by all of its workers that have already picked that node
+                own_cluster_all_hosts = self.shared_involved_workers & {*TestSwarm.run_swarms[own_cluster].workers}
+                return own_cluster_finished_hosts == own_cluster_all_hosts
             # is finished for an entire swarm by at least N of its workers
             return len(own_cluster_finished_hosts) >= threshold
         else:
             if threshold == -1:
-                # is finished globally by all workers
-                total_workers = sum([len([w for w in TestSwarm.run_swarms[s].workers]) for s in TestSwarm.run_swarms])
-                return len(self.shared_finished_workers) + len(self.shared_incompatible_workers) == total_workers
+                # is finished globally by all workers that have already picked that node
+                return self.shared_finished_workers == self.shared_involved_workers
             # is finished globally by at least N workers (down to at least one worker)
             return len(self.shared_finished_workers) >= threshold
 
@@ -567,6 +560,21 @@ class TestNode(Runnable):
                 if restriction == setup_object_params.get("set_state"):
                     return test_node
         return None
+
+    def should_parse(self, worker: TestWorker = None) -> bool:
+        """
+        Parse if node has been dropped in all its setup nodes by at least one worker.
+
+        :param worker: evaluate with respect to an optional worker ID scope or globally if none given
+        :returns: whether the test node should be parsed
+        """
+        parse_by = f" by {worker}" if worker else ""
+        for picked_worker in self.shared_involved_workers:
+            if self.is_unrolled(picked_worker) and self.is_cleanup_ready(picked_worker) and len(picked_worker.restrs) == 0:
+                logging.debug(f"Should not parse {self}{parse_by} which is cleanup ready from worker {picked_worker}")
+                return False
+        logging.debug(f"Should parse {self}{parse_by} which is not cleanup ready from any worker")
+        return True
 
     def should_rerun(self, worker: TestWorker = None) -> bool:
         """
@@ -682,21 +690,45 @@ class TestNode(Runnable):
         # no support for parallelism within reversible nodes since we might hit a race condition
         # whereby a node will be run for missing setup but its parent will be reversed before it
         # gets any parent-provided states
-        is_reversible = True
         for test_object in self.objects:
             object_params = test_object.object_typed_params(self.params)
             is_reversible = object_params.get("unset_mode_images", object_params["unset_mode"])[0] == "f"
             is_reversible |= object_params.get("unset_mode_vms", object_params["unset_mode"])[0] == "f"
             if is_reversible:
                 break
+        else:
+            is_reversible = False
 
         if not is_reversible:
             return True
         else:
-            # last one of a given scope should "close the door" for that scope
-            test_statuses = [r["status"].lower() for r in self.shared_results]
-            still_rerunning = "unknown" in test_statuses
-            return self.is_finished(worker, -1) and not still_rerunning
+
+            # last worker should "close the door" for all workers that opened it and left
+            for picked_worker in self.shared_involved_workers:
+                # TODO: provide swarm filtering not just here but universally wherever needed
+                if worker.swarm_id != "localhost" and worker.swarm_id not in picked_worker.id:
+                    continue
+                if self.is_flat() or picked_worker.id in self.params["name"]:
+                    picked_node = self
+                else:
+                    for node in self.bridged_nodes:
+                        if picked_worker.id in node.params["name"]:
+                            picked_node = node
+                            break
+                    else:
+                        raise ValueError(f"Cannot identify picked node for involved worker {picked_worker} "
+                                         f"instead of the composite {self} to consider for cleanup")
+                if not picked_node.is_cleanup_ready(picked_worker):
+                    logging.debug(f"Node is not cleanup ready for {picked_worker.id}")
+                    return False
+                # if any worker is still running this test it cannot be reversed
+                test_statuses = [r["status"].lower() for r in picked_node.results]
+                if "unknown" in test_statuses:
+                    logging.debug(f"A worker {picked_worker.id} is still running node which cannot yet be reversed")
+                    return False
+
+            # all involved workers should have also flagged the generalized node as finished
+            return self.is_finished(worker, -1)
 
     @classmethod
     def prefix_priority(cls, prefix1: str, prefix2: str) -> int:

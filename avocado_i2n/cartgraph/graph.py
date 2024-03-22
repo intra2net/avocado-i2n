@@ -1612,7 +1612,10 @@ class TestGraph(object):
                 traverse_path.append(next.pick_child(worker))
                 continue
 
-            if next.is_flat() and not next.is_unrolled(worker):
+            # capture premature cleanup ready cases (only cleanup ready due to unparsed nodes)
+            unexplored_nodes = [node for node in self.nodes if node.is_flat() and not node.is_unrolled(worker)]
+
+            if next.is_flat() and not next.is_unrolled(worker) and (len(unexplored_nodes) > 0 or next.should_parse(worker)):
                 for parents, siblings, current in self.parse_paths_to_object_roots(next, worker.net, params):
                     for parent in parents:
                         if parent.is_object_root():
@@ -1676,12 +1679,10 @@ class TestGraph(object):
                 if next.is_cleanup_ready(worker):
                     self.report_progress()
 
-                    # capture premature cleanup ready cases (only cleanup ready due to unparsed nodes)
-                    unexplored_nodes = [node for node in self.nodes if node.is_flat() and not node.is_unrolled(worker)]
                     if not next.is_flat() and len(unexplored_nodes) > 0:
                         # postpone cleaning up current node since it might have newly added children
                         logging.info(f"Worker {worker.id} postponing the cleanup for {next} "
-                                     f"due to {len(unexplored_nodes)} unexplored nodes")
+                                     f"due to {len(unexplored_nodes)} unexplored nodes: {unexplored_nodes[:3]}...")
                         # reset the worker path to improve overall ergodicity (it will look for other work)
                         traverse_path = [root]
                         # no asyncio sleep here since we want the worker to only bounce from occupied nodes
