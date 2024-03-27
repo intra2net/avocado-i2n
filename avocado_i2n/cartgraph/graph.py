@@ -1254,7 +1254,12 @@ class TestGraph(object):
             get_children, parse_children = self.parse_and_get_nodes_from_flat_node_and_object(test_node, test_object,
                                                                                               test_node.prefix, params=params)
             # both parsed and reused leaf composite nodes should be traversed as children of the leaf flat node
-            for child in get_children + parse_children:
+            more_children = get_children + parse_children
+            if len(more_children) == 0:
+                logging.warning(f"Could not compose flat node {test_node} with net object {test_object} due to "
+                                f"test object incompatibility")
+                test_node.incompatible_workers.add(test_object.long_suffix)
+            for child in more_children:
                 child.descend_from_node(test_node, test_object)
             children = parse_children
         else:
@@ -1609,10 +1614,6 @@ class TestGraph(object):
 
             if next.is_flat() and not next.is_unrolled(worker):
                 for parents, siblings, current in self.parse_paths_to_object_roots(next, worker.net, params):
-                    if current == next:
-                        if len(siblings) == 0:
-                            logging.warning(f"Could not compose flat node {next} due to test object incompatibility")
-                            next.incompatible_workers.add(worker)
                     for parent in parents:
                         if parent.is_object_root():
                             parent.descend_from_node(root, parent.get_terminal_object())

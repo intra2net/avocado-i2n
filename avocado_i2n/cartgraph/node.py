@@ -410,7 +410,7 @@ class TestNode(Runnable):
             return True
         elif not self.is_flat():
             raise RuntimeError(f"Only flat nodes can be unrolled, {self} is not flat")
-        elif worker in self.incompatible_workers:
+        elif worker.net.long_suffix in self.incompatible_workers:
             return True
         for node in self.cleanup_nodes:
             if self.setless_form in node.id and worker.id in node.id:

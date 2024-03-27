@@ -1183,7 +1183,7 @@ class CartesianNodeTest(Test):
         del flat_node.params["shared_root"]
 
         incompatible_worker = TestWorker(flat_object)
-        flat_node.incompatible_workers.add(incompatible_worker)
+        flat_node.incompatible_workers.add(flat_object.long_suffix)
         self.assertTrue(flat_node.is_unrolled(incompatible_worker))
 
     def test_is_ready(self):
@@ -3490,9 +3490,7 @@ class CartesianGraphTest(Test):
         flat_residue = graph.get_nodes_by_name("tutorial3.remote")
         self.assertEqual(len(flat_residue), 16)
         for node in flat_residue:
-            for i in range(2):
-                worker = graph.workers[f"net{i+1}"]
-                self.assertIn(worker, node.incompatible_workers)
+            self.assertEqual(node.incompatible_workers, {"net1", "net2"})
 
     def test_traversing_in_isolation(self):
         """Test that actual traversing (not just test running) works as expected."""
