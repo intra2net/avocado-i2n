@@ -977,6 +977,13 @@ class TestNode(Runnable):
             # retry on next step
             return cls.prefix_priority(else1, else2)
 
+    @classmethod
+    def variant_distance(cls, name1: str, name2: str) -> int:
+        """Provide name variants based distance for picking most different nodes."""
+        # TODO: consider weighted distance to all nodes based on their counters
+        variants1, variants2 = set(name1.split(".")), set(name2.split("."))
+        return len(variants1 | variants2) - len(variants1 & variants2)
+
     def pick_parent(self, worker: TestWorker) -> "TestNode":
         """
         Pick the next available parent based on some priority.
@@ -1044,6 +1051,33 @@ class TestNode(Runnable):
                 lambda x, y: TestNode.prefix_priority(x.long_prefix, y.long_prefix)
             ),
         )
+        sorted_nodes = sorted(
+            sorted_nodes, key=lambda n: n._picked_by_setup_nodes.get_counters()
+        )
+        # flat nodes descending from the shared root can benefit from extra variant distance sorting
+        if self.is_shared_root():
+            should_reverse = False
+            previous_nodes = [
+                n
+                for n in sorted_nodes
+                if worker.id in n._picked_by_setup_nodes.get_workers()
+            ]
+            if len(previous_nodes) == 0:
+                should_reverse = True
+                previous_nodes = [
+                    n
+                    for n in sorted_nodes
+                    if len(n._picked_by_setup_nodes.get_workers()) > 0
+                ]
+            score = lambda x: sum(
+                [
+                    TestNode.variant_distance(x.params["name"], n.params["name"])
+                    for n in previous_nodes
+                ]
+            )
+            sorted_nodes = sorted(
+                sorted_nodes, key=lambda n: score(n), reverse=should_reverse
+            )
         sorted_nodes = sorted(
             sorted_nodes, key=lambda n: n._picked_by_setup_nodes.get_counters()
         )
