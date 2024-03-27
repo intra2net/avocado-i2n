@@ -185,10 +185,11 @@ class TestGraph(object):
         does not take into account the duration of each test which could vary
         significantly.
         """
-        total, finished = len(self.nodes), 0
-        for tnode in self.nodes:
+        flat_nodes = [n for n in self.nodes if n.is_flat()]
+        total, finished = len(flat_nodes), 0
+        for tnode in flat_nodes:
             # we count with additional eagerness for at least one worker
-            if tnode.is_finished():
+            if tnode.is_unrolled():
                 finished += 1
         logging.info("Finished %i\%i tests, %0.2f%% complete", finished, total, 100.0*finished/total)
 
@@ -201,7 +202,7 @@ class TestGraph(object):
         :param str tag: tag of the dump, e.g. parsing/traversal step and slot
         """
         try:
-            from graphviz import Digraph
+            import graphviz
             log.getLogger("graphviz").parent = log.getLogger("avocado.job")
         except ImportError:
             logging.warning("Couldn't visualize the Cartesian graph due to missing dependency (Graphviz)")
@@ -209,22 +210,33 @@ class TestGraph(object):
 
         def get_display_id(node):
             node_id = node.long_prefix
-            node_id += f"[{node.started_worker}]" if node.is_occupied(node.started_worker) else ""
+            node_id += f"[{node.started_worker}]" if node.started_worker else ""
             return node_id
 
-        graph = Digraph('cartesian_graph', format='svg')
+        graph = graphviz.Digraph('cartesian_graph', format='svg')
         for tnode in self.nodes:
             tid = get_display_id(tnode)
             graph.node(tid)
             for snode in tnode.setup_nodes:
                 sid = get_display_id(snode)
                 graph.node(sid)
-                graph.edge(tid, sid)
+                graph.edge(tid, sid, color="red")
             for cnode in tnode.cleanup_nodes:
                 cid = get_display_id(cnode)
                 graph.node(cid)
-                graph.edge(tid, cid)
-        graph.render(f"{dump_dir}/cg_{id(self)}_{tag}")
+                graph.edge(tid, cid, color="blue")
+            for bnode in tnode.bridged_nodes:
+                bid = get_display_id(bnode)
+                graph.node(bid)
+                graph.edge(tid, bid, color="green")
+            for dnode in tnode.cloned_nodes:
+                aid = get_display_id(dnode)
+                graph.node(aid)
+                graph.edge(tid, aid, color="black")
+        try:
+            graph.render(f"{dump_dir}/cg_{id(self)}_{tag}")
+        except graphviz.backend.ExecutableNotFound:
+            logging.warning("Couldn't visualize the Cartesian graph due to missing binary (Graphviz)")
 
     """run/clean switching functionality"""
     def flag_children(self, node_name=None, object_name=None, worker_name=None,

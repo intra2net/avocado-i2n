@@ -408,7 +408,7 @@ def list(config, tag=""):
         TestGraph.logdir = runner.job.logdir
         setup_dict = config["param_dict"].copy()
         # listing can only be done in serial mode
-        setup_dict["nets"] = "net0"
+        setup_dict["nets"] = config["param_dict"].get("nets", "net0")
         graph = loader.parse_object_trees(
             restriction=config["tests_str"],
             prefix=prefix,
