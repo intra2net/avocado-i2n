@@ -1613,7 +1613,7 @@ class TestGraph(object):
                 continue
 
             # capture premature cleanup ready cases (only cleanup ready due to unparsed nodes)
-            unexplored_nodes = [node for node in self.nodes if node.is_flat() and not node.is_unrolled(worker)]
+            unexplored_nodes = [node for node in self.nodes if node.is_flat() and not node.is_unrolled()]
 
             if next.is_flat() and not next.is_unrolled(worker) and (len(unexplored_nodes) > 0 or next.should_parse(worker)):
                 for parents, siblings, current in self.parse_paths_to_object_roots(next, worker.net, params):

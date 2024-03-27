@@ -396,7 +396,7 @@ class TestNode(Runnable):
         """Check if the test node is the root of all test nodes for some test object."""
         return "object_root" in self.params
 
-    def is_unrolled(self, worker: TestWorker) -> bool:
+    def is_unrolled(self, worker: TestWorker = None) -> bool:
         """
         Check if the test is unrolled as composite node with dependencies.
 
@@ -407,11 +407,17 @@ class TestNode(Runnable):
             return True
         elif not self.is_flat():
             raise RuntimeError(f"Only flat nodes can be unrolled, {self} is not flat")
-        elif worker.net.long_suffix in self.incompatible_workers:
+        elif worker and worker.net.long_suffix in self.incompatible_workers:
+            return True
+        elif worker is None and len(self.incompatible_workers) > 0:
             return True
         for node in self.cleanup_nodes:
-            if self.setless_form in node.id and worker.id in node.id:
-                return True
+            if self.setless_form in node.id:
+                if worker and worker.id in node.id:
+                    return True
+                # whether the node is unrolled for any worker if no worker specified
+                elif worker is None:
+                    return True
         return False
 
     def is_setup_ready(self, worker: TestWorker) -> bool:

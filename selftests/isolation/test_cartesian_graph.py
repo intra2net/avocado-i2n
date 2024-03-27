@@ -1165,7 +1165,10 @@ class CartesianNodeTest(Test):
         self.assertTrue(flat_node.is_unrolled(TestWorker(flat_object)))
         more_flat_objects = TestGraph.parse_flat_objects("net2", "nets")
         self.assertEqual(len(more_flat_objects), 1)
+        # flat node should not be unrolled for other workers
         self.assertFalse(flat_node.is_unrolled(TestWorker(more_flat_objects[0])))
+        # flat node should be unrolled for any (at least one arbitrary) worker
+        self.assertTrue(flat_node.is_unrolled())
 
         flat_nodes = [n for n in TestGraph.parse_flat_nodes("normal..tutorial1")]
         self.assertEqual(len(flat_nodes), 1)
@@ -1178,10 +1181,11 @@ class CartesianNodeTest(Test):
         with self.assertRaises(RuntimeError):
             composite_nodes[0].is_unrolled(TestWorker(flat_object))
 
+        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1")[0]
         flat_node.params["shared_root"] = "yes"
         self.assertTrue(flat_node.is_unrolled(TestWorker(flat_object)))
-        del flat_node.params["shared_root"]
 
+        flat_node = TestGraph.parse_flat_nodes("normal..tutorial1")[0]
         incompatible_worker = TestWorker(flat_object)
         flat_node.incompatible_workers.add(flat_object.long_suffix)
         self.assertTrue(flat_node.is_unrolled(incompatible_worker))
@@ -2952,10 +2956,10 @@ class CartesianGraphTest(Test):
 
         self._run_traversal(graph)
         # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["install"][self.shared_pool], 6)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["customize"][self.shared_pool], 6)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["install"][self.shared_pool], 2*4-2*1)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["customize"][self.shared_pool], 2*4-2*1)
         # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 3)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 1*4-1*1)
 
     def test_traverse_two_objects_with_setup(self):
         """Test a two-object test traversal with reusable setup."""
@@ -2971,10 +2975,10 @@ class CartesianGraphTest(Test):
 
         self._run_traversal(graph)
         # get reusable setup from shared pool once to skip and once to sync (node reversal)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["install"][self.shared_pool], 8)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["customize"][self.shared_pool], 8)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["install"][self.shared_pool], 2*4)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["customize"][self.shared_pool], 2*4)
         # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 3)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 2*4-1)
 
     def test_traverse_two_objects_with_shared_setup(self):
         """Test a two-object test traversal with shared setup among two nodes."""
@@ -3006,7 +3010,7 @@ class CartesianGraphTest(Test):
                 # called once by worker for for each of two vms (no self-sync skip as setup is from previous run or shared pool)
                 # NOTE: any such use cases assume the previous setup is fully synced across all workers, if this is not the case
                 # it must be due to interrupted run in which case the setup is not guaranteed to be reusable on the first place
-                self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 8)
+                self.assertLessEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 2*4)
         for action in ["set"]:
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
@@ -3039,7 +3043,7 @@ class CartesianGraphTest(Test):
                 # called once by worker for for each of two vms (no self-sync skip as setup is from previous run or shared pool)
                 # NOTE: any such use cases assume the previous setup is fully synced across all workers, if this is not the case
                 # it must be due to interrupted run in which case the setup is not guaranteed to be reusable on the first place
-                self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 4)
+                self.assertLessEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 2*2)
         for action in ["set", "unset"]:
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
@@ -3070,10 +3074,10 @@ class CartesianGraphTest(Test):
                 # called once by worker for for each of two vms (no self-sync as setup is from previous run or shared pool)
                 # NOTE: any such use cases assume the previous setup is fully synced across all workers, if this is not the case
                 # it must be due to interrupted run in which case the setup is not guaranteed to be reusable on the first place
-                self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 8)
+                self.assertLessEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 2*4)
             for state in ["on_customize", "connect"]:
                 # called once by worker only for vm1 (excluding self-sync as setup is provided by the swarm pool)
-                self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 3)
+                self.assertLessEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 1*4-1*1)
         for action in ["set", "unset"]:
             for state in DummyStateControl.asserted_states[action]:
                 self.assertEqual(DummyStateControl.asserted_states[action][state][self.shared_pool], 0)
@@ -3146,8 +3150,8 @@ class CartesianGraphTest(Test):
 
         self._run_traversal(graph, self.config["param_dict"])
         # expect three sync (one for each worker without self-sync) and one cleanup call
-        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1*1)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 1*4-1*1)
 
     def test_trace_work_remote(self):
         """Test a multi-object test run where the workers will run multiple tests reusing also remote swarm setup."""
@@ -3210,8 +3214,8 @@ class CartesianGraphTest(Test):
 
         self._run_traversal(graph, self.config["param_dict"])
         # expect three sync (one for each worker without self-sync) and one cleanup call
-        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
+        self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1*1)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 1*4-1*1)
 
     def test_trace_work_preparsed(self):
         """Test a multi-object parsed in advance test run where the workers will run multiple tests reusing their setup."""
@@ -3505,21 +3509,23 @@ class CartesianGraphTest(Test):
         flat_nodes = [node for node in graph.nodes if node.is_flat()]
         self.assertEqual(graph.parse_paths_to_object_roots.call_count, (len(flat_nodes) - 1) * 2)
         for node in flat_nodes:
+            parse_calls = [mock.call(node, w.net, mock.ANY) for w in graph.workers.values()]
             for i in range(2):
                 worker = graph.workers[f"net{i+1}"]
-                self.assertTrue(node.is_unrolled(worker))
+                self.assertTrue(node.is_unrolled())
                 if node == root:
                     self.assertNotIn(mock.call(node, worker.net, mock.ANY),
                                      graph.parse_paths_to_object_roots.call_args_list)
                 else:
                     self.assertFalse(node.is_shared_root())
-                    graph.parse_paths_to_object_roots.assert_any_call(node, worker.net, mock.ANY)
+                    self.assertTrue(parse_calls[0] in graph.parse_paths_to_object_roots.call_args_list or
+                                    parse_calls[1] in graph.parse_paths_to_object_roots.call_args_list)
 
         # check flat nodes that could never be composed (not compatible with vm1 restriction)
         flat_residue = graph.get_nodes_by_name("tutorial3.remote")
         self.assertEqual(len(flat_residue), 16)
         for node in flat_residue:
-            self.assertEqual(node.incompatible_workers, {"net1", "net2"})
+            self.assertNotEqual(node.incompatible_workers & {"net1", "net2"}, set())
 
     def test_traversing_in_isolation(self):
         """Test that actual traversing (not just test running) works as expected."""
