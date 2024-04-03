@@ -514,11 +514,21 @@ class TestNode(Runnable):
 
         :param str worker: relative setup readiness with respect to a worker ID
         """
+        if not self.is_flat() and worker.id not in self.params["name"]:
+            raise RuntimeError(
+                f"Cannot consider cleanup readiness of node {self} which "
+                f"is meant for a different worker than {worker}"
+            )
         for node in self.cleanup_nodes:
             if not node.is_flat() and worker.id not in node.params["name"]:
                 continue
-            if worker.id not in self._dropped_cleanup_nodes.get_workers(node):
-                return False
+            # TODO: should we really treat the shared root stricter as before?
+            if self.is_shared_root() or len(self.get_stateful_objects()) > 0:
+                if worker.id not in self._dropped_cleanup_nodes.get_workers(node):
+                    return False
+            else:
+                if len(self._dropped_cleanup_nodes.get_workers(node)) == 0:
+                    return False
         return True
 
     def is_started(self, worker: TestWorker = None, threshold: int = 1) -> bool:
