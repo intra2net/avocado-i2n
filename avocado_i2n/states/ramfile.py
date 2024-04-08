@@ -52,6 +52,7 @@ class RamfileBackend(SourcedStateBackend):
         state_dir = params["swarm_pool"]
         logging.debug(f"Showing external states for vm {params['vms']} locally in {state_dir}")
         vm_dir = os.path.join(state_dir, params["object_id"])
+        # TODO: there could be a race where we list a state that disappears in os.stat below
         snapshots = os.listdir(vm_dir)
 
         images_states = set()
@@ -141,6 +142,7 @@ class RamfileBackend(SourcedStateBackend):
         """
         vm, vm_name = object, params["vms"]
         logging.info("Removing vm state '%s' of %s", params["unset_state"], vm_name)
+        # TODO: also handle this
         # TODO: such switch is not allowed within the state backend, has to be handled on more globally:
         # this is entirely commented so that the "remove previous state" on overwriting doesn't turn off the vm
         # making it impossible to save a state on off-vm
