@@ -68,6 +68,7 @@ from .runner import CartesianRunner
 
 #: list of all available manual steps or simply semi-automation tools
 __all__ = ["noop", "unittest", "update", "run", "list",
+           "start", "stop",
            "boot", "download", "control", "upload", "shutdown",
            "check", "pop", "push", "get", "set", "unset",
            "collect", "create", "clean"]
@@ -416,6 +417,49 @@ def list(config, tag=""):
             verbose=True,
         )
         graph.visualize(job.logdir)
+
+
+############################################################
+# NET management manual user steps
+############################################################
+
+
+@with_cartesian_graph
+def start(config, tag=""):
+    """
+    Start all given workers.
+
+    :param config: command line arguments and run configuration
+    :type config: {str, str}
+    :param str tag: extra name identifier for the test to be run
+    """
+    l, r = config["graph"].l, config["graph"].r
+    selected_nets = config["param_dict"]["nets"].split(" ")
+    LOG_UI.info("Starting worker nets %s (%s)",
+                ", ".join(selected_nets), os.path.basename(r.job.logdir))
+
+    workers = l.parse_workers(config["param_dict"])
+    for worker in workers:
+        worker.start()
+
+
+@with_cartesian_graph
+def stop(config, tag=""):
+    """
+    Stop all given workers.
+
+    :param config: command line arguments and run configuration
+    :type config: {str, str}
+    :param str tag: extra name identifier for the test to be run
+    """
+    l, r = config["graph"].l, config["graph"].r
+    selected_nets = config["param_dict"]["nets"].split(" ")
+    LOG_UI.info("Stopping worker nets %s (%s)",
+                ", ".join(selected_nets), os.path.basename(r.job.logdir))
+
+    workers = l.parse_workers(config["param_dict"])
+    for worker in workers:
+        worker.stop()
 
 
 ############################################################

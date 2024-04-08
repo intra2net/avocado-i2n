@@ -33,7 +33,7 @@ def new_job(config):
 @mock.patch('avocado_i2n.intertest_setup.new_job', new_job)
 @mock.patch('avocado_i2n.cartgraph.worker.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
-@mock.patch('avocado_i2n.cartgraph.worker.TestWorker.set_up', mock.MagicMock())
+@mock.patch('avocado_i2n.cartgraph.worker.TestWorker.start', mock.MagicMock())
 @mock.patch('avocado_i2n.runner.SpawnerDispatcher', mock.MagicMock())
 @mock.patch.object(CartesianRunner, 'run_test_task', DummyTestRun.mock_run_test_task)
 class IntertestSetupTest(Test):
@@ -301,8 +301,20 @@ class IntertestSetupTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["windows_virtuser"][self.shared_pool], 1*2)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.clicked"][self.shared_pool], 1*2)
 
+    def test_net_manipulation(self):
+        """Test the general usage of all net manipulation tools."""
+        self.config["param_dict"]["nets"] = "net1 net2 net5"
+        for vm_action in ["start", "stop"]:
+            with self.subTest(f"Net {vm_action}"):
+                setup_func = getattr(intertest_setup, vm_action)
+                from avocado_i2n.cartgraph import TestWorker
+                operation = mock.MagicMock()
+                with mock.patch.object(TestWorker, vm_action, operation):
+                    setup_func(self.config, tag="0")
+                operation.assert_called()
+
     def test_multi_vm_manipulation(self):
-        """Test the general usage of all multi-vm tools."""
+        """Test the general usage of all multi-vm manipulation tools."""
         self.config["param_dict"]["nets"] = "net1 net2 net5"
         self.config["vm_strs"] = {"vm2": "only Win7\n", "vm3": "only Ubuntu\n"}
         for vm_action in ["boot", "download", "upload", "shutdown"]:

@@ -4251,7 +4251,7 @@ class CartesianGraphTest(Test):
         self.assertEqual(run_graph_instance.restrs, self.runner.job.config["vm_strs"])
         run_graph_instance.parse_shared_root_from_object_roots.assert_called_once()
         mock_run_graph.parse_workers.assert_called_once()
-        run_graph_workers[0].set_up.assert_called()
+        run_graph_workers[0].start.assert_called()
         run_graph_instance.traverse_object_trees.assert_called()
 
 
