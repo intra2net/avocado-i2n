@@ -226,6 +226,7 @@ def update(config, tag=""):
 
     for i, vm_name in enumerate(selected_vms):
         vm_params = config["vms_params"].object_params(vm_name)
+        vm_objects = graph.get_objects_by(param_val=vm_name)
         from_state = vm_params.get("from_state", "install")
         to_state = vm_params.get("to_state", "customize")
         logging.info("Updating state '%s' of %s", to_state, vm_name)
@@ -267,12 +268,17 @@ def update(config, tag=""):
             clean_graph.flag_intersection(clean_graph, flag_type="run", flag=lambda self, slot: False)
             clean_graph.flag_intersection(clean_graph, flag_type="clean", flag=lambda self, slot: False)
             flag_state = None if to_state == "install" else to_state
-            try:
-                clean_graph.flag_children(flag_state, vm_name, worker.id, flag_type="clean", flag=lambda self, slot: len(self.cloned_nodes) == 0, skip_parents=True)
-            except AssertionError as error:
-                logging.error(error)
-                raise ValueError(f"Could not identify a test node from {vm_name}'s to_state='{flag_state}', "
-                                f"is it compatible with the default or specified remove_set?")
+            for vm_object in vm_objects:
+                try:
+                    clean_graph.flag_children(
+                        flag_state, vm_name, vm_object.component_form + r".*" + worker.id,
+                        flag_type="clean", flag=lambda self, slot: len(self.cloned_nodes) == 0,
+                        skip_parents=True,
+                    )
+                except AssertionError as error:
+                    logging.error(error)
+                    raise ValueError(f"Could not identify a test node from {vm_name}'s to_state='{flag_state}', "
+                                     f"is it compatible with the default or specified remove_set?")
 
             logging.info(f"Flagging for updating by {worker.id} all {vm_name} states "
                          f"between and including '{from_state}' and '{to_state}'")
@@ -317,16 +323,17 @@ def update(config, tag=""):
                     verbose=False,
                 )
                 clean_graph.flag_intersection(skip_graph, flag_type="run", flag=lambda self, slot: False)
-                try:
-                    clean_graph.flag_children(
-                        from_state, worker_name=worker.id,
-                        flag_type="run", flag=lambda self, slot: not self.is_finished(slot),
-                        skip_children=True
-                    )
-                except AssertionError as error:
-                    logging.error(error)
-                    raise ValueError(f"Could not identify a test node from {vm_name}'s from_state='{from_state}', "
-                                     f"is it compatible with the default or specified remove_set?")
+                for vm_object in vm_objects:
+                    try:
+                        clean_graph.flag_children(
+                            from_state, vm_name, vm_object.component_form + r".*" + worker.id,
+                            flag_type="run", flag=lambda self, slot: not self.is_finished(slot),
+                            skip_children=True,
+                        )
+                    except AssertionError as error:
+                        logging.error(error)
+                        raise ValueError(f"Could not identify a test node from {vm_name}'s from_state='{from_state}', "
+                                         f"is it compatible with the default or specified remove_set?")
 
             graph.objects += [o for o in clean_graph.objects if o.key == "nets"]
             graph.new_nodes(clean_graph.nodes)
