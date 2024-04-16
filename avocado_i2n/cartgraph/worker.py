@@ -137,29 +137,56 @@ class TestWorker(TestEnvironment):
         self.params["nets_shell_host"] = ip
         self.params["nets_shell_port"] = port
 
-    def set_up(self) -> bool:
+    def start(self) -> bool:
         """
         Start the environment for executing a test node.
 
         :returns: whether the environment is available after current or previous start
         :raises: :py:class:`ValueError` when environment ID could not be parsed
         """
-        logging.info(f"Setting up worker {self.id} environment")
+        logging.info(f"Starting worker {self.id} environment")
         isolation_type = self.params["nets_spawner"]
         if isolation_type == "process":
-            logging.debug("Serial runs do not have any bootable environment")
+            logging.debug("Serial runs do not have any startable environment")
             return True
         elif isolation_type == "lxc":
             import lxc
             cid = self.params["nets_host"]
             container = lxc.Container(cid)
             if not container.running:
-                logging.info(f"Starting bootable environment {cid}")
+                logging.info(f"Starting container environment {cid}")
                 return container.start()
             return container.running
         elif isolation_type == "remote":
             # TODO: send wake-on-lan package to start remote host (assuming routable)
             logging.warning("Assuming the remote host is running for now")
+            return True
+        else:
+            raise RuntimeError(f"Unsupported isolation type {isolation_type}")
+
+    def stop(self) -> bool:
+        """
+        Stop the environment for executing a test node.
+
+        :returns: whether the environment stopping succeded
+        :raises: :py:class:`ValueError` when environment ID could not be parsed
+        """
+        logging.info(f"Stopping worker {self.id} environment")
+        isolation_type = self.params["nets_spawner"]
+        if isolation_type == "process":
+            logging.debug("Serial runs do not have any stoppable environment")
+            return True
+        elif isolation_type == "lxc":
+            import lxc
+            cid = self.params["nets_host"]
+            container = lxc.Container(cid)
+            if container.running:
+                logging.info(f"Stopping container environment {cid}")
+                return container.stop()
+            return container.running
+        elif isolation_type == "remote":
+            # TODO: send shutdown via session to stop remote host (assuming routable)
+            logging.warning("Assuming the remote host is not running for now")
             return True
         else:
             raise RuntimeError(f"Unsupported isolation type {isolation_type}")

@@ -20,13 +20,12 @@ INTERFACE
 """
 
 import os
-import asyncio
 
 from avocado.core.output import LOG_UI, LOG_JOB as logging
 
 from avocado_i2n import params_parser as param
 from avocado_i2n.cartgraph import TestGraph
-from avocado_i2n.intertest_setup import with_cartesian_graph
+from avocado_i2n.intertest_setup import with_cartesian_graph, update
 
 
 #: list of all available manual steps or simply semi-automation tools
@@ -52,29 +51,35 @@ def permubuntu(config, tag=""):
     LOG_UI.info("Starting permanent vm setup for %s (%s)",
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
 
+    update(config, tag=tag)
+
     graph = TestGraph()
     graph.new_workers(l.parse_workers(config["param_dict"]))
-    flat_net = l.parse_net_from_object_strs("net1", config["vm_strs"])
-    graph.objects = l.parse_components_for_object(flat_net, "nets", params=config["param_dict"], unflatten=True)
-    for test_object in graph.objects:
-        if test_object.key != "vms":
-            continue
-        vm = test_object
-        # parse individual net only for the current vm
-        net = l.parse_object_from_objects("net1", "nets", [vm], params=config["param_dict"])
-        logging.info("Performing extra setup for the permanent %s", vm.suffix)
+    for vm_name in selected_vms:
+        graph.objects += TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name])
 
-        # consider this as a special kind of state converting test which concerns
-        # permanent objects (i.e. instead of transition from customize to on
-        # root, it is a transition from supposedly "permanentized" vm to the root)
-        logging.info("Booting %s for the first permanent on state", vm.suffix)
-        setup_dict = config["param_dict"].copy()
-        setup_dict.update({"set_state_vms": "ready"})
-        test_node = l.parse_node_from_object(net, "all..internal..manage.start", prefix=tag, params=setup_dict)
-        # TODO: traversal relies explicitly on object_suffix which only indicates
-        # where a parent node was parsed from, i.e. which test object of the child node
-        test_node.params["object_suffix"] = test_object.long_suffix
-        graph.new_nodes(test_node)
+    for test_worker in graph.workers.values():
+        test_worker.net.update_restrs(config["vm_strs"])
+        for test_object in [o for o in graph.objects if o.key == "vms"]:
+            setup_dict = config["param_dict"].copy()
+            setup_dict["vms"] = test_object.suffix
+            setup_dict.update({"set_state_vms": "ready"})
+
+            # consider this as a special kind of state converting test which concerns
+            # permanent objects (i.e. instead of transition from customize to on
+            # root, it is a transition from supposedly "permanentized" vm to the root)
+            logging.info("Booting %s for the first permanent on state", test_object.suffix)
+            nodes = graph.parse_composite_nodes("all..internal..manage.start", test_worker.net,
+                                                tag, params=setup_dict)
+            if len(nodes) == 0:
+                logging.warning(f"Skipped incompatible worker {test_worker.id}")
+                continue
+            graph.new_nodes(nodes)
+
+            # TODO: traversal relies explicitly on object_suffix which only indicates
+            # where a parent node was parsed from, i.e. which test object of the child node
+            for node in nodes:
+                node.params["object_suffix"] = test_object.long_suffix
 
     graph.parse_shared_root_from_object_roots(config["param_dict"])
     r.run_workers(graph, config["param_dict"])

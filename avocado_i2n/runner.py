@@ -276,7 +276,7 @@ class CartesianRunner(RunnerInterface):
         for worker in graph.workers.values():
             if not worker.spawner:
                 worker.spawner = SpawnerDispatcher(self.job.config, self.job)[worker.params["nets_spawner"]].obj
-            if not worker.set_up():
+            if not worker.start():
                 raise RuntimeError(f"Failed to start environment {worker.id}")
         slot_workers = sorted([*graph.workers.values()], key=lambda x: x.params["name"])
         to_traverse = [graph.traverse_object_trees(s, params) for s in slot_workers]

@@ -228,7 +228,7 @@ class TestGraph(object):
         graph.render(f"{dump_dir}/cg_{id(self)}_{tag}")
 
     """run/clean switching functionality"""
-    def flag_children(self, node_name=None, object_name=None,
+    def flag_children(self, node_name=None, object_name=None, worker_name=None,
                       flag_type="run", flag=lambda self, slot: slot not in self.workers,
                       skip_parents=False, skip_children=False):
         """
@@ -238,6 +238,8 @@ class TestGraph(object):
         :type node_name: str or None
         :param object_name: test object whose state is set or shared root if None
         :type object_name: str or None
+        :param worker_name: test worker whose's run/clean policy will be modified
+        :type worker_name: str or None
         :param str flag_type: 'run' or 'clean' categorization of the children
         :param function flag: whether and when the run/clean action should be executed
         :param bool skip_parents: whether the parents should not be flagged (just children)
@@ -259,6 +261,10 @@ class TestGraph(object):
                 root_tests = self.get_nodes_by(param_key="vms",
                                                param_val="(?:^|\s)"+object_name+"(?:$|\s)",
                                                subset=root_tests)
+        if worker_name:
+            root_tests = self.get_nodes_by(param_key="name",
+                                           param_val="(?:^|\.)"+worker_name+"(?:$|\.)",
+                                           subset=root_tests)
         if len(root_tests) < 1:
             raise AssertionError(f"Could not retrieve node with name {node_name} and flag all its children tests")
         elif len(root_tests) > 1:
@@ -299,10 +305,9 @@ class TestGraph(object):
         activity = "running" if flag_type == "run" else "cleanup"
         logging.debug(f"Flagging test nodes for {activity}")
         for test_node in self.nodes:
-            name = ".".join(test_node.params["name"].split(".")[1:])
-            matching_nodes = graph.get_nodes_by(param_key="name", param_val=name+"$")
+            matching_nodes = graph.get_nodes_by(param_key="name", param_val=test_node.setless_form+"$")
             if len(matching_nodes) == 0:
-                logging.debug(f"Skip flag for non-overlaping {test_node}")
+                logging.debug(f"Skip flag for non-overlapping {test_node}")
                 continue
             elif len(matching_nodes) > 1:
                 raise ValueError(f"Cannot map {test_node} into a unique test node from {graph}")
@@ -728,7 +733,7 @@ class TestGraph(object):
     def parse_node_from_object(test_object: TestObject, restriction: str = "",
                                prefix: str = "", params: dict[str, str] = None) -> TestNode:
         """
-        Get the original install test node for the given object.
+        Get a unique test node of some restriction for the given object.
 
         :param test_object: fully parsed test object to parse the node from, typically a test net
         :param restriction: single or multi-line restriction to use
@@ -1131,7 +1136,7 @@ class TestGraph(object):
         objects = TestGraph.parse_components_for_object(flat_net, "nets",
                                                         params=params, verbose=False, unflatten=False)
         # the parsed test nodes are already fully restricted by the available test objects
-        nodes = TestGraph().parse_composite_nodes(restriction, flat_net, prefix, params=params, verbose=True)
+        nodes = TestGraph().parse_composite_nodes(restriction, flat_net, prefix, params=params, verbose=verbose)
         logging.info(f"Intersecting {len(nodes)} initially parsed nodes with {len(objects)} initially parsed objects")
         object_ids = [o.id for o in objects]
         for test_node in nodes:
@@ -1470,14 +1475,9 @@ class TestGraph(object):
         setup_dict.update({"type": "shared_configure_install", "check_mode": "rr",  # explicit root handling
                            # overwrite some params inherited from the modified install node
                            f"set_state_images_{object_image}_{object_vm}": "root", "start_vm": "no"})
-        install_config = test_object.config.get_copy()
-        install_config.parse_next_batch(base_file="sets.cfg",
-                                        ovrwrt_file=param.tests_ovrwrt_file(),
-                                        ovrwrt_str=param.re_str("all..noop"),
-                                        ovrwrt_dict=setup_dict)
-        pre_node = TestNode("0", install_config)
+        pre_node = TestGraph.parse_node_from_object(test_node.objects[0], "all..noop",
+                                                    prefix="0", params=setup_dict)
         pre_node.results = list(test_node.results)
-        pre_node.set_objects_from_net(test_node.objects[0])
         pre_node.started_worker = worker
         status = await self.runner.run_test_node(pre_node)
         if not status:
@@ -1511,11 +1511,7 @@ class TestGraph(object):
 
         if test_node.should_run(worker):
 
-            if test_node.is_flat():
-                logging.debug(f"Worker {worker.id} skipping a flat node {test_node}")
-            elif params.get("dry_run", "no") == "yes":
-                logging.info(f"Worker {worker.id} skipping via dry test run {test_node}")
-            elif test_node.is_object_root():
+            if test_node.is_object_root():
                 status = await self.traverse_terminal_node(test_node.params["object_root"], worker, params)
                 if not status:
                     logging.error(f"Worker {worker.id} could not perform installation from {test_node}")
@@ -1535,7 +1531,7 @@ class TestGraph(object):
                     test_object.current_state = object_state
 
         else:
-            logging.debug(f"Worker {worker.id} skipping test {test_node}")
+            logging.debug(f"Worker {worker.id} skipping test {test_node} as it should not run")
 
         # register workers that have traversed (and not necessarily run which uses results) both leaf
         # and internal nodes (and not necessarily setup from above cases which could use picked children)
@@ -1558,12 +1554,7 @@ class TestGraph(object):
         test_node.started_worker = worker
         if test_node.should_clean(worker):
 
-            if test_node.is_flat():
-                logging.debug(f"Worker {worker.id} not cleaning a flat node {test_node}")
-            elif params.get("dry_run", "no") == "yes":
-                logging.info(f"Worker {worker.id} not cleaning via dry test run {test_node}")
-
-            elif len(test_node.get_stateful_objects()) > 0:
+            if len(test_node.get_stateful_objects()) > 0:
                 test_node.sync_states(params)
 
         else:
@@ -1657,7 +1648,7 @@ class TestGraph(object):
 
                 if next.is_setup_ready(worker):
                     await self.traverse_node(next, worker, params)
-                    if not next.should_rerun(worker):
+                    if not next.should_run(worker):
                         previous.drop_parent(next, worker)
                     traverse_path.pop()
                 else:
@@ -1672,7 +1663,7 @@ class TestGraph(object):
                 else:
                     await self.traverse_node(next, worker, params)
                     # cleanup nodes that should be retried postpone traversal down
-                    if next.should_rerun(worker):
+                    if next.should_run(worker):
                         traverse_path.pop()
                         continue
 
