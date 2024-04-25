@@ -209,6 +209,32 @@ class IntertestSetupTest(Test):
             else:
                 self.assertGreater(DummyStateControl.asserted_states["unset"][unset_state][self.shared_pool], 0)
 
+    def test_update_wipe(self):
+        """Test the wipe-only state customized usage of the manual update-cache tool."""
+        self.config["vms_params"]["from_state"] = "install"
+        self.config["vms_params"]["to_state"] = "install"
+        self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
+        DummyStateControl.asserted_states["unset"] = {"install": {self.shared_pool: 0},
+                                                      "customize": {self.shared_pool: 0}, "on_customize": {self.shared_pool: 0},
+                                                      "connect": {self.shared_pool: 0},
+                                                      "linux_virtuser": {self.shared_pool: 0}, "windows_virtuser": {self.shared_pool: 0},
+                                                      "guisetup.noop": {self.shared_pool: 0}, "guisetup.clicked": {self.shared_pool: 0},
+                                                      "getsetup.noop": {self.shared_pool: 0}, "getsetup.guisetup.noop": {self.shared_pool: 0},
+                                                      "getsetup.clicked": {self.shared_pool: 0}, "getsetup.guisetup.clicked": {self.shared_pool: 0}}
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-8.*\.iso$"},
+            {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$", "type": "^shared_configure_install$"},
+            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
+        ]
+        intertest_setup.update(self.config, tag="1r")
+        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
+        for unset_state in DummyStateControl.asserted_states["unset"]:
+            if unset_state == "install":
+                self.assertEqual(DummyStateControl.asserted_states["unset"][unset_state][self.shared_pool], 0)
+            else:
+                self.assertGreater(DummyStateControl.asserted_states["unset"][unset_state][self.shared_pool], 0)
+
     def test_update_remove_set(self):
         """Test the remove set usage of the manual update-cache tool."""
         self.config["vms_params"]["remove_set"] = "minimal"
