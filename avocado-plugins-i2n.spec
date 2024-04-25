@@ -29,7 +29,7 @@
 
 Summary: Avocado I2N Plugin
 Name: avocado-plugins-i2n
-Version: 98.0
+Version: 103.0
 Release: 0%{?gitrel}%{?dist}
 License: GPLv2
 Group: Development/Tools
@@ -99,6 +99,11 @@ PYTHONPATH=:. avocado run --max-parallel-tasks=4 selftests/isolation/test_*
 %{_datadir}/avocado-plugins-i2n/tp_folder/*
 
 %changelog
+* Tue Jun 10 2024 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 103.0-0
+- Support for distributed testing via swarm filtered setup reuse
+- Self-contained cargraph package with parsing on demand (parallel loading)
+- Multi-graph support with parallel test retries (for race condition hunting)
+
 * Tue Jul 19 2022 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 98.0-0
 - Fully parallel graph traversal using divergent paths strategy
 - Fully restored, adapted, and CI-covered sample test suite
