@@ -322,10 +322,10 @@ class IntertestSetupTest(Test):
             with self.subTest(f"Multi-vm {vm_action} ({variant_action})"):
                 DummyTestRun.asserted_tests = [
                     # the order does not diverge (which is desirable here) since similar nodes are not bridged
-                    {"shortname": "^internal.stateless.manage.%s.vm2.+.vm3.+Ubuntu" % variant_action, "vms": "^vm2 vm3$", "nets": "^net1$",
-                     "vm_action": "^%s$" % vm_action},
-                    {"shortname": "^internal.stateless.manage.%s.vm2.+.vm3.+Ubuntu" % variant_action, "vms": "^vm2 vm3$", "nets": "^net2$",
-                    "skip_image_processing": "^yes$", "vm_action": "^%s$" % vm_action},
+                    {"shortname": f"^internal.stateless.manage.{variant_action}.vm2.+.vm3.+Ubuntu", "vms": "^vm2 vm3$", "nets": "^net1$",
+                     "vm_action": f"^{vm_action}$"},
+                    {"shortname": f"^internal.stateless.manage.{variant_action}.vm2.+.vm3.+Ubuntu", "vms": "^vm2 vm3$", "nets": "^net2$",
+                    "skip_image_processing": "^yes$", "vm_action": f"^{vm_action}$"},
                 ]
                 setup_func = getattr(intertest_setup, vm_action)
                 setup_func(self.config, tag="0")
@@ -349,16 +349,16 @@ class IntertestSetupTest(Test):
                 DummyStateControl.asserted_states["get"] = {"root": {self.shared_pool: 0}}
                 DummyTestRun.asserted_tests = [
                     # the order does not diverge (which is desirable here) since similar nodes are not bridged
-                    {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets": "^net1$",
+                    {"shortname": f"^internal.stateful.{state_action}.vm2", "vms": "^vm2$", "nets": "^net1$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
                     # vm2 is incompatible with net5 so skipped
-                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Kali", "vms": "^vm3$", "nets": "^net5$",
+                    {"shortname": f"^internal.stateful.{state_action}.vm3.+Kali", "vms": "^vm3$", "nets": "^net5$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Kali", "vms": "^vm3$", "nets": "^net1$",
+                    {"shortname": f"^internal.stateful.{state_action}.vm3.+Kali", "vms": "^vm3$", "nets": "^net1$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Ubuntu", "vms": "^vm3$", "nets": "^net5$",
+                    {"shortname": f"^internal.stateful.{state_action}.vm3.+Ubuntu", "vms": "^vm3$", "nets": "^net5$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Ubuntu", "vms": "^vm3$", "nets": "^net1$",
+                    {"shortname": f"^internal.stateful.{state_action}.vm3.+Ubuntu", "vms": "^vm3$", "nets": "^net1$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % state_action},
                 ]
                 setup_func = getattr(intertest_setup, state_action)
@@ -371,15 +371,15 @@ class IntertestSetupTest(Test):
             with self.subTest(f"Manual state {state_action}"):
                 DummyTestRun.asserted_tests = [
                     # the order does not diverge (which is desirable here) since similar nodes are not bridged
-                    {"shortname": "^internal.stateless.manage.unchanged.vm2", "vms": "^vm2$", "nets": "^net1$",
+                    {"shortname": f"^internal.stateful.{operation}.vm2", "vms": "^vm2$", "nets": "^net1$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Kali", "vms": "^vm3$", "nets": "^net5$",
+                    {"shortname": f"^internal.stateful.{operation}.vm3.+Kali", "vms": "^vm3$", "nets": "^net5$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Kali", "vms": "^vm3$", "nets": "^net1$",
+                    {"shortname": f"^internal.stateful.{operation}.vm3.+Kali", "vms": "^vm3$", "nets": "^net1$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Ubuntu", "vms": "^vm3$", "nets": "^net5$",
+                    {"shortname": f"^internal.stateful.{operation}.vm3.+Ubuntu", "vms": "^vm3$", "nets": "^net5$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
-                    {"shortname": "^internal.stateless.manage.unchanged.vm3.+Ubuntu", "vms": "^vm3$", "nets": "^net1$",
+                    {"shortname": f"^internal.stateful.{operation}.vm3.+Ubuntu", "vms": "^vm3$", "nets": "^net1$",
                     "skip_image_processing": "^yes$", "vm_action": "^%s$" % operation},
                 ]
                 for test_dict in DummyTestRun.asserted_tests:

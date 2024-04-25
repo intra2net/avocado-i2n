@@ -123,8 +123,8 @@ test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) 
 test $(ls -A1q "$test_results/latest/test-results" | grep manage.run | wc -l) == $((${#container_array[@]}-1)) || (echo "Incorrect number of control file runs" && exit 1)
 $avocado_cmd setup=get nets=$test_slots vms=vm1,vm2 get_state_images=customize
 test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == $((${#container_array[@]}*2-1)) || (echo "Incorrect number of total state retrieval tests" && exit 1)
-test $(ls -A1q "$test_results/latest/test-results" | grep manage.unchanged.vms.vm1 | wc -l) == $((${#container_array[@]}-1)) || (echo "Incorrect number of vm1 state retrieval tests" && exit 1)
-test $(ls -A1q "$test_results/latest/test-results" | grep manage.unchanged.vms.vm2 | wc -l) == ${#container_array[@]} || (echo "Incorrect number of vm2 state retrieval tests" && exit 1)
+test $(ls -A1q "$test_results/latest/test-results" | grep stateful.get.vms.vm1 | wc -l) == $((${#container_array[@]}-1)) || (echo "Incorrect number of vm1 state retrieval tests" && exit 1)
+test $(ls -A1q "$test_results/latest/test-results" | grep stateful.get.vms.vm2 | wc -l) == ${#container_array[@]} || (echo "Incorrect number of vm2 state retrieval tests" && exit 1)
 echo "Skipping update tool until fixed for now"
 $avocado_cmd setup=update nets=$test_slots vms=vm1,vm2 from_state=customize to_state_vm1=connect remove_set=tutorial3
 test $(ls -A1q "$test_results/latest/test-results" | grep -v by-status | wc -l) == 3 || (echo "Incorrect number of total tests during update" && exit 1)

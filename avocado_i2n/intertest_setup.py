@@ -784,7 +784,7 @@ def _parse_one_node_for_all_objects_per_worker(config, tag, verb):
     setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
     for test_worker in graph.workers.values():
         test_worker.net.update_restrs(config["vm_strs"])
-        nodes = graph.parse_composite_nodes("all..internal..manage.%s" % verb[1], test_worker.net,
+        nodes = graph.parse_composite_nodes("all..internal.stateless.manage.%s" % verb[1], test_worker.net,
                                             tag, params=setup_dict)
         if len(nodes) == 0:
             logging.warning(f"Skipped incompatible worker {test_worker.id}")
@@ -833,7 +833,7 @@ def _parse_and_iterate_for_objects_and_workers(config, tag, param_dict, operatio
             setup_dict.update(param_dict)
             setup_dict["vms"] = test_object.suffix
 
-            nodes = graph.parse_composite_nodes("all..internal..manage.unchanged", test_worker.net,
+            nodes = graph.parse_composite_nodes(f"all..internal.stateful.{operation}", test_worker.net,
                                                 tag, params=setup_dict)
             if len(nodes) == 0:
                 logging.warning(f"Skipped incompatible worker {test_worker.id}")
