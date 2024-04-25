@@ -16,10 +16,10 @@
 import sys
 import os
 import re
-import collections
+import logging
+log = logging.getLogger('avocado.job.' + __name__)
 
 from avocado.core.settings import settings
-from avocado.core.output import LOG_JOB as log
 from virttest import env_process
 
 from . import params_parser as param
@@ -147,7 +147,7 @@ def params_from_cmd(config):
     config["prefix"] = ""
 
     # log into files for each major level the way it was done for autotest
-    config["job.run.store_logging_stream"] = ["avocado.core:DEBUG", ":10", ":20", ":30", ":40"]
+    config["job.run.store_logging_stream"] = ["avocado.core:DEBUG"]
     # dump parsed and traversed graph at each test loading and running step
     graph.set_graph_logging_level(level=config["tests_params"].get_numeric("cartgraph_verbose_level", 20))
 

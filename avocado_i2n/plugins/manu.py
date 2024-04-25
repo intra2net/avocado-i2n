@@ -14,9 +14,10 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import traceback
 
 from avocado.core.settings import settings
-from avocado.core.output import LOG_JOB as log, LOG_UI
+from avocado.core.output import LOG_UI, LOG_JOB as log
 from avocado.core.plugin_interfaces import CLICmd
 
 from .. import cmd_parser
@@ -79,7 +80,11 @@ class Manu(CLICmd):
                     # return 1 if at least one of the steps fails
                     retcode = 1
             except Exception as error:
+                tb_list = traceback.format_exception(error)
+                for item in tb_list:
+                    log.error(item.rstrip())
                 LOG_UI.error(error)
+                LOG_UI.error("Use 'export AVOCADO_LOG_EARLY=1' for further details.")
                 retcode = 1
 
         log.info("Manual setup chain finished.")

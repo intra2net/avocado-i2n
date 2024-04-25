@@ -22,7 +22,7 @@ except:
     LOADER_AVAILABLE = False
 
 from avocado.core.settings import settings
-from avocado.core.output import LOG_JOB as log
+from avocado.core.output import LOG_UI, LOG_JOB as log
 from avocado.core.plugin_interfaces import CLI
 
 from .. import cmd_parser
