@@ -1869,7 +1869,17 @@ class StatesSetupTest(Test):
         self.env = mock.MagicMock(name='env')
         self.env.get_vm = mock.MagicMock(side_effect=self._get_mock_vm)
 
-        self.backend = mock.MagicMock(spec=ss.StateBackend)
+        # satisfy subclass checks for our mock spy methods
+        def mock_class(cls):
+            class meta(type):
+                def __getattribute__(self, name):
+                    try:
+                        return getattr(m, name)
+                    except AttributeError:
+                        return getattr(cls, name)
+            m = mock.MagicMock(spec_set=cls)
+            return meta(cls.__name__, cls.__bases__, {})
+        self.backend = mock_class(ss.StateBackend)
         ss.BACKENDS = {"mock": self.backend}
 
     def _set_up_generic_params(self, state_op, state_name, state_type, state_object):

@@ -29,6 +29,7 @@ INTERFACE
 
 import os
 import re
+import json
 import shutil
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
@@ -270,11 +271,35 @@ class QCOW2ExtBackend(SourcedStateBackend, QCOW2Backend):
         vm_dir = os.path.join(state_dir, vm_id)
         image_dir = os.path.join(vm_dir, image_name)
         state = params["set_state"]
-        qemu_img = QemuImg(params, os.path.join(params["vms_base_dir"], vm_name), image_name)
         logging.info("Creating %s state '%s' of %s/%s", cls.state_type(), state,
                      vm_name, image_name)
-        os.makedirs(image_dir, exist_ok=True)
-        shutil.copy(qemu_img.image_filename, os.path.join(image_dir, state + ".qcow2"))
+        state_file = os.path.join(image_dir, state + ".qcow2")
+        # TODO: this does not follow a simple imperative boundary and has to be refactored
+        # together with a more natural support for qcow2ext and general external state chains,
+        # i.e. no conditionals allowed at the boundary
+        qemu_img = QemuImg(params, os.path.join(params["vms_base_dir"], vm_name), image_name)
+        image_info = json.loads(qemu_img.info(output="json"))
+        backing_file = image_info.get("backing-filename", "")
+        inverse = params.copy()
+        inverse["image_name"] = os.path.join(image_dir, state)
+        if os.path.exists(state_file):
+            qemu_img_inverse = QemuImg(inverse, os.path.join(params["vms_base_dir"], vm_name), image_name)
+            image_info = json.loads(qemu_img_inverse.info(output="json"))
+            inverse_file = image_info.get("backing-filename", "")
+            if state_file == backing_file:
+                # disallow loops and circular backing references, assuming an ancestor and squashing back
+                logging.info(f"Overwriting pre-existing backing state {state} via committing")
+                qemu_img.commit(params)
+            elif inverse_file == backing_file:
+                logging.info(f"Overwriting pre-existing backing state {state} via forward replacement")
+                os.makedirs(image_dir, exist_ok=True)
+                os.unlink(state_file)
+                shutil.copy(qemu_img.image_filename, state_file)
+            else:
+                raise RuntimeError("Cannot perform nontrivial pre-existing state overwrite for qcow2ext")
+        else:
+            os.makedirs(image_dir, exist_ok=True)
+            shutil.copy(qemu_img.image_filename, state_file)
 
     @classmethod
     def _unset(cls, params, object=None):

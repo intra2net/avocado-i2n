@@ -115,6 +115,8 @@ class RamfileBackend(SourcedStateBackend):
         state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, params["object_id"])
         state_file = os.path.join(vm_dir, params["check_state"] + ".state")
+        if os.path.exists(state_file):
+            os.unlink(state_file)
         vm.save_to_file(state_file)
         vm.destroy(gracefully=False)
 

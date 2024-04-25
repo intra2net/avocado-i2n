@@ -458,7 +458,15 @@ def set_states(run_params, env=None):
             if state_params["set_state"] in ROOTS:
                 state_backend.unset_root(state_params, state_object)
             else:
-                state_backend.unset(state_params, state_object)
+                from .pool import SourcedStateBackend
+                if issubclass(state_backend, SourcedStateBackend):
+                    # overwriting arbitrary external states in the backing chain can result in invalid
+                    # derivative states when branching out and other problems, do this only manually if
+                    # you really know what you are doing which would depend on a case-by-case basis
+                    logging.warning("Preserving the already existing snapshot due to overwrite dependency coupling")
+                else:
+                    logging.info("Removing the already existing snapshot")
+                    state_backend.unset(state_params, state_object)
         elif state_exists:
             raise exceptions.TestError("Invalid policy %s: The end action on present state can be "
                                        "either of 'abort', 'reuse', 'force'." % state_params["set_mode"])
