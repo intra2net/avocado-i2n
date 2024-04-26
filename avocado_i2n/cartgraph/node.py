@@ -27,6 +27,8 @@ INTERFACE
 
 """
 
+from __future__ import annotations
+
 import os
 import re
 from functools import cmp_to_key
@@ -513,7 +515,7 @@ class TestNode(Runnable):
             # is finished globally by at least N workers (down to at least one worker)
             return len(self.shared_finished_workers) >= threshold
 
-    def get_terminal_object(self, key: str = "object_root") -> "TestObject|None":
+    def get_terminal_object(self, key: str = "object_root") -> TestObject|None:
         """
         Determine any object that this node is a root of.
 

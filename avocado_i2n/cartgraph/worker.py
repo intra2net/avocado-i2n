@@ -27,6 +27,8 @@ INTERFACE
 
 """
 
+from __future__ import annotations
+
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 
