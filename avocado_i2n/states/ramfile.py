@@ -139,8 +139,11 @@ class RamfileBackend(SourcedStateBackend):
         """
         vm, vm_name = object, params["vms"]
         logging.info("Removing vm state '%s' of %s", params["unset_state"], vm_name)
-        if vm is not None:
-            vm.destroy(gracefully=False)
+        # TODO: such switch is not allowed within the state backend, has to be handled on more globally:
+        # this is entirely commented so that the "remove previous state" on overwriting doesn't turn off the vm
+        # making it impossible to save a state on off-vm
+        #if vm is not None:
+        #    vm.destroy(gracefully=False)
 
         for image_name in params.objects("images"):
             image_params = params.object_params(image_name)
