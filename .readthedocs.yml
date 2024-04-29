@@ -1,16 +1,31 @@
+# .readthedocs.yaml
+# Read the Docs configuration file
+# See https://docs.readthedocs.io/en/stable/config-file/v2.html for details
+
+# Required
 version: 2
 
-python:
-  version: 3.7
-  install:
-     - requirements: requirements_pip.txt
-     # TODO: pip-crippled vt dependency and no RTD scripts supported
-     #- method: pip
-     #  path: .
+# Set the version of Python and other tools you might need
+build:
+  os: ubuntu-22.04
+  tools:
+    python: "3.12"
 
-formats: all
-
+# Build documentation in the docs/api directory with Sphinx
 sphinx:
   builder: html
-  configuration: doc/api/conf.py
+  configuration: docs/api/conf.py
+  # TODO: investigate warnings
   fail_on_warning: false
+
+# Build docs in additional formats such as PDF and ePub
+formats: all
+
+# Specify dependencies to enable reproducible builds:
+# https://docs.readthedocs.io/en/stable/guides/reproducible-builds.html
+#python:
+#  install:
+#      TODO: pip-crippled vt dependency (104) and no RTD scripts supported
+#     - requirements: requirements_pip.txt
+#     - method: pip
+#       path: .

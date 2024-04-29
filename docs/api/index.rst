@@ -4,14 +4,58 @@ avocado-i2n
 *Plugins for avocado extending avocado-vt with automated vm state setup,
 inheritance, and traversal*
 
-|Build Status| |Documentation Status| |Language grade: Python| |codecov|
+|GH Actions| |Documentation Status| |CodeQL| |codecov|
 
 This file provides a brief overview of the core concepts behind the
 current plugin and hopefully a compact explanation of how tests are
 being run.
 
-Motivation and background
--------------------------
+Motivation
+----------
+
+Let’s say that we write an integration test about some web site that has
+to validate the system behaves as expected. Imagine we have a web page
+with a button that we want to click on and check that a dialog that
+appears once we click is exactly as it should be. So far it is not too
+hard to write a test about this - we validate the preconditions like the
+button that has to be present, operate on top, and validate the
+postconditions like the dialog appearing afterwards. What if there is
+also a checkbox on the dialog that the user would check to see some
+warning text appear? Still easy enough as we extend the original test to
+also make sure the checkbox is there, check it, then make sure the
+warning is there. Now let’s complicate this a bit further - imagine
+there are instead two checkboxes on the dialog that we should also
+validate but separately. If we check the first checkbox some text will
+be displayed but if we check the second checkbox a different text will
+be displayed instead. How do we validate both use cases? Well, we write
+a test like the original one that expects a button, clicks on it, then
+expects the first checkbox and checks it to validate the first outcome
+and another one to do the same things but check the second checkbox and
+validate the second outcome. Ok, two integration tests for the two use
+cases. But what if they are a hundred and we have to check the first
+button and validate the dialog each time? Could we do better than this
+by reusing the first step in the process? We could try and complicate
+our initial test a bit by unchecking the first checkbox in order to
+check the second one and test for its outcome but there is a significant
+drawback here - unchecking the first checkbox is not a precondition for
+checking the second one and could affect its outcome in unforeseen ways.
+Furthermore, the test script could be come very complicated and
+convoluted over multiple such undo operations. There is a way around all
+of this though: what if we could click the button, validate the dialog
+has appeared, and then simply save the state of everything we are doing
+as a checkpoint that we can then branch into both use cases? Enter the
+Cartesian graph where the first step would be a separate simpler test
+and a setup node for two other simpler tests (leaf nodes) that would
+each simply start from the state the initial test left the environment
+in, check its respective checkbox and validate the text that would
+appear as result of that. None of the two tests would be in any way
+aware of the other one or affected by it. This is why we parse tests as
+graphs where tests could be requirements for other tests and it is up to
+us to consider all variants of our web site’s use cases and use graph
+test nodes as means to reuse steps of their scenarios.
+
+Background
+----------
 
 The two milestones and guiding principles for a test running process
 are:
@@ -615,11 +659,11 @@ This document concentrates only on the running part and the developing
 part is covered in multiple tutorials in the project wiki. Feel free to
 check it out.
 
-.. |Build Status| image:: https://travis-ci.org/intra2net/avocado-i2n.svg?branch=master
-   :target: https://travis-ci.org/intra2net/avocado-i2n
+.. |GH Actions| image:: https://github.com/intra2net/avocado-i2n/actions/workflows/ci.yml/badge.svg
+   :target: https://github.com/intra2net/avocado-i2n/actions/workflows/ci.yml
 .. |Documentation Status| image:: https://readthedocs.org/projects/avocado-i2n/badge/?version=latest
    :target: https://avocado-i2n.readthedocs.io/en/latest/?badge=latest
-.. |Language grade: Python| image:: https://img.shields.io/lgtm/grade/python/g/intra2net/avocado-i2n.svg?logo=lgtm&logoWidth=18
-   :target: https://lgtm.com/projects/g/intra2net/avocado-i2n/context:python
+.. |CodeQL| image:: https://github.com/intra2net/avocado-i2n/actions/workflows/codeql.yml/badge.svg
+   :target: https://github.com/intra2net/avocado-i2n/actions/workflows/codeql.yml
 .. |codecov| image:: https://codecov.io/gh/intra2net/avocado-i2n/branch/master/graph/badge.svg
    :target: https://codecov.io/gh/intra2net/avocado-i2n
