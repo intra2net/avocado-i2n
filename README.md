@@ -29,7 +29,9 @@ one to do the same things but check the second checkbox and validate the
 second outcome. Ok, two integration tests for the two use cases. But what if
 they are a hundred and we have to check the first button and validate the
 dialog each time? Could we do better than this by reusing the first step in
-the process? We could try and complicate our initial test a bit by unchecking
+the process?
+
+Let's see. We could try and complicate our initial test a bit by unchecking
 the first checkbox in order to check the second one and test for its outcome
 but there is a significant drawback here - unchecking the first checkbox is
 not a precondition for checking the second one and could affect its outcome

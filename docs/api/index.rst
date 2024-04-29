@@ -34,25 +34,27 @@ and another one to do the same things but check the second checkbox and
 validate the second outcome. Ok, two integration tests for the two use
 cases. But what if they are a hundred and we have to check the first
 button and validate the dialog each time? Could we do better than this
-by reusing the first step in the process? We could try and complicate
-our initial test a bit by unchecking the first checkbox in order to
-check the second one and test for its outcome but there is a significant
-drawback here - unchecking the first checkbox is not a precondition for
-checking the second one and could affect its outcome in unforeseen ways.
-Furthermore, the test script could be come very complicated and
-convoluted over multiple such undo operations. There is a way around all
-of this though: what if we could click the button, validate the dialog
-has appeared, and then simply save the state of everything we are doing
-as a checkpoint that we can then branch into both use cases? Enter the
-Cartesian graph where the first step would be a separate simpler test
-and a setup node for two other simpler tests (leaf nodes) that would
-each simply start from the state the initial test left the environment
-in, check its respective checkbox and validate the text that would
-appear as result of that. None of the two tests would be in any way
-aware of the other one or affected by it. This is why we parse tests as
-graphs where tests could be requirements for other tests and it is up to
-us to consider all variants of our web site’s use cases and use graph
-test nodes as means to reuse steps of their scenarios.
+by reusing the first step in the process?
+
+Let’s see. We could try and complicate our initial test a bit by
+unchecking the first checkbox in order to check the second one and test
+for its outcome but there is a significant drawback here - unchecking
+the first checkbox is not a precondition for checking the second one and
+could affect its outcome in unforeseen ways. Furthermore, the test
+script could be come very complicated and convoluted over multiple such
+undo operations. There is a way around all of this though: what if we
+could click the button, validate the dialog has appeared, and then
+simply save the state of everything we are doing as a checkpoint that we
+can then branch into both use cases? Enter the Cartesian graph where the
+first step would be a separate simpler test and a setup node for two
+other simpler tests (leaf nodes) that would each simply start from the
+state the initial test left the environment in, check its respective
+checkbox and validate the text that would appear as result of that. None
+of the two tests would be in any way aware of the other one or affected
+by it. This is why we parse tests as graphs where tests could be
+requirements for other tests and it is up to us to consider all variants
+of our web site’s use cases and use graph test nodes as means to reuse
+steps of their scenarios.
 
 Background
 ----------
