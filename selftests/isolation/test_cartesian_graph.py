@@ -735,9 +735,8 @@ class CartesianNodeTest(Test):
 
     def test_is_started_or_finished(self):
         """Test that a test node is eagerly to fully started or finished in different scopes."""
-        # TODO: the worker restrictions are still a bit clunky
-        test_workers = TestGraph.parse_workers({"nets": "cluster1.net6 cluster1.net7 cluster1.net8"
-                                                        " cluster2.net6 cluster2.net7"})
+        nets = " ".join(param.all_suffixes_by_restriction("only cluster1,cluster2\nno cluster2.net8,net9\n"))
+        test_workers = TestGraph.parse_workers({"nets": nets})
         full_nodes = []
         for worker in test_workers:
             new_node = TestGraph.parse_node_from_object(worker.net, "normal..tutorial1", prefix="1")
@@ -791,9 +790,8 @@ class CartesianNodeTest(Test):
 
     def test_is_started_or_finished_filter(self):
         """Test that a test node is eagerly to fully started or finished in filtered scopes."""
-        # TODO: the worker restrictions are still a bit clunky
-        test_workers = TestGraph.parse_workers({"nets": "cluster1.net6 cluster1.net7 cluster1.net8"
-                                                        " cluster2.net6 cluster2.net7"})
+        nets = " ".join(param.all_suffixes_by_restriction("only cluster1,cluster2\nno cluster2.net8,net9\n"))
+        test_workers = TestGraph.parse_workers({"nets": nets})
         full_nodes = []
         for worker in test_workers:
             new_node = TestGraph().parse_composite_nodes("normal..tutorial1", worker.net,
@@ -854,9 +852,8 @@ class CartesianNodeTest(Test):
 
     def test_is_started_or_finished_flat(self):
         """Test that a flat node is always started and finished with any threshold."""
-        # TODO: the worker restrictions are still a bit clunky
-        test_workers = TestGraph.parse_workers({"nets": "cluster1.net6 cluster1.net7 cluster1.net8"
-                                                        " cluster2.net6 cluster2.net7"})
+        nets = " ".join(param.all_suffixes_by_restriction("only cluster1,cluster2\nno cluster2.net8,net9\n"))
+        test_workers = TestGraph.parse_workers({"nets": nets})
         nodes = TestGraph.parse_flat_nodes("normal..tutorial1")
         self.assertEqual(len(nodes), 1)
         flat_node = nodes[0]
@@ -2567,8 +2564,8 @@ class CartesianGraphTest(Test):
         graph = TestGraph()
         graph.new_nodes(TestGraph.parse_flat_nodes("leaves..tutorial2,leaves..tutorial_gui"))
         graph.parse_shared_root_from_object_roots()
-        # TODO: the worker restrictions are still a bit clunky
-        graph.new_workers(TestGraph.parse_workers({"nets": "cluster1.net6 cluster1.net7 cluster2.net6 cluster2.net7",
+        nets = " ".join(param.all_suffixes_by_restriction("only cluster1,cluster2\nonly net6,net7\n"))
+        graph.new_workers(TestGraph.parse_workers({"nets": nets,
                                                    "only_vm1": "CentOS", "only_vm2": "Win10",
                                                    "shared_pool": self.config["param_dict"]["shared_pool"]}))
 
