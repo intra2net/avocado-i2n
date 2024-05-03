@@ -271,6 +271,7 @@ class TestRunner(RunnerInterface):
                             f"Test result {uid} was obtained but test took much longer ({duration}) than usual"
                         )
                         # TODO: could we replace with WARN before the status is announced to the status server?
+                        # TODO: warn can hide fail if failed test took too long
                         test_result["status"] = "WARN"
                 # job and local results as interpreted by us have only serializable easy to use data
                 job_result = {key: value for key, value in test_result.items()}
