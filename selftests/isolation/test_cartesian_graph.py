@@ -2202,11 +2202,11 @@ class CartesianGraphTest(Test):
         graph = TestGraph()
         graph.new_objects([n for n in TestGraph.parse_suffix_objects("vms")])
         self.assertEqual(len(graph.objects), 6)
-        get_objects = graph.get_objects(param_val="vm\d")
+        get_objects = graph.get_objects(param_val=r"vm\d")
         self.assertEqual(len(get_objects), len(graph.objects))
         get_objects = graph.get_objects(param_val="vm1")
         self.assertEqual(len(get_objects), 2)
-        get_objects = graph.get_objects(param_val="\.CentOS", subset=get_objects)
+        get_objects = graph.get_objects(param_val=r"\.CentOS", subset=get_objects)
         self.assertEqual(len(get_objects), 1)
         get_objects = graph.get_objects("os_type", param_val="linux", subset=get_objects)
         self.assertEqual(len(get_objects), 1)
@@ -2243,7 +2243,7 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(get_nodes), len(graph.nodes))
         get_nodes = graph.get_nodes(param_val="tutorial3.remote")
         self.assertEqual(len(get_nodes), 16)
-        get_nodes = graph.get_nodes(param_val="\.object", subset=get_nodes)
+        get_nodes = graph.get_nodes(param_val=r"\.object", subset=get_nodes)
         self.assertEqual(len(get_nodes), 8)
         get_nodes = graph.get_nodes("remote_control_check", param_val="yes", subset=get_nodes)
         self.assertEqual(len(get_nodes), 4)
@@ -3795,25 +3795,25 @@ class CartesianGraphTest(Test):
             # net1 now moves on to its planned test
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets": "^net1$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c101$",
-             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
+             "get_location_vm1": r"[\w:/]+ net1:/mnt/local/images/swarm",
              "nets_shell_host_net1": "^192.168.254.101$", "nets_shell_port_net1": "22"},
             # net2 now steps back from tutorial2.files newly occupied by net1
             # net3 is done with half of the setup for client_noop and waits for net4 to provide the other half
             # net4 now moves on to its planned test
             {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^net4$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c104$",
-             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm",
+             "get_location_image1_vm1": r"[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": r"[\w:/]+ net4:/mnt/local/images/swarm",
              "nets_shell_host_net3": "^192.168.254.103$", "nets_shell_host_net4": "^192.168.254.104$",
              "nets_shell_port_net3": "22", "nets_shell_port_net4": "22"},
             # net1 continues to the second tutorial2
             {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^net1$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c101$",
-             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm",
+             "get_location_vm1": r"[\w:/]+ net1:/mnt/local/images/swarm",
              "nets_shell_host_net1": "^192.168.254.101$", "nets_shell_port_net1": "22"},
             # net2 picks the first gui test before net3's turn
             {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^net2$",
              "nets_spawner": "lxc", "nets_gateway": "^$", "nets_host": "^c102$",
-             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net4:/mnt/local/images/swarm",
+             "get_location_image1_vm1": r"[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": r"[\w:/]+ net4:/mnt/local/images/swarm",
              "nets_shell_host_net3": "^192.168.254.103$", "nets_shell_host_net4": "^192.168.254.104$",
              "nets_shell_port_net3": "22", "nets_shell_port_net4": "22"},
         ]
@@ -3864,20 +3864,20 @@ class CartesianGraphTest(Test):
              "nets_spawner": "remote", "nets_gateway": "^cluster2.net.lan$", "nets_host": "^2$"},
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets": "^cluster1.net6$",
              "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^1$",
-             "get_location_vm1": "[\w:/]+ cluster1.net6:/mnt/local/images/swarm",
+             "get_location_vm1": r"[\w:/]+ cluster1.net6:/mnt/local/images/swarm",
              "nets_shell_host_cluster1.net6": "^cluster1.net.lan$", "nets_shell_port_cluster1.net6": "221"},
             {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^cluster2.net7$",
              "nets_spawner": "remote", "nets_gateway": "^cluster2.net.lan$", "nets_host": "^2$",
-             "get_location_image1_vm1": "[\w:/]+ cluster2.net6:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ cluster2.net7:/mnt/local/images/swarm",
+             "get_location_image1_vm1": r"[\w:/]+ cluster2.net6:/mnt/local/images/swarm", "get_location_image1_vm2": r"[\w:/]+ cluster2.net7:/mnt/local/images/swarm",
              "nets_shell_host_cluster2.net6": "^cluster2.net.lan$", "nets_shell_host_cluster2.net7": "^cluster2.net.lan$",
              "nets_shell_port_cluster2.net6": "221", "nets_shell_port_cluster2.net7": "222"},
             {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^cluster1.net6$",
              "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^1$",
-             "get_location_vm1": "[\w:/]+ cluster1.net6:/mnt/local/images/swarm",
+             "get_location_vm1": r"[\w:/]+ cluster1.net6:/mnt/local/images/swarm",
              "nets_shell_host_cluster1.net6": "^cluster1.net.lan$", "nets_shell_port_cluster1.net6": "221"},
             {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^cluster1.net7$",
              "nets_spawner": "remote", "nets_gateway": "^cluster1.net.lan$", "nets_host": "^2$",
-             "get_location_image1_vm1": "[\w:/]+ cluster2.net6:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ cluster2.net7:/mnt/local/images/swarm",
+             "get_location_image1_vm1": r"[\w:/]+ cluster2.net6:/mnt/local/images/swarm", "get_location_image1_vm2": r"[\w:/]+ cluster2.net7:/mnt/local/images/swarm",
              "nets_shell_host_cluster2.net6": "^cluster2.net.lan$", "nets_shell_host_cluster2.net7": "^cluster2.net.lan$",
              "nets_shell_port_cluster2.net6": "221", "nets_shell_port_cluster2.net7": "222"},
         ]
@@ -3912,16 +3912,16 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$", "nets": "^net3$"},
             # net4 would step back from already occupied windows_virtuser (by net2) and wander off
             {"shortname": "^leaves.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets": "^net1$",
-             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm"},
+             "get_location_vm1": r"[\w:/]+ net1:/mnt/local/images/swarm"},
             # net2 would step back from already occupied linux_virtuser (by net3) and net3 proceeds from most distant path
             {"shortname": "^leaves.tutorial_gui.client_clicked", "vms": "^vm1 vm2$", "nets": "^net3$",
-             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net2:/mnt/local/images/swarm"},
+             "get_location_image1_vm1": r"[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": r"[\w:/]+ net2:/mnt/local/images/swarm"},
             # net4 now picks up available setup and tests after wandering off from occupied node
             {"shortname": "^leaves.quicktest.tutorial2.names.vm1", "vms": "^vm1$", "nets": "^net4$",
-             "get_location_vm1": "[\w:/]+ net1:/mnt/local/images/swarm"},
+             "get_location_vm1": r"[\w:/]+ net1:/mnt/local/images/swarm"},
             # net1 would bounce off the already occupied tutorial2.names
             {"shortname": "^leaves.tutorial_gui.client_noop", "vms": "^vm1 vm2$", "nets": "^net2$",
-             "get_location_image1_vm1": "[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": "[\w:/]+ net2:/mnt/local/images/swarm"},
+             "get_location_image1_vm1": r"[\w:/]+ net3:/mnt/local/images/swarm", "get_location_image1_vm2": r"[\w:/]+ net2:/mnt/local/images/swarm"},
             # all others now step back from already occupied tutorial2.names (by net1)
         ]
         self._run_traversal(graph, self.config["param_dict"])

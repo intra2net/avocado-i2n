@@ -63,10 +63,10 @@ class IntertestSetupTest(Test):
                                                       "getsetup.clicked": {self.shared_pool: 0}, "getsetup.guisetup.clicked": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-8.*\.iso$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": r".*CentOS-8.*\.iso$"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
             {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
+            {"shortname": "^original.unattended_install", "vms": "^vm2$", "cdrom_cd1": r".*win.*\.iso$"},
             {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$"},
         ]
         intertest_setup.update(self.config, tag="1r")
@@ -94,11 +94,11 @@ class IntertestSetupTest(Test):
                                                       "getsetup.clicked": {self.shared_pool: 0}, "getsetup.guisetup.clicked": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-8.*\.iso$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": r".*CentOS-8.*\.iso$"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "_status": "FAIL"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "_status": "PASS"},
             {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
+            {"shortname": "^original.unattended_install", "vms": "^vm2$", "cdrom_cd1": r".*win.*\.iso$"},
             {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$"},
         ]
         intertest_setup.update(self.config, tag="1r")
@@ -130,7 +130,7 @@ class IntertestSetupTest(Test):
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_images": "^install$"},
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "get_state_images": "^customize$"},
             {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
+            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": r".*win.*\.iso$"},
             {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$", "get_state_images": "^install$"},
         ]
         intertest_setup.update(self.config, tag="1r")
@@ -166,7 +166,7 @@ class IntertestSetupTest(Test):
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "get_state_images": "^install$", "nets": "^net1$"},
             {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$", "type": "^shared_configure_install$", "nets": "^net2$"},
             {"shortname": "^internal.automated.connect.vm1", "vms": "^vm1$", "get_state_images": "^customize$", "nets": "^net1$"},
-            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$", "nets": "^net2$"},
+            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": r".*win.*\.iso$", "nets": "^net2$"},
             {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$", "get_state_images": "^install$", "nets": "^net2$"},
         ]
         intertest_setup.update(self.config, tag="1r")
@@ -197,9 +197,9 @@ class IntertestSetupTest(Test):
                                                       "getsetup.clicked": {self.shared_pool: 0}, "getsetup.guisetup.clicked": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-8.*\.iso$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": r".*CentOS-8.*\.iso$"},
             {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": ".*win.*\.iso$"},
+            {"shortname": "^original.unattended_install.*vm2", "vms": "^vm2$", "cdrom_cd1": r".*win.*\.iso$"},
         ]
         intertest_setup.update(self.config, tag="1r")
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
@@ -216,7 +216,7 @@ class IntertestSetupTest(Test):
         DummyStateControl.asserted_states["unset"] = {"on_customize": {self.shared_pool: 0}, "connect": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-8.*\.iso$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": r".*CentOS-8.*\.iso$"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
         ]
         intertest_setup.update(self.config, tag="0")
@@ -230,7 +230,7 @@ class IntertestSetupTest(Test):
         DummyStateControl.asserted_states["unset"] = {"on_customize": {self.shared_pool: 0}, "connect": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-8.*\.iso$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": r".*CentOS-8.*\.iso$"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
         ]
         intertest_setup.update(self.config, tag="0")
@@ -244,7 +244,7 @@ class IntertestSetupTest(Test):
         DummyStateControl.asserted_states["unset"] = {"on_customize": {self.shared_pool: 0}, "connect": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-8.*\.iso$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": r".*CentOS-8.*\.iso$"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
         ]
         intertest_setup.update(self.config, tag="0")
@@ -258,7 +258,7 @@ class IntertestSetupTest(Test):
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n"}
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1", "vms": "^vm1$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": ".*CentOS-8.*\.iso$"},
+            {"shortname": "^original.unattended_install.*vm1", "vms": "^vm1$", "cdrom_cd1": r".*CentOS-8.*\.iso$"},
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$"},
         ]
         # vm2 does not participate in any test from the minimal test set but vm1 will be updated before this assertion fails
@@ -283,8 +283,8 @@ class IntertestSetupTest(Test):
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm1.+CentOS", "vms": "^vm1$", "type": "^shared_configure_install$", "nets": "^net1$"},
             {"shortname": "^internal.stateless.noop.vm1.+Fedora", "vms": "^vm1$", "type": "^shared_configure_install$", "nets": "^net2$"},
-            {"shortname": "^original.unattended_install.*vm1.+CentOS", "vms": "^vm1$", "cdrom_cd1": ".*CentOS.*\.iso$", "nets": "^net1$"},
-            {"shortname": "^original.unattended_install.*vm1.+Fedora", "vms": "^vm1$", "cdrom_cd1": ".*Fedora.*\.iso$", "nets": "^net2$"},
+            {"shortname": "^original.unattended_install.*vm1.+CentOS", "vms": "^vm1$", "cdrom_cd1": r".*CentOS.*\.iso$", "nets": "^net1$"},
+            {"shortname": "^original.unattended_install.*vm1.+Fedora", "vms": "^vm1$", "cdrom_cd1": r".*Fedora.*\.iso$", "nets": "^net2$"},
             {"shortname": "^internal.automated.customize.vm1.+CentOS", "vms": "^vm1$", "get_state_images": "^install$", "nets": "^net1$"},
             {"shortname": "^internal.automated.customize.vm1.+Fedora", "vms": "^vm1$", "get_state_images": "^install$", "nets": "^net2$"},
             {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$", "get_state_images": "^install$", "nets": "^net1$"},
@@ -408,7 +408,7 @@ class IntertestSetupTest(Test):
         DummyStateControl.asserted_states["unset"] = {"on_customize": {self.shared_pool: 0}}
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.stateless.noop.vm3", "vms": "^vm3$", "type": "^shared_configure_install$"},
-            {"shortname": "^original.unattended_install.*vm3", "vms": "^vm3$", "cdrom_cd1": ".*ubuntu-14.04.*\.iso$", "set_state_images": "^install$"},
+            {"shortname": "^original.unattended_install.*vm3", "vms": "^vm3$", "cdrom_cd1": r".*ubuntu-14.04.*\.iso$", "set_state_images": "^install$"},
             {"shortname": "^internal.automated.customize.vm3", "vms": "^vm3$", "set_state_images": "^customize$"},
             {"shortname": "^internal.stateless.manage.start.vm3", "vms": "^vm3$", "set_state_vms": "^ready$"},
         ]

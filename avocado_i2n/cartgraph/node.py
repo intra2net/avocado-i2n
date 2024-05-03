@@ -562,7 +562,7 @@ class TestNode(Runnable):
             node_object_suffices = [t.long_suffix for t in test_node.objects]
             if test_object in test_node.objects or test_object.long_suffix in node_object_suffices:
                 # search is done here to not match repeating restriction for a different object
-                if re.search("(\.|^)" + restriction + "(\.|$)", test_node.params.get("name")):
+                if re.search(r"(\.|^)" + restriction + r"(\.|$)", test_node.params.get("name")):
                     return test_node
                 setup_object_params = test_object.object_typed_params(test_node.params)
                 if restriction == setup_object_params.get("set_state"):

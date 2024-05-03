@@ -1446,7 +1446,7 @@ class TestGraph(object):
                 graph.new_objects(stubs)
             else:
                 graph.new_objects([s for s in stubs if s.key == "nets"])
-            leaves = sorted(leaves, key=lambda x: int(re.match("^(\d+)", x.prefix).group(1)))
+            leaves = sorted(leaves, key=lambda x: int(re.match(r"^(\d+)", x.prefix).group(1)))
 
             if log.getLogger('graph').level <= log.DEBUG:
                 parse_dir = os.path.join(graph.logdir, "graph_parse")
