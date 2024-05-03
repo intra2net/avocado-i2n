@@ -1592,7 +1592,7 @@ class TestGraph(object):
 
         logging.debug(f"Worker {worker.id} starting from the shared root")
         traverse_path = [root]
-        occupied_at, occupied_wait = None, 0.0
+        occupied_at, occupied_wait = set(), 0.0
         while not root.is_cleanup_ready(worker):
             next = traverse_path[-1]
             if len(traverse_path) > 1:
@@ -1618,15 +1618,16 @@ class TestGraph(object):
                 test_duration = next.params.get_numeric("test_timeout", 3600) * next.params.get_numeric("max_tries", 1)
                 occupied_timeout = round(max(test_duration/1000, 0.1), 2)
                 # despite ergodicity we ended at the same node (no other work)
-                if next == occupied_at:
+                if next in occupied_at:
                     if occupied_wait > test_duration:
                         raise RuntimeError(f"Worker {worker.id} spent {occupied_wait:.2f} seconds waiting for "
-                                           f"occupied node of maximum test duration {test_duration:.2f}")
+                                           f"occupied nodes of maximum test duration {test_duration:.2f}: " +
+                                           ", ".join(n.id for n in occupied_at))
                     occupied_wait += occupied_timeout
                 else:
                     # reset as we are waiting for a different node now
                     occupied_wait = 0.0
-                occupied_at = next
+                occupied_at.add(next)
                 logging.debug(f"Worker {worker.id} stepping back from already occupied test node {next} for "
                               f"a period of {occupied_timeout} seconds (total time spent: {occupied_wait:.2f})")
                 # reset the worker path to improve overall ergodicity (it will look for other work)

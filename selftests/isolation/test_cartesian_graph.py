@@ -2940,23 +2940,27 @@ class CartesianGraphTest(Test):
     def test_traverse_one_leaf_with_occupation_timeout(self):
         """Test multi-traversal of one test where it is occupied for too long (worker hangs)."""
         graph = TestGraph()
-        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1"))
+        graph.new_nodes(TestGraph.parse_flat_nodes("normal..tutorial1,normal..tutorial2"))
         # different order and restrictions so that we can emulate stuck net2
-        graph.new_workers(TestGraph.parse_workers({"nets": "net1 net2",
+        graph.new_workers(TestGraph.parse_workers({"nets": "net1 net2 net4",
                                                    "only_vm1": "CentOS"}))
         graph.new_nodes(graph.parse_composite_nodes("normal..tutorial1", graph.workers["net2"].net))
+        graph.new_nodes(graph.parse_composite_nodes("normal..tutorial2", graph.workers["net4"].net))
         graph.parse_shared_root_from_object_roots()
 
         test_node = graph.get_node_by(param_val="tutorial1.+net2")
         test_node.started_worker = graph.workers["net2"]
         del graph.workers["net2"]
+        test_node = graph.get_node_by(param_val="tutorial2.+net4")
+        test_node.started_worker = graph.workers["net4"]
+        del graph.workers["net4"]
         DummyStateControl.asserted_states["check"]["install"][self.shared_pool] = True
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets": "^net1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets": "^net1$"},
         ]
 
-        with self.assertRaisesRegex(RuntimeError, r"^Worker .+ spent [\d\.]+ seconds waiting for occupied node"):
+        with self.assertRaisesRegex(RuntimeError, r"^Worker .+ spent [\d\.]+ seconds waiting for occupied nodes"):
             self._run_traversal(graph, {"test_timeout": "1"})
 
     def test_traverse_two_objects_without_setup(self):
