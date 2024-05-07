@@ -24,11 +24,7 @@ import contextlib
 import asyncio
 from collections import namedtuple
 
-from avocado.core import job
-from avocado.core import output
-from avocado.core import data_dir
-from avocado.core import dispatcher
-from avocado.core.output import LOG_UI
+from avocado.core.output import LOG_UI, LOG_JOB as logging
 
 from avocado_i2n import params_parser as param
 from avocado_i2n.cartgraph import TestGraph, TestNode
@@ -65,21 +61,32 @@ def develop(config, tag=""):
     selected_vms = list(config["vm_strs"].keys())
     LOG_UI.info("Developing on virtual machines %s (%s)",
                 ", ".join(selected_vms), os.path.basename(r.job.logdir))
-    vms = " ".join(selected_vms)
-    mode = config["tests_params"].get("devmode", "generator")
-
-    setup_dict = config["param_dict"].copy()
-    setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
-    setup_str = param.re_str("all..manual..develop.%s" % mode)
-    tests, objects = l.parse_object_nodes(setup_dict, setup_str, config["vm_strs"], prefix=tag)
-    assert len(tests) == 1, "There must be exactly one develop test variant from %s" % tests
 
     graph = TestGraph()
-    graph.objects = objects
-    graph.nodes = [TestNode(tag, tests[0].config, objects[-1])]
-    l.parse_shared_root_from_object_trees(graph, config["param_dict"])
-    graph.flag_children(flag_type="run", flag=lambda self, slot: True)
-    to_traverse = [r.run_traversal(graph, config["param_dict"], s) for s in r.slots]
-    asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                                 r.job.timeout or None))
+    graph.new_workers(l.parse_workers(config["param_dict"]))
+    for vm_name in selected_vms:
+        graph.new_objects(TestGraph.parse_composite_objects(vm_name, "vms", config["vm_strs"][vm_name]))
+
+    vms = " ".join(selected_vms)
+    setup_dict = config["param_dict"].copy()
+    setup_dict.update({"vms": vms, "main_vm": selected_vms[0]})
+    for test_worker in graph.workers.values():
+        test_worker.net.update_restrs(config["vm_strs"])
+        mode = config["tests_params"].get("devmode", "generator")
+        nodes = graph.parse_composite_nodes("all..manual..develop.%s" % mode, test_worker.net,
+                                            tag, params=setup_dict)
+        if len(nodes) == 0:
+            logging.warning(f"Skipped incompatible worker {test_worker.id}")
+            continue
+        elif len(nodes) > 1:
+            raise RuntimeError(f"There must be exactly one {mode} develop test variant "
+                               f"for {test_worker.id} from {nodes}")
+        graph.new_nodes(nodes[0])
+
+    graph.parse_shared_root_from_object_roots(config["param_dict"])
+    graph.flag_children(
+        flag_type="run",
+        flag=lambda self, slot: not self.is_shared_root() and slot not in self.shared_finished_workers,
+    )
+    r.run_workers(graph, config["param_dict"])
     LOG_UI.info("Development complete")

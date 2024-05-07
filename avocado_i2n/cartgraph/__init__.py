@@ -1,3 +1,4 @@
 from .object import TestObject, NetObject, VMObject, ImageObject
-from .node import TestNode
+from .worker import TestEnvironment, TestSwarm, TestWorker
+from .node import PrefixTreeNode, PrefixTree, EdgeRegister, TestNode
 from .graph import TestGraph

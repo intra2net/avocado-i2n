@@ -71,10 +71,9 @@ def custom_configs_dir():
     return os.path.join(suite_path, "configs")
 
 
-_tests_ovrwrt_file = "avocado_overwrite_tests.cfg"
 def tests_ovrwrt_file():
     """Overwrite config file for all tests (nodes)."""
-    ovrwrt_file = os.path.join(os.environ['HOME'], _tests_ovrwrt_file)
+    ovrwrt_file = os.path.join(os.environ['HOME'], "avocado_overwrite_tests.cfg")
     if not os.path.exists(ovrwrt_file):
         logging.warning("Generating a file to use for overwriting the original test parameters")
         with open(ovrwrt_file, "w") as handle:
@@ -83,15 +82,25 @@ def tests_ovrwrt_file():
     return ovrwrt_file
 
 
-_vms_ovrwrt_file = "avocado_overwrite_vms.cfg"
 def vms_ovrwrt_file():
-    """Overwrite config file for all vms (objects)."""
-    ovrwrt_file = os.path.join(os.environ['HOME'], _vms_ovrwrt_file)
+    """Overwrite config file for all vms (a category of objects)."""
+    ovrwrt_file = os.path.join(os.environ['HOME'], "avocado_overwrite_vms.cfg")
     if not os.path.exists(ovrwrt_file):
         logging.warning("Generating a file to use for overwriting the original vm parameters")
         with open(ovrwrt_file, "w") as handle:
             handle.write("# Use this config to override with test objects configuration\n"
                          "include " + os.path.join(custom_configs_dir(), "objects-overwrite.cfg") + "\n")
+    return ovrwrt_file
+
+
+def ovrwrt_file(category: str):
+    """Overwrite config file for all objects."""
+    ovrwrt_file = os.path.join(os.environ['HOME'], f"avocado_overwrite_{category}.cfg")
+    if not os.path.exists(ovrwrt_file):
+        logging.warning(f"Generating a file to use for overwriting the original {category} parameters")
+        with open(ovrwrt_file, "w") as handle:
+            handle.write("# Use this config to override with test objects configuration\n"
+                         "include " + os.path.join(custom_configs_dir(), f"{category}-overwrite.cfg") + "\n")
     return ovrwrt_file
 
 
@@ -212,6 +221,12 @@ class Reparsable():
         """Initialize the parsable structure."""
         self.steps = []
 
+    def __repr__(self):
+        restriction = "Parsing parameters with the following configuration:\n"
+        for step in self.steps:
+            restriction += step.reportable_form()
+        return restriction
+
     def parse_next_file(self, pfile):
         """
         Add a file parsing step.
@@ -316,7 +331,7 @@ class Reparsable():
 
         # log any required information and detect empty Cartesian product
         if show_restriction:
-            logging.debug(self.print_parsed())
+            logging.debug(self)
         if show_dictionaries or show_empty_cartesian_product:
             options = collections.namedtuple("options", ['repr_mode', 'fullname', 'contents'])
             peek_parser = self.get_parser(show_dictionaries=False, show_empty_cartesian_product=False)
@@ -331,14 +346,14 @@ class Reparsable():
                         cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents),
                                                      peek_generator)
                 except StopIteration:
-                    raise EmptyCartesianProduct(self.print_parsed()) from None
+                    raise EmptyCartesianProduct(str(self)) from None
             else:
                 cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents),
                                              peek_generator)
 
         return parser
 
-    def get_params(self, list_of_keys=None,
+    def get_params(self, list_of_keys=None, dict_index=0,
                    show_restriction=False, show_dictionaries=False,
                    show_dict_fullname=False, show_dict_contents=False):
         """
@@ -349,6 +364,7 @@ class Reparsable():
 
         :param list_of_keys: list of parameters key in the final selection
         :type list_of_keys: [str] or None
+        :param int dict_index: index of the dictionary to use as parameters
         :returns: first variant dictionary from all current parsed steps
         :rtype: :py:class:`Params`
         :raises: :py:class:`AssertionError` if the parameter dictionary is not unique
@@ -362,9 +378,11 @@ class Reparsable():
                                  show_empty_cartesian_product=True)
 
         for i, d in enumerate(parser.get_dicts()):
-            if i == 0:
+            if i == dict_index:
                 default_params = d
-            assert i < 1, "There must be at most one configuration for the restriction:\n%s" % self.print_parsed()
+                break
+        else:
+            raise ValueError(f"There must be a configuration for the restriction:\n{self}")
 
         if list_of_keys is None:
             selected_params = default_params
@@ -384,18 +402,6 @@ class Reparsable():
         new = Reparsable()
         new.steps = copy.copy(self.steps)
         return new
-
-    def print_parsed(self):
-        """
-        Return printable information about what was parsed so far.
-
-        :returns: structured text of the base/ovrwrt file/str/dict parse steps
-        :rtype: str
-        """
-        restriction = "Parsing parameters with the following configuration:\n"
-        for step in self.steps:
-            restriction += step.reportable_form()
-        return restriction
 
 
 ###################################################################
@@ -434,6 +440,22 @@ def all_objects(key="vms", composites=None):
     return params.objects(key)
 
 
+def all_suffixes_by_restriction(restriction, key="nets"):
+    """
+    Return all object suffixes via restriction of their variants.
+
+    :param: str restriction: restriction of the suffix variants
+    :param: str key: key to describe the parametric object type
+    :returns: all restricted (from configuration) object suffixes of a given type
+    :rtype: [str]
+    """
+    rep = Reparsable()
+    rep.parse_next_file(f"{key}.cfg")
+    rep.parse_next_str(restriction)
+    parser = rep.get_parser()
+    return [d["shortname"] for d in parser.get_dicts()]
+
+
 def main_vm():
     """
     Return the default main vm that can be passed for any test configuration.
@@ -458,13 +480,13 @@ def re_str(variant_str, base_str="", tag=""):
     :rtype: str
     """
     if tag != "":
-        variant_str = "variants:\n    - %s:\n        only %s\n" % (tag, variant)
+        variant_str = "variants:\n    - %s:\n        only %s\n" % (tag, variant_str)
     else:
         variant_str = "only %s\n" % variant_str
     return base_str + variant_str
 
 
-def join_str(variant_strs, base_str=""):
+def join_str(variant_strs, sort_key, base_str=""):
     """
     Join all object variant restrictions over the base string.
 
@@ -475,9 +497,16 @@ def join_str(variant_strs, base_str=""):
     :rtype: str
     """
     objects, variant_str = "", ""
-    for params_object, variant in variant_strs.items():
+    available_objects = all_objects(sort_key)
+    for suffix in available_objects:
+        if suffix not in variant_strs.keys():
+            continue
+        variant = variant_strs[suffix]
         subvariant = "".join(["    " + l + "\n" for l in variant.rstrip("\n").split("\n")])
-        variant_str += "%s:\n%s" % (params_object, subvariant)
-        objects += " " + params_object
+        variant_str += "%s:\n%s" % (suffix, subvariant)
+        objects += " " + suffix
+    if objects == "":
+        raise ValueError(f"Could not find some of {list(variant_strs.keys())} among "
+                         f"the available {available_objects}")
     variant_str += "join" + objects + "\n"
     return base_str + variant_str

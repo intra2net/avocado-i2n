@@ -34,29 +34,34 @@ class DummyTestRun(object):
         name = self.current_test_dict["name"]
         # allow tests to specify the status they expect
         status = self.expected_test_dict.get("_status", "PASS")
-        self.add_test_result(uid, name, status)
+        time = self.expected_test_dict.get("_time", "1")
+        self.add_test_result(uid, name, status, time)
         if status in ["ERROR", "FAIL"] and self.current_test_dict.get("abort_on_error", "no") == "yes":
             raise exceptions.TestSkipError("God wanted this test to abort")
         return status not in ["ERROR", "FAIL"]
 
-    def add_test_result(self, uid, name, status, logdir="."):
-        mocktestid = mock.MagicMock(uid=uid, name=name)
-        # have to set actual name attribute
-        mocktestid.name = name
+    def add_test_result(self, uid, name, status, time, logdir="."):
+        mocktestid = type("Mock", (), {"uid": uid, "name": name})()
+        # or else have to set name attribute separately since "name" is reserved by MagicMock
+        # mocktestid = mock.MagicMock(uid=uid, name=name)
+        # mocktestid.name = name
         self.test_results.append({
             "name": mocktestid,
             "status": status,
+            "time": time,
             "logdir": logdir,
         })
 
     @staticmethod
-    async def mock_run_test(self, node):
+    async def mock_run_test_task(self, node):
         if not hasattr(self.job, "result"):
             self.job.result = mock.MagicMock()
             self.job.result.tests = []
-        # define ID-s and other useful parameter filtering
-        node.get_runnable()
+        # provide ID-s and other node attributes as meta-parameters for assertion
+        node.params["_long_prefix"] = node.long_prefix
         node.params["_uid"] = node.id_test.uid
+        assert node.started_worker is not None, f"{node} was not properly started by any worker"
+        assert "UNKNOWN" in [r["status"] for r in node.results], f"{node} does not have current UNKNOWN result"
         # small enough not to slow down our tests too much for a test timeout of 300 but
         # large enough to surpass the minimal occupation waiting timeout for more realism
         await asyncio.sleep(0.1)
@@ -92,7 +97,7 @@ class DummyStateControl(object):
                 do_sources = do_source.split()
                 for do_source in do_sources:
                     # TODO: currently we cannot fully test additional state sources
-                    if not do_source.startswith("/:"):
+                    if not do_source.endswith("shared"):
                         continue
                     if do == "check":
                         if not self.asserted_states[do][do_state][do_source] and len(do_sources) == 1:

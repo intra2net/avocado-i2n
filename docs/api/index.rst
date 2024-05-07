@@ -248,7 +248,7 @@ In order to run a manual step in the sample test suite, do
 ::
 
    avocado manu[ "K1=V1[ K2=V2[ ...]]"]
-   avocado manu setup=full,update vms=vm1
+   avocado manu setup=update vms=vm1
 
 where any further overwriting parameters can be provided on the command
 line. In order to initate dry runs for instance you can use
@@ -294,42 +294,34 @@ steps) is the following:
 -  *noop* - Simply load all plugins and do nothing (good for probing)
 -  *create* - Create any predefined image for each virtual machine
 -  *collect* - Collect the vm root state from a pool if available
--  *install* - Prepare step files and install virtual machines
--  *deploy* - Simply deploy changes on top of current state (will be
-   lost after reverting to snapshot)
--  *internal* - Run a custom setup node without any automated setup
+-  *deploy* - Simply deploy changes on top of current state (will be lost
+   after reverting to snapshot)
 -  *boot* - Simply boot the registered virtual machines and run selected
    controls if any
 -  *list* - List selected tests
 -  *run* - Run selected tests
--  *download* - Download a set of files from the vm to the test results
-   folder
--  *upload* - Upload a set of files to the vm’s temporary folder
--  *unittest* - Run all unit tests available for the test suite
-   utilities
--  *update* - Redeploy tests on a vm, removing all descending states
+-  *download* - Download a set of files from the vm to the test results folder
+-  *upload* - Upload a set of files to the vm's temporary folder
+-  *unittest* - Run all unit tests available for the test suite utilities
+-  *update* - Rerun setup tests on a vm, removing all descending states
 -  *shutdown* - Shutdown gracefully or kill living vms
 -  *clean* - Remove the logical volumes of all installed vms
--  *full* - Create lvm image, install product, deploy tests and take a
-   clean snapshot
--  *check* - Check whether a given state (snapshot of saved setup)
-   exists
--  *get* - Get a given state, i.e. revert to it keeping it for further
-   reuse
+-  *check* - Check whether a given state (snapshot of saved setup) exists
+-  *get* - Get a given state, i.e. revert to it keeping it for further reuse
 -  *set* - Set a given state, keeping it for further reuse
--  *unset* - Unset a given state, making it unavailable for further
-   reuse but freeing space
+-  *unset* - Unset a given state, making it unavailable for further reuse but
+   freeing space
 -  *push* - Same like setting a given state
--  *pop* - Pop a given state, i.e. revert to it but making it
-   unavailable for further reuse
--  *<tool>* - Run any custom compatible tool, located in the tools test
-   suite folder
+-  *pop* - Pop a given state, i.e. revert to it but making it unavailable for
+   further reuse
+-  *\<tool>* - Run any custom compatible tool, located in the tools test suite
+   folder
 
 You can define a chain of setup steps, e.g.
 
 ::
 
-   avocado manu setup=install,boot,deploy,run only=all
+   avocado manu setup=update,boot,deploy,run only=all
 
 If you want to run tests at some point, you must include the *run* step
 somewhere in the chain. Each setup performed after the *run* plays the
@@ -401,7 +393,7 @@ automated setup steps is the following:
 
 ::
 
-   avocado manu setup=full vms=vm1,vm2
+   avocado manu setup=update vms=vm1,vm2
    avocado manu only=tutorial2..files
    avocado manu setup=clean vms=vm1
    avocado manu only=tutorial2..files
@@ -621,12 +613,12 @@ Single node running
 ~~~~~~~~~~~~~~~~~~~
 
 If you want to run a test without automated setup from a complete graph,
-i.e. an internal (variant) test node, you can use the *internal* tool or
-manual step
+i.e. an internal (variant) test node, you can use the *run* tool or
+manual step as
 
 ::
 
-   avocado manu setup=internal node=set_provider vms=vm1
+   avocado manu setup=run only=all..set_provider vms=vm1
 
 This will run an internal test (used by the Cartesian graph for
 automated setup) completely manually, i.e. without performing any
@@ -648,9 +640,9 @@ smaller set of such nodes while the *only all* restriction will parse
 the complete graph but traverse only the part reachable from the shared
 root node skip the rest. Any internal tests that are not directly used
 remain disconnected and as such will not be run. They are then typically
-called only from (manual step) tools. Reading the graph from the config
-is thus mostly WYSIWYG and does not require any extra knowledge of the
-code parsing it.
+called only from ("all" restricted) tools. Reading the graph from the
+config is thus mostly WYSIWYG and does not require any extra knowledge
+of the code parsing it.
 
 How to develop
 --------------

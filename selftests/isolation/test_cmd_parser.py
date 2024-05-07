@@ -23,7 +23,7 @@ class CmdParserTest(Test):
         self.assertIn("aaa", self.config["param_dict"].keys())
         self.assertEqual(self.config["param_dict"]["aaa"], "bbb")
         self.config["params"] += ["ccc"]
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(ValueError):
             cmd.params_from_cmd(self.config)
 
     def test_selected_vms_default(self):
@@ -63,6 +63,40 @@ class CmdParserTest(Test):
         base_params = self.config["params"]
 
         self.config["params"] = base_params + ["vms=vmX"]
+        with self.assertRaises(ValueError):
+            cmd.params_from_cmd(self.config)
+
+    def test_selected_nets(self):
+        # check the parameter is not in the command line ones by default
+        cmd.params_from_cmd(self.config)
+        self.assertNotIn("nets", self.config["param_dict"])
+
+        # check restriction by cluster
+        self.config["params"] += ["only_nets=cluster1"]
+        cmd.params_from_cmd(self.config)
+        self.assertEqual(self.config["param_dict"]["nets"],
+                         "cluster1.net6 cluster1.net7 cluster1.net8 cluster1.net9")
+
+        # check more complex restrictions
+        self.config["params"] += ["only_nets=cluster1..net6,net7"]
+        cmd.params_from_cmd(self.config)
+        self.assertEqual(self.config["param_dict"]["nets"],
+                         "net7 cluster1.net6 cluster1.net7 cluster2.net7")
+
+        # check no restrictions
+        self.config["params"] += ["no_nets=cluster1..net6,localhost,net7,net9"]
+        cmd.params_from_cmd(self.config)
+        self.assertEqual(self.config["param_dict"]["nets"],
+                         "cluster1.net8 cluster2.net6 cluster2.net8")
+
+    def test_selected_nets_invalid(self):
+        # check that mixing of net restrictions and suffixes not allowed
+        self.config["params"] += ["only_nets=cluster1", "nets=net1,net2"]
+        with self.assertRaises(ValueError):
+            cmd.params_from_cmd(self.config)
+
+        # check that invalid object restrictions are not allowed
+        self.config["params"] += ["only_something=restr"]
         with self.assertRaises(ValueError):
             cmd.params_from_cmd(self.config)
 

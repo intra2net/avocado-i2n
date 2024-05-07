@@ -27,6 +27,8 @@ INTERFACE
 
 """
 
+from __future__ import annotations
+
 import logging
 
 from .. import params_parser as param
@@ -42,10 +44,9 @@ class TestObject(object):
         return self._params_cache
     params = property(fget=params)
 
-    def final_restr(self):
-        """Final restriction to make the object parsing variant unique."""
-        return self.config.steps[-1].parsable_form()
-    final_restr = property(fget=final_restr)
+    def component_form(self):
+        return self.params["name"].replace(self.key + ".", "")
+    component_form = property(fget=component_form)
 
     def long_suffix(self):
         """Sufficiently unique suffix to identify a variantless test object."""
@@ -57,18 +58,21 @@ class TestObject(object):
         return self.long_suffix + "-" + self.params["name"]
     id = property(fget=id)
 
-    def __init__(self, suffix, config):
+    def __init__(self, suffix, recipe):
         """
         Construct a test object (vm) for any test nodes (tests).
 
         :param str suffix: name of the test object
-        :param config: variant configuration for the test object
-        :type config: :py:class:`param.Reparsable`
+        :param recipe: variant configuration for the test object
+        :type recipe: :py:class:`param.Reparsable`
         """
         self.suffix = suffix.split("_")[0]
         self._long_suffix = suffix
-        self.config = config
+        self.recipe = recipe
         self._params_cache = None
+        self.restrs = {}
+        # TODO: Cartesian parser needs support for restrictions after join operations
+        self.dict_index = 0
 
         # TODO: integrate these features better
         self.current_state = "unknown"
@@ -76,9 +80,15 @@ class TestObject(object):
         self.composites = []
         self.components = []
 
+        self.key = "objects"
+
     def __repr__(self):
         shortname = self.params.get("shortname", "<unknown>")
         return f"[object] longsuffix='{self.long_suffix}', shortname='{shortname}'"
+
+    def is_flat(self) -> bool:
+        """Check if the test object is flat and does not yet have components to evaluate."""
+        return len(self.components) == 0
 
     def is_permanent(self):
         """
@@ -104,70 +114,64 @@ class TestObject(object):
             params = params.object_params(composite.suffix)
         return params.object_params(self.suffix).object_params(self.key)
 
-    def regenerate_params(self, verbose=False):
+    def update_restrs(self, object_restrs: dict[str, str]) -> None:
         """
-        Regenerate all parameters from the current reparsable config.
+        Update any restrictions with further filters.
 
-        :param bool verbose: whether to show generated parameter dictionaries
+        :param object_restrs: multi-line object restrictions to append
         """
-        generic_params = self.config.get_params(show_dictionaries=verbose)
+        for suffix, restriction in object_restrs.items():
+            self.restrs[suffix] = self.restrs.get(suffix, "")
+            if restriction != "":
+                if restriction.rstrip() not in self.restrs[suffix].splitlines():
+                    self.restrs[suffix] += restriction
+
+    def regenerate_params(self, verbose: bool = False) -> None:
+        """
+        Regenerate all parameters from the current reparsable recipe.
+
+        :param verbose: whether to show generated parameter dictionaries
+        """
+        generic_params = self.recipe.get_params(dict_index=self.dict_index,
+                                                show_dictionaries=verbose)
         self._params_cache = self.object_typed_params(generic_params)
+        for key, value in list(self._params_cache.items()):
+            if key.startswith("only_") or key.startswith("no_"):
+                restr_type, suffix = key.split("_", maxsplit=1)
+                restr_line = restr_type + " " + value + "\n" if value != "" else ""
+                self.update_restrs({suffix: restr_line})
+                del self._params_cache[key]
 
 
 class NetObject(TestObject):
     """A Net wrapper for a test object used in one or more test nodes."""
 
-    def __init__(self, name, config):
+    def component_form(self):
+        # TODO: an unexpected order of joining in the Cartesian config requires us to override base property
+        return self.params["name"]
+    component_form = property(fget=component_form)
+
+    def __init__(self, name, recipe):
         """
         Construct a test object (vm) for any test nodes (tests).
 
         All arguments are inherited from the base class.
         """
-        super().__init__(name, config)
+        super().__init__(name, recipe)
         self.key = "nets"
         self.components = []
-
-    @staticmethod
-    def get_session_ip_port(host, gateway, prefix, port):
-        """
-        Get an IP address and a port for a given slot configuration.
-
-        :param str host: host name or IP of the main host (empty for localhost)
-        :param str gateway: host name or IP of the host gateway if port forwarded
-        :param str prefix: IP prefix of host within gateway's intranet
-        :param str port: port of the gateway to access the host
-        :returns: IP and port in string parameter format
-        :rtype: (str, str)
-        """
-        # serial non-isolated run
-        if host == "":
-            ip = "localhost"
-        # local isolated run
-        if gateway == "":
-            if host != "":
-                ip = f"{prefix}.{host[1:]}"
-            else:
-                ip = "localhost"
-        # remote isolated run
-        else:
-            ip = gateway
-            if not host.isdigit():
-                raise RuntimeError(f"Invalid remote host '{host}', "
-                                   f"only numbers (as forwarded ports) accepted")
-            port = f"22{host}"
-        return ip, port
 
 
 class VMObject(TestObject):
     """A VM wrapper for a test object used in one or more test nodes."""
 
-    def __init__(self, name, config):
+    def __init__(self, name, recipe):
         """
         Construct a test object (vm) for any test nodes (tests).
 
         All arguments are inherited from the base class.
         """
-        super().__init__(name, config)
+        super().__init__(name, recipe)
         self.key = "vms"
         self.components = []
 
@@ -181,12 +185,16 @@ class ImageObject(TestObject):
         return self.long_suffix + "-" + self.composites[0].params["name"]
     id = property(fget=id)
 
-    def __init__(self, name, config):
+    def component_form(self):
+        return self.composites[0].component_form
+    component_form = property(fget=component_form)
+
+    def __init__(self, name, recipe):
         """
         Construct a test object (vm) for any test nodes (tests).
 
         All arguments are inherited from the base class.
         """
-        super().__init__(name, config)
+        super().__init__(name, recipe)
         self.key = "images"
         self.params["main_vm"] = "none"

@@ -20,7 +20,6 @@ import collections
 
 from avocado.core.settings import settings
 from avocado.core.output import LOG_JOB as log
-from avocado.core.output import LOG_UI as ui
 from virttest import env_process
 
 from . import params_parser as param
@@ -63,15 +62,14 @@ def params_from_cmd(config):
     # the run string includes only pure parameters
     param_dict = {}
     # the tests string includes the test restrictions while the vm strings include the ones for the vm variants
-    tests_str, vm_strs = "", collections.OrderedDict([(vm, "") for vm in available_vms])
+    tests_str, nets_str, vm_strs = "", "", {vm: "" for vm in available_vms}
 
     # main tokenizing loop
     for cmd_param in config["params"]:
         re_param = re.match(r"(\w+)=(.*)", cmd_param)
         if re_param is None:
-            ui.error("Found malformed parameter on the command line '%s' - "
-                      "must be of the form <key>=<val>", cmd_param)
-            sys.exit(1)
+            raise ValueError(f"Found malformed parameter on the command line '{cmd_param}' - "
+                             f"must be of the form <key>=<val>")
         (key, value) = re_param.group(1, 2)
         if key == "only" or key == "no":
             # detect if this is the primary restriction to escape defaults
@@ -84,13 +82,21 @@ def params_from_cmd(config):
             # main test restriction part
             tests_str += "%s %s\n" % (key, value)
         elif key.startswith("only_") or key.startswith("no_"):
-            for vm_name in available_vms:
-                if re.match("(only|no)_%s" % vm_name, key):
-                    # escape defaults for this vm and use the command line
-                    use_vms_default[vm_name] = False
-                    # main vm restriction part
-                    vm_str = "%s %s\n" % (key.replace("_%s" % vm_name, ""), value) if value else ""
-                    vm_strs[vm_name] += vm_str
+            if re.match("(only|no)_nets", key):
+                nets_str = "%s %s\n" % (key.replace("_nets", ""), value) if value else ""
+                # TODO: unify nets_str with vm_strs treatment across the Cartesian graph interface
+                param_dict["nets"] = " ".join(param.all_suffixes_by_restriction(nets_str))
+            else:
+                for vm_name in available_vms:
+                    if re.match(f"(only|no)_{vm_name}", key):
+                        # escape defaults for this vm and use the command line
+                        use_vms_default[vm_name] = False
+                        # main vm restriction part
+                        vm_str = "%s %s\n" % (key.replace(f"_{vm_name}", ""), value) if value else ""
+                        vm_strs[vm_name] += vm_str
+                        break
+                else:
+                    raise ValueError(f"Invalid object restriction {key} (no such object)")
         # NOTE: comma in a parameter sense implies the same as space in config file
         elif key == "vms":
             # NOTE: no restrictions of the required vms are allowed during tests since
@@ -100,6 +106,12 @@ def params_from_cmd(config):
                 if vm_name not in available_vms:
                     raise ValueError("The vm '%s' is not among the supported vms: "
                                      "%s" % (vm_name, ", ".join(available_vms)))
+        elif key == "nets":
+            if nets_str != "":
+                raise ValueError(f"Cannot specify explicit net suffixes {value} together with "
+                                 f"a nets restriction, currently also specified '{nets_str.rstrip()}'")
+            value = value.replace(",", " ")
+            param_dict[key] = value
         else:
             # NOTE: comma on the command line is space in a config file
             value = value.replace(",", " ")
