@@ -3166,48 +3166,48 @@ class CartesianGraphTest(Test):
     def test_run_exit_code(self):
         """Test that the test status is properly converted to a simple exit status."""
         self.config["tests_str"] += "only tutorial1\n"
-
         flat_net = TestGraph.parse_net_from_object_restrs("net1", self.config["vm_strs"])
         test_objects = TestGraph.parse_components_for_object(flat_net, "nets", params=self.config["param_dict"], unflatten=True)
         net = test_objects[-1]
-        test_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"].copy())
 
+        test_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"].copy())
         DummyTestRun.asserted_tests = [
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
             {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
         ]
         test_node.started_worker = "some-worker-since-only-traversal-allowed"
-        to_run = self.runner.run_test_node(test_node)
-        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
-        # all runs succeed - status must be True
-        self.assertTrue(status)
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        self.runner.job.result.tests.clear()
-        test_node.results.clear()
 
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
-        ]
         to_run = self.runner.run_test_node(test_node)
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
-        # last run fails - status must be False
-        self.assertFalse(status, "Runner did not preserve last run fail status")
-        self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        self.runner.job.result.tests.clear()
-        test_node.results.clear()
+        # the run failed - status must be False
+        self.assertFalse(status)
+        self.assertFalse(self.runner.all_results_ok())
 
-        DummyTestRun.asserted_tests = [
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "FAIL"},
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status" : "PASS"},
-        ]
-        to_run = self.runner.run_test_node(test_node)
-        _ = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
         to_run = self.runner.run_test_node(test_node)
         status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
-        # only previous run fails - status must be True
+        # new run of same test passed - status must be True
         self.assertTrue(status, "Runner did not preserve last run fail status")
+        self.assertTrue(self.runner.all_results_ok())
+
         self.assertEqual(len(DummyTestRun.asserted_tests), 0, "Some tests weren't run: %s" % DummyTestRun.asserted_tests)
-        self.runner.job.result.tests.clear()
-        test_node.results.clear()
+        DummyTestRun.asserted_tests = [
+            {"shortname": "^normal.nongui.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "_status" : "FAIL"},
+            {"shortname": "^normal.nongui.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "_status" : "PASS"},
+        ]
+        test_node = TestGraph.parse_node_from_object(net, "normal..tutorial2.files", params=self.config["param_dict"].copy())
+        test_node.started_worker = "some-worker-since-only-traversal-allowed"
+
+        to_run = self.runner.run_test_node(test_node)
+        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
+        # run of second test failed - status must be False
+        self.assertFalse(status)
+        self.assertFalse(self.runner.all_results_ok())
+
+        to_run = self.runner.run_test_node(test_node)
+        status = asyncio.get_event_loop().run_until_complete(asyncio.wait_for(to_run, None))
+        # new run of second test passed - status must be True
+        self.assertTrue(status, "Runner did not preserve last run fail status")
+        self.assertTrue(self.runner.all_results_ok())
 
     def test_rerun_max_times_serial(self):
         """Test that the test is tried `max_tries` times if no status is not specified."""

@@ -95,8 +95,13 @@ class CartesianRunner(RunnerInterface):
         ..todo:: There might be repeated tests here that have eventually
             passed so we might need to return an overall "pass" status.
         """
-        mapped_status = {STATUSES_MAPPING[t["status"]] for t in self.job.result.tests}
-        return all(mapped_status)
+        shared_status = True
+        for test in self.job.result.tests:
+            shared_status &= any(STATUSES_MAPPING[t["status"]] for t in self.job.result.tests
+                                 if t["name"].name == test["name"].name)
+            if not shared_status:
+                return False
+        return True
 
     def results_from_previous_jobs(self) -> None:
         """Parse results from previous job to add to all traversed graph nodes."""
