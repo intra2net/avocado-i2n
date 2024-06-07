@@ -2072,7 +2072,10 @@ class CartesianGraphTest(Test):
 
     def setUp(self):
         self.config = {}
-        self.config["param_dict"] = {"test_timeout": 100, "shared_pool": "/mnt/local/images/shared", "nets": "net1"}
+        self.config["param_dict"] = {"nets": "net1", "test_timeout": 100,
+                                     # test additional optional syncing for non-default cases
+                                     "pool_filter": "copy",
+                                     "shared_pool": "/mnt/local/images/shared"}
         self.config["tests_str"] = "only normal\n"
         self.config["vm_strs"] = {"vm1": "only CentOS\n", "vm2": "only Win10\n", "vm3": "only Ubuntu\n"}
 
@@ -2883,11 +2886,11 @@ class CartesianGraphTest(Test):
         ]
 
         self._run_traversal(graph)
-        # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
-        self.assertLessEqual(DummyStateControl.asserted_states["get"]["install"][self.shared_pool], 2*4-2*1)
-        self.assertLessEqual(DummyStateControl.asserted_states["get"]["customize"][self.shared_pool], 2*4-2*1)
-        # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
-        self.assertLessEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 1*4-1*1)
+        # recreated setup is taken from the worker that created it (node reversal)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["install"][self.shared_pool], 2*4)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["customize"][self.shared_pool], 2*4)
+        # recreated setup is taken from the worker that created it (node reversal)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 1*4)
 
     def test_traverse_two_objects_with_setup(self):
         """Test a two-object test traversal with reusable setup."""
@@ -2905,8 +2908,8 @@ class CartesianGraphTest(Test):
         # get reusable setup from shared pool once to skip and once to sync (node reversal)
         self.assertLessEqual(DummyStateControl.asserted_states["get"]["install"][self.shared_pool], 2*4)
         self.assertLessEqual(DummyStateControl.asserted_states["get"]["customize"][self.shared_pool], 2*4)
-        # recreated setup is taken from the worker that created it excluding self-sync sync (node reversal)
-        self.assertLessEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 2*4-1)
+        # recreated setup is taken from the worker that created it (node reversal)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["connect"][self.shared_pool], 2*4)
 
     def test_traverse_two_objects_with_shared_setup(self):
         """Test a two-object test traversal with shared setup among two nodes."""
@@ -3854,9 +3857,9 @@ class CartesianGraphTest(Test):
         ]
 
         self._run_traversal(graph, self.config["param_dict"])
-        # expect three sync (one for each worker without self-sync) and one cleanup call
+        # expect four sync and one cleanup calls
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1*1)
-        self.assertLessEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 1*4-1*1)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 1*4)
 
     def test_trace_work_remote(self):
         """Test a multi-object test run where the workers will run multiple tests reusing also remote swarm setup."""
@@ -3918,9 +3921,9 @@ class CartesianGraphTest(Test):
         ]
 
         self._run_traversal(graph, self.config["param_dict"])
-        # expect three sync (one for each worker without self-sync) and one cleanup call
+        # expect four sync and one cleanup calls
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1*1)
-        self.assertLessEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 1*4-1*1)
+        self.assertLessEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 1*4)
 
     def test_trace_work_preparsed(self):
         """Test a multi-object parsed in advance test run where the workers will run multiple tests reusing their setup."""
@@ -3960,14 +3963,14 @@ class CartesianGraphTest(Test):
             # all others now step back from already occupied tutorial2.names (by net1)
         ]
         self._run_traversal(graph, self.config["param_dict"])
-        # expect three sync (one for each worker without self-sync) and one cleanup call
+        # expect four sync and one cleanup calls
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
+        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 4)
 
         self._run_traversal(graph, self.config["param_dict"])
-        # expect three sync (one for each worker without self-sync) and one cleanup call
+        # expect four sync and one cleanup calls
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
-        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 3)
+        self.assertEqual(DummyStateControl.asserted_states["get"]["guisetup.clicked"][self.shared_pool], 4)
 
     def test_cloning_simple_permanent_object(self):
         """Test a complete test run including complex setup that involves permanent vms and cloning."""
@@ -4022,7 +4025,7 @@ class CartesianGraphTest(Test):
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["getsetup.noop"][self.shared_pool], 1)
         self.assertEqual(DummyStateControl.asserted_states["unset"]["ready"][self.shared_pool], 0)
-        # root state of a permanent vm is not synced from a single worker to itself
+        # root state of a permanent vm is not synced even once
         self.assertEqual(DummyStateControl.asserted_states["get"]["ready"][self.shared_pool], 0)
 
     def test_cloning_simple_cross_object(self):

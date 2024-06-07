@@ -1133,18 +1133,21 @@ class TestNode(Runnable):
                 logging.info(f"Need to clean up {self} by {self.started_worker.id}")
             else:
                 # spread the state setup for the given test object
+                if node_params.get("pool_filter", "reuse") in ["reuse", "block"]:
+                    logging.info(f"No need to sync {self} from {self.started_worker.id}")
+                    should_clean = False
+                    break
+                else:
+                    # TODO: actual state copy support is almost fully lacking at present
+                    # and the sync operation by itself cannot guarantee equalized setup
+                    if node_params.get("pool_filter", "reuse") != "copy":
+                        raise ValueError("Pool filtering can only be one of: reuse, copy, block")
+                    logging.info(f"Need to sync {self} from {location.join(',')} to {self.started_worker.id}")
                 node_params.update({f"get_state{suffixes}": object_state,
                                     f"get_location{suffixes}": location})
-                node_params[f"pool_scope{suffixes}"] = object_params.get("pool_scope", "swarm cluster shared")
-                # NOTE: "own" may not be removed because we skip "own" scope here which is done for both
-                # speed and the fact that it is not equivalent to reflexive download (actually getting a state)
-                for worker_id in self.shared_result_worker_ids:
-                    if worker_id == self.started_worker.id:
-                        logging.info(f"No need to sync {self} from {self.started_worker.id} to itself")
-                        should_clean = False
-                        break
-                else:
-                    logging.info(f"Need to sync {self} from {location.join(',')} to {self.started_worker.id}")
+                sync_scopes = set(object_params.get_list("pool_scope", ["swarm", "cluster", "shared"]))
+                sync_scopes.remove("own")
+                node_params[f"pool_scope{suffixes}"] = " ".join(sync_scopes)
                 do = "get"
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that
