@@ -27,16 +27,17 @@ INTERFACE
 
 """
 
-import logging as log
-logging = log.getLogger('avocado.job.' + __name__)
+import logging
+log = logging.getLogger('avocado.job.' + __name__)
 
 from avocado.core.plugin_interfaces import Resolver
 from avocado.core.resolver import ReferenceResolution, ReferenceResolutionResult
 
-from .cartgraph import TestGraph
+from .. import cmd_parser
+from .. import params_parser as param
+from ..cartgraph import TestGraph
 
-
-class CartesianLoader(Resolver):
+class TestLoader(Resolver):
     """Test loader for Cartesian graph parsing."""
 
     name = 'cartesian_loader'
@@ -51,9 +52,9 @@ class CartesianLoader(Resolver):
         :param extra_params: extra configuration parameters
         :type extra_params: {str, str}
         """
+        super().__init__(config=config)
         extra_params = {} if not extra_params else extra_params
         self.logdir = extra_params.pop('logdir', ".")
-        super().__init__()
 
     def resolve(self, reference):
         """

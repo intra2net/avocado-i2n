@@ -11,8 +11,8 @@ from avocado.core.suite import TestSuite, resolutions_to_runnables
 import unittest_importer
 from unittest_utils import DummyTestRun, DummyStateControl
 from avocado_i2n import params_parser as param
-from avocado_i2n.loader import CartesianLoader
-from avocado_i2n.runner import CartesianRunner
+from avocado_i2n.plugins.loader import TestLoader
+from avocado_i2n.plugins.runner import TestRunner
 from avocado_i2n.cartgraph import *
 
 
@@ -26,7 +26,7 @@ class CartesianWorkerTest(Test):
 
         self.prefix = ""
 
-        self.loader = CartesianLoader(config=self.config, extra_params={})
+        self.loader = TestLoader(config=self.config, extra_params={})
 
     def test_parse_flat_objects_vm(self):
         """Test for correctly parsed objects of different object variants from a restriction."""
@@ -148,7 +148,7 @@ class CartesianObjectTest(Test):
 
         self.prefix = ""
 
-        self.loader = CartesianLoader(config=self.config, extra_params={})
+        self.loader = TestLoader(config=self.config, extra_params={})
 
     def test_parse_composite_objects_vm(self):
         """Test for correctly parsed vm objects from a vm string restriction."""
@@ -453,7 +453,7 @@ class CartesianNodeTest(Test):
 
         self.prefix = ""
 
-        self.loader = CartesianLoader(config=self.config, extra_params={})
+        self.loader = TestLoader(config=self.config, extra_params={})
 
         self.shared_pool = ":" + self.config["param_dict"]["shared_pool"]
 
@@ -2066,8 +2066,8 @@ class CartesianNodeTest(Test):
 
 @mock.patch('avocado_i2n.cartgraph.worker.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
-@mock.patch('avocado_i2n.runner.SpawnerDispatcher', mock.MagicMock())
-@mock.patch.object(CartesianRunner, 'run_test_task', DummyTestRun.mock_run_test_task)
+@mock.patch('avocado_i2n.plugins.runner.SpawnerDispatcher', mock.MagicMock())
+@mock.patch.object(TestRunner, 'run_test_task', DummyTestRun.mock_run_test_task)
 class CartesianGraphTest(Test):
 
     def setUp(self):
@@ -2081,14 +2081,14 @@ class CartesianGraphTest(Test):
 
         self.prefix = ""
 
-        self.loader = CartesianLoader(config=self.config, extra_params={})
+        self.loader = TestLoader(config=self.config, extra_params={})
         self.job = mock.MagicMock()
         self.job.logdir = "."
         self.job.timeout = 6000
         self.job.result = mock.MagicMock()
         self.job.result.tests = []
         self.job.config = self.config
-        self.runner = CartesianRunner()
+        self.runner = TestRunner()
         self.runner.job = self.job
         self.runner.status_server = self.job
 
@@ -4148,10 +4148,10 @@ class CartesianGraphTest(Test):
         # expect a single cleanup call only for the states of enforcing cleanup policy
         self.assertEqual(DummyStateControl.asserted_states["unset"]["guisetup.noop"][self.shared_pool], 1)
 
-    @mock.patch('avocado_i2n.runner.StatusRepo')
-    @mock.patch('avocado_i2n.runner.StatusServer')
-    @mock.patch('avocado_i2n.runner.TestGraph')
-    @mock.patch('avocado_i2n.loader.TestGraph')
+    @mock.patch('avocado_i2n.plugins.runner.StatusRepo')
+    @mock.patch('avocado_i2n.plugins.runner.StatusServer')
+    @mock.patch('avocado_i2n.plugins.runner.TestGraph')
+    @mock.patch('avocado_i2n.plugins.loader.TestGraph')
     def test_loader_runner_entries(self, mock_load_graph, mock_run_graph,
                                    mock_status_server, _mock_status_repo):
         """Test that the default loader and runner entries work as expected."""

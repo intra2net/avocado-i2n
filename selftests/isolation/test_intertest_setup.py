@@ -11,7 +11,7 @@ from virttest import utils_params
 import unittest_importer
 from unittest_utils import DummyTestRun, DummyStateControl
 from avocado_i2n import intertest_setup
-from avocado_i2n.runner import CartesianRunner
+from avocado_i2n.plugins.runner import TestRunner
 
 
 @contextlib.contextmanager
@@ -34,8 +34,8 @@ def new_job(config):
 @mock.patch('avocado_i2n.cartgraph.worker.remote.wait_for_login', mock.MagicMock())
 @mock.patch('avocado_i2n.cartgraph.node.door', DummyStateControl)
 @mock.patch('avocado_i2n.cartgraph.worker.TestWorker.start', mock.MagicMock())
-@mock.patch('avocado_i2n.runner.SpawnerDispatcher', mock.MagicMock())
-@mock.patch.object(CartesianRunner, 'run_test_task', DummyTestRun.mock_run_test_task)
+@mock.patch('avocado_i2n.plugins.runner.SpawnerDispatcher', mock.MagicMock())
+@mock.patch.object(TestRunner, 'run_test_task', DummyTestRun.mock_run_test_task)
 class IntertestSetupTest(Test):
 
     def setUp(self):

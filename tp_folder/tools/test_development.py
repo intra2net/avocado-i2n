@@ -26,10 +26,7 @@ from collections import namedtuple
 
 from avocado.core.output import LOG_UI, LOG_JOB as logging
 
-from avocado_i2n import params_parser as param
-from avocado_i2n.cartgraph import TestGraph, TestNode
-from avocado_i2n.loader import CartesianLoader
-from avocado_i2n.runner import CartesianRunner
+from avocado_i2n.cartgraph import TestGraph
 from avocado_i2n.intertest_setup import with_cartesian_graph
 
 

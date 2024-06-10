@@ -34,7 +34,6 @@ import time
 import json
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
-import signal
 import asyncio
 log.getLogger('asyncio').parent = log.getLogger('avocado.job')
 
@@ -50,10 +49,10 @@ from avocado.core.task.runtime import RuntimeTask, PreRuntimeTask, PostRuntimeTa
 from avocado.core.task.statemachine import TaskStateMachine, Worker
 from avocado.core.dispatcher import SpawnerDispatcher
 
-from .cartgraph import TestGraph, TestWorker, TestNode
+from ..cartgraph import TestGraph, TestWorker, TestNode
 
 
-class CartesianRunner(RunnerInterface):
+class TestRunner(RunnerInterface):
     """Test runner for Cartesian graph traversal."""
 
     name = 'traverser'

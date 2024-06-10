@@ -62,8 +62,7 @@ from avocado.core.output import LOG_UI
 
 from . import params_parser as param
 from .cartgraph import TestGraph, TestNode
-from .loader import CartesianLoader
-from .runner import CartesianRunner
+from .plugins.runner import TestRunner
 
 
 #: list of all available manual steps or simply semi-automation tools
@@ -131,7 +130,7 @@ def with_cartesian_graph(fn):
     """
     def wrapper(config, tag=""):
         loader = TestGraph
-        runner = CartesianRunner()
+        runner = TestRunner()
         CartesianGraph = namedtuple('CartesianGraph', 'l r')
         config["graph"] = CartesianGraph(l=loader, r=runner)
 
@@ -369,7 +368,7 @@ def run(config, tag=""):
     config["prefix"] = tag + "n" if len(re.findall("run", config["vms_params"]["setup"])) > 1 else ""
 
     loader = TestGraph
-    runner = CartesianRunner()
+    runner = TestRunner()
     CartesianGraph = namedtuple('CartesianGraph', 'l r')
     config["graph"] = CartesianGraph(l=loader, r=runner)
 
@@ -397,7 +396,7 @@ def list(config, tag=""):
     This is equivalent to but more powerful than the loader plugin.
     """
     loader = TestGraph
-    runner = CartesianRunner()
+    runner = TestRunner()
     CartesianGraph = namedtuple('CartesianGraph', 'l r')
     config["graph"] = CartesianGraph(l=loader, r=runner)
 
