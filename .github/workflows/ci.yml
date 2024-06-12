@@ -62,25 +62,26 @@ jobs:
       - run: sleep 3
       - name: Create some fake binaries to make vt-bootstrap happy
         run: |
-         mkdir -p /tmp/dummy_bin
-         touch /tmp/dummy_bin/arping
-         touch /tmp/dummy_bin/tcpdump
-         chmod 777 /tmp/dummy_bin/*
-         echo "/tmp/dummy_bin" >> $GITHUB_PATH
+          mkdir -p /tmp/dummy_bin
+          touch /tmp/dummy_bin/arping
+          touch /tmp/dummy_bin/tcpdump
+          chmod 777 /tmp/dummy_bin/*
+          echo "/tmp/dummy_bin" >> $GITHUB_PATH
       - name: Bootstrapping Avocado VT
         run: avocado vt-bootstrap --vt-skip-verify-download-assets --yes-to-all
       - name: Isolation tests using parallel avocado runner
         # if later on we decide that unit tests are still more appropriate here just do
         #run: make check
-        run: PYTHONPATH=:. avocado run --max-parallel-tasks=4 selftests/isolation/test_*
-        # TODO: coverage report with avocado runs ends in 0% or ~0%, perhaps due to avocado or its async testing
-        #run: PYTHONPATH=:. coverage run --append --source=avocado_i2n $(which avocado) run --nrunner-max-parallel-tasks=4 selftests/isolation/test_*
-      #- name: Collect all coverage
-      #  run: coverage report -m
-      #- name: Upload coverage to Codecov
-      #  uses: codecov/codecov-action@v3
-      #  with:
-      #   verbose: true
+        run: PYTHONPATH=:. coverage run -m avocado run --max-parallel-tasks=4 selftests/isolation/test_*
+      - name: Collect all coverage
+        run: |
+          coverage combine
+          coverage report -m
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
       - name: Cleaning up avocado(-vt) libs
         run: |
           rm -rf avocado-vt-libs
