@@ -307,7 +307,7 @@ class TestNode(Runnable):
         #suffix = self.objects[0].long_suffix
         suffix = self.params["_name_map_file"].get("nets.cfg", "")
         # since this doesn't use the prefix tree a regex could match part of a variant
-        return  "\." + self.setless_form.replace(suffix, ".+") + "$"
+        return  r"\." + self.setless_form.replace(suffix, ".+") + r"$"
     bridged_form = property(fget=bridged_form)
 
     def long_prefix(self):

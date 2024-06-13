@@ -156,7 +156,7 @@ class TestGraph(object):
         """
         with open(os.path.join(dump_dir, filename), "r") as f:
             str_list = f.read()
-        setup_list = re.findall("(\w+-\w+) (\d) (\d)", str_list)
+        setup_list = re.findall(r"(\w+-\w+) (\d) (\d)", str_list)
         for i in range(len(setup_list)):
             assert self.nodes[i].long_prefix == setup_list[i][0], "Corrupted setup list file"
             self.nodes[i].should_run = lambda x: bool(int(setup_list[i][1]))
@@ -193,7 +193,7 @@ class TestGraph(object):
             # we count with additional eagerness for at least one worker
             if tnode.is_unrolled():
                 finished += 1
-        logging.info("Finished %i\%i tests, %0.2f%% complete", finished, total, 100.0*finished/total)
+        logging.info("Finished %i\\%i tests, %0.2f%% complete", finished, total, 100.0*finished/total)
 
     def visualize(self, dump_dir, tag=0):
         """
@@ -266,17 +266,17 @@ class TestGraph(object):
         if object_name is None and node_name is None:
             root_tests = self.get_nodes(param_key="shared_root", param_val="yes")
         elif node_name is None:
-            root_tests = self.get_nodes(param_key="object_root", param_val="(?:-|\.|^)"+object_name+"(?:-|\.|$)")
+            root_tests = self.get_nodes(param_key="object_root", param_val=r"(?:-|\.|^)"+object_name+r"(?:-|\.|$)")
         else:
             root_tests = self.get_nodes_by_name(node_name)
             if object_name:
                 # TODO: we only support vm objects at the moment
                 root_tests = self.get_nodes(param_key="vms",
-                                               param_val="(?:^|\s)"+object_name+"(?:$|\s)",
+                                               param_val=r"(?:^|\s)"+object_name+r"(?:$|\s)",
                                                subset=root_tests)
         if worker_name:
             root_tests = self.get_nodes(param_key="name",
-                                           param_val="(?:^|\.)"+worker_name+"(?:$|\.)",
+                                           param_val=r"(?:^|\.)"+worker_name+r"(?:$|\.)",
                                            subset=root_tests)
         if len(root_tests) < 1:
             raise AssertionError(f"Could not retrieve node with name {node_name} and flag all its children tests")
@@ -831,7 +831,7 @@ class TestGraph(object):
                 else:
                     vms = []
                     for vm_name in all_vms:
-                        if re.search("(\.|^)" + vm_name + "(\.|$)", object_variant):
+                        if re.search(r"(\.|^)" + vm_name + r"(\.|$)", object_variant):
                             vms += [vm_name]
             else:
                 # case of leaf test node or even specified object (dependency) as well as node
@@ -865,7 +865,7 @@ class TestGraph(object):
             get_vms[vm_name] = filtered_vms
             # dependency filter for child node object has to be applied too
             if vm_name == object_name or (object_type == "images" and object_name.endswith(f"_{vm_name}")):
-                get_vms[vm_name] = self.get_objects(param_val="(\.|^)" + object_variant + "(\.|$)", subset=get_vms[vm_name])
+                get_vms[vm_name] = self.get_objects(param_val=r"(\.|^)" + object_variant + r"(\.|$)", subset=get_vms[vm_name])
             if len(get_vms[vm_name]) == 0:
                 raise ValueError(f"Could not fetch any objects for suffix {vm_name} "
                                  f"in the test {node_name}")
@@ -873,14 +873,14 @@ class TestGraph(object):
         previous_nets = [o for o in self.objects if o.key == "nets" and o.long_suffix == test_object.long_suffix]
         # dependency filter for child node object has to be applied too
         if object_variant and object_type == "nets":
-            previous_nets = self.get_objects(param_val="(\.|^)" + object_variant + "(\.|$)", subset=previous_nets)
+            previous_nets = self.get_objects(param_val=r"(\.|^)" + object_variant + r"(\.|$)", subset=previous_nets)
         get_nets, parse_nets = {test_object.long_suffix: []}, {test_object.long_suffix: []}
         # all possible vm combinations as variants of the same net slot
         for combination in itertools.product(*get_vms.values()):
             # filtering for nets based on complete vm object variant names from the product
             filtered_nets = list(previous_nets)
             for vm_object in combination:
-                vm_restr = "(\.|^)" + vm_object.component_form + "(\.|$)"
+                vm_restr = r"(\.|^)" + vm_object.component_form + r"(\.|$)"
                 filtered_nets = self.get_objects(param_val=vm_restr, subset=filtered_nets)
             # additional filtering for nets based on dropped vm suffixes
             regex = r"^(?!.*(\.|^)(" + "|".join(dropped_vms) + r")(\.|$))"
@@ -943,7 +943,7 @@ class TestGraph(object):
                 logging.info(f"Parsed a test node {new_node.params['shortname']} from "
                              f"two-way compatible test net {net}")
                 # provide dynamic fingerprint to an original object root node
-                if re.search("(\.|^)original(\.|$)", new_node.params["name"]):
+                if re.search(r"(\.|^)original(\.|$)", new_node.params["name"]):
                     new_node.params["object_root"] = test_node.params.get("dep_id", net.id)
             except param.EmptyCartesianProduct:
                 # empty product in cases like parent (dependency) nodes imply wrong configuration
@@ -976,8 +976,8 @@ class TestGraph(object):
         setup_restr = test_node.setless_form
         setup_obj_restr = test_object.component_form
         filtered_children = self.get_nodes_by_name(setup_restr)
-        filtered_children = self.get_nodes("name", f"(\.|^){setup_obj_restr}(\.|$)",
-                                              subset=filtered_children)
+        filtered_children = self.get_nodes("name", rf"(\.|^){setup_obj_restr}(\.|$)",
+                                           subset=filtered_children)
         # prevent reflexive retrieval and consider only composite nodes
         filtered_children = [n for n in filtered_children if not n.is_flat()]
         # have to consider only user restrictions here for default as nodes can have their own
@@ -1099,15 +1099,15 @@ class TestGraph(object):
                       f"for dependency for {test_node}")
         # speedup for handling already parsed unique parent cases
         filtered_parents = self.get_nodes_by_name(setup_restr)
-        filtered_parents = self.get_nodes("name", f"(\.|^){setup_obj_restr}(\.|$)",
+        filtered_parents = self.get_nodes("name", rf"(\.|^){setup_obj_restr}(\.|$)",
                                              subset=filtered_parents)
-        filtered_parents = self.get_nodes("name", f"(\.|^){setup_net_restr}(\.|$)",
+        filtered_parents = self.get_nodes("name", rf"(\.|^){setup_net_restr}(\.|$)",
                                              subset=filtered_parents)
         # the vm whose dependency we are parsing may not be restrictive enough so reuse optional other
         # objects variants of the current test node - cloning is only supported in the node restriction
         if len(filtered_parents) > 1:
             for test_object in test_node.objects:
-                object_parents = self.get_nodes("name", f"(\.|^){test_object.component_form}(\.|$)",
+                object_parents = self.get_nodes("name", rf"(\.|^){test_object.component_form}(\.|$)",
                                                    subset=filtered_parents)
                 filtered_parents = object_parents if len(object_parents) > 0 else filtered_parents
         if len(filtered_parents) == 1:
