@@ -23,9 +23,9 @@ formats: all
 
 # Specify dependencies to enable reproducible builds:
 # https://docs.readthedocs.io/en/stable/guides/reproducible-builds.html
-#python:
-#  install:
-#      TODO: pip-crippled vt dependency (104) and no RTD scripts supported
-#     - requirements: requirements_pip.txt
-#     - method: pip
-#       path: .
+python:
+  install:
+     # TODO: no RTD scripts supported
+     - requirements: requirements_pip.txt
+     - method: pip
+       path: .

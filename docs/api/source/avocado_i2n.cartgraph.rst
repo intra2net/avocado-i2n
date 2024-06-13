@@ -10,6 +10,7 @@ Submodules
    avocado_i2n.cartgraph.graph
    avocado_i2n.cartgraph.node
    avocado_i2n.cartgraph.object
+   avocado_i2n.cartgraph.worker
 
 Module contents
 ---------------

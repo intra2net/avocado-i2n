@@ -20,9 +20,7 @@ Submodules
 
    avocado_i2n.cmd_parser
    avocado_i2n.intertest_setup
-   avocado_i2n.loader
    avocado_i2n.params_parser
-   avocado_i2n.runner
 
 Module contents
 ---------------

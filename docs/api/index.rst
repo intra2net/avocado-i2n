@@ -294,28 +294,32 @@ steps) is the following:
 -  *noop* - Simply load all plugins and do nothing (good for probing)
 -  *create* - Create any predefined image for each virtual machine
 -  *collect* - Collect the vm root state from a pool if available
--  *deploy* - Simply deploy changes on top of current state (will be lost
-   after reverting to snapshot)
+-  *deploy* - Simply deploy changes on top of current state (will be
+   lost after reverting to snapshot)
 -  *boot* - Simply boot the registered virtual machines and run selected
    controls if any
 -  *list* - List selected tests
 -  *run* - Run selected tests
--  *download* - Download a set of files from the vm to the test results folder
--  *upload* - Upload a set of files to the vm's temporary folder
--  *unittest* - Run all unit tests available for the test suite utilities
+-  *download* - Download a set of files from the vm to the test results
+   folder
+-  *upload* - Upload a set of files to the vm’s temporary folder
+-  *unittest* - Run all unit tests available for the test suite
+   utilities
 -  *update* - Rerun setup tests on a vm, removing all descending states
 -  *shutdown* - Shutdown gracefully or kill living vms
 -  *clean* - Remove the logical volumes of all installed vms
--  *check* - Check whether a given state (snapshot of saved setup) exists
--  *get* - Get a given state, i.e. revert to it keeping it for further reuse
+-  *check* - Check whether a given state (snapshot of saved setup)
+   exists
+-  *get* - Get a given state, i.e. revert to it keeping it for further
+   reuse
 -  *set* - Set a given state, keeping it for further reuse
--  *unset* - Unset a given state, making it unavailable for further reuse but
-   freeing space
+-  *unset* - Unset a given state, making it unavailable for further
+   reuse but freeing space
 -  *push* - Same like setting a given state
--  *pop* - Pop a given state, i.e. revert to it but making it unavailable for
-   further reuse
--  *\<tool>* - Run any custom compatible tool, located in the tools test suite
-   folder
+-  *pop* - Pop a given state, i.e. revert to it but making it
+   unavailable for further reuse
+-  *<tool>* - Run any custom compatible tool, located in the tools test
+   suite folder
 
 You can define a chain of setup steps, e.g.
 
@@ -447,7 +451,7 @@ graph is available in the test development documentation but the
 essential ones are the *check*, *get*, *set*, and *unset* routines with
 additional parameters like
 
--  \**_state{_vms|_images}\* - A vm or image state to perform the
+-  \**_state{\_vms|_images}\* - A vm or image state to perform the
    routine on
 -  \**_mode\* - Behaviors in case of present/absent setup defined above
 -  \**_opts\* - Secondary options, important only within the
@@ -601,7 +605,7 @@ use of UNIX shell style pattern matching:
 
    avocado manu setup=unittest ut_filter=*_helper_unittest.py
 
-This will run only the unit tests that end with ’_helper_unittest.py’.
+This will run only the unit tests that end with ’\_helper_unittest.py’.
 
 If you are developing your own unit test for a utility, you only need to
 follow the guide about unit testing in python and put your own test
@@ -640,7 +644,7 @@ smaller set of such nodes while the *only all* restriction will parse
 the complete graph but traverse only the part reachable from the shared
 root node skip the rest. Any internal tests that are not directly used
 remain disconnected and as such will not be run. They are then typically
-called only from ("all" restricted) tools. Reading the graph from the
+called only from (“all” restricted) runs. Reading the graph from the
 config is thus mostly WYSIWYG and does not require any extra knowledge
 of the code parsing it.
 
