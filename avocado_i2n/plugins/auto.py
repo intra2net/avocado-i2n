@@ -100,40 +100,5 @@ class Auto(CLI):
             config["params"] = []
         cmd_parser.params_from_cmd(config)
 
-        # TODO: crude override of the avocado test suite due to
-        # hardcoded suite runner
-        from avocado.core.suite import TestSuite, TestSuiteError
-
-        def from_config(
-            config: dict[str, str], name: str = None, job_config: dict[str, str] = None
-        ) -> TestSuite:
-            suite_config = config
-            config = settings.as_dict()
-            if job_config:
-                config.update(job_config)
-            config.update(suite_config)
-            runner = config.get("run.suite_runner")
-            # TODO: hardcoded runner type, this method works perfectly fine for
-            # our own traverser scheduler (suite runner)
-            if runner in ["nrunner", "traverser"]:
-                suite = TestSuite._from_config_with_resolver(config, name)
-                if suite.test_parameters or suite.variants:
-                    suite.tests = suite._get_test_variants()
-            else:
-                raise TestSuiteError(
-                    f'Suite creation for runner "{runner}" ' f"is not supported"
-                )
-
-            if not config.get("run.ignore_missing_references"):
-                if not suite.tests:
-                    msg = (
-                        "Test Suite could not be created. No test references "
-                        "provided nor any other arguments resolved into tests"
-                    )
-                    raise TestSuiteError(msg)
-
-            return suite
-
-        TestSuite.from_config = from_config
         log.debug(f"Setting test runner to 'traverser'")
         config["run.suite_runner"] = "traverser"
