@@ -27,6 +27,10 @@ INTERFACE
 
 """
 
+from typing import Any
+
+from virttest.utils_params import Params
+
 from .setup import StateBackend
 from ..vmnet import VMNetwork
 
@@ -37,7 +41,7 @@ class VMNetBackend(StateBackend):
     network_class = VMNetwork
 
     @classmethod
-    def show(cls, params, object=None):
+    def show(cls, params: Params, object: Any = None) -> list[str]:
         """
         Return a list of available states of a specific type.
 
@@ -46,7 +50,7 @@ class VMNetBackend(StateBackend):
         return ["default"]
 
     @classmethod
-    def get(cls, params, object=None):
+    def get(cls, params: Params, object: Any = None) -> None:
         """
         Retrieve a state disregarding the current changes.
 
@@ -62,7 +66,7 @@ class VMNetBackend(StateBackend):
         type(env).get_vmnet = lambda self: self.vmnet
 
     @classmethod
-    def set(cls, params, object=None):
+    def set(cls, params: Params, object: Any = None) -> None:
         """
         Store a state saving the current changes.
 
@@ -71,7 +75,7 @@ class VMNetBackend(StateBackend):
         pass
 
     @classmethod
-    def unset(cls, params, object=None):
+    def unset(cls, params: Params, object: Any = None) -> None:
         """
         Remove a state with previous changes.
 
@@ -80,7 +84,7 @@ class VMNetBackend(StateBackend):
         pass
 
     @classmethod
-    def check_root(cls, params, object=None):
+    def check_root(cls, params: Params, object: Any = None) -> bool:
         """
         Check whether a root state or essentially the object exists.
 
@@ -89,19 +93,17 @@ class VMNetBackend(StateBackend):
         return True
 
     @classmethod
-    def get_root(cls, params, object=None):
+    def get_root(cls, params: Params, object: Any = None) -> None:
         """
         Get a root state or essentially due to pre-existence do nothing.
 
         :param params: configuration parameters
-        :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         cls.get(params, object=object)
 
     @classmethod
-    def set_root(cls, params, object=None):
+    def set_root(cls, params: Params, object: Any = None) -> None:
         """
         Set a root state to provide object existence.
 
@@ -110,7 +112,7 @@ class VMNetBackend(StateBackend):
         pass
 
     @classmethod
-    def unset_root(cls, params, object=None):
+    def unset_root(cls, params: Params, object: Any = None) -> None:
         """
         Unset a root state to prevent object existence.
 

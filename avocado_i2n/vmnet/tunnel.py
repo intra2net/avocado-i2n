@@ -36,121 +36,126 @@ INTERFACE
 """
 
 
+from typing import Any
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 
-from virttest import utils_params
+from virttest.utils_params import Params
 
 from .netconfig import VMNetconfig
+from .interface import VMInterface
+from .node import VMNode
 
 
 class VMTunnel(object):
     """The tunnel class."""
 
     """Structural properties"""
-    def left(self, value=None):
+    def left(self, value: VMNode = None) -> VMNode | None:
         """A reference to the left node of the tunnel."""
         if value is not None:
             self._left = value
+            return None
         else:
             return self._left
     left = property(fget=left, fset=left)
 
-    def right(self, value=None):
+    def right(self, value: VMNode = None) -> VMNode | None:
         """A reference to the right node of the tunnel."""
         if value is not None:
             self._right = value
+            return None
         else:
             return self._right
     right = property(fget=right, fset=right)
 
-    def left_iface(self, value=None):
+    def left_iface(self, value: VMInterface = None) -> VMInterface | None:
         """A reference to the left interface of the tunnel."""
         if value is not None:
             self._left_iface = value
+            return None
         else:
             return self._left_iface
     left_iface = property(fget=left_iface, fset=left_iface)
 
-    def right_iface(self, value=None):
+    def right_iface(self, value: VMInterface = None) -> VMInterface | None:
         """A reference to the right interface of the tunnel."""
         if value is not None:
             self._right_iface = value
+            return None
         else:
             return self._right_iface
     right_iface = property(fget=right_iface, fset=right_iface)
 
-    def left_net(self, value=None):
+    def left_net(self, value: VMNetconfig = None) -> VMNetconfig | None:
         """A reference to the left netconfig of the tunnel."""
         if value is not None:
             self._left_net = value
+            return None
         else:
             return self._left_net
     left_net = property(fget=left_net, fset=left_net)
 
-    def right_net(self, value=None):
+    def right_net(self, value: VMNetconfig = None) -> VMNetconfig | None:
         """A reference to the right netconfig of the tunnel."""
         if value is not None:
             self._right_net = value
+            return None
         else:
             return self._right_net
     right_net = property(fget=right_net, fset=right_net)
 
-    def left_params(self):
+    @property
+    def left_params(self) -> Params:
         """The tunnel generated left side parameters."""
         return self.left.params.object_params(self.name)
-    left_params = property(fget=left_params)
 
-    def right_params(self):
+    @property
+    def right_params(self) -> Params:
         """The tunnel generated right side parameters."""
         return self.right.params.object_params(self.name)
-    right_params = property(fget=right_params)
 
-    def params(self):
+    @property
+    def params(self) -> Params:
         """The tunnel generated test parameters."""
         return self._params
-    params = property(fget=params)
 
     """Connection properties"""
-    def name(self, value=None):
+    def name(self, value: str = None) -> str | None:
         """Name for the connection."""
         if value is not None:
             self._name = value
+            return None
         else:
             return self._name
     name = property(fget=name, fset=name)
 
-    def __init__(self, name, node1, node2,
-                 local1=None, remote1=None, peer1=None, auth=None):
+    def __init__(self, name: str, node1: VMNode, node2: VMNode,
+                 local1: dict[str, str] = None, remote1: dict[str, str] = None,
+                 peer1: dict[str, str] = None, auth: dict[str, str] = None) -> None:
         """
         Construct the full set of required tunnel parameters for a given tunnel left configuration
         that are not already defined in the parameters of the two vms (left `node1` with
         right `node2`).
 
-        :param str name: name of the tunnel
+        :param name: name of the tunnel
         :param node1: left side node of the tunnel
-        :type node1: VMNode object
         :param node2: right side node of the tunnel
-        :type node2: VMNode object
         :param local1: left local configuration with at least one key 'type' with value 'nic'
                        for left-site (could be used for site-to-site or site-to-point tunnels)
                        or 'internetip' for left-point (for point-to-site or point-to-point tunnels)
                        or 'custom' for left-site or left-point that is not a LAN (e.g. for tunnel
                        forwarding of another tunneled remote net)
-        :type local1: {str, str}
         :param remote1: left remote configuration with at least one key 'type' with value 'custom'
                         for right-site (could be used for site-to-site or point-to-site tunnels) or
                         'externalip' for right-point (for site-to-point or point-to-point tunnels)
                         or 'modeconfig' for special right-point (using a ModeConfig connection for
                         a right road warrior)
-        :type remote1: {str, str}
         :param peer1: left peer configuration with at least one key 'type' with value 'ip' for no
                       NAT along the tunnel (the peer having a public IP) or 'dynip' for a road
                       warrior right end point (the peer is behind NAT and its IP is changing)
-        :type peer1: {str, str}
         :param auth: authentication configuration with at least one key 'type' with value in
                      "pubkey", "psk", "none" and the rest of the keys providing type details
-        :type auth: {str, str}
         :raises: :py:class:`ValueError` if some of the supplied configuration is not valid
 
         The right side `local2`, `remote2`, `peer2` configuration is determined from the left side.
@@ -167,7 +172,7 @@ class VMTunnel(object):
         if peer1 is None:
             peer1 = {"type": "ip", "nic": "internet_nic"}
         local2, remote2, peer2 = self._get_peer_variant(local1, remote1, peer1)
-        params = utils_params.Params()
+        params = Params()
 
         # main parameters
         params["vpnconn_%s_%s" % (name, node1.name)] = name
@@ -269,8 +274,10 @@ class VMTunnel(object):
         params2 = params.object_params(node2.name)
         params1.update(node1.params)
         params2.update(node2.params)
-        node1.params = params1
-        node2.params = params2
+        node1.params.clear()
+        node2.params.clear()
+        node1.params.update(params1)
+        node2.params.update(params2)
 
         self._params = params
         self._left = node1
@@ -283,31 +290,28 @@ class VMTunnel(object):
 
         logging.info("Produced tunnel from parameters is %s", self)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         left_net = "none" if self.left_net is None else self.left_net.net_ip
         right_net = "none" if self.right_net is None else self.right_net.net_ip
         tunnel_tuple = (self.name, self.left.name, self.left_iface.ip,
                         self.right.name, self.right_iface.ip, left_net, right_net)
         return "[tunnel] name='%s', left='%s(%s)', right='%s(%s)', lnet='%s', rnet='%s'" % tunnel_tuple
 
-    def connects_nodes(self, node1, node2):
+    def connects_nodes(self, node1: VMNode, node2: VMNode) -> bool:
         """
         Check whether a tunnel connects two vm nodes, i.e. they are in directly connected
         as tunnel peers or indirectly in tunnel connected LANs (netconfigs).
 
         :param node1: one side vm of the tunnel
-        :type node1: VM node
         :param node2: another side vm of the tunnel
-        :type node2: VM node
         :returns: whether the tunnel connects the two nodes
-        :rtype: bool
         """
-        def on_the_left(node):
+        def on_the_left(node: VMNode) -> bool:
             if node == self.left:
                 logging.debug("The node %s is the left end point of the tunnel %s",
                               node, self)
                 return True
-            if self.left_net and node.check_interface(self.left_net.has_interface):
+            if self.left_net is not None and node.check_interface(self.left_net.has_interface):
                 logging.debug("The node %s is in the left end site of the tunnel %s",
                               node, self)
                 return True
@@ -317,12 +321,12 @@ class VMTunnel(object):
                                   node, self)
                     return True
             return False
-        def on_the_right(node):
+        def on_the_right(node: VMNode) -> bool:
             if node == self.right:
                 logging.debug("The node %s is the right end point of the tunnel %s",
                               node, self)
                 return True
-            if self.right_net and node.check_interface(self.right_net.has_interface):
+            if self.right_net is not None and node.check_interface(self.right_net.has_interface):
                 logging.debug("The node %s is in the right end site of the tunnel %s",
                               node, self)
                 return True
@@ -342,7 +346,8 @@ class VMTunnel(object):
         else:
             return False
 
-    def _get_peer_variant(self, left_local, left_remote, left_peer):
+    def _get_peer_variant(self, left_local: dict[str, str], left_remote: dict[str, str],
+                          left_peer: dict[str, str]) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
         """
         Convert triple of parameters according to ipsec rules.
 
@@ -378,12 +383,11 @@ class VMTunnel(object):
 
         return right_local, right_remote, right_peer
 
-    def configure_between_endpoints(self, apply_extra_options=None):
+    def configure_between_endpoints(self, apply_extra_options: dict[str, Any] = None) -> None:
         """
         Build a tunnel between two endpoint vms.
 
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
-        :type apply_extra_options: {str, any}
         """
         logging.info("Building a tunnel %s between %s and %s",
                      self.name, self.left.name, self.right.name)
@@ -396,14 +400,12 @@ class VMTunnel(object):
         self.configure_on_endpoint(self.left, apply_extra_options)
         self.configure_on_endpoint(self.right, apply_extra_options)
 
-    def configure_on_endpoint(self, node, apply_extra_options=None):
+    def configure_on_endpoint(self, node: VMNode, apply_extra_options: dict[str, Any] = None) -> None:
         """
         Configure a tunnel on an end point virtual machine.
 
         :param node: node end point where the tunnel will be configured
-        :type node: VMNode object
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
-        :type apply_extra_options: {str, any}
         :raises: :py:class:`ValueError` if some of the supplied configuration is not valid
 
         The provided virtual machine parameters will be used
@@ -461,17 +463,15 @@ class VMTunnel(object):
             vm.session.cmd("iptables -I INPUT -i %s -p icmp -j ACCEPT" % self.name)
             vm.session.cmd("iptables -I OUTPUT -o %s -p icmp -j ACCEPT" % self.name)
 
-    def import_key_params(self, from_node, to_node):
+    def import_key_params(self, from_node: VMNode, to_node: VMNode) -> None:
         """
         This will generate own key configuration at the source vm
         and foreign key configuration at the destination vm.
 
         :param from_node: source node to get the key from (and generate own key
                           configuration on it containing all relevant key information)
-        :type from_node: VMNode object
         :param to_node: destination node to import the key to (and generate foreign key
                         configuration on it containing all relevant key information)
-        :type to_node: VMNode object
         """
         assert from_node != to_node, "Cannot import key parameters from a vm node to itself"
         if from_node not in [self.left, self.right]:
@@ -482,10 +482,10 @@ class VMTunnel(object):
                              "%s is not one of them" % (self.left.name, self.right.name, to_node.name))
         from_vm, to_vm = from_node.platform, to_node.platform
 
-        own_key_params = utils_params.Params({"vpnconn_own_key_name": "sample-key"})
+        own_key_params = Params({"vpnconn_own_key_name": "sample-key"})
         from_vm.params.update(own_key_params)
 
-        def get_imported_key_params(from_params):
+        def get_imported_key_params(from_params: Params) -> Params:
             to_params = from_params.copy()
             to_params["vpnconn_foreign_key_name"] = from_params["vpnconn_own_key_name"]
             del to_params["vpnconn_own_key_name"]

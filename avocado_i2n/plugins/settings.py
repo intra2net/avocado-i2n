@@ -29,7 +29,7 @@ from avocado.core.plugin_interfaces import Settings
 
 class I2NSettings(Settings):
 
-    def adjust_settings_paths(self, paths):
+    def adjust_settings_paths(self, paths: str) -> None:
         base = resource_filename('avocado_i2n', 'conf.d')
         for path in [os.path.join(base, conf)
                      for conf in resource_listdir('avocado_i2n', 'conf.d')

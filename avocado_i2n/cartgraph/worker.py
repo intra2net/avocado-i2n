@@ -35,13 +35,15 @@ logging = log.getLogger('avocado.job.' + __name__)
 import aexpect
 from aexpect.exceptions import ShellTimeoutError
 from aexpect import remote
+from aexpect.client import RemoteSession
+from virttest.utils_params import Params
 
 from . import NetObject
 
 
 class TestEnvironment(object):
 
-    def __init__(self, id: str):
+    def __init__(self, id: str) -> None:
         """
         Construct a test environment for any test nodes (tests).
 
@@ -55,7 +57,7 @@ class TestSwarm(TestEnvironment):
 
     run_swarms = {}
 
-    def __init__(self, id, workers = None):
+    def __init__(self, id: str, workers: list[TestWorker] = None) -> None:
         """
         Construct a test swarm (of sub-environments for execution) for any test nodes (tests).
 
@@ -64,7 +66,7 @@ class TestSwarm(TestEnvironment):
         super().__init__(id)
         self.workers = workers or []
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         dump = f"[swarm] id='{self.id}', workers='{len(self.workers)}'"
         for worker in self.workers:
             dump = f"{dump}\n\t{worker}"
@@ -76,17 +78,17 @@ class TestWorker(TestEnvironment):
 
     _session_cache = {}
 
-    def params(self):
+    @property
+    def params(self) -> Params:
         """Parameters (cache) property."""
         return self.net.params
-    params = property(fget=params)
 
-    def restrs(self):
+    @property
+    def restrs(self) -> dict[str, str]:
         """Restrictions property."""
         return self.net.restrs
-    restrs = property(fget=restrs)
 
-    def __init__(self, id_net: NetObject):
+    def __init__(self, id_net: NetObject) -> None:
         """
         Construct a test worker (execution environment) for any test nodes (tests).
 
@@ -99,7 +101,7 @@ class TestWorker(TestEnvironment):
         _, self.swarm_id, _ = self.params["name"].split(".")
         self.spawner = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"[worker] id='{self.id}', spawner='{self.params['nets_spawner']}'"
 
     def overwrite_with_slot(self, slot: str) -> None:
@@ -193,7 +195,7 @@ class TestWorker(TestEnvironment):
         else:
             raise RuntimeError(f"Unsupported isolation type {isolation_type}")
 
-    def get_session(self) -> aexpect.ShellSession:
+    def get_session(self) -> RemoteSession:
         """
         Get a remote session to the current slot for the given test node.
 

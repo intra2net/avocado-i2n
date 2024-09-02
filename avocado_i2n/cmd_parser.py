@@ -16,24 +16,27 @@
 import sys
 import os
 import re
+from typing import Any, Callable
 import logging
 log = logging.getLogger('avocado.job.' + __name__)
 
 from avocado.core.settings import settings
 from virttest import env_process
+from virttest.utils_env import Env
+from avocado_vt.test import VirtTest
+from virttest.utils_params import Params
 
 from . import params_parser as param
 from .cartgraph import graph
 from .states import setup as ss
 
 
-def params_from_cmd(config):
+def params_from_cmd(config: Params) -> None:
     """
     Take care of command line overwriting, parameter preparation,
     setup and cleanup chains, and paths/utilities for all host controls.
 
     :param config: command line arguments
-    :type config: {str, str}
     :raises: :py:class:`ValueError` if a command line selected vm is not available
              from the configuration and thus supported or internal tests are
              restricted from the command line
@@ -164,19 +167,16 @@ def params_from_cmd(config):
     env_process_hooks()
 
 
-def full_vm_params_and_strs(param_dict, vm_strs, use_vms_default):
+def full_vm_params_and_strs(param_dict: dict[str, str] | None, vm_strs: dict[str, str],
+                            use_vms_default: dict[str, bool]) -> tuple[Params, dict[str,str]]:
     """
     Add default vm parameters and strings for missing command line such.
 
     :param param_dict: runtime parameters used for extra customization
-    :type param_dict: {str, str} or None
     :param vm_strs: command line vm-specific names and variant restrictions
-    :type vm_strs: {str, str}
     :param use_vms_default: whether to use default variant restriction for a
                             particular vm
-    :type use_vms_default: {str, bool}
     :returns: complete vm parameters and strings
-    :rtype: (:py:class:`Params`, {str, str})
     :raises: :py:class:`ValueError` if no command line or default variant
              restriction could be found for some vm
     """
@@ -193,16 +193,15 @@ def full_vm_params_and_strs(param_dict, vm_strs, use_vms_default):
     return vms_params, vm_strs
 
 
-def full_tests_params_and_str(param_dict, tests_str, use_tests_default):
+def full_tests_params_and_str(param_dict: dict[str, str] | None,
+                              tests_str: str, use_tests_default: bool) -> tuple[Params, str]:
     """
     Add default tests parameters and string for missing command line such.
 
     :param param_dict: runtime parameters used for extra customization
-    :type param_dict: {str, str} or None
-    :param str tests_str: command line variant restrictions
-    :param bool use_tests_default: whether to use default primary restriction
+    :param tests_str: command line variant restrictions
+    :param use_tests_default: whether to use default primary restriction
     :returns: complete tests parameters and string
-    :rtype: (:py:class:`Params`, str)
     :raises: :py:class:`ValueError` if the default primary restriction could is
              not valid (among the available ones)
     """
@@ -222,19 +221,19 @@ def full_tests_params_and_str(param_dict, tests_str, use_tests_default):
     return tests_params, tests_str
 
 
-def env_process_hooks():
+def env_process_hooks() -> None:
     """
     Add env processing hooks to handle on/off state get/set operations
     and vmnet networking setup and instance attachment to environment.
     """
-    def on_state(fn):
-        def wrapper(test, params, env):
+    def on_state(fn: Callable[[Any], Any]) -> Any:
+        def wrapper(test: VirtTest, params: Params, env: Env) -> Any:
             params["skip_types"] = "nets/vms/images nets"
             fn(params, env)
             del params["skip_types"]
         return wrapper
-    def off_state(fn):
-        def wrapper(test, params, env):
+    def off_state(fn: Callable[[Any], Any])-> Any:
+        def wrapper(test: VirtTest, params: Params, env: Env) -> Any:
             params["skip_types"] = "nets/vms"
             fn(params, env)
             del params["skip_types"]

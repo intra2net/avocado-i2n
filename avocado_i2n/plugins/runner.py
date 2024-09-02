@@ -32,6 +32,7 @@ from __future__ import annotations
 import os
 import time
 import json
+from typing import Any
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 import asyncio
@@ -48,6 +49,7 @@ from avocado.core.teststatus import STATUSES_MAPPING
 from avocado.core.task.runtime import RuntimeTask, PreRuntimeTask, PostRuntimeTask
 from avocado.core.task.statemachine import TaskStateMachine, Worker
 from avocado.core.dispatcher import SpawnerDispatcher
+from virttest.utils_params import Params
 
 from ..cartgraph import TestGraph, TestWorker, TestNode
 
@@ -58,7 +60,7 @@ class TestRunner(RunnerInterface):
     name = 'traverser'
     description = 'Runs tests through a Cartesian graph traversal'
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Construct minimal attributes for the Cartesian runner."""
         self.tasks = []
 
@@ -67,7 +69,7 @@ class TestRunner(RunnerInterface):
         self.previous_results = []
 
     """results functionality"""
-    async def _update_status(self):
+    async def _update_status(self) -> None:
         message_handler = MessageHandler()
         while True:
             try:
@@ -84,12 +86,11 @@ class TestRunner(RunnerInterface):
             task = tasks_by_id.get(task_id)
             message_handler.process_message(message, task, self.job)
 
-    def all_results_ok(self):
+    def all_results_ok(self) -> bool:
         """
         Evaluate if all tests run under this runner have an ok status.
 
         :returns: whether all tests ended with acceptable status
-        :rtype: bool
 
         ..todo:: There might be repeated tests here that have eventually
             passed so we might need to return an overall "pass" status.
@@ -124,12 +125,11 @@ class TestRunner(RunnerInterface):
                     self.previous_results += [test_details]
 
     """running functionality"""
-    async def run_test_task(self, node):
+    async def run_test_task(self, node: TestNode) -> None:
         """
         Run a test instance inside a subprocess.
 
         :param node: test node to run
-        :type node: :py:class:`TestNode`
         """
         host = node.params["nets_host"] or "process"
         gateway = node.params["nets_gateway"] or "localhost"
@@ -218,7 +218,7 @@ class TestRunner(RunnerInterface):
                 test_result = next((x for x in self.job.result.tests if x["name"].name == name and x["name"].uid == uid))
                 if len(node.results) > 0:
                     # TODO: avocado's choice of result attributes is not uniform for past and current results
-                    get_duration = lambda x: float(x.get('time_elapsed', x['time']))
+                    def get_duration(x: dict[str, str]) -> float: return float(x.get('time_elapsed', x['time']))
                     duration = get_duration(test_result)
                     max_allowed = max([get_duration(r) for r in node.results if r["status"] == "PASS"], default=duration)
                     logging.info(f"Validating test duration {duration} is within usual bounds ({max_allowed})")
@@ -252,7 +252,7 @@ class TestRunner(RunnerInterface):
         else:
             return True
 
-    def run_workers(self, test_suite: TestSuite or TestGraph, params: dict[str, str]) -> None:
+    def run_workers(self, test_suite: TestSuite | TestGraph, params: Params) -> None:
         """
         Run all workers in parallel traversing the graph for each.
 

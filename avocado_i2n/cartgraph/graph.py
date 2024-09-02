@@ -34,11 +34,14 @@ from __future__ import annotations
 import os
 import re
 import time
+from typing import Any
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 import collections
 import itertools
 import asyncio
+
+from virttest.utils_params import Params
 
 from .. import params_parser as param
 from . import PrefixTreeNode, PrefixTree, TestNode
@@ -46,7 +49,7 @@ from . import TestSwarm, TestWorker
 from . import TestObject, NetObject, VMObject, ImageObject
 
 
-def set_graph_logging_level(level=20):
+def set_graph_logging_level(level: int = 20) -> None:
     """
     Set the logging level specifically for the Cartesian graph.
 
@@ -77,17 +80,17 @@ class TestGraph(object):
 
     logdir = None
 
-    def nodes(self) -> list["TestNode"]:
+    @property
+    def nodes(self) -> tuple[TestNode]:
         """Read-only list of test nodes."""
         return tuple(self._nodes)
-    nodes = property(fget=nodes)
 
-    def objects(self) -> list["TestObject"]:
+    @property
+    def objects(self) -> tuple[TestObject]:
         """Read-only list of test objects."""
         return tuple(self._objects)
-    objects = property(fget=objects)
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Construct the test graph."""
         self._objects = []
         self._nodes = []
@@ -101,7 +104,7 @@ class TestGraph(object):
         self.logdir = TestGraph.logdir
         self.runner = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         dump = "[cartgraph] objects='%s' nodes='%s'" % (len(self.objects), len(self.nodes))
         for test_object in self.objects:
             dump = "%s\n\t%s" % (dump, str(test_object))
@@ -109,7 +112,7 @@ class TestGraph(object):
             dump = "%s\n\t%s" % (dump, str(test_node))
         return dump
 
-    def new_objects(self, objects: list[TestObject] or TestObject) -> None:
+    def new_objects(self, objects: list[TestObject] | TestObject) -> None:
         """
         Add new objects excluding (old) repeating ones as ID.
 
@@ -123,7 +126,7 @@ class TestGraph(object):
             self.objects_index[test_object.long_suffix] = test_object
             self._objects.append(test_object)
 
-    def new_nodes(self, nodes: list[TestNode] or TestNode) -> None:
+    def new_nodes(self, nodes: list[TestNode] | TestNode) -> None:
         """
         Add new nodes excluding (old) repeating ones as ID.
 
@@ -135,7 +138,7 @@ class TestGraph(object):
             self.nodes_index.insert(test_node)
             self._nodes.append(test_node)
 
-    def new_workers(self, workers: list[TestWorker] or TestWorker) -> None:
+    def new_workers(self, workers: list[TestWorker] | TestWorker) -> None:
         """
         Add new workers excluding (old) repeating ones as ID.
 
@@ -147,12 +150,12 @@ class TestGraph(object):
             self.workers[test_worker.params["shortname"]] = test_worker
 
     """dumping functionality"""
-    def load_setup_list(self, dump_dir, filename="setup_list"):
+    def load_setup_list(self, dump_dir: str, filename: str = "setup_list") -> None:
         """
         Load the setup state of each node from a list file.
 
-        :param str dump_dir: directory for the dump image
-        :param str filename: file to load the setup information from
+        :param dump_dir: directory for the dump image
+        :param filename: file to load the setup information from
         """
         with open(os.path.join(dump_dir, filename), "r") as f:
             str_list = f.read()
@@ -162,12 +165,12 @@ class TestGraph(object):
             self.nodes[i].should_run = lambda x: bool(int(setup_list[i][1]))
             self.nodes[i].should_clean = lambda x: bool(int(setup_list[i][2]))
 
-    def save_setup_list(self, dump_dir, filename="setup_list"):
+    def save_setup_list(self, dump_dir: str, filename: str = "setup_list") -> None:
         """
         Save the setup state of each node to a list file.
 
-        :param str dump_dir: directory for the dump image
-        :param str filename: file to save the setup information to
+        :param dump_dir: directory for the dump image
+        :param filename: file to save the setup information to
         """
         str_list = ""
         for test in self.nodes:
@@ -177,7 +180,7 @@ class TestGraph(object):
         with open(os.path.join(dump_dir, filename), "w") as f:
             f.write(str_list)
 
-    def report_progress(self):
+    def report_progress(self) -> None:
         """
         Report the total test run progress as the number and percentage
         of tests that are fully finished (will not be run again).
@@ -195,13 +198,13 @@ class TestGraph(object):
                 finished += 1
         logging.info("Finished %i\\%i tests, %0.2f%% complete", finished, total, 100.0*finished/total)
 
-    def visualize(self, dump_dir, tag=0):
+    def visualize(self, dump_dir: str, tag: str = "0") -> None:
         """
         Dump a visual description of the Cartesian graph at
         a given parsing/traversal step.
 
-        :param str dump_dir: directory for the dump image
-        :param str tag: tag of the dump, e.g. parsing/traversal step and slot
+        :param dump_dir: directory for the dump image
+        :param tag: tag of the dump, e.g. parsing/traversal step and slot
         """
         try:
             import graphviz
@@ -210,7 +213,7 @@ class TestGraph(object):
             logging.warning("Couldn't visualize the Cartesian graph due to missing dependency (Graphviz)")
             return
 
-        def get_display_id(node):
+        def get_display_id(node: TestNode) -> str:
             node_id = node.long_prefix
             node_id += f"[{node.started_worker}]" if node.started_worker else ""
             return node_id
@@ -241,40 +244,37 @@ class TestGraph(object):
             logging.warning("Couldn't visualize the Cartesian graph due to missing binary (Graphviz)")
 
     """run/clean switching functionality"""
-    def flag_children(self, node_name=None, object_name=None, worker_name=None,
-                      flag_type="run", flag=lambda self, slot: slot not in self.workers,
-                      skip_parents=False, skip_children=False):
+    def flag_children(self, node_name: str = "", object_name: str = "", worker_name: str = "",
+                      flag_type: str = "run", flag: function = lambda self, slot: slot not in self.workers,
+                      skip_parents: bool = False, skip_children: bool = False) -> None:
         """
         Set the run/clean flag for all children of a parent node of a given name.
 
         :param node_name: name of the parent node or root if None
-        :type node_name: str or None
         :param object_name: test object whose state is set or shared root if None
-        :type object_name: str or None
         :param worker_name: test worker whose's run/clean policy will be modified
-        :type worker_name: str or None
-        :param str flag_type: 'run' or 'clean' categorization of the children
-        :param function flag: whether and when the run/clean action should be executed
-        :param bool skip_parents: whether the parents should not be flagged (just children)
-        :param bool skip_children: whether the children should not be flagged (just roots)
+        :param flag_type: 'run' or 'clean' categorization of the children
+        :param flag: whether and when the run/clean action should be executed
+        :param skip_parents: whether the parents should not be flagged (just children)
+        :param skip_children: whether the children should not be flagged (just roots)
         :raises: :py:class:`AssertionError` if obtained # of root tests is != 1
 
         ..note:: Works only with connected graphs and will skip any disconnected nodes.
         """
         activity = "running" if flag_type == "run" else "cleanup"
         logging.debug(f"Flagging test nodes for {activity}")
-        if object_name is None and node_name is None:
+        if object_name == "" and node_name == "":
             root_tests = self.get_nodes(param_key="shared_root", param_val="yes")
-        elif node_name is None:
+        elif node_name == "":
             root_tests = self.get_nodes(param_key="object_root", param_val=r"(?:-|\.|^)"+object_name+r"(?:-|\.|$)")
         else:
             root_tests = self.get_nodes_by_name(node_name)
-            if object_name:
+            if object_name != "":
                 # TODO: we only support vm objects at the moment
                 root_tests = self.get_nodes(param_key="vms",
                                                param_val=r"(?:^|\s)"+object_name+r"(?:$|\s)",
                                                subset=root_tests)
-        if worker_name:
+        if worker_name != "":
             root_tests = self.get_nodes(param_key="name",
                                            param_val=r"(?:^|\.)"+worker_name+r"(?:$|\.)",
                                            subset=root_tests)
@@ -300,18 +300,17 @@ class TestGraph(object):
             if not skip_children:
                 flagged.extend(test_node.cleanup_nodes)
 
-    def flag_intersection(self, graph,
-                          flag_type="run", flag=lambda self, slot: slot not in self.workers,
-                          skip_object_roots=False, skip_shared_root=False):
+    def flag_intersection(self, graph: TestGraph,
+                          flag_type: str = "run", flag: function = lambda self, slot: slot not in self.workers,
+                          skip_object_roots: bool = False, skip_shared_root: bool = False) -> None:
         """
         Set the run/clean flag for all test nodes intersecting with the test nodes from another graph.
 
         :param graph: Cartesian graph to intersect the current graph with
-        :type graph: :py:class:`TestGraph`
-        :param str flag_type: 'run' or 'clean' categorization of the children
-        :param function flag: whether and when the run/clean action should be executed
-        :param bool skip_object_roots: whether the object roots should not be flagged as well
-        :param bool skip_shared_root: whether the shared root should not be flagged as well
+        :param flag_type: 'run' or 'clean' categorization of the children
+        :param flag: whether and when the run/clean action should be executed
+        :param skip_object_roots: whether the object roots should not be flagged as well
+        :param skip_shared_root: whether the shared root should not be flagged as well
 
         ..note:: Works also with disconnected graphs and will not skip any disconnected nodes.
         """
@@ -338,7 +337,7 @@ class TestGraph(object):
 
     """parse and get functionality"""
     @staticmethod
-    def _unique_filter(items):
+    def _unique_filter(items: list[Any]) -> Any:
         """
         Query all test objects by a value in a parameter, returning a unique object.
 
@@ -355,7 +354,7 @@ class TestGraph(object):
     def get_objects_by_restr(self,
                              restriction: str = "",
                              subset: list[TestObject] = None,
-                             unique: bool = False) -> list[TestObject]|TestObject:
+                             unique: bool = False) -> TestObject | list[TestObject] | None:
         """
         Query all test objects by a multi-line restriction of "only" and "no" filters.
 
@@ -382,7 +381,7 @@ class TestGraph(object):
     def get_objects(self,
                        param_key: str = "name", param_val: str = "",
                        subset: list[TestObject] = None,
-                       unique: bool = False) -> list[TestObject]|TestObject:
+                       unique: bool = False) -> list[TestObject] | TestObject:
         """
         Query all test objects by a value in a parameter, returning a list of objects.
 
@@ -398,7 +397,7 @@ class TestGraph(object):
         logging.debug(f"Retrieved {len(objects)}/{len(subset)} test objects with {param_key} = {param_val}")
         return TestGraph._unique_filter(objects) if unique else objects
 
-    def get_nodes_by_name(self, name: str = "", unique: bool = False) -> list[TestNode]|TestNode:
+    def get_nodes_by_name(self, name: str = "", unique: bool = False) -> list[TestNode] | TestNode:
         """
         Query all test nodes by their name, returning a list of matching nodes.
 
@@ -412,7 +411,7 @@ class TestGraph(object):
 
     def get_nodes_by_restr(self,
                            restriction: str = "", subset: list[TestNode] = None,
-                           unique: bool = False) -> list[TestNode]|TestNode:
+                           unique: bool = False) -> Any | list[TestNode] | None:
         """
         Query all test nodes by a multi-line restriction of "only" and "no" filters.
 
@@ -439,7 +438,7 @@ class TestGraph(object):
     def get_nodes(self,
                      param_key: str = "name", param_val: str = "",
                      subset: list[TestNode] = None,
-                     unique: bool = False) -> list[TestNode]|TestNode:
+                     unique: bool = False) -> list[TestNode] | TestNode:
         """
         Query all test nodes by a value in a parameter, returning a list of nodes.
 
@@ -457,7 +456,7 @@ class TestGraph(object):
 
     @staticmethod
     def parse_flat_objects(suffix: str, category: str, restriction: str = "",
-                           params: dict[str, str] = None, unique: bool = False) -> list[TestObject]|TestObject:
+                           params: Params = None, unique: bool = False) -> list[TestObject] | TestObject:
         """
         Parse flat objects for each variant of a suffix satisfying a restriction.
 
@@ -502,8 +501,8 @@ class TestGraph(object):
     @staticmethod
     def parse_composite_objects(suffix: str, category: str, restriction: str = "",
                                 component_restrs: dict[str, str] = None,
-                                params: dict[str, str] = None,
-                                verbose: bool = False, unique: bool = False) -> list[TestObject]|TestObject:
+                                params: Params = None,
+                                verbose: bool = False, unique: bool = False) -> list[TestObject] | TestObject:
         """
         Parse a composite object for each variant from joined component variants.
 
@@ -580,7 +579,7 @@ class TestGraph(object):
 
     @staticmethod
     def parse_suffix_objects(category: str, suffix_restrs: dict[str, str] = None,
-                             params: dict[str, str] = None, verbose: bool = False, flat: bool = False) -> list[TestObject]:
+                             params: Params = None, verbose: bool = False, flat: bool = False) -> list[TestObject]:
         """
         Parse all available test objects and their configuration determined by available suffixes.
 
@@ -610,7 +609,7 @@ class TestGraph(object):
 
     @staticmethod
     def parse_object_from_objects(suffix: str, category: str, test_objects: tuple[TestObject],
-                                  params: dict[str, str] = None, verbose: bool = False) -> list[TestObject]:
+                                  params: Params = None, verbose: bool = False) -> TestObject:
         """
         Parse a unique composite object from joined already parsed component objects.
 
@@ -626,7 +625,7 @@ class TestGraph(object):
         setup_dict = params.copy()
         setup_dict.update({f"object_id_{o.suffix}": o.id for o in test_objects})
         component_restrs = {o.suffix: "only " + o.component_form + "\n" for o in test_objects}
-        composite_objects = TestGraph.parse_composite_objects(suffix, category,
+        composite_objects: list[TestObject] = TestGraph.parse_composite_objects(suffix, category,
                                                               component_restrs=component_restrs,
                                                               params=setup_dict, verbose=verbose)
 
@@ -643,7 +642,7 @@ class TestGraph(object):
 
     @staticmethod
     def parse_components_for_object(test_object: TestObject, category: str, restriction: str = "",
-                                    params: dict[str, str] = None, verbose: bool = False, unflatten: bool = False) -> list[TestObject]:
+                                    params: Params = None, verbose: bool = False, unflatten: bool = False) -> list[TestObject]:
         """
         Parse all component objects for an already parsed composite object.
 
@@ -654,7 +653,7 @@ class TestGraph(object):
         :param verbose: whether to print extra messages or not
         :param unflatten: whether to unflatten flat objects with their components
         """
-        test_objects = []
+        test_objects: list[TestObject] = []
         if category == "images":
             return test_objects
         if category == "vms":
@@ -702,7 +701,7 @@ class TestGraph(object):
         return test_objects
 
     @staticmethod
-    def parse_net_from_object_restrs(suffix: str, object_restrs: dict[str, str] = None) -> NetObject:
+    def parse_net_from_object_restrs(suffix: str, object_restrs: dict[str, str] = None) -> TestObject | NetObject:
         """
         Parse a default net with object strings as compatibility.
 
@@ -710,7 +709,7 @@ class TestGraph(object):
         :param object_restrs: object (vm) restrictions as component restrictions for the net
         :returns: default net object
         """
-        flat_objects = TestGraph.parse_flat_objects(suffix, "nets")
+        flat_objects: list[TestObject] = TestGraph.parse_flat_objects(suffix, "nets")
         assert len(flat_objects) == 1, f"A unique net variant must be parsed from restrictions {object_restrs}"
         flat_object = flat_objects[0]
         flat_object.update_restrs(object_restrs)
@@ -720,8 +719,8 @@ class TestGraph(object):
         return flat_object
 
     @staticmethod
-    def parse_flat_nodes(restriction: str = "", params: dict[str, str] = None,
-                         unique: bool = False) -> list[TestNode]|TestNode:
+    def parse_flat_nodes(restriction: str = "", params: Params = None,
+                         unique: bool = False) -> list[TestNode] | TestNode:
         """
         Parse a flat node for each variant of satisfying a restriction.
 
@@ -754,7 +753,7 @@ class TestGraph(object):
 
     @staticmethod
     def parse_node_from_object(test_object: TestObject, restriction: str = "",
-                               prefix: str = "", params: dict[str, str] = None) -> TestNode:
+                               prefix: str = "", params: Params = None) -> TestNode:
         """
         Get a unique test node of some restriction for the given object.
 
@@ -798,7 +797,7 @@ class TestGraph(object):
 
     # TODO: this should be named get_and_parse as well as other methods
     def get_and_parse_objects_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
-                                                  params: dict[str, str] = None) -> (list[TestObject], list[TestObject]):
+                                                  params: Params = None) -> tuple[list[TestObject], list[TestObject]]:
         """
         Generate or reuse all component test objects for a given test node.
 
@@ -818,7 +817,7 @@ class TestGraph(object):
         node_name = test_node.params["shortname"]
 
         all_vms = param.all_objects(key="vms")
-        def needed_vms():
+        def needed_vms() -> list[str]:
             # case of singleton test node
             if test_node.params.get("vms") is None:
                 if object_type != "nets":
@@ -906,7 +905,7 @@ class TestGraph(object):
         return get_nets[test_object.long_suffix], parse_nets[test_object.long_suffix]
 
     def parse_nodes_from_flat_node_and_object(self, test_node: TestNode, test_object: TestObject, prefix: str = "",
-                                              params: dict[str, str] = None, verbose: bool = False) -> list[TestNode]:
+                                              params: Params = None, verbose: bool = False) -> list[TestNode]:
         """
         Parse composite nodes from a flat node and a flat object.
 
@@ -959,7 +958,7 @@ class TestGraph(object):
         return test_nodes
 
     def get_and_parse_nodes_from_flat_node_and_object(self, test_node: TestNode = None, test_object: TestObject = None, prefix: str = "",
-                                                      params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestNode]]:
+                                                      params: Params = None, verbose: bool = False) -> tuple[list[TestNode], list[TestNode]]:
         """
         Parse new composite nodes and reuse already cached ones for a flat node.
 
@@ -1013,8 +1012,8 @@ class TestGraph(object):
         return get_nodes, parse_nodes
 
     def parse_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
-                              params: dict[str, str] = None,
-                              verbose: bool = False, unique: bool = False) -> list[TestNode]|TestNode:
+                              params: Params = None,
+                              verbose: bool = False, unique: bool = False) -> list[TestNode] | TestNode:
         """
         Parse all user defined tests (leaf nodes) using the nodes restriction string
         and possibly restricting to a single test object for the singleton tests.
@@ -1038,7 +1037,7 @@ class TestGraph(object):
         return TestGraph._unique_filter(test_nodes) if unique else test_nodes
 
     def get_and_parse_composite_nodes(self, restriction: str = "", test_object: TestObject = None, prefix: str = "",
-                                      params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestNode]]:
+                                      params: Params = None, verbose: bool = False) -> tuple[list[TestNode], list[TestNode]]:
         """
         Parse new composite nodes and reuse already cached ones instead of overlapping new ones.
 
@@ -1059,7 +1058,7 @@ class TestGraph(object):
         return get_nodes, parse_nodes
 
     def get_and_parse_nodes_from_composite_node_and_object(self, test_node: TestNode, test_object: TestObject,
-                                                           params: dict[str, str] = None) -> tuple[list[TestNode], list[TestNode]]:
+                                                           params: Params = None) -> tuple[list[TestNode], list[TestNode]]:
         """
         Parse new composite nodes and reuse already cached ones for a composite node.
 
@@ -1112,7 +1111,7 @@ class TestGraph(object):
                 filtered_parents = object_parents if len(object_parents) > 0 else filtered_parents
         if len(filtered_parents) == 1:
             if len(filtered_parents[0].cloned_nodes) > 0:
-                return filtered_parents[0].cloned_nodes, []
+                return list(filtered_parents[0].cloned_nodes), []
             if unique_new_node and len(filtered_parents) == 1:
                 logging.debug(f"Reusing a unique parent node {filtered_parents[0]} for the composite {test_node}")
                 return filtered_parents, []
@@ -1131,7 +1130,7 @@ class TestGraph(object):
 
     @staticmethod
     def parse_object_nodes(worker: TestWorker = None, restriction: str = "", prefix: str = "", object_restrs: dict[str, str] = None,
-                           params: dict[str, str] = None, verbose: bool = False) -> tuple[list[TestNode], list[TestObject]]:
+                           params: Params = None, verbose: bool = False) -> tuple[list[TestNode], list[TestObject]]:
         """
         Parse test nodes based on a selection of parsable objects.
 
@@ -1271,7 +1270,7 @@ class TestGraph(object):
         return test_nodes
 
     def parse_branches_for_node_and_object(self, test_node: TestNode, test_object: TestObject,
-                                           params: dict[str, str] = None) -> tuple[list[TestNode], list[TestNode], list[TestNode]]:
+                                           params: Params = None) -> tuple[list[TestNode], list[TestNode]]:
         """
         Parse all objects, parent object dependencies, and child clones for the current node and object.
 
@@ -1322,7 +1321,7 @@ class TestGraph(object):
         return parents, children
 
     def parse_paths_to_object_roots(self, test_node: TestNode, test_object: TestObject,
-                                    params: dict[str, str] = None) -> list[tuple[list[TestNode], list[TestNode], TestNode]]:
+                                    params: Params = None) -> list[tuple[list[TestNode], list[TestNode], TestNode]]:
         """
         Parse the setup paths from a flat node to the terminal nodes of all its objects.
 
@@ -1341,7 +1340,7 @@ class TestGraph(object):
             unresolved.extend(children)
             yield parents, children, test_node
 
-    def parse_shared_root_from_object_roots(self, params: dict[str, str] = None) -> TestNode:
+    def parse_shared_root_from_object_roots(self, params: Params = None) -> TestNode:
         """
         Parse the shared root node from used test objects (roots) into a connected graph.
 
@@ -1360,7 +1359,7 @@ class TestGraph(object):
         setup_dict = {} if params is None else params.copy()
         setup_dict.update({"shared_root" : "yes"})
         try:
-            root_for_all = TestGraph.parse_flat_nodes("all..internal..noop", setup_dict, unique=True)
+            root_for_all: TestNode = TestGraph.parse_flat_nodes("all..internal..noop", setup_dict, unique=True)
         except RuntimeError as error:
             raise RuntimeError(f"A unique shared root must be parsable: {error}")
         logging.debug(f"Parsed shared root {root_for_all.params['shortname']}")
@@ -1373,7 +1372,7 @@ class TestGraph(object):
         return root_for_all
 
     @staticmethod
-    def parse_workers(params: dict[str, str] = None) -> list[TestWorker]:
+    def parse_workers(params: Params = None) -> list[TestWorker]:
         """
         Parse all workers with special strings provided by the runtime.
 
@@ -1409,7 +1408,7 @@ class TestGraph(object):
 
     @staticmethod
     def parse_object_trees(worker: TestWorker = None, restriction: str = "", prefix: str = "", object_restrs: dict[str, str] = None,
-                           params: dict[str, str] = None, verbose: bool = False, with_shared_root: bool =True) -> "TestGraph":
+                           params: Params = None, verbose: bool = False, with_shared_root: bool =True) -> "TestGraph":
         """
         Parse a complete test graph.
 
@@ -1467,7 +1466,7 @@ class TestGraph(object):
         return graph
 
     """traverse functionality"""
-    async def traverse_terminal_node(self, object_name: str, worker: TestWorker, params: dict[str, str]) -> bool:
+    async def traverse_terminal_node(self, object_name: str, worker: TestWorker, params: Params) -> bool:
         """
         Traverse an extra set of tests necessary for creating a given test object.
 
@@ -1482,7 +1481,7 @@ class TestGraph(object):
         """
         object_suffix, object_variant = object_name.split("-")[:1][0], "-".join(object_name.split("-")[1:])
         object_image, object_vm = object_suffix.split("_")
-        objects = self.get_objects(param_val="^"+object_variant+"$",
+        objects: list[TestObject] = self.get_objects(param_val="^"+object_variant+"$",
                                       subset=self.get_objects("images", object_suffix.split("_")[0]))
         vms = [o for o in objects if o.key == "vms"]
         assert len(vms) == 1, "Test object %s's vm not existing or unique in: %s" % (object_name, objects)
@@ -1515,7 +1514,7 @@ class TestGraph(object):
         test_node.params["type"] = test_node.params["configure_install"]
         return await self.runner.run_test_node(test_node)
 
-    async def traverse_node(self, test_node: TestNode, worker: TestWorker, params: dict[str, str]) -> None:
+    async def traverse_node(self, test_node: TestNode, worker: TestWorker, params: Params) -> None:
         """
         Traverse a test node according to a given run policy and additional runner conditions.
 
@@ -1565,7 +1564,7 @@ class TestGraph(object):
         test_node.finished_worker = worker
         test_node.started_worker = None
 
-    async def reverse_node(self, test_node: TestNode, worker: TestWorker, params: dict[str, str]) -> None:
+    async def reverse_node(self, test_node: TestNode, worker: TestWorker, params: Params) -> None:
         """
         Reverse or traverse in the opposite direction a test node according to a given clean policy.
 
@@ -1588,7 +1587,7 @@ class TestGraph(object):
             logging.debug(f"Worker {worker.id} should not clean up {test_node}")
         test_node.started_worker = None
 
-    async def traverse_object_trees(self, worker: TestWorker, params: dict[str, str] = None) -> None:
+    async def traverse_object_trees(self, worker: TestWorker, params: Params = None) -> None:
         """
         Run all user and system defined tests optimizing the setup reuse and
         minimizing the repetition of demanded tests.

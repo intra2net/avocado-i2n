@@ -43,27 +43,25 @@ class TestLoader(Resolver):
     name = 'cartesian_loader'
     description = 'Loads tests from initial Cartesian product'
 
-    def __init__(self, config=None, extra_params=None):
+    def __init__(
+        self, config: dict[str, str] = None, extra_params: dict[str, str] = None
+    ) -> None:
         """
         Construct the Cartesian loader.
 
         :param config: command line arguments
-        :type config: {str, str}
         :param extra_params: extra configuration parameters
-        :type extra_params: {str, str}
         """
         super().__init__(config=config)
         extra_params = {} if not extra_params else extra_params
         self.logdir = extra_params.pop('logdir', ".")
 
-    def resolve(self, reference):
+    def resolve(self, reference: str | None) -> list[tuple[type, dict[str, str]]]:
         """
         Discover (possible) tests from test references.
 
         :param reference: tests reference used to produce tests
-        :type reference: str or None
         :returns: test factories as tuples of the test class and its parameters
-        :rtype: [(type, {str, str})]
         """
         if reference is not None:
             assert reference.split() == self.config["params"]

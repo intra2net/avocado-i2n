@@ -28,10 +28,15 @@ INTERFACE
 """
 
 import os
+from typing import Any
+from typing import Generator
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 
 from avocado.core import exceptions
+from avocado_vt.test import VirtTest
+from virttest.utils_env import Env
+from virttest.utils_params import Params
 
 
 #: list of all available state backends and operations
@@ -45,102 +50,84 @@ class StateBackend():
     """A general backend implementing state manipulation."""
 
     @classmethod
-    def show(cls, params, object=None):
+    def show(cls, params: dict[str, str], object: Any = None) -> list[str]:
         """
         Return a list of available states of a specific type.
 
         :param params: configuration parameters
-        :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: :py:class:`virttest.qemu_vm.VM` or None
         :returns: list of detected states
-        :rtype: [str]
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
     @classmethod
-    def get(cls, params, object=None):
+    def get(cls, params: dict[str, str], object: Any = None) -> None:
         """
         Retrieve a state disregarding the current changes.
 
         :param params: configuration parameters
-        :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
     @classmethod
-    def set(cls, params, object=None):
+    def set(cls, params: dict[str, str], object: Any = None) -> None:
         """
         Store a state saving the current changes.
 
         :param params: configuration parameters
-        :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
     @classmethod
-    def unset(cls, params, object=None):
+    def unset(cls, params: dict[str, str], object: Any = None) -> None:
         """
         Remove a state with previous changes.
 
         :param params: configuration parameters
-        :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
     @classmethod
-    def check_root(cls, params, object=None):
+    def check_root(cls, params: dict[str, str], object: Any = None) -> bool:
         """
         Check whether a root state or essentially the object exists.
 
         :param params: configuration parameters
-        :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: :py:class:`virttest.qemu_vm.VM` or None
         :returns: whether the object (root state) is exists
-        :rtype: bool
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
     @classmethod
-    def get_root(cls, params, object=None):
+    def get_root(cls, params: dict[str, str], object: Any = None) -> None:
         """
         Get a root state or essentially due to pre-existence do nothing.
 
         :param params: configuration parameters
-        :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         pass
 
     @classmethod
-    def set_root(cls, params, object=None):
+    def set_root(cls, params: dict[str, str], object: Any = None) -> None:
         """
         Set a root state to provide object existence.
 
         :param params: configuration parameters
-        :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
     @classmethod
-    def unset_root(cls, params, object=None):
+    def unset_root(cls, params: dict[str, str], object: Any = None) -> None:
         """
         Unset a root state to prevent object existence.
 
         :param params: configuration parameters
-        :type params: {str, str}
         :param object: object whose states are manipulated
-        :type object: :py:class:`virttest.qemu_vm.VM` or None
         """
         raise NotImplementedError("Cannot use abstract state backend")
 
@@ -151,14 +138,12 @@ BACKENDS = {}
 ROOTS = ['root', '0root', 'boot', '0boot']
 
 
-def _parametric_object_iteration(params, composites=None):
+def _parametric_object_iteration(params: dict[str, str], composites: list[tuple[str, str]] = None) -> Generator[Params, None, None]:
     """
     Iterator over a hierarchy of stateful parametric objects.
 
     :param params: parameters of the parametric object is processed
-    :type params: {str, str}
     :param composites: current composite parametric object
-    :type composites: [(str, str)]
     :raises: :py:class:`ValueError` if no hierarchy is configured
     """
     object_composition = params.objects("states_chain")
@@ -183,19 +168,17 @@ def _parametric_object_iteration(params, composites=None):
     composites.pop()
 
 
-def _state_check_chain(do, env,
-                       params_obj_type, params_obj_name,
-                       state_params):
+def _state_check_chain(do: str, env: Env,
+                       params_obj_type: str, params_obj_name: str,
+                       state_params: dict[str, str]) -> bool:
     """
     State chain from set/set/unset states to check states.
 
-    :param str do: get, set, or unset
+    :param do: get, set, or unset
     :param env: test environment
-    :type env: Env object
-    :param str params_obj_type: type of the parametric object to check
-    :param str params_obj_name: name of the parametric object to check
+    :param params_obj_type: type of the parametric object to check
+    :param params_obj_name: name of the parametric object to check
     :param state_params: image parameters of the vm's image which is processed
-    :type state_params: {str, str}
     """
     state_params["check_state"] = state_params[f"{do}_state"]
     if state_params.get(f"{do}_location"):
@@ -219,16 +202,13 @@ def _state_check_chain(do, env,
     return state_exists
 
 
-def show_states(run_params, env=None):
+def show_states(run_params: Params, env: Env = None) -> list[str]:
     """
     Return a list of available states of a specific type.
 
     :param run_params: configuration parameters
-    :type run_params: {str, str}
     :param env: test environment or nothing if not needed
-    :type env: Env object or None
     :returns: list of detected states
-    :rtype: [str]
     """
     states = []
     for state_params in _parametric_object_iteration(run_params):
@@ -251,15 +231,12 @@ def show_states(run_params, env=None):
     return states
 
 
-def check_states(run_params, env=None):
+def check_states(run_params: Params, env: Env = None) -> bool:
     """
     Check whether a given state exits.
 
     :param run_params: configuration parameters
-    :type run_params: {str, str}
-    :type env: Env object or None
     :returns: whether the given state exists
-    :rtype: bool
 
     .. note:: We can check for multiple states of multiple objects at the
         same time through our choice of configuration.
@@ -333,14 +310,11 @@ def check_states(run_params, env=None):
     return True
 
 
-def get_states(run_params, env=None):
+def get_states(run_params: Params, env: Env = None) -> None:
     """
     Retrieve a state disregarding the current changes.
 
     :param run_params: configuration parameters
-    :type run_params: {str, str}
-    :type env: Env object or None
-    :returns: list of detected states
     :raises: :py:class:`exceptions.TestAbortError` if the retrieved state doesn't exist,
         the vm is unavailable from the env, or snapshot exists in passive mode (abort)
     :raises: :py:class:`exceptions.TestError` if invalid policy was used
@@ -404,14 +378,11 @@ def get_states(run_params, env=None):
             state_backend.get(state_params, state_object)
 
 
-def set_states(run_params, env=None):
+def set_states(run_params: Params, env: Env = None) -> None:
     """
     Store a state saving the current changes.
 
     :param run_params: configuration parameters
-    :type run_params: {str, str}
-    :type env: Env object or None
-    :returns: list of detected states
     :raises: :py:class:`exceptions.TestAbortError` if unexpected/missing snapshot in passive mode (abort)
     :raises: :py:class:`exceptions.TestError` if invalid policy was used
     """
@@ -488,14 +459,11 @@ def set_states(run_params, env=None):
             state_backend.set(state_params, state_object)
 
 
-def unset_states(run_params, env=None):
+def unset_states(run_params: Params, env: Env = None) -> None:
     """
     Remove a state with previous changes.
 
     :param run_params: configuration parameters
-    :type run_params: {str, str}
-    :type env: Env object or None
-    :returns: list of detected states
     :raises: :py:class:`exceptions.TestAbortError` if missing snapshot in passive mode (abort)
     :raises: :py:class:`exceptions.TestError` if invalid policy was used
     """
@@ -554,14 +522,11 @@ def unset_states(run_params, env=None):
             state_backend.unset(state_params, state_object)
 
 
-def push_states(run_params, env=None):
+def push_states(run_params: Params, env: Env = None) -> None:
     """
     Identical to the set operation but used within the push/pop pair.
 
     :param run_params: configuration parameters
-    :type run_params: {str, str}
-    :type env: Env object or None
-    :returns: list of detected states
     """
     for state_params in _parametric_object_iteration(run_params):
         params_obj_name = state_params["object_name"]
@@ -589,14 +554,11 @@ def push_states(run_params, env=None):
         set_states(state_params, env)
 
 
-def pop_states(run_params, env=None):
+def pop_states(run_params: Params, env: Env = None) -> None:
     """
     Retrieve and remove a state/snapshot.
 
     :param run_params: configuration parameters
-    :type run_params: {str, str}
-    :type env: Env object or None
-    :returns: list of detected states
     """
     for state_params in _parametric_object_iteration(run_params):
         params_obj_name = state_params["object_name"]

@@ -14,11 +14,13 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import argparse
 import traceback
 
 from avocado.core.settings import settings
 from avocado.core.output import LOG_UI, LOG_JOB as log
 from avocado.core.plugin_interfaces import CLICmd
+from virttest.utils_params import Params
 
 from .. import cmd_parser
 from .. import params_parser as param
@@ -30,7 +32,7 @@ class Manu(CLICmd):
     name = 'manu'
     description = 'Tools using setup chains of manual steps with Cartesian graph manipulation.'
 
-    def configure(self, parser):
+    def configure(self, parser: argparse.ArgumentParser) -> None:
         """
         Add the parser for the manual action.
 
@@ -48,7 +50,7 @@ class Manu(CLICmd):
                                  nargs='*',
                                  positional_arg=True)
 
-    def run(self, config):
+    def run(self, config: Params) -> int:
         """
         Take care of command line overwriting, parameter preparation,
         setup and cleanup chains, and paths/utilities for all host controls.

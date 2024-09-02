@@ -28,11 +28,13 @@ INTERFACE
 """
 
 import os
+from typing import Any
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 
 from virttest import env_process
 from virttest.virt_vm import VMCreateError
+from virttest.utils_params import Params
 
 from .pool import SourcedStateBackend
 
@@ -43,7 +45,7 @@ class RamfileBackend(SourcedStateBackend):
     image_state_backend = None
 
     @classmethod
-    def _show(cls, params, object=None):
+    def _show(cls, params: Params, object: Any = None) -> list[str]:
         """
         Return a list of available states of a specific type.
 
@@ -63,7 +65,7 @@ class RamfileBackend(SourcedStateBackend):
             if len(images_states) == 0:
                 images_states = image_snapshots
             else:
-                images_states = states.intersect(image_snapshots)
+                images_states = images_states.intersect(image_snapshots)
 
         states = []
         for snapshot in snapshots:
@@ -79,7 +81,7 @@ class RamfileBackend(SourcedStateBackend):
         return states
 
     @classmethod
-    def _get(cls, params, object=None):
+    def _get(cls, params: Params, object: Any = None) -> None:
         """
         Retrieve a state disregarding the current changes.
 
@@ -102,7 +104,7 @@ class RamfileBackend(SourcedStateBackend):
         vm.resume(timeout=3)
 
     @classmethod
-    def _set(cls, params, object=None):
+    def _set(cls, params: Params, object: Any = None) -> None:
         """
         Store a state saving the current changes.
 
@@ -133,7 +135,7 @@ class RamfileBackend(SourcedStateBackend):
         vm.resume(timeout=3)
 
     @classmethod
-    def _unset(cls, params, object=None):
+    def _unset(cls, params: Params, object: Any = None) -> None:
         """
         Remove a state with previous changes.
 
@@ -159,7 +161,7 @@ class RamfileBackend(SourcedStateBackend):
         os.unlink(state_file)
 
     @classmethod
-    def check_root(cls, params, object=None):
+    def check_root(cls, params: Params, object: Any = None) -> bool:
         """
         Check whether a root state or essentially the object is running.
 
@@ -199,7 +201,7 @@ class RamfileBackend(SourcedStateBackend):
             return False
 
     @classmethod
-    def set_root(cls, params, object=None):
+    def set_root(cls, params: Params, object: Any = None) -> None:
         """
         Set a root state to provide running object.
 
@@ -250,7 +252,7 @@ class RamfileBackend(SourcedStateBackend):
                 vm.create()
 
     @classmethod
-    def unset_root(cls, params, object=None):
+    def unset_root(cls, params: Params, object: Any = None) -> None:
         """
         Unset a root state to prevent object from running.
 

@@ -49,13 +49,18 @@ INTERFACE
 import os
 import re
 import time
+from typing import Any
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 import collections
 
 from avocado.utils import process
 from avocado.core import exceptions
+from aexpect.client import RemoteSession
 from virttest import utils_net
+from virttest.utils_env import Env
+from virttest.utils_params import Params
+from virttest.qemu_vm import VM
 
 from .interface import VMInterface
 from .node import VMNode
@@ -79,7 +84,7 @@ class VMNetwork(object):
     each of them.
     """
 
-    def __init__(self, params, env):
+    def __init__(self, params: Params, env: Env) -> None:
         """
         Construct a network data structure given the test parameters,
         the `env` and the `test` instance.
@@ -124,7 +129,7 @@ class VMNetwork(object):
             self.integrate_node(self.nodes[vm_name])
         logging.debug("Constructed network configuration:\n%s", self)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         dump = "[vmnet] netconfigs='%s'" % len(self.netconfigs.keys())
         for netconfig in self.netconfigs.values():
             dump = "%s\n\t%s" % (dump, str(netconfig))
@@ -132,61 +137,57 @@ class VMNetwork(object):
                 dump = "%s\n\t\t%s -> %s" % (dump, str(iface), str(iface.node))
         return dump
 
-    def start_all_sessions(self):
+    def start_all_sessions(self) -> None:
         """Start a session to each of the vm nodes."""
         for node in self.nodes.values():
             node.get_session()
 
     """VM node retrieval methods"""
-    def _get_single_node(self):
+    def _get_single_node(self) -> VMNode:
         """Get the only vm node in the network and raise error if it is not the only one."""
         if len(self.nodes.values()) != 1:
             raise exceptions.TestError("A multi-vm network was thought of as a single-vm network")
         else:
             return list(self.nodes.values())[0]
 
-    def get_single_vm(self):
+    def get_single_vm(self) -> VM:
         """
         Get the only vm in the network.
 
         :returns: only vm in the network
-        :rtype: :py:class:`virttest.qemu_vm.VM`
         """
         node = self._get_single_node()
         return node.platform
 
-    def get_single_vm_with_session(self):
+    def get_single_vm_with_session(self) -> tuple[VM, RemoteSession]:
         """
         Get the only vm in the network and its only session.
 
         :returns: vm and its last session
-        :rtype: (:py:class:`virttest.qemu_vm.VM`, Session object)
         """
         node = self._get_single_node()
         if node.last_session is None:
             self.start_all_sessions()
         return (node.platform, node.last_session)
 
-    def get_single_vm_with_session_and_params(self):
+    def get_single_vm_with_session_and_params(self) -> tuple[VM, RemoteSession, Params]:
         """
         Get the only vm in the network and its only session
         as well as configuration (to replace the test configuration).
 
         :returns: vm, its last session, and its params
-        :rtype: (:py:class:`virttest.qemu_vm.VM`, Session object, Params object)
         """
         node = self._get_single_node()
         if node.last_session is None:
             self.start_all_sessions()
         return (node.platform, node.last_session, node.params)
 
-    def get_ordered_vms(self, vm_num=None):
+    def get_ordered_vms(self, vm_num: int = None) -> tuple[VM, ...]:
         """
         Get all N (``=vm_num``) vms in the network ordered by their name.
 
-        :param int vm_num: number N of vms
+        :param vm_num: number N of vms
         :returns: ordered vms
-        :rtype: (:py:class:`virttest.qemu_vm.VM`)
         :raises: :py:class:`exceptions.TestError` if # of vms != N
         """
         if vm_num is not None and len(self.nodes.values()) != vm_num:
@@ -198,13 +199,12 @@ class VMNetwork(object):
                 vms.append(self.nodes[key].platform)
             return tuple(vms)
 
-    def get_vms(self):
+    def get_vms(self) -> Any:
         """
         Get a named tuple of vms in the network with their parametrically
         defined roles.
 
         :returns: tuple t with t.client = <vm1 object> and t.server = <vm2 object>
-        :rtype: named tuple
         :raises: :py:class:`exceptions.TestError` if some roles don't have assigned vms
 
         This is the main and most recommended vm retrieval method.
@@ -229,14 +229,13 @@ class VMNetwork(object):
         return role_tuple(*role_platforms)
 
     """VM network modification methods"""
-    def integrate_node(self, node):
+    def integrate_node(self, node: VMNode) -> None:
         """
         Add all interfaces and netconfigs resulting from a new vm node
         into the vm network, thus integrating the configuration into
         the available one.
 
         :param node: vm node to be integrated into the network
-        :type node: :py:class:`VMNode`
         """
         logging.debug("Generating all interfaces for %s", node.name)
         if node in self.nodes:
@@ -270,20 +269,18 @@ class VMNetwork(object):
                 netconfig.add_interface(interface)
                 self.netconfigs[netconfig.net_ip] = netconfig
 
-    def reattach_interface(self, client, server,
-                           client_nic="internet_nic", server_nic="lan_nic",
-                           proxy_nic=""):
+    def reattach_interface(self, client: VM, server: VM,
+                           client_nic: str = "internet_nic", server_nic: str = "lan_nic",
+                           proxy_nic: str = "") -> None:
         """
         Reconfigure a network interface of a vm reattaching it to a different
         interface's network config.
 
         :param client: vm whose interace will be rattached
-        :type client: :py:class:`virttest.qemu_vm.VM`
         :param server: vm whose network will the interface be attached to
-        :type server: :py:class:`virttest.qemu_vm.VM`
-        :param str client_nic: role of the nic of the client
-        :param str server_nic: role of the nic of the server
-        :param str proxy_nic: name of a proxyARP nic of the server
+        :param client_nic: role of the nic of the client
+        :param server_nic: role of the nic of the server
+        :param proxy_nic: name of a proxyARP nic of the server
 
         If the `proxy_nic` is defined and the second interface (`server_nic`) is
         different than the `proxy_nic` value, it is assumed to be and turned
@@ -330,7 +327,7 @@ class VMNetwork(object):
         logging.debug("Reattached interface is now %s", interface)
 
     """VM network host action methods"""
-    def _configure_local_dhcp(self, config_string, declarations, interface):
+    def _configure_local_dhcp(self, config_string: str, declarations: dict[str, str], interface: VMInterface) -> str:
         if interface.netconfig is None:
             raise exceptions.TestError("The interface %s does not belong to any netconfig", interface)
         elif interface.node is None:
@@ -390,7 +387,7 @@ class VMNetwork(object):
 
         return config_string
 
-    def _configure_local_dns(self, config_string, declarations, interface):
+    def _configure_local_dns(self, config_string: str, declarations: dict[str, str], interface: VMInterface) -> str:
         if interface.netconfig is None:
             raise exceptions.TestError("The interface %s does not belong to any netconfig", interface)
         elif interface.node is None:
@@ -463,7 +460,7 @@ class VMNetwork(object):
 
         return config_string
 
-    def _configure_local_nat(self, interface, set_rules=True):
+    def _configure_local_nat(self, interface: VMInterface, set_rules: bool = True) -> None:
         if interface.netconfig is None:
             raise exceptions.TestError("The interface %s does not belong to any netconfig", interface)
         elif interface.node is None:
@@ -488,7 +485,7 @@ class VMNetwork(object):
             process.run("iptables -I FORWARD %s --state RELATED,ESTABLISHED -j ACCEPT" % rev_ops)
             process.run("iptables -t nat -I POSTROUTING %s -j MASQUERADE" % post_ops)
 
-    def setup_host_services(self):
+    def setup_host_services(self) -> None:
         """
         Provide all necessary services like DHCP, DNS and NAT
         to restrict all tests locally.
@@ -620,13 +617,13 @@ class VMNetwork(object):
             time.sleep(1)
             process.run("dnsmasq --conf-file=%s" % dns_dhcp_config)
 
-    def _add_new_bridge(self, interface):
+    def _add_new_bridge(self, interface: VMInterface) -> None:
         netdst = interface.netconfig.netdst
         host_ip = interface.netconfig.host_ip
         mask_bit = interface.netconfig.mask_bit
         host_mac = interface.mac.replace("02:00", "02:20")
 
-        def _debug_bridge_ip(netdst):
+        def _debug_bridge_ip(netdst: str) -> None:
             output = process.run('ip addr show %s' % netdst, shell=True)
             logging.debug('ip addr output for %s:\n%s' % (netdst, output))
 
@@ -651,7 +648,7 @@ class VMNetwork(object):
             utils_net.bring_up_ifname(netdst)
             _debug_bridge_ip(netdst)
 
-    def _cleanup_bridge_interfaces(self, netdst):
+    def _cleanup_bridge_interfaces(self, netdst: str) -> None:
         logging.debug("Resetting the bridge %s to remove unwanted interfaces", netdst)
         bridge_manager = utils_net.find_bridge_manager(netdst)
         bridges = bridge_manager.get_structure()
@@ -664,7 +661,7 @@ class VMNetwork(object):
                 # our other calls - at least we managed to isolate the buggy and unimplemented interface calls
                 bridge_manager.del_port(netdst, ifname)
 
-    def setup_host_bridges(self):
+    def setup_host_bridges(self) -> None:
         """
         Setup bridges and interfaces needed to create and isolate the network.
 
@@ -723,15 +720,14 @@ class VMNetwork(object):
                 logging.debug("Interface will be added to bridge during vm creation")
 
     """VM network guest action methods"""
-    def spawn_clients(self, server_name, clients_num, nic="lan_nic"):
+    def spawn_clients(self, server_name: str, clients_num: int, nic: str = "lan_nic") -> tuple[VM, ...]:
         """
         Create and boot ephemeral clients for a given server.
 
-        :param str server_name: name of the vm that plays the role of a server
-        :param int clients_num: number of ephemeral clients to spawn
-        :param str nic: name of the nic of the server
+        :param server_name: name of the vm that plays the role of a server
+        :param clients_num: number of ephemeral clients to spawn
+        :param nic: name of the nic of the server
         :returns: generated ephemeral clients
-        :rtype: (:py:class:`virttest.qemu_vm.VM`)
         """
         server = self.nodes[server_name].platform
         inherited_server_params = server.params.copy()
@@ -769,7 +765,7 @@ class VMNetwork(object):
         self.params["kill_unresponsive_vms"] = "no"
         return tuple([self.nodes[key].platform for key in new_clients])
 
-    def _generate_clients_parameters(self, server_name, clients_num, nic):
+    def _generate_clients_parameters(self, server_name: str, clients_num: int, nic: str) -> dict[str, str]:
         nic = self.nodes[server_name].params[nic]
         server_interface = self.nodes[server_name].interfaces[nic]
         mac_sections = server_interface.mac.split(":")
@@ -814,32 +810,28 @@ class VMNetwork(object):
 
         return overwrite_dict
 
-    def _register_client_at_server(self, interface, server, enable_dhcp=True):
+    def _register_client_at_server(self, interface: VMInterface, server: VM, enable_dhcp: bool = True) -> None:
         """
         Register a client vm at a server vm.
 
         :param interface: network interface containing the new configuration
-        :type interface: :py:class:`VMInterface`
         :param server: server where the (DHCP) client will be registered
-        :type server: :py:class:`virttest.qemu_vm.VM`
-        :param bool enable_dhcp: whether to use DHCP or static IP
+        :param enable_dhcp: whether to use DHCP or static IP
         """
         raise NotImplementedError("Need implementation for some OS")
 
-    def _reconfigure_vm_nic(self, interface, vm):
+    def _reconfigure_vm_nic(self, interface: VMInterface, vm: VM) -> None:
         """
         Reconfigure the NIC of a vm.
 
         :param interface: network interface containing the new configuration
-        :type interface: :py:class:`VMInterface`
         :param vm: vm whose nic will be reconfigured
-        :type vm: :py:class:`virttest.qemu_vm.VM`
         :raises: :py:class:`exceptions.TestError` if the client is an Android device
         :raises: :py:class:`exceptions.NotImplementedError` if the client is not compatible
         """
         logging.info("Reconfiguring the %s of %s", interface.name, vm.name)
         if vm.params["os_type"] == "windows":
-            nic = interface.name
+            nic: str = interface.name
             network = self.params.get("nic_wname", nic) + " " + str(int(nic[1:]) + 1)
             # the first adapter number is omitted on windows
             network = network.rstrip(" 1")
@@ -855,16 +847,14 @@ class VMNetwork(object):
         else:
             raise NotImplementedError("Trying to configure nic on %s with an unsupported os %s" % (vm.name, vm.params["os_variant"]))
 
-    def change_network_address(self, netconfig, new_ip, new_mask=None):
+    def change_network_address(self, netconfig: VMNetconfig, new_ip: str, new_mask: str = None) -> None:
         """
         Change the ip of a netconfig and more specifically of the network interface of
         any vm participating in it.
 
         :param netconfig: netconfig to change the IP of
-        :type netconfig: :py:class:`VMNetconfig`
-        :param str new_ip: new IP address for the netconfig
+        :param new_ip: new IP address for the netconfig
         :param new_mask: new network mask for the netconfig
-        :type new_mask: str or None
 
         .. note:: The network must have at least one interface in order to change its address.
         """
@@ -902,17 +892,15 @@ class VMNetwork(object):
             node.platform.params["ip_%s" % interface.name] = interface.ip
             node.platform.params["ip_%s_%s" % (interface.name, node.name)] = interface.ip
 
-    def set_static_address(self, client, server,
-                           client_nic="internet_nic", server_nic="lan_nic"):
+    def set_static_address(self, client: VM, server: VM,
+                           client_nic: str = "internet_nic", server_nic: str = "lan_nic") -> None:
         """
         Set a static IP address on a client vm.
 
         :param client: vm whose nic will get static IP
-        :type client: :py:class:`virttest.qemu_vm.VM`
         :param server: vm whose network will provide a free static IP
-        :type server: :py:class:`virttest.qemu_vm.VM`
-        :param str client_nic: role of the nic of the client
-        :param str server_nic: role of the nic of the server
+        :param client_nic: role of the nic of the client
+        :param server_nic: role of the nic of the server
 
         .. note:: This assumes running machines.
         """
@@ -922,27 +910,21 @@ class VMNetwork(object):
         client_iface.netconfig.gateway = server_iface.ip
         self._reconfigure_vm_nic(client_iface, client)
 
-    def configure_tunnel_between_vms(self, name, vm1, vm2,
-                                     local1=None, remote1=None, peer1=None, auth=None,
-                                     apply_extra_options=None):
+    def configure_tunnel_between_vms(self, name: str, vm1: VM, vm2: VM,
+                                     local1: dict[str, str] = None, remote1: dict[str, str] =None,
+                                     peer1: dict[str, str] = None, auth: dict[str, str] = None,
+                                     apply_extra_options: dict[str, Any] = None) -> None:
         """
         Configure a tunnel between two vms.
 
-        :param str name: name of the tunnel
+        :param name: name of the tunnel
         :param vm1: left side vm of the tunnel
-        :type vm1: :py:class:`virttest.qemu_vm.VM`
         :param vm2: right side vm of the tunnel
-        :type vm2: :py:class:`virttest.qemu_vm.VM`
         :param local1: left local type as in tunnel constructor
-        :type local1: {str, str}
         :param remote1: left remote type as in tunnel constructor
-        :type remote1: {str, str}
         :param peer1: left peer type as in tunnel constructor
-        :type peer1: {str, str}
         :param auth: authentication configuration as described in the tunnel constructor
-        :type auth: {str, str}
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
-        :type apply_extra_options: {str, any}
         """
         left_node = self.nodes[vm1.name]
         right_node = self.nodes[vm2.name]
@@ -950,16 +932,14 @@ class VMNetwork(object):
                                              local1, remote1, peer1, auth)
         self.tunnels[name].configure_between_endpoints(apply_extra_options)
 
-    def configure_tunnel_on_vm(self, name, vm, apply_extra_options=None):
+    def configure_tunnel_on_vm(self, name: str, vm: VM, apply_extra_options: dict[str, Any] = None) -> None:
         """
         Configure a tunnel on a vm, assuming it is manually
         or independently configured on the other end.
 
-        :param str name: name of the tunnel
+        :param name: name of the tunnel
         :param vm: vm where the tunnel will be configured
-        :type vm: :py:class:`virttest.qemu_vm.VM`
         :param apply_extra_options: extra switches to apply as key exchange, firewall ruleset, etc.
-        :type apply_extra_options: {str, any}
         :raises: :py:class:`exceptions.KeyError` if not all tunnel parameters are present
 
         Currently the method uses only existing tunnels.
@@ -971,9 +951,10 @@ class VMNetwork(object):
         node = self.nodes[vm.name]
         self.tunnels[name].configure_on_endpoint(node, apply_extra_options)
 
-    def configure_roadwarrior_vpn_on_server(self, name, server, client,
-                                            local1=None, remote1=None, peer1=None, auth=None,
-                                            apply_extra_options=None):
+    def configure_roadwarrior_vpn_on_server(self, name: str, server: VM, client: VM,
+                                            local1: dict[str, str] = None, remote1: dict[str, str] = None,
+                                            peer1: dict[str, str] = None, auth: dict[str, str] = None,
+                                            apply_extra_options: dict[str, Any] = None) -> None:
         """
         Configure a VPN connection (tunnel) on a vm to play the role of a VPN
         server for any individual clients to access it from the internet.
@@ -982,9 +963,7 @@ class VMNetwork(object):
         with the exception of:
 
         :param server: vm which will be the VPN server for roadwarrior connections
-        :type server: :py:class:`virttest.qemu_vm.VM`
         :param client: vm which will be connecting individual device
-        :type client: :py:class:`virttest.qemu_vm.VM`
 
         Regarding the client, only its parameters will be updated by this method.
         """
@@ -1004,9 +983,9 @@ class VMNetwork(object):
                                              local1, remote1, peer1, auth)
         self.configure_tunnel_on_vm(name, server, apply_extra_options)
 
-    def configure_vpn_route(self, vms, vpns,
-                            remote1=None, peer1=None, auth=None,
-                            extra_apply_options=None):
+    def configure_vpn_route(self, vms: list[VM], vpns: list[str],
+                            remote1: dict[str, str] = None, peer1: dict[str, str] = None, auth: dict[str, str] = None,
+                            extra_apply_options: dict[str, Any] = None) -> None:
         """
         Build a set of VPN connections using VPN forwarding to gain access from
         one vm to another.
@@ -1015,9 +994,7 @@ class VMNetwork(object):
         with the exception of:
 
         :param vms: vms to participate in the VPN route
-        :type vms: [:py:class:`virttest.qemu_vm.VM`]
         :param vpns: VPNs over which the route will be constructed
-        :type vpns: [str]
         :raises: :py:class:`exceptions.TestError` if #vpns < #vms - 1 or #vpns < 2 or #vms < 2
 
         Infrastructure of point to point VPN connections must already exist.
@@ -1058,18 +1035,15 @@ class VMNetwork(object):
                                               extra_apply_options)
 
     """VM network test methods"""
-    def get_tunnel_accessible_ip(self, src_vm, dst_vm, dst_nic="lan_nic"):
+    def get_tunnel_accessible_ip(self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic") -> str:
         """
         Get an accessible IP from a vm to a vm given using heuristics about
         the tunnels and netconfigs of the entire vm network.
 
         :param src_vm: source vm whose IPs are starting points
-        :type src_vm: :py:class:`virttest.qemu_vm.VM`
         :param dst_vm: destination vm whose IPs are ending points
-        :type dst_vm: :py:class:`virttest.qemu_vm.VM`
-        :param str dst_nic: network interface for the destination vm
+        :param dst_nic: network interface for the destination vm
         :returns: the IP with which the destination vm can be accessed from the source vm
-        :rtype: str
         :raises: :py:class:`exceptions.TestError` if the destination server is not a server or
             the source or destination vms are not connected by a tunnel
 
@@ -1111,18 +1085,15 @@ class VMNetwork(object):
             logging.debug("Retrieved network translated ip %s for %s", nat_ip, dst_vm.name)
         return nat_ip
 
-    def get_accessible_ip(self, src_vm, dst_vm, dst_nic="lan_nic"):
+    def get_accessible_ip(self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic") -> str:
         """
         Get an accessible IP from a vm to a vm given using heuristics about
         the tunnels and netconfigs of the entire vm network.
 
         :param src_vm: source vm whose IPs are starting points
-        :type src_vm: :py:class:`virttest.qemu_vm.VM`
         :param dst_vm: destination vm whose IPs are ending points
-        :type dst_vm: :py:class:`virttest.qemu_vm.VM`
-        :param str dst_nic: network interface role for the destination vm
+        :param dst_nic: network interface role for the destination vm
         :returns: the IP with which the destination vm can be accessed from the source vm
-        :rtype: str
 
         This ip can then be used for ping, tcp tests, etc.
         """
@@ -1143,7 +1114,7 @@ class VMNetwork(object):
             if src_iface.netconfig == dst_iface.netconfig:
                 logging.debug("Internal IP %s of %s is accessible to %s",
                               dst_iface.ip, dst_vm.name, src_vm.name)
-                return dst_iface.ip
+                return str(dst_iface.ip)
 
         # TODO: we could also do some general routing and gateway search but this is
         # rather unnecessary with the current user requirements
@@ -1152,17 +1123,15 @@ class VMNetwork(object):
         logging.debug("No accessible IP found in local networks, falling back to tunnel search")
         return self.get_tunnel_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
 
-    def verify_vpn_in_log(self, src_vm, dst_vm, log_vm=None, require_blocked=False):
+    def verify_vpn_in_log(self, src_vm: VM, dst_vm: VM, log_vm: VM = None,
+                          require_blocked: bool = False) -> None:
         """
         Search for the appropriate message in the vpn log file.
 
         :param src_vm: source vm whose packets will be logged
-        :type src_vm: :py:class:`virttest.qemu_vm.VM`
         :param dst_vm: destination vm whose packets will be logged
-        :type dst_vm: :py:class:`virttest.qemu_vm.VM`
         :param log_vm: vm where all packets are logged
-        :type log_vm: :py:class:`virttest.qemu_vm.VM`
-        :param bool require_blocked: whether to expect access message or deny message
+        :param require_blocked: whether to expect access message or deny message
         :raises: :py:class:`exceptions.TestError` if the source or destination vms are not on the network
         :raises: :py:class:`exceptions.TestFail` if the VPN packets were not logged properly
 
@@ -1212,18 +1181,16 @@ class VMNetwork(object):
         log_vm.session.cmd("rm -f /var/log/messages")
         log_vm.session.cmd("/etc/init.d/rsyslog restart")
 
-    def ping(self, src_vm, dst_vm, dst_nic="lan_nic", address=None):
+    def ping(self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic",
+             address: str = None) -> tuple[int, str]:
         """
         Pings a vm from another vm to test basic ICMP connectivity.
 
         :param src_vm: source vm which will ping
-        :type src_vm: :py:class:`virttest.qemu_vm.VM`
         :param dst_vm: destination vm which will be pinged
-        :type dst_vm: :py:class:`virttest.qemu_vm.VM`
-        :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
-        :param str address: explicit IP or domain to use for pinging
+        :param dst_nic: nic of the destination vm used if necessary to obtain accessible IP
+        :param address: explicit IP or domain to use for pinging
         :returns: the status and output of the performed ping
-        :rtype: (int, str)
 
         If no `address` is provided, the IP is obtained by analyzing the network topology
         from `src_vm` to `dst_vm`.
@@ -1237,13 +1204,14 @@ class VMNetwork(object):
         count_limit = "" if src_vm.params.get("os_type", "linux") == "windows" else "-c 3"
         return src_vm.session.cmd_status_output("ping %s %s" % (address, count_limit))
 
-    def ping_validate(self, src_vm, dst_vm, dst_nic="lan_nic", address=None, timeout=30):
+    def ping_validate(self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic",
+                      address: str = None, timeout: int = 30) -> None:
         """
         Pings a vm from another vm to test basic ICMP connectivity and bails on nonzero status.
 
         Arguments are similar to the ones from :py:meth:`ping` with the exception of:
 
-        :param int timeout: number of seconds to retry the ping for as networking
+        :param timeout: number of seconds to retry the ping for as networking
                             might not be immediately available
         :raises: :py:class:`exceptions.TestError` if the performed ping failed
 
@@ -1261,11 +1229,11 @@ class VMNetwork(object):
         else:
             logging.debug(output.split("\n")[-3])
 
-    def ping_all(self, timeout=30):
+    def ping_all(self, timeout: int = 30) -> None:
         """
         Pings all nodes from each other in order to test complete basic ICMP connectivity.
 
-        :param int timeout: number of seconds to retry the ping for as networking
+        :param timeout: number of seconds to retry the ping for as networking
                             might not be immediately available
         :raises: :py:class:`exceptions.TestError` if a network mutual ping failed
 
@@ -1295,18 +1263,17 @@ class VMNetwork(object):
             raise exceptions.TestError("Mutual ping of all LAN members unsuccessful")
         logging.info("Mutual ping of all LAN members successful")
 
-    def port_connectivity(self, msg, src_vm, dst_vm, dst_nic="lan_nic",
-                          address=None, port=80, protocol="TCP"):
+    def port_connectivity(self, msg: str, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic",
+                          address: str = None, port: int = 80, protocol: str = "TCP") -> tuple[int, str]:
         """
         Test connectivity using a predefined port (usually in addition to pinging).
 
         Arguments are similar to the :py:meth:`ping` method with the exception of:
 
-        :param str msg: probing data to be sent to the port
-        :param int port: forwarding port to send the message to
-        :param str protocol: protocol type (TCP, UDP or something over them)
+        :param msg: probing data to be sent to the port
+        :param port: forwarding port to send the message to
+        :param protocol: protocol type (TCP, UDP or something over them)
         :returns: the result of the performed port connection attempt
-        :rtype: (int, str)
         """
         if address is None:
             address = self.get_accessible_ip(src_vm, dst_vm, dst_nic=dst_nic)
@@ -1320,16 +1287,16 @@ class VMNetwork(object):
         logging.debug("Status %s and output from the connection attempt:\n%s", status, output)
         return status, output
 
-    def port_connectivity_validate(self, msg, src_vm, dst_vm, dst_nic="lan_nic",
-                                   address=None, port=80, protocol="TCP",
-                                   validate_output="", require_blocked=False):
+    def port_connectivity_validate(self, msg: str, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic",
+                                   address: str = None, port: int = 80, protocol: str = "TCP",
+                                   validate_output: str = "", require_blocked: bool = False) -> None:
         """
         Test connectivity using a predefined port (usually in addition to pinging).
 
         Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
 
-        :param str validate_output: string to find in the command output and validate against
-        :param bool require_blocked: whether to expect nonzero status from the connection attempt
+        :param validate_output: string to find in the command output and validate against
+        :param require_blocked: whether to expect nonzero status from the connection attempt
         :raises: :py:class:`exceptions.TestError` if the performed port connection attempt failed
 
         This method does not perform a refined exit status check, you can use the non-validated
@@ -1353,8 +1320,8 @@ class VMNetwork(object):
             state = "not blocked" if require_blocked else "failed"
             raise exceptions.TestFail("Connecting the port %s %s with the following outputs:\n%s" % (port, state, output))
 
-    def http_connectivity(self, src_vm, dst_vm, dst_nic="lan_nic",
-                          address=None, port=80, protocol="HTTP"):
+    def http_connectivity(self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic",
+                          address: str = None, port: int = 80, protocol: str = "HTTP") -> tuple[int, str]:
         """
         Test connectivity using an HTTP port and protocol.
 
@@ -1367,9 +1334,9 @@ class VMNetwork(object):
             raise exceptions.TestError("Invalid protocol for HTTP port connectivity: %s" % protocol)
         return self.port_connectivity("GET / HTTP/1.0", src_vm, dst_vm, dst_nic, address, port, "TCP")
 
-    def http_connectivity_validate(self, src_vm, dst_vm, dst_nic="lan_nic",
-                                   address=None, port=80, protocol="HTTP",
-                                   require_blocked=False):
+    def http_connectivity_validate(self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic",
+                                   address: str = None, port: int = 80, protocol: str = "HTTP",
+                                   require_blocked: bool = False) -> None:
         """
         Test connectivity using an HTTP port and protocol.
 
@@ -1383,8 +1350,8 @@ class VMNetwork(object):
         return self.port_connectivity_validate("GET / HTTP/1.0", src_vm, dst_vm, dst_nic, address, port, "TCP",
                                                validate_output="HTML", require_blocked=require_blocked)
 
-    def https_connectivity(self, src_vm, dst_vm, dst_nic="lan_nic",
-                           address=None, port=443, protocol="HTTPS"):
+    def https_connectivity(self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic",
+                           address: str = None, port: int = 443, protocol: str = "HTTPS") -> tuple[int, str]:
         """
         Test connectivity using an HTTPS port and protocol.
 
@@ -1404,9 +1371,9 @@ class VMNetwork(object):
         logging.debug("Got status %s and page content:\n%s", status, output)
         return status, output
 
-    def https_connectivity_validate(self, src_vm, dst_vm, dst_nic="lan_nic",
-                                    address=None, port=443, protocol="HTTPS",
-                                    require_blocked=False):
+    def https_connectivity_validate(self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic",
+                                    address: str = None, port: int = 443, protocol: str = "HTTPS",
+                                    require_blocked: bool = False) -> None:
         """
         Test connectivity using an HTTPS port and protocol.
 
@@ -1423,8 +1390,8 @@ class VMNetwork(object):
             if status != 0 and "HTML" not in output:
                 raise exceptions.TestFail("HTTPS connection to %s failed with the following outputs:\n%s" % (port, output))
 
-    def ssh_connectivity(self, src_vm, dst_vm, dst_nic="lan_nic",
-                         address=None, port=22, protocol="SSH"):
+    def ssh_connectivity(self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic",
+                         address: str = None, port: int = 22, protocol: str = "SSH") -> tuple[int, str]:
         """
         Test connectivity using an SSH port and protocol.
 
@@ -1437,9 +1404,9 @@ class VMNetwork(object):
             raise exceptions.TestError("Invalid protocol for SSH port connectivity: %s" % protocol)
         return self.port_connectivity("test", src_vm, dst_vm, dst_nic, address, port, "TCP")
 
-    def ssh_connectivity_validate(self, src_vm, dst_vm, dst_nic="lan_nic",
-                                  address=None, port=22, protocol="SSH",
-                                  require_blocked=False):
+    def ssh_connectivity_validate(self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic",
+                                  address: str = None, port: int = 22, protocol: str = "SSH",
+                                  require_blocked: bool = False) -> None:
         """
         Test connectivity using an SSH port and protocol.
 
@@ -1453,7 +1420,7 @@ class VMNetwork(object):
         return self.port_connectivity_validate("test", src_vm, dst_vm, dst_nic, address, port, "TCP",
                                                validate_output="OpenSSH", require_blocked=require_blocked)
 
-    def _ssh_client_hostname(self, src_vm, dst_vm, ssh_ip, timeout=10):
+    def _ssh_client_hostname(self, src_vm: VM, dst_vm: VM, ssh_ip: str, timeout: int = 10) -> str:
         logging.info("Retrieving host name of client %s from %s through ip %s",
                      dst_vm.name, src_vm.name, ssh_ip)
         dump = src_vm.session.cmd("echo \"\" | "
@@ -1461,14 +1428,14 @@ class VMNetwork(object):
                                   "-o UserKnownHostsFile=/dev/null "
                                   "root@%s dhcpcd --dumplease eth0 | grep host_name" % ssh_ip)
         logging.debug(dump)
-        dst_hostname = re.search(r"host_name=(\w+)", dump)
-        if dst_hostname:
-            dst_hostname = dst_hostname.group(1)
+        dst_hostname_match = re.search(r"host_name=(\w+)", dump)
+        if dst_hostname_match:
+            dst_hostname = dst_hostname_match.group(1)
             logging.info("Reported host name is %s", dst_hostname)
             return dst_hostname
         raise exceptions.TestFail("No client host name found")
 
-    def _ssh_server_hostname(self, src_vm, dst_vm, ssh_ip, timeout=10):
+    def _ssh_server_hostname(self, src_vm: VM, dst_vm: VM, ssh_ip: str, timeout: int = 10) -> str:
         logging.info("Retrieving host name of server %s from %s through ip %s",
                      dst_vm.name, src_vm.name, ssh_ip)
         src_vm.session.sendline("ssh -o StrictHostKeyChecking=no "
@@ -1487,26 +1454,23 @@ class VMNetwork(object):
             elif match == 1:
                 # the extra search is due to the inability of the builtin command to match the host
                 # therefore internally match all and perform the actual matching here
-                dst_hostname = re.search(r"(\w+)\.[a-zA-Z]+", text)
-                if dst_hostname:
-                    dst_hostname = dst_hostname.group(1)
+                dst_hostname_match = re.search(r"(\w+)\.[a-zA-Z]+", text)
+                if dst_hostname_match:
+                    dst_hostname = dst_hostname_match.group(1)
                     logging.info("Reported host name is %s", dst_hostname)
                     return dst_hostname
         raise exceptions.TestFail("No server host name found")
 
-    def ssh_hostname(self, src_vm, dst_vm, dst_nic="lan_nic", timeout=10):
+    def ssh_hostname(self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic", timeout: int = 10) -> str:
         """
         Get the host name of a vm from any other vm in the vm net
         using the SSH protocol.
 
         :param src_vm: source vm with the SSH client
-        :type src_vm: :py:class:`virttest.qemu_vm.VM`
         :param dst_vm: destination vm with the SSH server
-        :type dst_vm: :py:class:`virttest.qemu_vm.VM`
-        :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
-        :param int timeout: timeout for the SSH connection
+        :param dst_nic: nic of the destination vm used if necessary to obtain accessible IP
+        :param timeout: timeout for the SSH connection
         :returns: the hostname of the SSH server
-        :rtype: str+
 
         This tests the TCP connectivity and verifies it leads to the
         correct machine.
@@ -1517,18 +1481,17 @@ class VMNetwork(object):
         else:
             return self._ssh_server_hostname(src_vm, dst_vm, ssh_ip, timeout)
 
-    def scp_files(self, src_path, dst_path, src_vm, dst_vm, dst_nic="lan_nic", timeout=10):
+    def scp_files(self, src_path: str, dst_path: str, src_vm: VM, dst_vm: VM,
+                  dst_nic: str = "lan_nic", timeout: int = 10) -> None:
         """
         Copy files securely where built-in methods like :py:func:`vm.copy_files_to` fail.
 
-        :param str src_path: source path for the securely copied files
-        :param str dst_path: destination path for the securely copied files
+        :param src_path: source path for the securely copied files
+        :param dst_path: destination path for the securely copied files
         :param src_vm: source vm with the ssh client
-        :type src_vm: :py:class:`virttest.qemu_vm.VM`
         :param dst_vm: destination vm with the ssh server
-        :type dst_vm: :py:class:`virttest.qemu_vm.VM`
-        :param str dst_nic: nic of the destination vm used if necessary to obtain accessible IP
-        :param int timeout: timeout for the SSH connection
+        :param dst_nic: nic of the destination vm used if necessary to obtain accessible IP
+        :param timeout: timeout for the SSH connection
         :raises: :py:class:`exceptions.TestFail` if the files couldn't be copied
 
         The paths `src_path` and `dst_path` must be strings, possibly with a wildcard.
@@ -1559,15 +1522,14 @@ class VMNetwork(object):
                     return
         raise exceptions.TestFail("No file progress bars were found - couldn't copy %s" % src_path)
 
-    def ftp_connectivity(self, msg, file, src_vm, dst_vm, dst_nic="lan_nic",
-                         address=None, port=21):
+    def ftp_connectivity(self, msg: str, file: str | None, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic",
+                         address: str = None, port: int = 21) -> tuple[int, str]:
         """
         Send file request to an FTP destination port and address and verify it was received.
 
         Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
 
         :param file: file to retrieve containing the test data or none if sent directly
-        :type file: str or None
         :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
         """
         logging.debug("Sending the data '%s' in a file %s", msg, file)
@@ -1582,15 +1544,14 @@ class VMNetwork(object):
         logging.debug("Got status %s and file content:\n%s", status, output)
         return status, output
 
-    def ftp_connectivity_validate(self, msg, file, src_vm, dst_vm, dst_nic="lan_nic",
-                                  address=None, port=21, require_blocked=False):
+    def ftp_connectivity_validate(self, msg: str, file: str | None, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic",
+                                  address: str = None, port: int = 21, require_blocked: bool = False) -> None:
         """
         Send file request to an FTP destination port and address and verify it was received.
 
         Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
 
         :param file: file to retrieve containing the test data or none if sent directly
-        :type file: str or None
         :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
         """
         status, output = self.ftp_connectivity(msg, file, src_vm, dst_vm, dst_nic=dst_nic,
@@ -1602,14 +1563,13 @@ class VMNetwork(object):
             if status != 0 and msg not in output:
                 raise exceptions.TestFail("FTP connection to %s succeeded with the following outputs:\n%s" % (port, output))
 
-    def tftp_connectivity(self, msg, file, src_vm, dst_vm, dst_nic="lan_nic",
-                          address=None, port=69):
+    def tftp_connectivity(self, msg: str, file: str | None, src_vm: VM, dst_vm: VM,
+                          dst_nic: str = "lan_nic", address: str = None, port: int = 69) -> tuple[int, str]:
         """
         Send file request to an TFTP destination port and address and verify it was received.
         Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
 
         :param file: file to retrieve containing the test data or none if sent directly
-        :type file: str or None
         :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
         """
         logging.debug("Sending the data '%s' in a file %s", msg, file)
@@ -1623,14 +1583,14 @@ class VMNetwork(object):
         logging.debug("Got status %s and file content:\n%s", status, output)
         return status, output
 
-    def tftp_connectivity_validate(self, msg, file, src_vm, dst_vm, dst_nic="lan_nic",
-                                   address=None, port=69, require_blocked=False):
+    def tftp_connectivity_validate(self, msg: str, file: str | None, src_vm: VM,
+                                   dst_vm: VM, dst_nic: str = "lan_nic", address: str = None,
+                                   port: int = 69, require_blocked: bool = False) -> None:
         """
         Send file request to an TFTP destination port and address and verify it was received.
         Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
 
         :param file: file to retrieve containing the test data or none if sent directly
-        :type file: str or None
         :raises: :py:class:`exceptions.TestError` if inappropriate protocol was given
         """
         status, output = self.tftp_connectivity(msg, file, src_vm, dst_vm, dst_nic=dst_nic,

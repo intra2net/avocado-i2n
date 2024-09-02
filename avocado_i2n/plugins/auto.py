@@ -14,6 +14,7 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import argparse
 
 from avocado.core.settings import settings
 from avocado.core.output import LOG_UI, LOG_JOB as log
@@ -27,7 +28,7 @@ class Auto(CLI):
     name = 'auto'
     description = 'Autotesting using restriction-generated graph of setup state dependencies.'
 
-    def configure(self, parser):
+    def configure(self, parser: argparse.ArgumentParser) -> None:
         """
         Add the subparser for the run action.
 
@@ -57,7 +58,7 @@ class Auto(CLI):
                                      parser=cmd_parser,
                                      long_arg='--auto')
 
-    def run(self, config):
+    def run(self, config: dict[str, str]) -> None:
         """
         Take care of command line overwriting, parameter preparation,
         setup and cleanup chains, and paths/utilities for all host controls.
@@ -79,7 +80,7 @@ class Auto(CLI):
         # TODO: crude override of the avocado test suite due to
         # hardcoded suite runner
         from avocado.core.suite import TestSuite, TestSuiteError
-        def from_config(config, name=None, job_config=None):
+        def from_config(config: dict[str, str], name: str = None, job_config: dict[str, str] = None) -> TestSuite:
             suite_config = config
             config = settings.as_dict()
             if job_config:

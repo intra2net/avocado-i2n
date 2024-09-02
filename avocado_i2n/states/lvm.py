@@ -37,11 +37,13 @@ import re
 import logging
 import shutil
 import time
+from typing import Any
 
 from avocado.core import exceptions
 from avocado.utils import process
 from avocado.utils import lv_utils
 from virttest import env_process
+from virttest.utils_params import Params
 
 from .setup import StateBackend
 
@@ -50,15 +52,13 @@ class LVMBackend(StateBackend):
     """Backend manipulating states as logical volume snapshots."""
 
     @classmethod
-    def _get_image_mount_loc(cls, params):
+    def _get_image_mount_loc(cls, params: Params) -> str:
         """
         Get the path to the mount location for the logical volume.
 
         :param params: configuration parameters
-        :type params: {str, str}
         :returns: mount location for the logical volume or empty string if a
                   raw image device is used
-        :rtype: str
         """
         if params.get_boolean("image_raw_device", True):
             return ""
@@ -69,7 +69,7 @@ class LVMBackend(StateBackend):
             return params["images_base_dir"]
 
     @classmethod
-    def show(cls, params, object=None):
+    def show(cls, params: Params, object: Any = None) -> list[str]:
         """
         Return a list of available states of a specific type.
 
@@ -78,7 +78,7 @@ class LVMBackend(StateBackend):
         return lv_utils.lv_list(params["vg_name"])
 
     @classmethod
-    def get(cls, params, object=None):
+    def get(cls, params: Params, object: Any = None) -> None:
         """
         Retrieve a state disregarding the current changes.
 
@@ -110,7 +110,7 @@ class LVMBackend(StateBackend):
                                   mount_loc)
 
     @classmethod
-    def set(cls, params, object=None):
+    def set(cls, params: Params, object: Any = None) -> None:
         """
         Store a state saving the current changes.
 
@@ -124,7 +124,7 @@ class LVMBackend(StateBackend):
                                   params["lv_snapshot_name"])
 
     @classmethod
-    def unset(cls, params, object=None):
+    def unset(cls, params: Params, object: Any = None) -> None:
         """
         Remove a state with previous changes.
 
@@ -141,7 +141,7 @@ class LVMBackend(StateBackend):
         lv_utils.lv_remove(params["vg_name"], params["lv_snapshot_name"])
 
     @classmethod
-    def check_root(cls, params, object=None):
+    def check_root(cls, params: Params, object: Any = None) -> bool:
         """
         Check whether a root state or essentially the object exists.
 
@@ -160,7 +160,7 @@ class LVMBackend(StateBackend):
             return False
 
     @classmethod
-    def set_root(cls, params, object=None):
+    def set_root(cls, params: Params, object: Any = None) -> None:
         """
         Set a root state to provide object existence.
 
@@ -209,7 +209,7 @@ class LVMBackend(StateBackend):
                 env_process.preprocess_image(None, params, image_path)
 
     @classmethod
-    def unset_root(cls, params, object=None):
+    def unset_root(cls, params: Params, object: Any = None) -> None:
         """
         Unset a root state to prevent object existence.
 
@@ -253,22 +253,21 @@ class LVMBackend(StateBackend):
             logging.error(ex)
 
 
-def vg_setup(vg_name, disk_vg_size,
-             disk_basedir, disk_sparse_filename,
-             use_tmpfs=True):
+def vg_setup(vg_name: str, disk_vg_size: str,
+             disk_basedir: str, disk_sparse_filename: str,
+             use_tmpfs: bool = True) -> tuple[str, str, str, str]:
     """
     Create volume group on top of ram memory to speed up LV performance.
 
     When disk is specified the size of the physical volume is taken from
     existing disk space.
 
-    :param str vg_name: name of the volume group
-    :param str disk_vg_size: size of the disk virtual group (MB)
-    :param str disk_basedir: base directory for the disk sparse file
-    :param str disk_sparse_filename: name of the disk sparse file
-    :param bool use_tmpfs: whether to use RAM or slower storage
+    :param vg_name: name of the volume group
+    :param disk_vg_size: size of the disk virtual group (MB)
+    :param disk_basedir: base directory for the disk sparse file
+    :param disk_sparse_filename: name of the disk sparse file
+    :param use_tmpfs: whether to use RAM or slower storage
     :returns: disk_filename, vg_disk_dir, vg_name, loop_device
-    :rtype: (str, str, str, str)
     :raises: :py:class:`lv_utils.LVException` on failure at any stage
 
     Sample disk params:
@@ -329,21 +328,19 @@ def vg_setup(vg_name, disk_vg_size,
     return disk_filename, vg_disk_dir, vg_name, loop_device
 
 
-def vg_cleanup(disk_filename=None, vg_disk_dir=None,
-               vg_name=None, loop_device=None, use_tmpfs=True):
+def vg_cleanup(disk_filename: str = None, vg_disk_dir: str = None,
+               vg_name: str = None, loop_device: str = None, use_tmpfs: bool = True) -> None:
     """
     Clean up any stage of the VG disk setup in case of test error.
 
     This detects whether the components were initialized and if so tries
     to remove them. In case of failure it raises summary exception.
 
-    :param str disk_filename: name of the disk sparse file
-    :param str vg_disk_dir: location of the disk file
-    :param str vg_name: name of the volume group
-    :param str loop_device: name of the disk or loop device
-    :param bool use_tmpfs: whether to use RAM or slower storage
-    :returns: disk_filename, vg_disk_dir, vg_name, loop_device
-    :rtype: (str, str, str, str)
+    :param disk_filename: name of the disk sparse file
+    :param vg_disk_dir: location of the disk file
+    :param vg_name: name of the volume group
+    :param loop_device: name of the disk or loop device
+    :param use_tmpfs: whether to use RAM or slower storage
     :raises: :py:class:`lv_utils.LVException` on intolerable failure at any stage
     """
     errs = []

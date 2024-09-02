@@ -32,6 +32,8 @@ from __future__ import annotations
 import os
 import re
 from functools import cmp_to_key
+from typing import Generator
+from typing import Any
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 
@@ -39,40 +41,42 @@ from aexpect.exceptions import ShellCmdError
 from aexpect import remote_door as door
 from avocado.core.test_id import TestID
 from avocado.core.nrunner.runnable import Runnable
+from virttest.utils_params import Params
 
 from . import TestSwarm, TestWorker, TestObject, NetObject
+from .. import params_parser as param
 
 
 door.DUMP_CONTROL_DIR = "/tmp"
 
 
 class PrefixTreeNode(object):
-    def __init__(self, variant=None, parent=None):
+    def __init__(self, variant: str = None, parent: str = None) -> None:
         self.variant = variant
         self.parent = parent
         self.end_test_node = None
         self.children = {}
 
-    def check_child(self, variant):
+    def check_child(self, variant: str) -> bool:
         return variant in self.children
 
-    def get_child(self, variant):
+    def get_child(self, variant: str) -> str:
         return self.children[variant]
 
-    def set_child(self, variant, child):
+    def set_child(self, variant: str, child: str) -> None:
         self.children[variant] = child
 
-    def unset_child(self, variant):
+    def unset_child(self, variant: str) -> None:
         del self.children[variant]
 
-    def traverse(self):
+    def traverse(self) -> Generator[None, None, None]:
         yield self
         for child in self.children.values():
             yield from child.traverse()
 
 
 class PrefixTree(object):
-    def __init__(self):
+    def __init__(self) -> None:
         self.variant_nodes = {}
 
     def __contains__(self, name: str) -> bool:
@@ -122,10 +126,10 @@ class PrefixTree(object):
 
 class EdgeRegister():
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._registry = {}
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"[edge] registry='{self._registry}'"
 
     def get_workers(self, node: "TestNode" = None) -> set[str]:
@@ -177,8 +181,8 @@ class TestNode(Runnable):
     objects and dependencies to/from other test nodes (setup/cleanup).
     """
 
-    class ReadOnlyDict(dict):
-        def _readonly(self, *args, **kwargs):
+    class ReadOnlyDict(dict[Any, Any]):
+        def _readonly(self, *args: tuple[type, ...], **kwargs: dict[str, type]) -> None:
             raise RuntimeError("Cannot modify read-only dictionary")
         __setitem__ = _readonly
         __delitem__ = _readonly
@@ -192,13 +196,14 @@ class TestNode(Runnable):
     #: letter: "a" (autosetup), "b" (byproduct), "c" (cleanup), "d" (duplicate)
     prefix_pattern = re.compile(r"^(\d+)([abcd]?)(.+)")
 
-    def params(self):
+    @property
+    def params(self) -> Params:
         """Parameters (cache) property."""
         if self._params_cache is None:
             self.regenerate_params()
         return self._params_cache
-    params = property(fget=params)
 
+    @property
     def shared_started_workers(self) -> set[TestWorker]:
         """Workers that have previously started traversing this node (incl. leaves and others)."""
         workers = set()
@@ -208,8 +213,8 @@ class TestNode(Runnable):
             if bridged_node.started_worker is not None:
                 workers.add(bridged_node.started_worker)
         return workers
-    shared_started_workers = property(fget=shared_started_workers)
 
+    @property
     def shared_finished_workers(self) -> set[TestWorker]:
         """Workers that have previously finished traversing this node (incl. leaves and others)."""
         workers = set()
@@ -219,23 +224,23 @@ class TestNode(Runnable):
             if bridged_node.finished_worker is not None:
                 workers.add(bridged_node.finished_worker)
         return workers
-    shared_finished_workers = property(fget=shared_finished_workers)
 
+    @property
     def shared_involved_workers(self) -> set[TestWorker]:
         """Workers that picked up the node and possibly have continued to either its setup or cleanup."""
         worker_ids = self._picked_by_setup_nodes.get_workers() | self._picked_by_cleanup_nodes.get_workers()
         workers = [w for s in TestSwarm.run_swarms for w in TestSwarm.run_swarms[s].workers if w.id in worker_ids]
         return set(workers)
-    shared_involved_workers = property(fget=shared_involved_workers)
 
+    @property
     def shared_results(self) -> list[dict[str, str]]:
         """Test results shared across all bridged nodes."""
         results = list(self.results)
         for bridged_node in self.bridged_nodes:
             results += bridged_node.results
         return results
-    shared_results = property(fget=shared_results)
 
+    @property
     def shared_filtered_results(self) -> list[dict[str, str]]:
         """Test results shared across all bridged nodes."""
         all_results = self.shared_results
@@ -253,8 +258,8 @@ class TestNode(Runnable):
             if scope_filter in result["name"]:
                 results += [result]
         return results
-    shared_filtered_results = property(fget=shared_filtered_results)
 
+    @property
     def shared_result_worker_ids(self) -> set[str]:
         """ID-s of workers that produced the shared results."""
         workers = set()
@@ -267,38 +272,38 @@ class TestNode(Runnable):
                     workers.add(worker_id)
                     break
         return workers
-    shared_result_worker_ids = property(fget=shared_result_worker_ids)
 
-    def bridged_nodes(self) -> list["TestNode"]:
+    @property
+    def bridged_nodes(self) -> tuple["TestNode"]:
         """Read-only list of bridged nodes."""
         return tuple(self._bridged_nodes)
-    bridged_nodes = property(fget=bridged_nodes)
 
-    def cloned_nodes(self) -> list["TestNode"]:
+    @property
+    def cloned_nodes(self) -> tuple["TestNode"]:
         """Read-only list of cloned nodes."""
         return tuple(self._cloned_nodes)
-    cloned_nodes = property(fget=cloned_nodes)
 
-    def setup_nodes(self) -> dict["TestNode", TestObject]:
+    @property
+    def setup_nodes(self) -> dict[TestNode, set[TestObject]]:
         """Read-only dict of setup nodes."""
         return TestNode.ReadOnlyDict(self._setup_nodes)
-    setup_nodes = property(fget=setup_nodes)
 
-    def cleanup_nodes(self) -> dict["TestNode", TestObject]:
+    @property
+    def cleanup_nodes(self) -> dict[TestNode, set[TestObject]]:
         """Read-only dict of cleanup nodes."""
         return TestNode.ReadOnlyDict(self._cleanup_nodes)
-    cleanup_nodes = property(fget=cleanup_nodes)
 
-    def setless_form(self):
+    @property
+    def setless_form(self) -> Params:
         """Test set invariant form of the test node name."""
         max_restr = ""
         for main_restr in self.params.objects("main_restrictions"):
             if self.params["name"].startswith(main_restr):
                 max_restr = main_restr if len(main_restr) > len(max_restr) else max_restr
         return self.params["name"].replace(max_restr + ".", "", 1)
-    setless_form = property(fget=setless_form)
 
-    def bridged_form(self):
+    @property
+    def bridged_form(self) -> Params:
         """Test worker invariant form of the test node name."""
         # TODO: the order of parsing nets and vms has to be improved
         if len(self.objects) == 0:
@@ -308,32 +313,29 @@ class TestNode(Runnable):
         suffix = self.params["_name_map_file"].get("nets.cfg", "")
         # since this doesn't use the prefix tree a regex could match part of a variant
         return  r"\." + self.setless_form.replace(suffix, ".+") + r"$"
-    bridged_form = property(fget=bridged_form)
 
-    def long_prefix(self):
+    @property
+    def long_prefix(self) -> Params:
         """Sufficiently unique prefix to identify a diagram test node."""
         nets = self.params.get("nets", "").replace(" ", ".")
         vms = self.params.get("vms", "").replace(" ", ".")
         return self.prefix + "-" + nets + "." + vms
-    long_prefix = property(fget=long_prefix)
 
-    def id(self):
+    @property
+    def id(self) -> Params:
         """Unique ID to identify a test node."""
         return self.prefix + "-" + self.params["name"]
-    id = property(fget=id)
 
-    def id_test(self):
+    @property
+    def id_test(self) -> Params:
         """Unique test ID to identify a test node."""
         return TestID(self.prefix, self.params["name"])
-    id_test = property(fget=id_test)
 
-    def __init__(self, prefix, recipe):
+    def __init__(self, prefix: str, recipe: param.Reparsable) -> None:
         """
         Construct a test node (test) for any test objects (vms).
 
-        :param str name: name of the test node
         :param recipe: variant parsing recipe for the test node
-        :type recipe: :py:class:`param.Reparsable`
         """
         super().__init__("avocado-vt", prefix, {})
 
@@ -363,7 +365,7 @@ class TestNode(Runnable):
         self._dropped_setup_nodes = EdgeRegister()
         self._dropped_cleanup_nodes = EdgeRegister()
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         shortname = self.params.get("shortname", "<unknown>")
         return f"[node] longprefix='{self.long_prefix}', shortname='{shortname}'"
 
@@ -534,7 +536,7 @@ class TestNode(Runnable):
             # is finished globally by at least N workers (down to at least one worker)
             return len(self.shared_finished_workers) >= threshold
 
-    def get_terminal_object(self, key: str = "object_root") -> TestObject|None:
+    def get_terminal_object(self, key: str = "object_root") -> TestObject | None:
         """
         Determine any object that this node is a root of.
 
@@ -564,7 +566,7 @@ class TestNode(Runnable):
                 setup_objects += [test_object]
         return setup_objects
 
-    def get_dependency(self, restriction: str, test_object: TestObject) -> "TestNode":
+    def get_dependency(self, restriction: str, test_object: TestObject) -> "TestNode | None":
         """
         Check if the test node has a dependency parsed and available.
 
@@ -791,8 +793,8 @@ class TestNode(Runnable):
             # identical prefixes detected, nothing we can do but choose a default
             return 0
         match1, match2 = re.match(cls.prefix_pattern, prefix1), re.match(cls.prefix_pattern, prefix2)
-        digit1, alpha1, else1 = (prefix1, None, None) if match1 is None else match1.group(1, 2, 3)
-        digit2, alpha2, else2 = (prefix2, None, None) if match2 is None else match2.group(1, 2, 3)
+        digit1, alpha1, else1 = (prefix1, "", "") if match1 is None else match1.group(1, 2, 3)
+        digit2, alpha2, else2 = (prefix2, "", "") if match2 is None else match2.group(1, 2, 3)
 
         # compare order of parsing if simple leaf nodes
         if digit1.isdigit() and digit2.isdigit():
@@ -814,9 +816,9 @@ class TestNode(Runnable):
             return 1 if alpha1 > alpha2 else -1
         # redo the comparison for the next prefix part
         else:
-            if else1 is None:
+            if else1 == "":
                 raise ValueError(f"could not match test prefix part {prefix1} to choose priority")
-            if else2 is None:
+            if else2 == "":
                 raise ValueError(f"could not match test prefix part {prefix2} to choose priority")
             # priority to the prefix that didn't terminate yet
             if else1.startswith("-"):
@@ -1015,12 +1017,11 @@ class TestNode(Runnable):
                 del(vt_params[key])
         super().__init__('avocado-vt', uri, **vt_params)
 
-    def scan_states(self):
+    def scan_states(self) -> bool:
         """
         Scan for present object states to reuse the test from previous runs.
 
         :returns: whether all required states are available
-        :rtype: bool
         """
         should_run = True
         node_params = self.params.copy()
@@ -1069,7 +1070,7 @@ class TestNode(Runnable):
         logging.info(f"Should{' ' if should_run else ' not '}run from scan {self} by {self.started_worker.id}")
         return should_run
 
-    def sync_states(self, params):
+    def sync_states(self, params: Params) -> None:
         """Sync or drop present object states to clean or later skip tests from previous runs."""
         node_params = self.params.copy()
         for key in list(node_params.keys()):
@@ -1170,7 +1171,7 @@ class TestNode(Runnable):
         else:
             logging.info(f"No need to clean up or sync {self} for {self.started_worker.id}")
 
-    def validate(self):
+    def validate(self) -> None:
         """Validate the test node for sane attribute-parameter correspondence."""
         logging.info(f"Validating {self}")
 

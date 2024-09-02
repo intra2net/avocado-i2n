@@ -47,6 +47,8 @@ INTERFACE
 import sys
 import os
 import re
+from typing import Generator
+from typing import Any, Callable
 import logging as log
 logging = log.getLogger('avocado.job.' + __name__)
 import contextlib
@@ -59,6 +61,7 @@ from avocado.core import data_dir
 from avocado.core.suite import TestSuite
 from avocado.core.settings import settings
 from avocado.core.output import LOG_UI
+from virttest.utils_params import Params
 
 from . import params_parser as param
 from .cartgraph import TestGraph, TestNode
@@ -73,7 +76,7 @@ __all__ = ["noop", "unittest", "update", "run", "list",
            "collect", "create", "clean"]
 
 
-def load_addons_tools():
+def load_addons_tools() -> None:
     """Load all custom manual steps defined in the test suite tools folder."""
     suite_path = settings.as_dict().get('i2n.common.suite_path')
     tools_path = os.path.join(suite_path, "tools")
@@ -102,12 +105,11 @@ def load_addons_tools():
 
 
 @contextlib.contextmanager
-def new_job(config):
+def new_job(config: dict[str, Any]) -> Generator[Params, None, None]:
     """
     Produce a new job object and thus a job.
 
     :param config: command line arguments
-    :type config: {str, str}
     """
     suite = TestSuite('suite', {}, tests=[], job_config=config)
     with job.Job(config, [suite]) as job_instance:
@@ -119,16 +121,14 @@ def new_job(config):
         yield job_instance
 
 
-def with_cartesian_graph(fn):
+def with_cartesian_graph(fn: Callable[[Any], Any]) -> Callable[[Any], Any]:
     """
     Run a given function with a job-enabled loader-runner hybrid graph.
 
     :param fn: function to run with a job
-    :type fn: function
     :returns: same function with job resource included
-    :rtype: function
     """
-    def wrapper(config, tag=""):
+    def wrapper(config: dict[str, Any], tag: str = "") -> int:
         loader = TestGraph
         runner = TestRunner()
         CartesianGraph = namedtuple('CartesianGraph', 'l r')
@@ -148,24 +148,22 @@ def with_cartesian_graph(fn):
 ############################################################
 
 
-def noop(config, tag=""):
+def noop(config: dict[str, Any], tag: str = "") -> None:
     """
     Empty setup step to invoke plugin without performing anything.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
     """
     LOG_UI.info("NOOP")
 
 
-def unittest(config, tag=""):
+def unittest(config: dict[str, Any], tag: str = "") -> None:
     """
     Perform self testing for sanity and test result validation.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
     """
     import unittest
     util_unittests = unittest.TestSuite()
@@ -190,14 +188,13 @@ def unittest(config, tag=""):
 
 
 @with_cartesian_graph
-def update(config, tag=""):
+def update(config: dict[str, Any], tag: str = "") -> None:
     """
     Update all states (run all tests) from the state defined as
     ``from_state=<state>`` to the state defined as ``to_state=<state>``.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
 
     The state can be achieved all the way from the test object creation. The
     performed setup depends entirely on the state's dependencies which can
@@ -267,7 +264,7 @@ def update(config, tag=""):
             # flagging children will require connected graphs while flagging intersection can also handle disconnected ones
             clean_graph.flag_intersection(clean_graph, flag_type="run", flag=lambda self, slot: False)
             clean_graph.flag_intersection(clean_graph, flag_type="clean", flag=lambda self, slot: False)
-            flag_state = None if to_state == "install" else to_state
+            flag_state = "" if to_state == "install" else to_state
             for vm_object in vm_objects:
                 try:
                     clean_graph.flag_children(
@@ -353,13 +350,12 @@ def update(config, tag=""):
     LOG_UI.info("Finished updating cache")
 
 
-def run(config, tag=""):
+def run(config: dict[str, Any], tag: str = "") -> int:
     """
     Run a set of tests without any automated setup.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
 
     This is equivalent to but more powerful than the runner plugin.
     """
@@ -385,13 +381,12 @@ def run(config, tag=""):
         return retcode
 
 
-def list(config, tag=""):
+def list(config: dict[str, Any], tag: str = "") -> None:
     """
     List a set of tests from the command line.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
 
     This is equivalent to but more powerful than the loader plugin.
     """
@@ -424,13 +419,12 @@ def list(config, tag=""):
 
 
 @with_cartesian_graph
-def start(config, tag=""):
+def start(config: dict[str, Any], tag: str = "") -> None:
     """
     Start all given workers.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
     """
     l, r = config["graph"].l, config["graph"].r
     selected_nets = config["param_dict"]["nets"].split(" ")
@@ -443,13 +437,12 @@ def start(config, tag=""):
 
 
 @with_cartesian_graph
-def stop(config, tag=""):
+def stop(config: dict[str, Any], tag: str = "") -> None:
     """
     Stop all given workers.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
     """
     l, r = config["graph"].l, config["graph"].r
     selected_nets = config["param_dict"]["nets"].split(" ")
@@ -467,13 +460,12 @@ def stop(config, tag=""):
 
 
 @with_cartesian_graph
-def boot(config, tag=""):
+def boot(config: dict[str, Any], tag: str = "") -> None:
     """
     Boot all given vms.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
 
     The boot test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
@@ -482,13 +474,12 @@ def boot(config, tag=""):
 
 
 @with_cartesian_graph
-def download(config, tag=""):
+def download(config: dict[str, Any], tag: str = "") -> None:
     """
     Download a set of files from the given vms.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
 
     The set of files is specified using a "files" parameter.
 
@@ -499,13 +490,12 @@ def download(config, tag=""):
 
 
 @with_cartesian_graph
-def control(config, tag=""):
+def control(config: dict[str, Any], tag: str = "") -> None:
     """
     Run a control file on the given vms.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
 
     The control file is specified using a "control_file" parameter.
     """
@@ -513,13 +503,12 @@ def control(config, tag=""):
 
 
 @with_cartesian_graph
-def upload(config, tag=""):
+def upload(config: dict[str, Any], tag: str = "") -> None:
     """
     Upload a set of files to the given vms.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
 
     The set of files is specified using a `files` parameter.
 
@@ -530,13 +519,12 @@ def upload(config, tag=""):
 
 
 @with_cartesian_graph
-def shutdown(config, tag=""):
+def shutdown(config: dict[str, Any], tag: str = "") -> None:
     """
     Shutdown gracefully or kill living vms.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
 
     The shutdown test always takes care of any other vms so we can do it all in one test
     which is a bit of a hack but is much faster than the standard per-vm handling.
@@ -550,13 +538,12 @@ def shutdown(config, tag=""):
 
 
 @with_cartesian_graph
-def check(config, tag=""):
+def check(config: dict[str, Any], tag: str = "") -> None:
     """
     Check whether a given state (setup snapshot) exists.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
     """
     operation = "check"
     _parse_and_iterate_for_objects_and_workers(
@@ -570,14 +557,13 @@ def check(config, tag=""):
 
 
 @with_cartesian_graph
-def pop(config, tag=""):
+def pop(config: dict[str, Any], tag: str = "") -> None:
     """
     Get to a state/snapshot disregarding the current changes
     loosing the it afterwards.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
     """
     operation = "pop"
     _parse_and_iterate_for_objects_and_workers(
@@ -591,13 +577,12 @@ def pop(config, tag=""):
 
 
 @with_cartesian_graph
-def push(config, tag=""):
+def push(config: dict[str, Any], tag: str = "") -> None:
     """
     Wrapper for setting state/snapshot, same as :py:func:`set`.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
     """
     operation = "push"
     _parse_and_iterate_for_objects_and_workers(
@@ -611,13 +596,12 @@ def push(config, tag=""):
 
 
 @with_cartesian_graph
-def get(config, tag=""):
+def get(config: dict[str, Any], tag: str = "") -> None:
     """
     Get to a state/snapshot disregarding the current changes.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
 
     This method could be implemented in identical way to the push/pop
     methods but we use different approach for illustration.
@@ -634,13 +618,12 @@ def get(config, tag=""):
 
 
 @with_cartesian_graph
-def set(config, tag=""):
+def set(config: dict[str, Any], tag: str = "") -> None:
     """
     Create a new state/snapshot from the current state/snapshot.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
 
     This method could be implemented in identical way to the push/pop
     methods but we use different approach for illustration.
@@ -657,13 +640,12 @@ def set(config, tag=""):
 
 
 @with_cartesian_graph
-def unset(config, tag=""):
+def unset(config: dict[str, Any], tag: str = "") -> None:
     """
     Remove a state/snapshot.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
 
     This method could be implemented in identical way to the push/pop
     methods but we use different approach for illustration.
@@ -695,13 +677,12 @@ def unset(config, tag=""):
     )
 
 
-def collect(config, tag=""):
+def collect(config: dict[str, Any], tag: str = "") -> None:
     """
     Get a new test object (vm, root state) from a pool.
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
 
     ..todo:: With later refactoring of the root check implicitly getting a
         pool rool state, we can refine the parameters here.
@@ -716,13 +697,12 @@ def collect(config, tag=""):
                                 get)
 
 
-def create(config, tag=""):
+def create(config: dict[str, Any], tag: str = "") -> None:
     """
     Create a new test object (vm, root state).
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
     """
     _reuse_tool_with_param_dict(config, tag,
                                 {"set_state_images": "root",
@@ -734,13 +714,12 @@ def create(config, tag=""):
                                 set)
 
 
-def clean(config, tag=""):
+def clean(config: dict[str, Any], tag: str = "") -> None:
     """
     Remove a test object (vm, root state).
 
     :param config: command line arguments and run configuration
-    :type config: {str, str}
-    :param str tag: extra name identifier for the test to be run
+    :param tag: extra name identifier for the test to be run
     """
     _reuse_tool_with_param_dict(config, tag,
                                 {"unset_state_images": "root",
@@ -757,12 +736,11 @@ def clean(config, tag=""):
 ############################################################
 
 
-def _parse_one_node_for_all_objects_per_worker(config, tag, verb):
+def _parse_one_node_for_all_objects_per_worker(config: dict[str, Any], tag: str, verb: tuple[str, str, str, str]) -> None:
     """
     Parse a single node for all test objects and a given worker.
 
     :param verb: verb forms in a tuple (gerund form, variant, test name, present)
-    :type verb: (str, str, str, str)
 
     The rest of the arguments match the public functions.
 
@@ -802,13 +780,13 @@ def _parse_one_node_for_all_objects_per_worker(config, tag, verb):
     LOG_UI.info("%s complete", verb[3])
 
 
-def _parse_and_iterate_for_objects_and_workers(config, tag, param_dict, operation):
+def _parse_and_iterate_for_objects_and_workers(config: dict[str, Any], tag: str,
+                                               param_dict: dict[str, str], operation: str) -> None:
     """
     Parse a single node for each test object and test worker.
 
     :param param_dict: additional parameters to overwrite the previous dictionary with
-    :type param_dict: {str, str}
-    :param str operation: operation description to use when logging
+    :param operation: operation description to use when logging
 
     The rest of the arguments match the public functions.
 
@@ -854,14 +832,13 @@ def _parse_and_iterate_for_objects_and_workers(config, tag, param_dict, operatio
     LOG_UI.info("Finished %s", operation)
 
 
-def _reuse_tool_with_param_dict(config, tag, param_dict, tool):
+def _reuse_tool_with_param_dict(config: dict[str, Any], tag: str, param_dict: dict[str, str],
+                                tool: Callable[[Any], Any]) -> None:
     """
     Reuse a previously defined tool with temporary updated parameter dictionary.
 
     :param param_dict: additional parameters to overwrite the previous dictionary with
-    :type param_dict: {str, str}
     :param tool: tool to reuse
-    :type tool: function
 
     The rest of the arguments match the public functions.
     """

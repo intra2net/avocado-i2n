@@ -42,11 +42,11 @@ from avocado.core.settings import settings
 class EmptyCartesianProduct(Exception):
     """Empty Cartesian product of variants"""
 
-    def __init__(self, message):
+    def __init__(self, message: str) -> None:
         """
         Initialize an empty Cartesian product exception.
 
-        :param str message: additional message about the exception
+        :param message: additional message about the exception
         """
         message = "Empty Cartesian product of parameters!\n" + message
         message = "Check for self-excluding variants in your current configuration:\n" + message
@@ -66,13 +66,13 @@ settings.register_option(section='i2n.common',
                          help_msg="Path to the test suite containing Cartesian variants and test scripts.")
 
 
-def custom_configs_dir():
+def custom_configs_dir() -> str:
     """Custom directory for all config files."""
     suite_path = settings.as_dict().get('i2n.common.suite_path')
     return os.path.join(suite_path, "configs")
 
 
-def tests_ovrwrt_file():
+def tests_ovrwrt_file() -> str:
     """Overwrite config file for all tests (nodes)."""
     ovrwrt_file = os.path.join(os.environ['HOME'], "avocado_overwrite_tests.cfg")
     if not os.path.exists(ovrwrt_file):
@@ -83,7 +83,7 @@ def tests_ovrwrt_file():
     return ovrwrt_file
 
 
-def vms_ovrwrt_file():
+def vms_ovrwrt_file() -> str:
     """Overwrite config file for all vms (a category of objects)."""
     ovrwrt_file = os.path.join(os.environ['HOME'], "avocado_overwrite_vms.cfg")
     if not os.path.exists(ovrwrt_file):
@@ -94,7 +94,7 @@ def vms_ovrwrt_file():
     return ovrwrt_file
 
 
-def ovrwrt_file(category: str):
+def ovrwrt_file(category: str) -> str:
     """Overwrite config file for all objects."""
     ovrwrt_file = os.path.join(os.environ['HOME'], f"avocado_overwrite_{category}.cfg")
     if not os.path.exists(ovrwrt_file):
@@ -113,26 +113,24 @@ def ovrwrt_file(category: str):
 class ParsedContent():
     """Class for parsed content of a general type."""
 
-    def __init__(self, content):
+    def __init__(self, content: str) -> None:
         """Initialize the parsed content."""
         self.content = content
 
-    def reportable_form(self):
+    def reportable_form(self) -> str:
         """
         Parsed content representation used in reports of parsing steps.
 
         :returns: resulting report-compatible string
-        :rtype: str
         :raises: :py:class:`NotImlementedError` as this is an abstract method
         """
         raise NotImlementedError("Parsed content is an abstract class with no parsalbe form")
 
-    def parsable_form(self):
+    def parsable_form(self) -> str:
         """
         Convert parameter content into parsable string.
 
         :returns: resulting parsable string
-        :rtype: str
         :raises: :py:class:`NotImlementedError` as this is an abstract method
         """
         raise NotImlementedError("Parsed content is an abstract class with no parsalbe form")
@@ -141,12 +139,12 @@ class ParsedContent():
 class ParsedFile(ParsedContent):
     """Class for parsed content of file type."""
 
-    def __init__(self, content):
+    def __init__(self, content: str) -> None:
         """Initialize the parsed content."""
         super().__init__(content)
         self.filename = content
 
-    def reportable_form(self):
+    def reportable_form(self) -> str:
         """
         Parsed file representation used in reports of parsing steps.
 
@@ -154,12 +152,11 @@ class ParsedFile(ParsedContent):
         """
         return "\tParsed file:\n\t\t%s\n" % self.content
 
-    def parsable_form(self):
+    def parsable_form(self) -> str:
         """
         Convert parameter file name into parsable string.
 
         :returns: resulting parsable string
-        :rtype: str
         """
         return "include %s\n" % self.content
 
@@ -167,7 +164,7 @@ class ParsedFile(ParsedContent):
 class ParsedStr(ParsedContent):
     """Class for parsed content of string type."""
 
-    def reportable_form(self):
+    def reportable_form(self) -> str:
         """
         Parsed string representation used in reports of parsing steps.
 
@@ -175,12 +172,11 @@ class ParsedStr(ParsedContent):
         """
         return "\tParsed string:\n\t\t%s\n" % self.content.rstrip("\n").replace("\n", "\n\t\t")
 
-    def parsable_form(self):
+    def parsable_form(self) -> str:
         """
         Convert parameter string into parsable string.
 
         :returns: resulting parsable string
-        :rtype: str
 
         This is equivalent to the string since the string
         is parsable by definition.
@@ -191,7 +187,7 @@ class ParsedStr(ParsedContent):
 class ParsedDict(ParsedContent):
     """Class for parsed content of dictionary type."""
 
-    def reportable_form(self):
+    def reportable_form(self) -> str:
         """
         Parsed dictionary representation used in reports of parsing steps.
 
@@ -199,12 +195,11 @@ class ParsedDict(ParsedContent):
         """
         return "\tParsed dictionary:\n\t\t%s\n" % self.parsable_form().rstrip("\n").replace("\n", "\n\t\t")
 
-    def parsable_form(self):
+    def parsable_form(self) -> str:
         """
         Convert parameter dictionary into parsable string.
 
         :returns: resulting parsable string
-        :rtype: str
         """
         param_str = ""
         for (key, value) in self.content.items():
@@ -218,21 +213,21 @@ class Reparsable():
     producing both parser and parameters (parser dicts) on demand.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the parsable structure."""
         self.steps = []
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         restriction = "Parsing parameters with the following configuration:\n"
         for step in self.steps:
             restriction += step.reportable_form()
         return restriction
 
-    def parse_next_file(self, pfile):
+    def parse_next_file(self, pfile: str) -> None:
         """
         Add a file parsing step.
 
-        :param str pfile: file to be parsed next
+        :param pfile: file to be parsed next
 
         If the parsable file has a relative form (not and absolute path), it
         will be searched in the relative test suite config directory.
@@ -243,42 +238,36 @@ class Reparsable():
             filename = os.path.join(custom_configs_dir(), pfile)
         self.steps.append(ParsedFile(filename))
 
-    def parse_next_str(self, pstring):
+    def parse_next_str(self, pstring: str) -> None:
         """
         Add a string parsing step.
 
-        :param str pstring: string to be parsed next
+        :param pstring: string to be parsed next
         """
         self.steps.append(ParsedStr(pstring))
 
-    def parse_next_dict(self, pdict):
+    def parse_next_dict(self, pdict: dict[str, str]) -> None:
         """
         Add a dictionary parsing step.
 
         :param pdict: dictionary to be parsed next
-        :type pdict: {str, str}
         """
         self.steps.append(ParsedDict(pdict))
 
     def parse_next_batch(self,
-                         base_file=None, base_str="", base_dict=None,
-                         ovrwrt_file=None, ovrwrt_str="", ovrwrt_dict=None):
+                         base_file: str = None, base_str: str | None = "",
+                         base_dict: dict[str, str] = None, ovrwrt_file: str = None,
+                         ovrwrt_str: str | None = "", ovrwrt_dict: dict[str, str] = None) -> None:
         """
         Parse a batch of base file, string, and dictionary, and possibly an
         overwrite file (with custom parameters at the user's home location).
 
         :param base_file: file to be parsed first
-        :type base_file: str or None
         :param base_str: string to be parsed first
-        :type base_str: str or None
         :param base_dict: params to be added first
-        :type base_dict: {str, str} or None
         :param ovrwrt_file: file to be parsed last
-        :type ovrwrt_file: str or None
         :param ovrwrt_str: string to be parsed last
-        :type ovrwrt_str: str or None
         :param ovrwrt_dict: params to be added last
-        :type ovrwrt_dict: {str, str} or None
 
         The priority of the setting follows the order of the arguments:
         Dictionary with some parameters is topmost, string with some
@@ -299,20 +288,19 @@ class Reparsable():
             self.parse_next_dict(ovrwrt_dict)
 
     def get_parser(self,
-                   show_restriction=False, show_dictionaries=False,
-                   show_dict_fullname=False, show_dict_contents=False,
-                   show_empty_cartesian_product=True):
+                   show_restriction: bool = False, show_dictionaries: bool = False,
+                   show_dict_fullname: bool = False, show_dict_contents: bool = False,
+                   show_empty_cartesian_product: bool = True) -> cartesian_config.Parser:
         """
         Get a basic parameters parser with its dictionaries.
 
-        :param bool show_restriction: whether to show the restriction strings
-        :param bool show_dictionaries: whether to show the obtained variants
-        :param bool show_dict_fullname: whether to show the variant fullname rather than its shortname
-        :param bool show_dict_contents: whether to show the obtained variant parameters
-        :param bool show_empty_cartesian_product: whether to check and show the resulting cartesian product
+        :param show_restriction: whether to show the restriction strings
+        :param show_dictionaries: whether to show the obtained variants
+        :param show_dict_fullname: whether to show the variant fullname rather than its shortname
+        :param show_dict_contents: whether to show the obtained variant parameters
+        :param show_empty_cartesian_product: whether to check and show the resulting cartesian product
 
         :returns: resulting parser
-        :rtype: :py:class:`cartesian_config.Parser`
         :raises: :py:class:`EmptyCartesianProduct` if no combination of the restrictions exists
         """
         parser = cartesian_config.Parser()
@@ -354,9 +342,9 @@ class Reparsable():
 
         return parser
 
-    def get_params(self, list_of_keys=None, dict_index=0,
-                   show_restriction=False, show_dictionaries=False,
-                   show_dict_fullname=False, show_dict_contents=False):
+    def get_params(self, list_of_keys: list[str] = None, dict_index: int = 0,
+                   show_restriction: bool = False, show_dictionaries: bool = False,
+                   show_dict_fullname: bool = False, show_dict_contents: bool = False) -> Params:
         """
         Get a single parameter dictionary from the currently parsed configuration.
 
@@ -364,10 +352,8 @@ class Reparsable():
         Cartesian product) and uniqueness (no more than one final variant).
 
         :param list_of_keys: list of parameters key in the final selection
-        :type list_of_keys: [str] or None
         :param int dict_index: index of the dictionary to use as parameters
         :returns: first variant dictionary from all current parsed steps
-        :rtype: :py:class:`Params`
         :raises: :py:class:`AssertionError` if the parameter dictionary is not unique
 
         The rest of the arguments are identical to the ones from :py:method:`get_parser`.
@@ -391,12 +377,11 @@ class Reparsable():
             selected_params = {key: default_params[key] for key in list_of_keys}
         return Params(selected_params)
 
-    def get_copy(self):
+    def get_copy(self) -> "Reparsable":
         """
         Get a copy of the current reparsable that can safely be updated further.
 
         :returns: a copy of self with all current parsed steps in an independent list
-        :rtype: :py:class:`Reparsable`
 
         The rest of the arguments are identical to the ones from :py:method:`get_parser`.
         """
@@ -410,27 +395,24 @@ class Reparsable():
 ###################################################################
 
 
-def all_restrictions():
+def all_restrictions() -> list[str]:
     """
     Return all restrictions that can be passed for any test configuration.
 
     :returns: all available (from configuration) vms
-    :rtype: [str]
     """
     rep = Reparsable()
     rep.parse_next_file("groups-base.cfg")
     return rep.get_params(list_of_keys=["main_restrictions"]).objects("main_restrictions")
 
 
-def all_objects(key="vms", composites=None):
+def all_objects(key: str = "vms", composites: list[str] = None) -> list[str]:
     """
     Return all test objects that can be passed for any test configuration.
 
-    :param: str key: key to extract parametric objects from
+    :param: key: key to extract parametric objects from
     :param composites: composite restriction of the returned objects
-    :type composites: [str]
     :returns: all available (from configuration) objects of a given type
-    :rtype: [str]
     """
     rep = Reparsable()
     rep.parse_next_file("guest-base.cfg")
@@ -441,14 +423,13 @@ def all_objects(key="vms", composites=None):
     return params.objects(key)
 
 
-def all_suffixes_by_restriction(restriction, key="nets"):
+def all_suffixes_by_restriction(restriction: str, key: str = "nets") -> list[str]:
     """
     Return all object suffixes via restriction of their variants.
 
-    :param: str restriction: restriction of the suffix variants
-    :param: str key: key to describe the parametric object type
+    :param: restriction: restriction of the suffix variants
+    :param: key: key to describe the parametric object type
     :returns: all restricted (from configuration) object suffixes of a given type
-    :rtype: [str]
     """
     rep = Reparsable()
     rep.parse_next_file(f"{key}.cfg")
@@ -457,28 +438,26 @@ def all_suffixes_by_restriction(restriction, key="nets"):
     return [d["shortname"] for d in parser.get_dicts()]
 
 
-def main_vm():
+def main_vm() -> str | None:
     """
     Return the default main vm that can be passed for any test configuration.
 
     :returns: main available (from configuration) vm
-    :rtype: str or None
     """
     rep = Reparsable()
     rep.parse_next_file("guest-base.cfg")
     return rep.get_params(list_of_keys=["main_vm"]).get("main_vm")
 
 
-def re_str(variant_str, base_str="", tag=""):
+def re_str(variant_str: str, base_str: str = "", tag: str = "") -> str:
     """
     Add a variant restriction to the base string, optionally
     adding a custom tag as well.
 
-    :param str variant_str: variant restriction
-    :param str base_str: string where the variant restriction will be added
-    :param str tag: additional tag to the variant combination
+    :param variant_str: variant restriction
+    :param base_str: string where the variant restriction will be added
+    :param tag: additional tag to the variant combination
     :returns: restricted parameter string
-    :rtype: str
     """
     if tag != "":
         variant_str = "variants:\n    - %s:\n        only %s\n" % (tag, variant_str)
@@ -487,15 +466,14 @@ def re_str(variant_str, base_str="", tag=""):
     return base_str + variant_str
 
 
-def join_str(variant_strs, sort_key, base_str=""):
+def join_str(variant_strs: dict[str, str], sort_key: str, base_str: str = "") -> str:
     """
     Join all object variant restrictions over the base string.
 
     :param variant_strs: variant restrictions for each object as key, value pair
-    :type variant_strs: {str, str}
-    :param str base_str: string where the variant restriction will be added
+    :param sort_key: key to extract parametric objects from
+    :param base_str: string where the variant restriction will be added
     :returns: restricted parameter string
-    :rtype: str
     """
     objects, variant_str = "", ""
     available_objects = all_objects(sort_key)

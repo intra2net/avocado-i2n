@@ -1503,9 +1503,9 @@ class StatesPoolTest(Test):
 
         self._create_mock_transfer_backend()
 
-        self.backend.ops.list.return_value = ["image1.qcow2"]
+        self.backend.ops.list_paths.return_value = ["image1.qcow2"]
         exists = self.backend.check_root(self.run_params, self.env)
-        self.backend.ops.list.assert_called_with(":/data/pool/vm1", mock.ANY)
+        self.backend.ops.list_paths.assert_called_with(":/data/pool/vm1", mock.ANY)
         self.assertTrue(exists)
 
     def test_list_chain_image(self):
@@ -1518,10 +1518,10 @@ class StatesPoolTest(Test):
         self._create_mock_transfer_backend()
         self.deps = ["launch", "prelaunch", ""]
 
-        self.backend.ops.list.return_value = ["launch.qcow2", "prelaunch.qcow2"]
+        self.backend.ops.list_paths.return_value = ["launch.qcow2", "prelaunch.qcow2"]
         exists = self.run_params["check_state"] in self.backend.show(self.run_params, self.env)
         expected_checks = [mock.call("container.host:/dir/subdir/vm1-abc.def/image1", mock.ANY)]
-        self.assertListEqual(self.backend.ops.list.call_args_list, expected_checks)
+        self.assertListEqual(self.backend.ops.list_paths.call_args_list, expected_checks)
         self.assertTrue(exists)
 
     def test_list_chain_vm(self):
@@ -1534,10 +1534,10 @@ class StatesPoolTest(Test):
         self._create_mock_transfer_backend()
         self.deps = ["launch", "prelaunch", ""]
 
-        self.backend.ops.list.return_value = ["launch.state", "prelaunch.state"]
+        self.backend.ops.list_paths.return_value = ["launch.state", "prelaunch.state"]
         exists = self.run_params["check_state"] in self.backend.show(self.run_params, self.env)
         expected_checks = [mock.call("container.host:/dir/subdir/vm1-abc.def", mock.ANY)]
-        self.assertListEqual(self.backend.ops.list.call_args_list, expected_checks)
+        self.assertListEqual(self.backend.ops.list_paths.call_args_list, expected_checks)
         self.assertTrue(exists)
 
     def test_compare_chain_valid(self):
@@ -1818,7 +1818,7 @@ class StatesPoolTest(Test):
                         self.backend.ops.list_local.return_value = []
                         self.backend.ops.list_link.return_value = []
                         self.backend.ops.list_remote.return_value = []
-                        self.backend.ops.list = types.MethodType(pool.TransferOps.list.__func__, self.backend.ops)
+                        self.backend.ops.list_paths = types.MethodType(pool.TransferOps.list_paths.__func__, self.backend.ops)
                         self.backend.show(self.run_params, self.env)
                         if i == 0:
                             self.backend.ops.list_local.assert_called_once()
