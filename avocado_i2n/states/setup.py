@@ -14,13 +14,12 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Utility to manage off and on test object states.
 
 SUMMARY
 ------------------------------------------------------
-Utility to manage off and on test object states.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------
@@ -150,7 +149,7 @@ def _parametric_object_iteration(
     params: dict[str, str], composites: list[tuple[str, str]] = None
 ) -> Generator[Params, None, None]:
     """
-    Iterator over a hierarchy of stateful parametric objects.
+    Iterate over a hierarchy of stateful parametric objects.
 
     :param params: parameters of the parametric object is processed
     :param composites: current composite parametric object

@@ -14,10 +14,10 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+VMNode object for the vmnet utility.
 
 SUMMARY
 ------------------------------------------------------
-VMNode object for the vmnet utility.
 
 Copyright: Intra2net AG
 
@@ -26,7 +26,6 @@ CONTENTS
 ------------------------------------------------------
 This class wraps up the functionality shared among the interfaces of
 the same platform like session management, etc.
-
 
 INTERFACE
 ------------------------------------------------------
@@ -44,30 +43,28 @@ from virttest.qemu_vm import VM
 
 
 class VMNode(object):
-    """
-    The vmnode class - a collection of interfaces
-    sharing the same platform.
-    """
+    """Get the vmnode class - a collection of interfaces sharing the same platform."""
 
     """Structural properties"""
 
     @property
     def interfaces(self) -> dict[str, "VMInterface"]:
-        """A collection of interfaces the vm node represents."""
+        """Get a collection of interfaces the vm node represents."""
         return self._interfaces
 
     @property
     def ephemeral(self) -> bool:
-        """Whether the vm node is ephemeral (spawned in a network)."""
+        """
+        Check if the vm node is ephemeral.
+
+        returns: whether the vm node is ephemeral (spawned in a network).
+        """
         return self._ephemeral
 
     """Platform properties"""
 
     def platform(self, value: VM = None) -> VM | None:
-        """
-        A reference to the virtual machine object whose network
-        configuration is represented by the vm node.
-        """
+        """Get a reference to the virtual machine object whose network configuration is represented by the vm node."""
         if value is not None:
             self._platform = value
             return None
@@ -77,7 +74,7 @@ class VMNode(object):
     platform = property(fget=platform, fset=platform)
 
     def name(self, value: str = None) -> str | None:
-        """A proxy reference to the vm name."""
+        """Get a proxy reference to the vm name."""
         if value is not None:
             self._platform.name = value
             return None
@@ -89,7 +86,7 @@ class VMNode(object):
     @property
     def params(self) -> Params:
         """
-        A proxy reference to the vm params.
+        Get a proxy reference to the vm params.
 
         .. note:: this is just a shallow copy to preserve the hierarchy:
             network level params = test level params -> vmnode level params = test object params
@@ -100,7 +97,7 @@ class VMNode(object):
     def remote_sessions(
         self, value: list[RemoteSession] = None
     ) -> list[RemoteSession] | None:
-        """A proxy reference to the vm sessions."""
+        """Get a proxy reference to the vm sessions."""
         if value is not None:
             self._platform.remote_sessions = value
             return None
@@ -111,7 +108,7 @@ class VMNode(object):
 
     def last_session(self, value: RemoteSession = None) -> RemoteSession | None:
         """
-        A pointer to the last created vm session.
+        Get a pointer to the last created vm session.
 
         Used to facilitate the frequent access to a single session.
         """
@@ -138,6 +135,7 @@ class VMNode(object):
         self._last_session = None
 
     def __repr__(self) -> str:
+        """Provide a representation of the object."""
         vm_tuple = (self.name, len(self.remote_sessions))
         return "[node] name='%s', sessions='%s'" % vm_tuple
 
@@ -165,7 +163,7 @@ class VMNode(object):
 
     def get_session(self, serial: bool = False) -> RemoteSession:
         """
-        The basic network login - get a session from a vmnode.
+        Obtain a session from a vmnode by performing the basic network login.
 
         :param serial: whether to use serial connection
         """

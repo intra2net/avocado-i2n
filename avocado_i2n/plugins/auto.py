@@ -13,6 +13,18 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
+"""
+Auto plugin as avocado run command switch.
+
+SUMMARY
+------------------------------------------------------
+
+
+INTERFACE
+------------------------------------------------------
+
+"""
+
 import os
 import argparse
 
@@ -24,6 +36,7 @@ from .. import cmd_parser
 
 
 class Auto(CLI):
+    """Class for the auto plugin."""
 
     name = "auto"
     description = (
@@ -66,6 +79,8 @@ class Auto(CLI):
 
     def run(self, config: dict[str, str]) -> None:
         """
+        Run the auto plugin.
+
         Take care of command line overwriting, parameter preparation,
         setup and cleanup chains, and paths/utilities for all host controls.
         """

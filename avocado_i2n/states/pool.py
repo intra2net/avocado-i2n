@@ -14,13 +14,12 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Module for the QCOW2 pool state management backend.
 
 SUMMARY
 ------------------------------------------------------
-Module for the QCOW2 pool state management backend.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------

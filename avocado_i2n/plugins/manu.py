@@ -13,6 +13,19 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
+"""
+Manu plugin as a separate avocado command.
+
+SUMMARY
+------------------------------------------------------
+
+Copyright: Intra2net AG
+
+INTERFACE
+------------------------------------------------------
+
+"""
+
 import os
 import argparse
 import traceback
@@ -28,6 +41,7 @@ from .. import intertest_setup as intertest
 
 
 class Manu(CLICmd):
+    """Class for the manu plugin."""
 
     name = "manu"
     description = (
@@ -56,7 +70,9 @@ class Manu(CLICmd):
 
     def run(self, config: Params) -> int:
         """
-        Take care of command line overwriting, parameter preparation,
+        Run the manu plugin.
+
+        Take care of command line overwriting, parameter preparation for all host controls,
         setup and cleanup chains, and paths/utilities for all host controls.
         """
         log.info("Manual setup chain started.")

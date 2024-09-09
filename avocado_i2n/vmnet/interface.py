@@ -14,10 +14,10 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Interface object for the vmnet utility.
 
 SUMMARY
 ------------------------------------------------------
-Interface object for the vmnet utility.
 
 Copyright: Intra2net AG
 
@@ -27,7 +27,6 @@ CONTENTS
 This is the basic building block of the vm network. Interfaces are grouped
 in nodes (the virtual machines they belong to) and in netconfigs (the
 local networks they define together).
-
 
 INTERFACE
 ------------------------------------------------------
@@ -40,12 +39,12 @@ from .node import VMNode
 
 
 class VMInterface(object):
-    """The interface class."""
+    """Get the interface class."""
 
     """Structural properties"""
 
     def node(self, value: VMNode = None) -> VMNode | None:
-        """A reference to the node the interface belongs to."""
+        """Get a reference to the node the interface belongs to."""
         if value is not None:
             self._node = value
             return None
@@ -55,7 +54,7 @@ class VMInterface(object):
     node = property(fget=node, fset=node)
 
     def netconfig(self, value: "VMNetconfig" = None) -> "VMNetconfig | None":
-        """A reference to the netconfig the interface belongs to."""
+        """Get a reference to the netconfig the interface belongs to."""
         if value is not None:
             self._netconfig = value
             return None
@@ -66,7 +65,7 @@ class VMInterface(object):
 
     @property
     def params(self) -> Params:
-        """The interface filtered test parameters."""
+        """Use as the interface filtered test parameters."""
         return self._params
 
     """Configuration properties"""
@@ -119,6 +118,7 @@ class VMInterface(object):
         self._ip = params["ip"]
 
     def __repr__(self) -> str:
+        """Provide a representation of the object."""
         vm_name = "none" if self.node is None else self.node.name
         net_name = "none" if self.netconfig is None else self.netconfig.net_ip
         iface_tuple = (self.name, self.ip, self.mac, vm_name, net_name)

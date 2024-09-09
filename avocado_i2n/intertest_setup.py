@@ -13,11 +13,11 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
-"""
+r"""
+Utility to manage all needed virtual machines.
 
 SUMMARY
 ------------------------------------------------------
-Utility to manage all needed virtual machines.
 
 Copyright: Intra2net AG
 
@@ -37,7 +37,6 @@ performed only on those machines and not on all. Example is 'vms = vm1 vm2 vm3\n
 to create only vm1 and vm3 add to the overwrite string 'vms = vm1 vm3\n' in order
 to overwrite the vms parameter. Of course you can do this with any parameter
 to manage other aspects of the virtual environment setup process.
-
 
 INTERFACE
 ------------------------------------------------------
@@ -213,8 +212,10 @@ def unittest(config: dict[str, Any], tag: str = "") -> None:
 @with_cartesian_graph
 def update(config: dict[str, Any], tag: str = "") -> None:
     """
-    Update all states (run all tests) from the state defined as
-    ``from_state=<state>`` to the state defined as ``to_state=<state>``.
+    Update all states.
+
+    Run all tests from the state defined as ``from_state=<state>``
+    to the state defined as ``to_state=<state>``.
 
     :param config: command line arguments and run configuration
     :param tag: extra name identifier for the test to be run
@@ -283,7 +284,7 @@ def update(config: dict[str, Any], tag: str = "") -> None:
                 clean_graph = l.parse_object_trees(
                     worker=worker,
                     restriction=setup_str,
-                    prefix=f"{tag}m{i+1}",
+                    prefix=f"{tag}m{i + 1}",
                     object_restrs=config["available_vms"],
                     params=setup_dict,
                     verbose=False,
@@ -636,8 +637,7 @@ def check(config: dict[str, Any], tag: str = "") -> None:
 @with_cartesian_graph
 def pop(config: dict[str, Any], tag: str = "") -> None:
     """
-    Get to a state/snapshot disregarding the current changes
-    loosing the it afterwards.
+    Get to a state/snapshot disregarding the current changes loosing the it afterwards.
 
     :param config: command line arguments and run configuration
     :param tag: extra name identifier for the test to be run
@@ -657,7 +657,7 @@ def pop(config: dict[str, Any], tag: str = "") -> None:
 @with_cartesian_graph
 def push(config: dict[str, Any], tag: str = "") -> None:
     """
-    Wrapper for setting state/snapshot, same as :py:func:`set`.
+    Use as wrapper for setting state/snapshot, same as :py:func:`set`.
 
     :param config: command line arguments and run configuration
     :param tag: extra name identifier for the test to be run

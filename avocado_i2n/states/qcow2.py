@@ -14,13 +14,12 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Module for the QCOW2 state management backends.
 
 SUMMARY
 ------------------------------------------------------
-Module for the QCOW2 state management backends.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------

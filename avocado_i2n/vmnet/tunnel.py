@@ -14,10 +14,10 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Tunnel object for the vmnet utility.
 
 SUMMARY
 ------------------------------------------------------
-Tunnel object for the vmnet utility.
 
 Copyright: Intra2net AG
 
@@ -28,7 +28,6 @@ This class wraps up the utilities for managing tunnels.
 
 The parameters parsed at each vm are used as overwrite dictionary and
 and missing ones are generated for the full configuration of the tunnel.
-
 
 INTERFACE
 ------------------------------------------------------
@@ -49,12 +48,12 @@ from .node import VMNode
 
 
 class VMTunnel(object):
-    """The tunnel class."""
+    """Get the tunnel class."""
 
     """Structural properties"""
 
     def left(self, value: VMNode = None) -> VMNode | None:
-        """A reference to the left node of the tunnel."""
+        """Get a reference to the left node of the tunnel."""
         if value is not None:
             self._left = value
             return None
@@ -64,7 +63,7 @@ class VMTunnel(object):
     left = property(fget=left, fset=left)
 
     def right(self, value: VMNode = None) -> VMNode | None:
-        """A reference to the right node of the tunnel."""
+        """Get a reference to the right node of the tunnel."""
         if value is not None:
             self._right = value
             return None
@@ -74,7 +73,7 @@ class VMTunnel(object):
     right = property(fget=right, fset=right)
 
     def left_iface(self, value: VMInterface = None) -> VMInterface | None:
-        """A reference to the left interface of the tunnel."""
+        """Get a reference to the left interface of the tunnel."""
         if value is not None:
             self._left_iface = value
             return None
@@ -84,7 +83,7 @@ class VMTunnel(object):
     left_iface = property(fget=left_iface, fset=left_iface)
 
     def right_iface(self, value: VMInterface = None) -> VMInterface | None:
-        """A reference to the right interface of the tunnel."""
+        """Get a reference to the right interface of the tunnel."""
         if value is not None:
             self._right_iface = value
             return None
@@ -94,7 +93,7 @@ class VMTunnel(object):
     right_iface = property(fget=right_iface, fset=right_iface)
 
     def left_net(self, value: VMNetconfig = None) -> VMNetconfig | None:
-        """A reference to the left netconfig of the tunnel."""
+        """Get a reference to the left netconfig of the tunnel."""
         if value is not None:
             self._left_net = value
             return None
@@ -104,7 +103,7 @@ class VMTunnel(object):
     left_net = property(fget=left_net, fset=left_net)
 
     def right_net(self, value: VMNetconfig = None) -> VMNetconfig | None:
-        """A reference to the right netconfig of the tunnel."""
+        """Get a reference to the right netconfig of the tunnel."""
         if value is not None:
             self._right_net = value
             return None
@@ -115,17 +114,17 @@ class VMTunnel(object):
 
     @property
     def left_params(self) -> Params:
-        """The tunnel generated left side parameters."""
+        """Tunnel generated left side parameters."""
         return self.left.params.object_params(self.name)
 
     @property
     def right_params(self) -> Params:
-        """The tunnel generated right side parameters."""
+        """Tunnel generated right side parameters."""
         return self.right.params.object_params(self.name)
 
     @property
     def params(self) -> Params:
-        """The tunnel generated test parameters."""
+        """Tunnel generated test parameters."""
         return self._params
 
     """Connection properties"""
@@ -151,9 +150,9 @@ class VMTunnel(object):
         auth: dict[str, str] = None,
     ) -> None:
         """
-        Construct the full set of required tunnel parameters for a given tunnel left configuration
-        that are not already defined in the parameters of the two vms (left `node1` with
-        right `node2`).
+        Construct the full set of required tunnel parameters for a given tunnel left configuration.
+
+        That are not already defined in the parameters of the two vms (left 'node1' with right 'node2').
 
         :param name: name of the tunnel
         :param node1: left side node of the tunnel
@@ -346,6 +345,7 @@ class VMTunnel(object):
         logging.info("Produced tunnel from parameters is %s", self)
 
     def __repr__(self) -> str:
+        """Provide a representation of the object."""
         left_net = "none" if self.left_net is None else self.left_net.net_ip
         right_net = "none" if self.right_net is None else self.right_net.net_ip
         tunnel_tuple = (
@@ -364,8 +364,10 @@ class VMTunnel(object):
 
     def connects_nodes(self, node1: VMNode, node2: VMNode) -> bool:
         """
-        Check whether a tunnel connects two vm nodes, i.e. they are in directly connected
-        as tunnel peers or indirectly in tunnel connected LANs (netconfigs).
+        Check whether a tunnel connects two vm nodes.
+
+        The vm nodes can be connected directly as tunnel
+        peers or indirectly in tunnel connected LANs (netconfigs).
 
         :param node1: one side vm of the tunnel
         :param node2: another side vm of the tunnel
@@ -568,8 +570,7 @@ class VMTunnel(object):
 
     def import_key_params(self, from_node: VMNode, to_node: VMNode) -> None:
         """
-        This will generate own key configuration at the source vm
-        and foreign key configuration at the destination vm.
+        Generate own key configuration at the source vm and foreign key configuration at the destination vm.
 
         :param from_node: source node to get the key from (and generate own key
                           configuration on it containing all relevant key information)

@@ -14,10 +14,10 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Module for the LVM state management backend.
 
 SUMMARY
 ------------------------------------------------------
-Module for the LVM state management backend.
 
 Copyright: Intra2net AG
 
@@ -25,7 +25,6 @@ Copyright: Intra2net AG
     maintained (only tested in isolation) but kept here for backwards
     portability as well as completeness in case there is interest to
     revive it by contributors that actually need it.
-
 
 INTERFACE
 ------------------------------------------------------

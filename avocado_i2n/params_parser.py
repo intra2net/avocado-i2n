@@ -14,14 +14,12 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Module for handling all Cartesian config parsing and making it reusable and maximally performant.
 
 SUMMARY
 ------------------------------------------------------
-Module for handling all Cartesian config parsing and
-making it reusable and maximally performant.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------
@@ -41,7 +39,7 @@ from avocado.core.settings import settings
 
 
 class EmptyCartesianProduct(Exception):
-    """Empty Cartesian product of variants"""
+    """Empty Cartesian product of variants."""
 
     def __init__(self, message: str) -> None:
         """
@@ -75,13 +73,13 @@ settings.register_option(
 
 
 def custom_configs_dir() -> str:
-    """Custom directory for all config files."""
+    """Get custom directory for all config files."""
     suite_path = settings.as_dict().get("i2n.common.suite_path")
     return os.path.join(suite_path, "configs")
 
 
 def tests_ovrwrt_file() -> str:
-    """Overwrite config file for all tests (nodes)."""
+    """Get overwrite file for all tests (nodes)."""
     ovrwrt_file = os.path.join(os.environ["HOME"], "avocado_overwrite_tests.cfg")
     if not os.path.exists(ovrwrt_file):
         logging.warning(
@@ -98,7 +96,7 @@ def tests_ovrwrt_file() -> str:
 
 
 def vms_ovrwrt_file() -> str:
-    """Overwrite config file for all vms (a category of objects)."""
+    """Get overwrite file for all vms (a category of objects)."""
     ovrwrt_file = os.path.join(os.environ["HOME"], "avocado_overwrite_vms.cfg")
     if not os.path.exists(ovrwrt_file):
         logging.warning(
@@ -115,7 +113,7 @@ def vms_ovrwrt_file() -> str:
 
 
 def ovrwrt_file(category: str) -> str:
-    """Overwrite config file for all objects."""
+    """Get overwrite file for all objects."""
     ovrwrt_file = os.path.join(os.environ["HOME"], f"avocado_overwrite_{category}.cfg")
     if not os.path.exists(ovrwrt_file):
         logging.warning(
@@ -145,7 +143,7 @@ class ParsedContent:
 
     def reportable_form(self) -> str:
         """
-        Parsed content representation used in reports of parsing steps.
+        Get parsed content representation used in reports of parsing steps.
 
         :returns: resulting report-compatible string
         :raises: :py:class:`NotImlementedError` as this is an abstract method
@@ -176,7 +174,7 @@ class ParsedFile(ParsedContent):
 
     def reportable_form(self) -> str:
         """
-        Parsed file representation used in reports of parsing steps.
+        Get parsed file representation used in reports of parsing steps.
 
         Arguments are identical to the ones of the parent class.
         """
@@ -196,7 +194,7 @@ class ParsedStr(ParsedContent):
 
     def reportable_form(self) -> str:
         """
-        Parsed string representation used in reports of parsing steps.
+        Get parsed string representation used in reports of parsing steps.
 
         Arguments are identical to the ones of the parent class.
         """
@@ -221,7 +219,7 @@ class ParsedDict(ParsedContent):
 
     def reportable_form(self) -> str:
         """
-        Parsed dictionary representation used in reports of parsing steps.
+        Get parsed dictionary representation used in reports of parsing steps.
 
         Arguments are identical to the ones of the parent class.
         """
@@ -243,8 +241,9 @@ class ParsedDict(ParsedContent):
 
 class Reparsable:
     """
-    Class to represent quickly parsable Cartesian configuration,
-    producing both parser and parameters (parser dicts) on demand.
+    Class to represent quickly parsable Cartesian configuration.
+
+    The class produces both parser and parameters (parser dicts) on demand.
     """
 
     def __init__(self) -> None:
@@ -252,6 +251,7 @@ class Reparsable:
         self.steps = []
 
     def __repr__(self) -> str:
+        """Provide a representation of the parsable Cartesian configuration."""
         restriction = "Parsing parameters with the following configuration:\n"
         for step in self.steps:
             restriction += step.reportable_form()
@@ -298,8 +298,10 @@ class Reparsable:
         ovrwrt_dict: dict[str, str] = None,
     ) -> None:
         """
-        Parse a batch of base file, string, and dictionary, and possibly an
-        overwrite file (with custom parameters at the user's home location).
+        Parse a batch of base file, string, and dictionary.
+
+        Possibly also parse a batch of an overwrite file (with custom parameters
+        at the user's home location).
 
         :param base_file: file to be parsed first
         :param base_str: string to be parsed first
@@ -519,8 +521,7 @@ def main_vm() -> str | None:
 
 def re_str(variant_str: str, base_str: str = "", tag: str = "") -> str:
     """
-    Add a variant restriction to the base string, optionally
-    adding a custom tag as well.
+    Add a variant restriction to the base string, optionally adding a custom tag as well.
 
     :param variant_str: variant restriction
     :param base_str: string where the variant restriction will be added
@@ -550,7 +551,7 @@ def join_str(variant_strs: dict[str, str], sort_key: str, base_str: str = "") ->
             continue
         variant = variant_strs[suffix]
         subvariant = "".join(
-            ["    " + l + "\n" for l in variant.rstrip("\n").split("\n")]
+            ["    " + line + "\n" for line in variant.rstrip("\n").split("\n")]
         )
         variant_str += "%s:\n%s" % (suffix, subvariant)
         objects += " " + suffix

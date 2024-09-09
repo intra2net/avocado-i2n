@@ -14,13 +14,12 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Utility for the main test suite substructures like test nodes.
 
 SUMMARY
 ------------------------------------------------------
-Utility for the main test suite substructures like test nodes.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------
@@ -52,35 +51,47 @@ door.DUMP_CONTROL_DIR = "/tmp"
 
 
 class PrefixTreeNode(object):
+    """A node of a prefix tree."""
+
     def __init__(self, variant: str = None, parent: str = None) -> None:
+        """Construct a prefix tree node."""
         self.variant = variant
         self.parent = parent
         self.end_test_node = None
         self.children = {}
 
     def check_child(self, variant: str) -> bool:
+        """Check child prefix tree node."""
         return variant in self.children
 
     def get_child(self, variant: str) -> str:
+        """Get child prefix tree node."""
         return self.children[variant]
 
     def set_child(self, variant: str, child: str) -> None:
+        """Set child prefix tree node."""
         self.children[variant] = child
 
     def unset_child(self, variant: str) -> None:
+        """Unset child prefix tree node."""
         del self.children[variant]
 
     def traverse(self) -> Generator[None, None, None]:
+        """Traverse the current node."""
         yield self
         for child in self.children.values():
             yield from child.traverse()
 
 
 class PrefixTree(object):
+    """A trie structure used for faster prefix lookup."""
+
     def __init__(self) -> None:
+        """Construct a prefix tree."""
         self.variant_nodes = {}
 
     def __contains__(self, name: str) -> bool:
+        """Check whether the prefix tree contains a given name."""
         variants = name.split(".")
         if variants[0] not in self.variant_nodes:
             return False
@@ -94,6 +105,7 @@ class PrefixTree(object):
         return False
 
     def insert(self, test_node: "TestNode") -> None:
+        """Insert a test node name in the prefix tree."""
         variants = test_node.params["name"].split(".")
         if variants[0] not in self.variant_nodes.keys():
             self.variant_nodes[variants[0]] = [PrefixTreeNode(variants[0])]
@@ -109,6 +121,7 @@ class PrefixTree(object):
             current.end_test_node = test_node
 
     def get(self, name: str) -> list["TestNode"]:
+        """Get all the names of the prefix tree."""
         variants = name.split(".")
         if variants[0] not in self.variant_nodes:
             return []
@@ -126,11 +139,14 @@ class PrefixTree(object):
 
 
 class EdgeRegister:
+    """A register for the Cartesian graph edges allowing counter and worker stats extraction."""
 
     def __init__(self) -> None:
+        """Construct an edge register."""
         self._registry = {}
 
     def __repr__(self) -> str:
+        """Provide a representation of the object."""
         return f"[edge] registry='{self._registry}'"
 
     def get_workers(self, node: "TestNode" = None) -> set[str]:
@@ -180,11 +196,15 @@ class EdgeRegister:
 
 class TestNode(Runnable):
     """
-    A wrapper for all test relevant parts like parameters, parser, used
-    objects and dependencies to/from other test nodes (setup/cleanup).
+    A wrapper for all test relevant parts.
+
+    These include parameters, parser, used objects and
+    dependencies to/from other test nodes (setup/cleanup).
     """
 
     class ReadOnlyDict(dict[Any, Any]):
+        """Custom implementation of a read-only attribute of dictionary type."""
+
         def _readonly(self, *args: tuple[type, ...], **kwargs: dict[str, type]) -> None:
             raise RuntimeError("Cannot modify read-only dictionary")
 
@@ -347,12 +367,12 @@ class TestNode(Runnable):
 
     @property
     def id(self) -> Params:
-        """Unique ID to identify a test node."""
+        """Use unique ID to identify a test node."""
         return self.prefix + "-" + self.params["name"]
 
     @property
     def id_test(self) -> Params:
-        """Unique test ID to identify a test node."""
+        """Use a unique test ID to identify a test node."""
         return TestID(self.prefix, self.params["name"])
 
     def __init__(self, prefix: str, recipe: param.Reparsable) -> None:
@@ -390,6 +410,7 @@ class TestNode(Runnable):
         self._dropped_cleanup_nodes = EdgeRegister()
 
     def __repr__(self) -> str:
+        """Provide a representation of the object."""
         shortname = self.params.get("shortname", "<unknown>")
         return f"[node] longprefix='{self.long_prefix}', shortname='{shortname}'"
 
@@ -499,7 +520,7 @@ class TestNode(Runnable):
 
     def is_started(self, worker: TestWorker = None, threshold: int = 1) -> bool:
         """
-        The test is currently traversed by at least N (-1 for all) workers of all or some scopes.
+        Check if the test is currently traversed by at least N (-1 for all) workers of all or some scopes.
 
         :param worker: evaluate with respect to an optional worker ID scope or globally if none given
         :param threshold: how eagerly the node is considered started in terms of number of
@@ -541,7 +562,7 @@ class TestNode(Runnable):
 
     def is_finished(self, worker: TestWorker = None, threshold: int = 1) -> bool:
         """
-        The test was ever traversed by at least N (-1 for all) workers of all or some scopes.
+        Check if the test was ever traversed by at least N (-1 for all) workers of all or some scopes.
 
         :param worker: evaluate with respect to an optional worker ID scope or globally if none given
         :param threshold: how eagerly the node is considered started in terms of number of
@@ -774,7 +795,7 @@ class TestNode(Runnable):
 
     def default_run_decision(self, worker: TestWorker) -> bool:
         """
-        Default decision policy on whether a test node should be run or skipped.
+        Set default decision policy on whether a test node should be run or skipped.
 
         :param worker: worker which makes the run decision
         :returns: whether the worker should run the test node
@@ -809,7 +830,7 @@ class TestNode(Runnable):
 
     def default_clean_decision(self, worker: TestWorker) -> bool:
         """
-        Default decision policy on whether a test node should be cleaned or skipped.
+        Set default decision policy on whether a test node should be cleaned or skipped.
 
         :param worker: worker which makes the clean decision
         :returns: whether the worker should clean the test node
@@ -1168,9 +1189,7 @@ class TestNode(Runnable):
         self.regenerate_vt_parameters()
 
     def regenerate_vt_parameters(self) -> None:
-        """
-        Regenerate the parameters provided to the VT runner.
-        """
+        """Regenerate the parameters provided to the VT runner."""
         uri = self.params.get("name")
         vt_params = self.params.copy()
         # Flatten the vt_params, discarding the attributes that are not

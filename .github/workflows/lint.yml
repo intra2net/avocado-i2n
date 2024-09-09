@@ -17,9 +17,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install mypy types-setuptools black
+          pip install mypy types-setuptools black pycodestyle pydocstyle
 
       - name: Run linters
         run: |
           mypy avocado_i2n
           black --check --diff --color avocado_i2n
+          # only excluded checks are conflicts with black and within pycodestyle
+          # (in addition E402 is not something we intend to follow)
+          pycodestyle --ignore=E203,E402,E501,W503 avocado_i2n
+          pydocstyle avocado_i2n

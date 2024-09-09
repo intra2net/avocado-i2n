@@ -14,13 +14,12 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Utility for the main test suite substructures like test objects.
 
 SUMMARY
 ------------------------------------------------------
-Utility for the main test suite substructures like test objects.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------
@@ -48,6 +47,7 @@ class TestObject(object):
 
     @property
     def component_form(self) -> str:
+        """Component form of the test object name."""
         return self.params["name"].replace(self.key + ".", "")
 
     @property
@@ -57,7 +57,7 @@ class TestObject(object):
 
     @property
     def id(self) -> str:
-        """Unique ID to identify a test object."""
+        """Use unique ID to identify a test object."""
         return self.long_suffix + "-" + self.params["name"]
 
     def __init__(self, suffix: str, recipe: param.Reparsable) -> None:
@@ -84,6 +84,7 @@ class TestObject(object):
         self.key = "objects"
 
     def __repr__(self) -> str:
+        """Provide a representation of the object."""
         shortname = self.params.get("shortname", "<unknown>")
         return f"[object] longsuffix='{self.long_suffix}', shortname='{shortname}'"
 
@@ -93,8 +94,9 @@ class TestObject(object):
 
     def is_permanent(self) -> bool:
         """
-        If the test object is permanent, it can only be created manually
-        (possibly through the use of manual setup steps).
+        Check if the object is permanent.
+
+        If permanent, it can only be created manually (possibly through the use of manual setup steps).
 
         On states on permanent test object are treated differently than
         on states on normal test object since they are preserved through
@@ -148,6 +150,7 @@ class NetObject(TestObject):
     """A Net wrapper for a test object used in one or more test nodes."""
 
     def component_form(self) -> str:
+        """Component form of the test object name."""
         # TODO: an unexpected order of joining in the Cartesian config requires us to override base property
         return self.params["name"]
 
@@ -189,6 +192,7 @@ class ImageObject(TestObject):
     id = property(fget=id)
 
     def component_form(self) -> str:
+        """Component form of the test object name."""
         return self.composites[0].component_form
 
     component_form = property(fget=component_form)

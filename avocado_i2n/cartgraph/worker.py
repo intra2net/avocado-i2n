@@ -14,13 +14,12 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Utility for the main test suite substructures like test objects.
 
 SUMMARY
 ------------------------------------------------------
-Utility for the main test suite substructures like test objects.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------
@@ -43,6 +42,7 @@ from . import NetObject
 
 
 class TestEnvironment(object):
+    """Generic environment isolating a given test."""
 
     def __init__(self, id: str) -> None:
         """
@@ -68,6 +68,7 @@ class TestSwarm(TestEnvironment):
         self.workers = workers or []
 
     def __repr__(self) -> str:
+        """Provide a representation of the object."""
         dump = f"[swarm] id='{self.id}', workers='{len(self.workers)}'"
         for worker in self.workers:
             dump = f"{dump}\n\t{worker}"
@@ -103,6 +104,7 @@ class TestWorker(TestEnvironment):
         self.spawner = None
 
     def __repr__(self) -> str:
+        """Provide a representation of the object."""
         return f"[worker] id='{self.id}', spawner='{self.params['nets_spawner']}'"
 
     def overwrite_with_slot(self, slot: str) -> None:

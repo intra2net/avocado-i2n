@@ -14,10 +14,10 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Utility to manage local networks of vms and various topologies.
 
 SUMMARY
 ------------------------------------------------------
-Utility to manage local networks of vms and various topologies.
 
 Copyright: Intra2net AG
 
@@ -80,15 +80,15 @@ DNSMASQ_PIDFILE = "/var/run/avocado-dnsmasq.pid"
 
 class VMNetwork(object):
     """
-    Any VMNetwork instance can be used to connect vms in various network topologies
-    and to reconfigure, ping, retrieve the session of, as well as spawn clients for
-    each of them.
+    Any VMNetwork instance can be used to connect vms in various network topologies.
+
+    It can also be used to reconfigure, ping, retrieve the session of, as well as spawn
+    clients for each of them.
     """
 
     def __init__(self, params: Params, env: Env) -> None:
         """
-        Construct a network data structure given the test parameters,
-        the `env` and the `test` instance.
+        Construct a network data structure given the test parameters, the `env` and the `test` instance.
 
         .. note:: The params attribute is just a shallow copy to preserve the hierarchy:
             network level params = test level params -> node level params = test object params
@@ -136,6 +136,7 @@ class VMNetwork(object):
         logging.debug("Constructed network configuration:\n%s", self)
 
     def __repr__(self) -> str:
+        """Provide a representation of the object."""
         dump = "[vmnet] netconfigs='%s'" % len(self.netconfigs.keys())
         for netconfig in self.netconfigs.values():
             dump = "%s\n\t%s" % (dump, str(netconfig))
@@ -181,8 +182,7 @@ class VMNetwork(object):
 
     def get_single_vm_with_session_and_params(self) -> tuple[VM, RemoteSession, Params]:
         """
-        Get the only vm in the network and its only session
-        as well as configuration (to replace the test configuration).
+        Get the only vm in the network and its only session as well as configuration (to replace the test configuration).
 
         :returns: vm, its last session, and its params
         """
@@ -212,8 +212,7 @@ class VMNetwork(object):
 
     def get_vms(self) -> Any:
         """
-        Get a named tuple of vms in the network with their parametrically
-        defined roles.
+        Get a named tuple of vms in the network with their parametrically defined roles.
 
         :returns: tuple t with t.client = <vm1 object> and t.server = <vm2 object>
         :raises: :py:class:`exceptions.TestError` if some roles don't have assigned vms
@@ -243,9 +242,9 @@ class VMNetwork(object):
 
     def integrate_node(self, node: VMNode) -> None:
         """
-        Add all interfaces and netconfigs resulting from a new vm node
-        into the vm network, thus integrating the configuration into
-        the available one.
+        Add all interfaces and netconfigs resulting from a new vm node into the vm network.
+
+        Thus integrate the configuration into the available one.
 
         :param node: vm node to be integrated into the network
         """
@@ -302,8 +301,7 @@ class VMNetwork(object):
         proxy_nic: str = "",
     ) -> None:
         """
-        Reconfigure a network interface of a vm reattaching it to a different
-        interface's network config.
+        Reconfigure a network interface of a vm reattaching it to a different interface's network config.
 
         :param client: vm whose interace will be rattached
         :param server: vm whose network will the interface be attached to
@@ -602,10 +600,7 @@ class VMNetwork(object):
             process.run("iptables -t nat -I POSTROUTING %s -j MASQUERADE" % post_ops)
 
     def setup_host_services(self) -> None:
-        """
-        Provide all necessary services like DHCP, DNS and NAT
-        to restrict all tests locally.
-        """
+        """Provide all necessary services like DHCP, DNS and NAT to restrict all tests locally."""
         logging.info("Checking for local DHCP, DNS and NAT service requirements")
         dhcp_declarations = {}
         dns_declarations = {}
@@ -846,7 +841,7 @@ class VMNetwork(object):
 
     def setup_host_bridges(self) -> None:
         """
-        Setup bridges and interfaces needed to create and isolate the network.
+        Set up bridges and interfaces needed to create and isolate the network.
 
         The final network topology is derived entirely from the test parameters.
         """
@@ -1070,8 +1065,9 @@ class VMNetwork(object):
         self, netconfig: VMNetconfig, new_ip: str, new_mask: str = None
     ) -> None:
         """
-        Change the ip of a netconfig and more specifically of the network interface of
-        any vm participating in it.
+        Change the ip of a netconfig.
+
+        More specifically of the network interface of any vm participating in it.
 
         :param netconfig: netconfig to change the IP of
         :param new_ip: new IP address for the netconfig
@@ -1180,8 +1176,7 @@ class VMNetwork(object):
         self, name: str, vm: VM, apply_extra_options: dict[str, Any] = None
     ) -> None:
         """
-        Configure a tunnel on a vm, assuming it is manually
-        or independently configured on the other end.
+        Configure a tunnel on a vm, assuming it is manually or independently configured on the other end.
 
         :param name: name of the tunnel
         :param vm: vm where the tunnel will be configured
@@ -1211,8 +1206,9 @@ class VMNetwork(object):
         apply_extra_options: dict[str, Any] = None,
     ) -> None:
         """
-        Configure a VPN connection (tunnel) on a vm to play the role of a VPN
-        server for any individual clients to access it from the internet.
+        Configure a VPN connection (tunnel) on a VM to act as a VPN server.
+
+        This will allow individual clients to access it from the Internet
 
         Arguments are similar to the ones from :py:meth:`configure_tunnel_between_vms`
         with the exception of:
@@ -1252,8 +1248,7 @@ class VMNetwork(object):
         extra_apply_options: dict[str, Any] = None,
     ) -> None:
         """
-        Build a set of VPN connections using VPN forwarding to gain access from
-        one vm to another.
+        Build a set of VPN connections using VPN forwarding to gain access from one vm to another.
 
         Arguments are similar to the ones from :py:meth:`configure_tunnel_between_vms`
         with the exception of:
@@ -1363,8 +1358,9 @@ class VMNetwork(object):
         self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic"
     ) -> str:
         """
-        Get an accessible IP from a vm to a vm given using heuristics about
-        the tunnels and netconfigs of the entire vm network.
+        Get an accessible IP from a vm to a vm.
+
+        Use heuristics about the tunnels and netconfigs of the entire vm network.
 
         :param src_vm: source vm whose IPs are starting points
         :param dst_vm: destination vm whose IPs are ending points
@@ -1434,8 +1430,9 @@ class VMNetwork(object):
         self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic"
     ) -> str:
         """
-        Get an accessible IP from a vm to a vm given using heuristics about
-        the tunnels and netconfigs of the entire vm network.
+        Get an accessible IP from a vm to a vm.
+
+        Use heuristics about the tunnels and netconfigs of the entire vm network.
 
         :param src_vm: source vm whose IPs are starting points
         :param dst_vm: destination vm whose IPs are ending points
@@ -2028,8 +2025,7 @@ class VMNetwork(object):
         self, src_vm: VM, dst_vm: VM, dst_nic: str = "lan_nic", timeout: int = 10
     ) -> str:
         """
-        Get the host name of a vm from any other vm in the vm net
-        using the SSH protocol.
+        Get the host name of a vm from any other vm in the vm net using the SSH protocol.
 
         :param src_vm: source vm with the SSH client
         :param dst_vm: destination vm with the SSH server
@@ -2180,6 +2176,7 @@ class VMNetwork(object):
     ) -> tuple[int, str]:
         """
         Send file request to an TFTP destination port and address and verify it was received.
+
         Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
 
         :param file: file to retrieve containing the test data or none if sent directly
@@ -2209,6 +2206,7 @@ class VMNetwork(object):
     ) -> None:
         """
         Send file request to an TFTP destination port and address and verify it was received.
+
         Arguments are similar to the :py:meth:`port_connectivity` method with the exception of:
 
         :param file: file to retrieve containing the test data or none if sent directly

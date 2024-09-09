@@ -13,6 +13,19 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
+"""
+Parser for command line Cartesian parameters.
+
+SUMMARY
+------------------------------------------------------
+
+Copyright: Intra2net AG
+
+INTERFACE
+------------------------------------------------------
+
+"""
+
 import sys
 import os
 import re
@@ -34,8 +47,9 @@ from .states import setup as ss
 
 def params_from_cmd(config: Params) -> None:
     """
-    Take care of command line overwriting, parameter preparation,
-    setup and cleanup chains, and paths/utilities for all host controls.
+    Produce Cartesian parameters from a command line.
+
+    Take care of paths/utilities for all host controls.
 
     :param config: command line arguments
     :raises: :py:class:`ValueError` if a command line selected vm is not available
@@ -265,8 +279,10 @@ def full_tests_params_and_str(
 
 def env_process_hooks() -> None:
     """
-    Add env processing hooks to handle on/off state get/set operations
-    and vmnet networking setup and instance attachment to environment.
+    Add env processing hooks to handle needed customization steps.
+
+    These steps include on/off state get/set operations, vmnet networking,
+    and instance attachment to environment.
     """
 
     def on_state(fn: Callable[[Any], Any]) -> Any:

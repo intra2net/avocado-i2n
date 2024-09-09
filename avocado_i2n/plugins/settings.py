@@ -16,9 +16,7 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
-"""
-Avocado plugin that extends the settings path of our config paths.
-"""
+"""Avocado plugin that extends the settings path of our config paths."""
 
 import os
 from pkg_resources import resource_filename
@@ -28,8 +26,10 @@ from avocado.core.plugin_interfaces import Settings
 
 
 class I2NSettings(Settings):
+    """Class for the settings plugin."""
 
     def adjust_settings_paths(self, paths: str) -> None:
+        """Adjust all config paths."""
         base = resource_filename("avocado_i2n", "conf.d")
         for path in [
             os.path.join(base, conf)

@@ -14,15 +14,16 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Main test suite data structure.
 
 SUMMARY
 ------------------------------------------------------
-Main test suite data structure containing tests as nodes in a bidirected graph
-with edges to their dependencies (parents) and dependables (children) but also
-with a separate edge for each stateful object.
+
+The data structure contains tests as nodes in a bidirected graph with edges to their
+dependencies (parents) and dependables (children) but also with a separate edge
+for each stateful object.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------
@@ -108,6 +109,7 @@ class TestGraph(object):
         self.runner = None
 
     def __repr__(self) -> str:
+        """Provide a representation of the object."""
         dump = "[cartgraph] objects='%s' nodes='%s'" % (
             len(self.objects),
             len(self.nodes),
@@ -191,8 +193,9 @@ class TestGraph(object):
 
     def report_progress(self) -> None:
         """
-        Report the total test run progress as the number and percentage
-        of tests that are fully finished (will not be run again).
+        Report the total test run progress.
+
+        The progress is counted as the number and percentage of tests that are fully finished will not be run again
 
         The estimation includes setup tests which might be reused and therefore
         provides worst case scenario for the number of remaining tests. It also
@@ -214,8 +217,7 @@ class TestGraph(object):
 
     def visualize(self, dump_dir: str, tag: str = "0") -> None:
         """
-        Dump a visual description of the Cartesian graph at
-        a given parsing/traversal step.
+        Dump a visual description of the Cartesian graph at a given parsing/traversal step.
 
         :param dump_dir: directory for the dump image
         :param tag: tag of the dump, e.g. parsing/traversal step and slot
@@ -1283,8 +1285,10 @@ class TestGraph(object):
         unique: bool = False,
     ) -> list[TestNode] | TestNode:
         """
-        Parse all user defined tests (leaf nodes) using the nodes restriction string
-        and possibly restricting to a single test object for the singleton tests.
+        Parse all user defined tests (leaf nodes).
+
+        Use the nodes restriction string and possibly restrict to a single test object
+        for the singleton tests.
 
         :param restriction: single or multi-line restriction to use
         :param test_object: possibly flat test object to compose the node on top of, typically a test net
@@ -2046,8 +2050,9 @@ class TestGraph(object):
         self, worker: TestWorker, params: Params = None
     ) -> None:
         """
-        Run all user and system defined tests optimizing the setup reuse and
-        minimizing the repetition of demanded tests.
+        Run all user and system defined tests.
+
+        Optimize the setup reuse and minimize the repetition of demanded tests.
 
         :param worker: worker traversing the graph
         :param params: runtime parameters used for extra customization

@@ -14,13 +14,12 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Specialized test loader for the plugin.
 
 SUMMARY
 ------------------------------------------------------
-Specialized test loader for the plugin.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------

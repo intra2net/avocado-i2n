@@ -14,13 +14,12 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Specialized test runner for the plugin.
 
 SUMMARY
 ------------------------------------------------------
-Specialized test runner for the plugin.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------
@@ -293,7 +292,7 @@ class TestRunner(RunnerInterface):
         logging.info(f"Finished running test with status {test_status.upper()}")
         # no need to log when test was not repeated
         if run_times > 0:
-            logging.info(f"Finished running test {run_times+1} times")
+            logging.info(f"Finished running test {run_times + 1} times")
 
         # FIX: as VT's retval is broken (always True), we fix its handling here
         if test_status in ["error", "fail"]:

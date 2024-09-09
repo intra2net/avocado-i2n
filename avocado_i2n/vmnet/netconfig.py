@@ -14,10 +14,10 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Network configuration object for the VM network.
 
 SUMMARY
 ------------------------------------------------------
-Network configuration object for the VM network.
 
 Copyright: Intra2net AG
 
@@ -27,7 +27,6 @@ CONTENTS
 It contains the network configuration, offers network services like
 IP address allocation, translation, and validation, and consists
 of Interface objects that share this network configuration.
-
 
 INTERFACE
 ------------------------------------------------------
@@ -45,23 +44,25 @@ from avocado.core import exceptions
 
 
 class VMNetconfig(object):
-    """
-    The netconfig class - a collection of interfaces
-    sharing the same network configuration.
-    """
+    """Get the netconfig class - a collection of interfaces sharing the same network configuration."""
 
     """Structural properties"""
 
     @property
     def interfaces(self) -> dict[Any, VMInterface]:
-        """A collection of interfaces the netconfig represents."""
+        """
+        Get a collection of interfaces the netconfig represents.
+
+        ..todo:: The key type should be str but using the same method and property name confuses
+            our automation in some places and not in others.
+        """
         return self._interfaces
 
     """Configuration properties"""
 
     def netdst(self, value: str = None) -> str | None:
         """
-        The bridge where Qemu will redirect the packets.
+        Get the bridge where Qemu will redirect the packets.
 
         Plays the role of the network connectivity skeleton.
         """
@@ -74,7 +75,7 @@ class VMNetconfig(object):
     netdst = property(fget=netdst, fset=netdst)
 
     def netmask(self, value: str = None) -> str | None:
-        """The netmask used by the participating network interfaces."""
+        """Get the netmask used by the participating network interfaces."""
         if value is not None:
             self._netmask = value
             return None
@@ -84,7 +85,7 @@ class VMNetconfig(object):
     netmask = property(fget=netmask, fset=netmask)
 
     def mask_bit(self, value: str = None) -> str | None:
-        """The netmask bit used by the participating network interfaces."""
+        """Get the netmask bit used by the participating network interfaces."""
         if value is not None:
             interface = ipaddress.ip_interface("%s/%s" % (self.net_ip, value))
             self.netmask = str(interface.network.netmask)
@@ -103,7 +104,7 @@ class VMNetconfig(object):
     mask_bit = property(fget=mask_bit, fset=mask_bit)
 
     def gateway(self, value: str = None) -> str | None:
-        """The gateway ip used by the participating network interfaces."""
+        """Get the gateway ip used by the participating network interfaces."""
         if value is not None:
             self._gateway = value
             return None
@@ -113,7 +114,7 @@ class VMNetconfig(object):
     gateway = property(fget=gateway, fset=gateway)
 
     def net_ip(self, value: str = None) -> str | None:
-        """The network ip used by the participating network interfaces."""
+        """Get the network ip used by the participating network interfaces."""
         if value is not None:
             self._net_ip = value
             return None
@@ -123,10 +124,7 @@ class VMNetconfig(object):
     net_ip = property(fget=net_ip, fset=net_ip)
 
     def host_ip(self, value: str = None) -> str | None:
-        """
-        IP of the host for the virtual machine if it participates in the
-        local network (and therefore in the netcofig).
-        """
+        """IP of the host for the virtual machine if it participates in the local network (and therefore in the netcofig)."""
         if value is not None:
             self._host_ip = value
             return None
@@ -138,8 +136,7 @@ class VMNetconfig(object):
     @property
     def range(self) -> dict[int, bool]:
         """
-        IP range of addresses that can be allocated to joining vms
-        (new interfaces that join the netconfig).
+        IP range of addresses that can be allocated to joining vms (new interfaces that join the netconfig).
 
         To set a different ip_start and ip_end, i.e. different boundaries,
         use the setter of this property.
@@ -218,8 +215,7 @@ class VMNetconfig(object):
 
     def ext_netdst(self, value: str = None) -> str | None:
         """
-        External network destination to which we route
-        after network translation.
+        External network destination to which we route after network translation.
 
         .. note:: Used for host-based NAT configuration.
         """
@@ -250,6 +246,7 @@ class VMNetconfig(object):
         self._ext_netdst = None
 
     def __repr__(self) -> str:
+        """Provide a representation of the object."""
         net_tuple = (self.net_ip, self.netmask, self.netdst)
         return "[net] addr='%s', netmask='%s', netdst='%s'" % net_tuple
 
@@ -259,8 +256,9 @@ class VMNetconfig(object):
 
     def from_interface(self, interface: VMInterface) -> None:
         """
-        Construct all netconfig parameters from the provided interface or reset
-        them with respect to that interface if they were already set.
+        Construct all netconfig parameters from the provided interface.
+
+        Alternatively reset them with respect to that interface if they were already set.
 
         :param interface: reference interface for the configuration
         """
@@ -290,8 +288,10 @@ class VMNetconfig(object):
 
     def add_interface(self, interface: VMInterface) -> None:
         """
-        Add an interface to the netconfig, performing the necessary registrations
-        and finishing with validation of the interface configuration.
+        Add an interface to the netconfig.
+
+        Perform the necessary registrations and finishing
+        with validation of the interface configuration.
 
         :param interface: interface to add to the netconfig
         """
@@ -301,8 +301,9 @@ class VMNetconfig(object):
 
     def has_interface(self, interface: VMInterface) -> bool:
         """
-        Check whether an interface already belongs to the netconfig through
-        both IP and actual attachment (to counter same IP range netconfigs).
+        Check whether an interface already belongs to the netconfig.
+
+        Checking is done through both IP and actual attachment (to counter same IP range netconfigs).
 
         :param interface: interface to check in the netconfig
         :returns: whether the interface is already present in the netconfig
@@ -314,9 +315,9 @@ class VMNetconfig(object):
 
     def can_add_interface(self, interface: VMInterface) -> bool:
         """
-        Check if an interface can be added to the netconfig based on its
-        desired IP address and throw Exceptions if it is already present
-        or the netmask does not coincide (misconfiguration errors).
+        Check if an interface can be added to the netconfig based on its desired IP address.
+
+        Throw exceptions if it is already present or the netmask does not coincide (misconfiguration errors).
 
         :param interface: interface to add to the netconfig
         :returns: whether the interface can be added
@@ -384,10 +385,7 @@ class VMNetconfig(object):
                 )
 
     def get_allocatable_address(self) -> str:
-        """
-        Return the next IP address in the pool of available IPs that
-        can be used by DHCP clients in the network.
-        """
+        """Return the next IP address in the pool of available IPs that can be used by DHCP clients in the network."""
         for val in self.range:
             if self.range[val] is False:
                 self.range[val] = True
@@ -399,10 +397,10 @@ class VMNetconfig(object):
         return str(ipaddress.IPv4Address(str(net_ip + new_address)))
 
     def translate_address(self, ip: str, nat_ip: str) -> str:
-        """
-        Return the NAT translated IP of an interface or alternatively the IP
-        of an interface masked by a desired network address.
+        """Return the NAT translated IP of an interface.
 
+        Alternatively return the NAT translated IP of an interface masked by a desired network address.
+        :param interface: interface to translate
         :param nat_ip: NATed IP to use for reference
         :returns: the translated IP of the interface
         """
