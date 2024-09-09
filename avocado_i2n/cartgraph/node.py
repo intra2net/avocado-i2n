@@ -35,7 +35,8 @@ from functools import cmp_to_key
 from typing import Generator
 from typing import Any
 import logging as log
-logging = log.getLogger('avocado.job.' + __name__)
+
+logging = log.getLogger("avocado.job." + __name__)
 
 from aexpect.exceptions import ShellCmdError
 from aexpect import remote_door as door
@@ -124,7 +125,7 @@ class PrefixTree(object):
         return test_nodes
 
 
-class EdgeRegister():
+class EdgeRegister:
 
     def __init__(self) -> None:
         self._registry = {}
@@ -156,7 +157,9 @@ class EdgeRegister():
         counter = 0
         node_keys = [node.bridged_form] if node else self._registry.keys()
         for node_key in node_keys:
-            worker_keys = [worker.id] if worker else self._registry.get(node_key, {}).keys()
+            worker_keys = (
+                [worker.id] if worker else self._registry.get(node_key, {}).keys()
+            )
             for worker_key in worker_keys:
                 counter += self._registry.get(node_key, {}).get(worker_key, 0)
         return counter
@@ -184,6 +187,7 @@ class TestNode(Runnable):
     class ReadOnlyDict(dict[Any, Any]):
         def _readonly(self, *args: tuple[type, ...], **kwargs: dict[str, type]) -> None:
             raise RuntimeError("Cannot modify read-only dictionary")
+
         __setitem__ = _readonly
         __delitem__ = _readonly
         pop = _readonly
@@ -228,8 +232,16 @@ class TestNode(Runnable):
     @property
     def shared_involved_workers(self) -> set[TestWorker]:
         """Workers that picked up the node and possibly have continued to either its setup or cleanup."""
-        worker_ids = self._picked_by_setup_nodes.get_workers() | self._picked_by_cleanup_nodes.get_workers()
-        workers = [w for s in TestSwarm.run_swarms for w in TestSwarm.run_swarms[s].workers if w.id in worker_ids]
+        worker_ids = (
+            self._picked_by_setup_nodes.get_workers()
+            | self._picked_by_cleanup_nodes.get_workers()
+        )
+        workers = [
+            w
+            for s in TestSwarm.run_swarms
+            for w in TestSwarm.run_swarms[s].workers
+            if w.id in worker_ids
+        ]
         return set(workers)
 
     @property
@@ -244,10 +256,18 @@ class TestNode(Runnable):
     def shared_filtered_results(self) -> list[dict[str, str]]:
         """Test results shared across all bridged nodes."""
         all_results = self.shared_results
-        if self.started_worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
+        if (
+            self.started_worker
+            and "swarm" not in self.params["pool_scope"]
+            and self.params.get("nets_spawner") == "lxc"
+        ):
             # has separate results for each worker (doesn't matter eager of full)
             scope_filter = self.started_worker.swarm_id + "." + self.started_worker.id
-        elif self.started_worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
+        elif (
+            self.started_worker
+            and "cluster" not in self.params["pool_scope"]
+            and self.params.get("nets_spawner") == "remote"
+        ):
             # has results for an entire swarm by at least N of its workers
             scope_filter = self.started_worker.swarm_id
         else:
@@ -266,7 +286,9 @@ class TestNode(Runnable):
         for result in self.shared_results:
             if result["status"] != "PASS":
                 continue
-            worker_ids = [w.id for s in TestSwarm.run_swarms.values() for w in s.workers]
+            worker_ids = [
+                w.id for s in TestSwarm.run_swarms.values() for w in s.workers
+            ]
             for worker_id in worker_ids:
                 if worker_id in result["name"]:
                     workers.add(worker_id)
@@ -299,7 +321,9 @@ class TestNode(Runnable):
         max_restr = ""
         for main_restr in self.params.objects("main_restrictions"):
             if self.params["name"].startswith(main_restr):
-                max_restr = main_restr if len(main_restr) > len(max_restr) else max_restr
+                max_restr = (
+                    main_restr if len(main_restr) > len(max_restr) else max_restr
+                )
         return self.params["name"].replace(max_restr + ".", "", 1)
 
     @property
@@ -309,10 +333,10 @@ class TestNode(Runnable):
         if len(self.objects) == 0:
             return self.setless_form
         # TODO: the long suffix does not contain anything reasonable
-        #suffix = self.objects[0].long_suffix
+        # suffix = self.objects[0].long_suffix
         suffix = self.params["_name_map_file"].get("nets.cfg", "")
         # since this doesn't use the prefix tree a regex could match part of a variant
-        return  r"\." + self.setless_form.replace(suffix, ".+") + r"$"
+        return r"\." + self.setless_form.replace(suffix, ".+") + r"$"
 
     @property
     def long_prefix(self) -> Params:
@@ -384,6 +408,7 @@ class TestNode(Runnable):
             # TODO: dynamically added additional images will not be detected here
             from . import ImageObject
             from .. import params_parser as param
+
             vm_name = test_object.suffix
             parsed_images = [c.suffix for c in test_object.components]
             for image_name in self.params.object_params(vm_name).objects("images"):
@@ -391,7 +416,9 @@ class TestNode(Runnable):
                     image_suffix = f"{image_name}_{vm_name}"
                     config = param.Reparsable()
                     config.parse_next_dict(test_object.params.object_params(image_name))
-                    config.parse_next_dict({"object_suffix": image_suffix, "object_type": "images"})
+                    config.parse_next_dict(
+                        {"object_suffix": image_suffix, "object_type": "images"}
+                    )
                     image = ImageObject(image_suffix, config)
                     image.composites.append(test_object)
                     self.objects += [image]
@@ -403,8 +430,9 @@ class TestNode(Runnable):
         :param worker: test worker with respect to which to consider various scopes
         """
         # by default only reentrancy of 1 is allowed independently of previous results
-        max_concurrent_tries = self.params.get_numeric("max_concurrent_tries",
-                                                       self.params.get_numeric("max_tries", 1))
+        max_concurrent_tries = self.params.get_numeric(
+            "max_concurrent_tries", self.params.get_numeric("max_tries", 1)
+        )
         return self.is_started(worker, max(max_concurrent_tries, 1))
 
     def is_flat(self) -> bool:
@@ -480,15 +508,27 @@ class TestNode(Runnable):
         """
         if self.is_flat():
             return False
-        if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
+        if (
+            worker
+            and "swarm" not in self.params["pool_scope"]
+            and self.params.get("nets_spawner") == "lxc"
+        ):
             # is started separately by each worker (doesn't matter eager of full)
             return worker in self.shared_started_workers
-        elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
+        elif (
+            worker
+            and "cluster" not in self.params["pool_scope"]
+            and self.params.get("nets_spawner") == "remote"
+        ):
             own_cluster = worker.swarm_id
-            own_cluster_started_hosts = {w for w in self.shared_started_workers if w.swarm_id == own_cluster}
+            own_cluster_started_hosts = {
+                w for w in self.shared_started_workers if w.swarm_id == own_cluster
+            }
             if threshold == -1:
                 # is started for an entire swarm by all of its workers that have already picked that node
-                own_cluster_all_hosts = self.shared_involved_workers & {*TestSwarm.run_swarms[own_cluster].workers}
+                own_cluster_all_hosts = self.shared_involved_workers & {
+                    *TestSwarm.run_swarms[own_cluster].workers
+                }
                 return own_cluster_started_hosts == own_cluster_all_hosts
             # is started for an entire swarm by at least N of its workers
             return len(own_cluster_started_hosts) >= threshold
@@ -517,15 +557,27 @@ class TestNode(Runnable):
         """
         if self.is_flat():
             return True
-        if worker and "swarm" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "lxc":
+        if (
+            worker
+            and "swarm" not in self.params["pool_scope"]
+            and self.params.get("nets_spawner") == "lxc"
+        ):
             # is finished separately by each worker (doesn't matter eager of full)
             return worker in self.shared_finished_workers
-        elif worker and "cluster" not in self.params["pool_scope"] and self.params.get("nets_spawner") == "remote":
+        elif (
+            worker
+            and "cluster" not in self.params["pool_scope"]
+            and self.params.get("nets_spawner") == "remote"
+        ):
             own_cluster = worker.swarm_id
-            own_cluster_finished_hosts = {w for w in self.shared_finished_workers if w.swarm_id == own_cluster}
+            own_cluster_finished_hosts = {
+                w for w in self.shared_finished_workers if w.swarm_id == own_cluster
+            }
             if threshold == -1:
                 # is finished for an entire swarm by all of its workers that have already picked that node
-                own_cluster_all_hosts = self.shared_involved_workers & {*TestSwarm.run_swarms[own_cluster].workers}
+                own_cluster_all_hosts = self.shared_involved_workers & {
+                    *TestSwarm.run_swarms[own_cluster].workers
+                }
                 return own_cluster_finished_hosts == own_cluster_all_hosts
             # is finished for an entire swarm by at least N of its workers
             return len(own_cluster_finished_hosts) >= threshold
@@ -566,7 +618,9 @@ class TestNode(Runnable):
                 setup_objects += [test_object]
         return setup_objects
 
-    def get_dependency(self, restriction: str, test_object: TestObject) -> "TestNode | None":
+    def get_dependency(
+        self, restriction: str, test_object: TestObject
+    ) -> "TestNode | None":
         """
         Check if the test node has a dependency parsed and available.
 
@@ -581,9 +635,14 @@ class TestNode(Runnable):
             # TODO: direct object comparison will not work for dynamically
             # (within node) created objects like secondary images
             node_object_suffices = [t.long_suffix for t in test_node.objects]
-            if test_object in test_node.objects or test_object.long_suffix in node_object_suffices:
+            if (
+                test_object in test_node.objects
+                or test_object.long_suffix in node_object_suffices
+            ):
                 # search is done here to not match repeating restriction for a different object
-                if re.search(r"(\.|^)" + restriction + r"(\.|$)", test_node.params.get("name")):
+                if re.search(
+                    r"(\.|^)" + restriction + r"(\.|$)", test_node.params.get("name")
+                ):
                     return test_node
                 setup_object_params = test_object.object_typed_params(test_node.params)
                 if restriction == setup_object_params.get("set_state"):
@@ -599,10 +658,18 @@ class TestNode(Runnable):
         """
         parse_by = f" by {worker}" if worker else ""
         for picked_worker in self.shared_involved_workers:
-            if self.is_unrolled(picked_worker) and self.is_cleanup_ready(picked_worker) and len(picked_worker.restrs) == 0:
-                logging.debug(f"Should not parse {self}{parse_by} which is cleanup ready from worker {picked_worker}")
+            if (
+                self.is_unrolled(picked_worker)
+                and self.is_cleanup_ready(picked_worker)
+                and len(picked_worker.restrs) == 0
+            ):
+                logging.debug(
+                    f"Should not parse {self}{parse_by} which is cleanup ready from worker {picked_worker}"
+                )
                 return False
-        logging.debug(f"Should parse {self}{parse_by} which is not cleanup ready from any worker")
+        logging.debug(
+            f"Should parse {self}{parse_by} which is not cleanup ready from any worker"
+        )
         return True
 
     def should_rerun(self, worker: TestWorker = None) -> bool:
@@ -626,30 +693,49 @@ class TestNode(Runnable):
             logging.debug(f"Should not rerun a cloned node {self}")
             return False
         elif worker and worker.id not in self.params["name"]:
-            raise RuntimeError(f"Worker {worker.id} should not consider rerunning {self}")
+            raise RuntimeError(
+                f"Worker {worker.id} should not consider rerunning {self}"
+            )
 
-        all_statuses = ["fail", "error", "pass", "warn", "skip", "cancel", "interrupted", "unknown"]
+        all_statuses = [
+            "fail",
+            "error",
+            "pass",
+            "warn",
+            "skip",
+            "cancel",
+            "interrupted",
+            "unknown",
+        ]
         if self.params.get("replay"):
-            rerun_status = self.params.get_list("rerun_status", "fail,error,warn", delimiter=",")
+            rerun_status = self.params.get_list(
+                "rerun_status", "fail,error,warn", delimiter=","
+            )
         else:
             rerun_status = self.params.get_list("rerun_status", []) or all_statuses
         stop_status = self.params.get_list("stop_status", [])
         for status, status_type in [(rerun_status, "rerun"), (stop_status, "stop")]:
             disallowed_status = {*status} - {*all_statuses}
             if len(disallowed_status) > 0:
-                raise ValueError(f"Value of {status_type} status must be a valid test status,"
-                                 f" found {', '.join(disallowed_status)}")
+                raise ValueError(
+                    f"Value of {status_type} status must be a valid test status,"
+                    f" found {', '.join(disallowed_status)}"
+                )
 
         # ignore the retry parameters for nodes that cannot be re-run (need to run at least once)
-        max_tries = self.params.get_numeric("max_tries", 2 if self.params.get("replay") else 1)
+        max_tries = self.params.get_numeric(
+            "max_tries", 2 if self.params.get("replay") else 1
+        )
         # do not log when the user is not using the retry feature
         if max_tries > 1:
             stop_condition = ", ".join(stop_status) if stop_status else "NONE"
             rerun_condition = ", ".join(rerun_status) if rerun_status else "NONE"
-            logging.debug(f"Could rerun {self} with stop condition {stop_condition}, a rerun condition "
-                          f"{rerun_condition}, and a maximum of {max_tries} tries")
+            logging.debug(
+                f"Could rerun {self} with stop condition {stop_condition}, a rerun condition "
+                f"{rerun_condition}, and a maximum of {max_tries} tries"
+            )
         if max_tries < 0:
-           raise ValueError("Number of max_tries cannot be less than zero")
+            raise ValueError("Number of max_tries cannot be less than zero")
 
         # analyzing rerun and stop status conditions
         if len(self.get_stateful_objects()) == 0:
@@ -663,11 +749,15 @@ class TestNode(Runnable):
             self.started_worker = old_started_worker
         rerun_statuses_violated = {*test_statuses} - {*rerun_status}
         if len(rerun_statuses_violated) > 0:
-            logging.debug(f"Stopping test tries due to violated rerun test statuses: {rerun_status}")
+            logging.debug(
+                f"Stopping test tries due to violated rerun test statuses: {rerun_status}"
+            )
             return False
         stop_statuses_found = {*stop_status} & {*test_statuses}
         if len(stop_statuses_found) > 0:
-            logging.info(f"Stopping test tries due to obtained stop test statuses: {', '.join(stop_statuses_found)}")
+            logging.info(
+                f"Stopping test tries due to obtained stop test statuses: {', '.join(stop_statuses_found)}"
+            )
             return False
 
         # the runs total also considers UNKNOWN statuses from currently occupied test nodes minus currently traversed/evaluated case
@@ -675,7 +765,9 @@ class TestNode(Runnable):
         # implicitly this means that setting >1 retries will be done on tests actually collecting results (no flat nodes, dry runs, etc.)
         reruns_left = 0 if max_tries == 1 else max_tries - total_runs
         if reruns_left > 0:
-            logging.debug(f"Still have {reruns_left} allowed reruns left and should rerun {self}")
+            logging.debug(
+                f"Still have {reruns_left} allowed reruns left and should rerun {self}"
+            )
             return True
         logging.debug(f"Should not rerun {self}")
         return False
@@ -739,8 +831,14 @@ class TestNode(Runnable):
         # gets any parent-provided states
         for test_object in self.objects:
             object_params = test_object.object_typed_params(self.params)
-            is_reversible = object_params.get("unset_mode_images", object_params["unset_mode"])[0] == "f"
-            is_reversible |= object_params.get("unset_mode_vms", object_params["unset_mode"])[0] == "f"
+            is_reversible = (
+                object_params.get("unset_mode_images", object_params["unset_mode"])[0]
+                == "f"
+            )
+            is_reversible |= (
+                object_params.get("unset_mode_vms", object_params["unset_mode"])[0]
+                == "f"
+            )
             if is_reversible:
                 break
         else:
@@ -753,7 +851,10 @@ class TestNode(Runnable):
             # last worker should "close the door" for all workers that opened it and left
             for picked_worker in self.shared_involved_workers:
                 # TODO: provide swarm filtering not just here but universally wherever needed
-                if worker.swarm_id != "localhost" and worker.swarm_id not in picked_worker.id:
+                if (
+                    worker.swarm_id != "localhost"
+                    and worker.swarm_id not in picked_worker.id
+                ):
                     continue
                 if self.is_flat() or picked_worker.id in self.params["name"]:
                     picked_node = self
@@ -763,15 +864,19 @@ class TestNode(Runnable):
                             picked_node = node
                             break
                     else:
-                        raise ValueError(f"Cannot identify picked node for involved worker {picked_worker} "
-                                         f"instead of the composite {self} to consider for cleanup")
+                        raise ValueError(
+                            f"Cannot identify picked node for involved worker {picked_worker} "
+                            f"instead of the composite {self} to consider for cleanup"
+                        )
                 if not picked_node.is_cleanup_ready(picked_worker):
                     logging.debug(f"Node is not cleanup ready for {picked_worker.id}")
                     return False
                 # if any worker is still running this test it cannot be reversed
                 test_statuses = [r["status"].lower() for r in picked_node.results]
                 if "unknown" in test_statuses:
-                    logging.debug(f"A worker {picked_worker.id} is still running node which cannot yet be reversed")
+                    logging.debug(
+                        f"A worker {picked_worker.id} is still running node which cannot yet be reversed"
+                    )
                     return False
 
             # all involved workers should have also flagged the generalized node as finished
@@ -792,9 +897,15 @@ class TestNode(Runnable):
         if prefix1 == prefix2:
             # identical prefixes detected, nothing we can do but choose a default
             return 0
-        match1, match2 = re.match(cls.prefix_pattern, prefix1), re.match(cls.prefix_pattern, prefix2)
-        digit1, alpha1, else1 = (prefix1, "", "") if match1 is None else match1.group(1, 2, 3)
-        digit2, alpha2, else2 = (prefix2, "", "") if match2 is None else match2.group(1, 2, 3)
+        match1, match2 = re.match(cls.prefix_pattern, prefix1), re.match(
+            cls.prefix_pattern, prefix2
+        )
+        digit1, alpha1, else1 = (
+            (prefix1, "", "") if match1 is None else match1.group(1, 2, 3)
+        )
+        digit2, alpha2, else2 = (
+            (prefix2, "", "") if match2 is None else match2.group(1, 2, 3)
+        )
 
         # compare order of parsing if simple leaf nodes
         if digit1.isdigit() and digit2.isdigit():
@@ -817,9 +928,13 @@ class TestNode(Runnable):
         # redo the comparison for the next prefix part
         else:
             if else1 == "":
-                raise ValueError(f"could not match test prefix part {prefix1} to choose priority")
+                raise ValueError(
+                    f"could not match test prefix part {prefix1} to choose priority"
+                )
             if else2 == "":
-                raise ValueError(f"could not match test prefix part {prefix2} to choose priority")
+                raise ValueError(
+                    f"could not match test prefix part {prefix2} to choose priority"
+                )
             # priority to the prefix that didn't terminate yet
             if else1.startswith("-"):
                 return 1
@@ -838,12 +953,27 @@ class TestNode(Runnable):
 
         The current order will prioritize less traversed test paths.
         """
-        available_nodes = [n for n in self.setup_nodes if worker.id in n.params["name"] or n.is_flat()]
-        available_nodes = [n for n in available_nodes if worker.id not in self._dropped_setup_nodes.get_workers(n)]
+        available_nodes = [
+            n for n in self.setup_nodes if worker.id in n.params["name"] or n.is_flat()
+        ]
+        available_nodes = [
+            n
+            for n in available_nodes
+            if worker.id not in self._dropped_setup_nodes.get_workers(n)
+        ]
         if len(available_nodes) == 0:
-            raise RuntimeError(f"Picked a parent of a node without remaining parents for {self}")
-        sorted_nodes = sorted(available_nodes, key=cmp_to_key(lambda x, y: TestNode.prefix_priority(x.long_prefix, y.long_prefix)))
-        sorted_nodes = sorted(sorted_nodes, key=lambda n: n._picked_by_cleanup_nodes.get_counters())
+            raise RuntimeError(
+                f"Picked a parent of a node without remaining parents for {self}"
+            )
+        sorted_nodes = sorted(
+            available_nodes,
+            key=cmp_to_key(
+                lambda x, y: TestNode.prefix_priority(x.long_prefix, y.long_prefix)
+            ),
+        )
+        sorted_nodes = sorted(
+            sorted_nodes, key=lambda n: n._picked_by_cleanup_nodes.get_counters()
+        )
         sorted_nodes = sorted(sorted_nodes, key=lambda n: int(not n.is_flat()))
 
         test_node = sorted_nodes[0]
@@ -860,12 +990,29 @@ class TestNode(Runnable):
 
         The current order will prioritize less traversed test paths.
         """
-        available_nodes = [n for n in self.cleanup_nodes if worker.id in n.params["name"] or n.is_flat()]
-        available_nodes = [n for n in available_nodes if worker.id not in self._dropped_cleanup_nodes.get_workers(n)]
+        available_nodes = [
+            n
+            for n in self.cleanup_nodes
+            if worker.id in n.params["name"] or n.is_flat()
+        ]
+        available_nodes = [
+            n
+            for n in available_nodes
+            if worker.id not in self._dropped_cleanup_nodes.get_workers(n)
+        ]
         if len(available_nodes) == 0:
-            raise RuntimeError(f"Picked a child of a node without remaining children for {self}")
-        sorted_nodes = sorted(available_nodes, key=cmp_to_key(lambda x, y: TestNode.prefix_priority(x.long_prefix, y.long_prefix)))
-        sorted_nodes = sorted(sorted_nodes, key=lambda n: n._picked_by_setup_nodes.get_counters())
+            raise RuntimeError(
+                f"Picked a child of a node without remaining children for {self}"
+            )
+        sorted_nodes = sorted(
+            available_nodes,
+            key=cmp_to_key(
+                lambda x, y: TestNode.prefix_priority(x.long_prefix, y.long_prefix)
+            ),
+        )
+        sorted_nodes = sorted(
+            sorted_nodes, key=lambda n: n._picked_by_setup_nodes.get_counters()
+        )
         sorted_nodes = sorted(sorted_nodes, key=lambda n: int(not n.is_flat()))
 
         test_node = sorted_nodes[0]
@@ -881,7 +1028,9 @@ class TestNode(Runnable):
         :raises: :py:class:`ValueError` if visited node is not directly dependent
         """
         if test_node not in self.setup_nodes:
-            raise ValueError(f"Invalid parent to drop: {test_node} not a parent of {self}")
+            raise ValueError(
+                f"Invalid parent to drop: {test_node} not a parent of {self}"
+            )
         self._dropped_setup_nodes.register(test_node, worker)
 
     def drop_child(self, test_node: "TestNode", worker: TestWorker) -> None:
@@ -893,7 +1042,9 @@ class TestNode(Runnable):
         :raises: :py:class:`ValueError` if visited node is not directly dependent
         """
         if test_node not in self.cleanup_nodes:
-            raise ValueError(f"Invalid child to drop: {test_node} not a child of {self}")
+            raise ValueError(
+                f"Invalid child to drop: {test_node} not a child of {self}"
+            )
         self._dropped_cleanup_nodes.register(test_node, worker)
 
     def descend_from_node(self, test_node: "TestNode", test_object: TestObject) -> None:
@@ -903,8 +1054,12 @@ class TestNode(Runnable):
         :param test_node: parent node the current node is a child of
         :param test_object: test object via which the dependency is determined
         """
-        self._setup_nodes[test_node] = self._setup_nodes.get(test_node, set()) | {test_object}
-        test_node._cleanup_nodes[self] = test_node._cleanup_nodes.get(self, set()) | {test_object}
+        self._setup_nodes[test_node] = self._setup_nodes.get(test_node, set()) | {
+            test_object
+        }
+        test_node._cleanup_nodes[self] = test_node._cleanup_nodes.get(self, set()) | {
+            test_object
+        }
 
     def bridge_with_node(self, test_node: "TestNode") -> None:
         """
@@ -919,7 +1074,9 @@ class TestNode(Runnable):
         elif not re.search(test_node.bridged_form, self.params["name"]):
             raise ValueError(f"Cannot bridge {self} with non-equivalent {test_node}")
         if test_node not in self._bridged_nodes:
-            logging.info(f"Bridging {self.params['shortname']} to {test_node.params['shortname']}")
+            logging.info(
+                f"Bridging {self.params['shortname']} to {test_node.params['shortname']}"
+            )
             self._bridged_nodes.append(test_node)
             test_node._bridged_nodes.append(self)
 
@@ -956,10 +1113,14 @@ class TestNode(Runnable):
                     if component.key == "nets":
                         continue
                     object_suffix = "_" + component.long_suffix
-                    if setup_location in self.params.get(f"get_location{object_suffix}", ""):
+                    if setup_location in self.params.get(
+                        f"get_location{object_suffix}", ""
+                    ):
                         continue
                     if self.params.get(f"get_location{object_suffix}"):
-                        self.params[f"get_location{object_suffix}"] += " " + setup_location
+                        self.params[f"get_location{object_suffix}"] += (
+                            " " + setup_location
+                        )
                     else:
                         self.params[f"get_location{object_suffix}"] = setup_location
 
@@ -975,7 +1136,9 @@ class TestNode(Runnable):
                             self.params[f"{key}{source_suffix}"] = worker.params[key]
                         break
                 else:
-                    raise RuntimeError(f"Could not pull setup location {setup_location} for {self}")
+                    raise RuntimeError(
+                        f"Could not pull setup location {setup_location} for {self}"
+                    )
 
     def update_restrs(self, object_restrs: dict[str, str]) -> None:
         """
@@ -1008,14 +1171,14 @@ class TestNode(Runnable):
         """
         Regenerate the parameters provided to the VT runner.
         """
-        uri = self.params.get('name')
+        uri = self.params.get("name")
         vt_params = self.params.copy()
         # Flatten the vt_params, discarding the attributes that are not
         # scalars, and will not be used in the context of nrunner
-        for key in ('_name_map_file', '_short_name_map_file', 'dep'):
+        for key in ("_name_map_file", "_short_name_map_file", "dep"):
             if key in self.params:
-                del(vt_params[key])
-        super().__init__('avocado-vt', uri, **vt_params)
+                del vt_params[key]
+        super().__init__("avocado-vt", uri, **vt_params)
 
     def scan_states(self) -> bool:
         """
@@ -1045,8 +1208,12 @@ class TestNode(Runnable):
             # ultimate consideration of whether the state is actually present
             object_suffix = f"_{test_object.key}_{test_object.long_suffix}"
             node_params[f"check_state{object_suffix}"] = object_state
-            node_params[f"show_location{object_suffix}"] = ":" + object_params["shared_pool"]
-            node_params[f"check_mode{object_suffix}"] = object_params.get("check_mode", "rf")
+            node_params[f"show_location{object_suffix}"] = (
+                ":" + object_params["shared_pool"]
+            )
+            node_params[f"check_mode{object_suffix}"] = object_params.get(
+                "check_mode", "rf"
+            )
             # TODO: unfortunately we need env object with pre-processed vms in order
             # to provide ad-hoc root vm states so we use the current advantage that
             # all vm state backends can check for states without a vm boot (root)
@@ -1056,9 +1223,15 @@ class TestNode(Runnable):
 
         if not is_leaf:
             session = self.started_worker.get_session()
-            control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
-            mod_control_path = door.set_subcontrol_parameter(control_path, "action", "check")
-            mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)
+            control_path = os.path.join(
+                self.params["suite_path"], "controls", "pre_state.control"
+            )
+            mod_control_path = door.set_subcontrol_parameter(
+                control_path, "action", "check"
+            )
+            mod_control_path = door.set_subcontrol_parameter_dict(
+                mod_control_path, "params", node_params
+            )
             try:
                 door.run_subcontrol(session, mod_control_path)
                 should_run = False
@@ -1066,8 +1239,12 @@ class TestNode(Runnable):
                 if "AssertionError" in error.output:
                     should_run = True
                 else:
-                    raise RuntimeError("Could not complete state scan due to control file error")
-        logging.info(f"Should{' ' if should_run else ' not '}run from scan {self} by {self.started_worker.id}")
+                    raise RuntimeError(
+                        "Could not complete state scan due to control file error"
+                    )
+        logging.info(
+            f"Should{' ' if should_run else ' not '}run from scan {self} by {self.started_worker.id}"
+        )
         return should_run
 
     def sync_states(self, params: Params) -> None:
@@ -1097,9 +1274,14 @@ class TestNode(Runnable):
             if object_state == "install" and test_object.is_permanent():
                 should_clean = False
                 break
-            vm_name = test_object.suffix if test_object.key == "vms" else test_object.composites[0].suffix
+            vm_name = (
+                test_object.suffix
+                if test_object.key == "vms"
+                else test_object.composites[0].suffix
+            )
             # TODO: is this needed?
             from .. import params_parser as param
+
             if vm_name in params.get("vms", param.all_objects("vms")):
                 should_clean = True
             else:
@@ -1111,8 +1293,12 @@ class TestNode(Runnable):
                 node_params["images_" + vm_name] = vm_params["images"]
                 for image_name in vm_params.objects("images"):
                     image_params = vm_params.object_params(image_name)
-                    node_params[f"image_name_{image_name}_{vm_name}"] = image_params["image_name"]
-                    node_params[f"image_format_{image_name}_{vm_name}"] = image_params["image_format"]
+                    node_params[f"image_name_{image_name}_{vm_name}"] = image_params[
+                        "image_name"
+                    ]
+                    node_params[f"image_format_{image_name}_{vm_name}"] = image_params[
+                        "image_format"
+                    ]
                     if image_params.get_boolean("create_image", False):
                         node_params[f"remove_image_{image_name}_{vm_name}"] = "yes"
                         node_params["skip_image_processing"] = "no"
@@ -1126,27 +1312,43 @@ class TestNode(Runnable):
                 # NOTE: we are forcing the unset_mode to be the one defined for the test node because
                 # the unset manual step behaves differently now (all this extra complexity starts from
                 # the fact that it has different default value which is noninvasive
-                node_params.update({f"unset_state{suffixes}": object_state,
-                                    f"unset_location{suffixes}": location,
-                                    f"unset_mode{suffixes}": object_params.get("unset_mode", "ri"),
-                                    f"pool_scope": "own"})
+                node_params.update(
+                    {
+                        f"unset_state{suffixes}": object_state,
+                        f"unset_location{suffixes}": location,
+                        f"unset_mode{suffixes}": object_params.get("unset_mode", "ri"),
+                        f"pool_scope": "own",
+                    }
+                )
                 do = "unset"
                 logging.info(f"Need to clean up {self} by {self.started_worker.id}")
             else:
                 # spread the state setup for the given test object
                 if node_params.get("pool_filter", "reuse") in ["reuse", "block"]:
-                    logging.info(f"No need to sync {self} from {self.started_worker.id}")
+                    logging.info(
+                        f"No need to sync {self} from {self.started_worker.id}"
+                    )
                     should_clean = False
                     break
                 else:
                     # TODO: actual state copy support is almost fully lacking at present
                     # and the sync operation by itself cannot guarantee equalized setup
                     if node_params.get("pool_filter", "reuse") != "copy":
-                        raise ValueError("Pool filtering can only be one of: reuse, copy, block")
-                    logging.info(f"Need to sync {self} from {location.join(',')} to {self.started_worker.id}")
-                node_params.update({f"get_state{suffixes}": object_state,
-                                    f"get_location{suffixes}": location})
-                sync_scopes = set(object_params.get_list("pool_scope", ["swarm", "cluster", "shared"]))
+                        raise ValueError(
+                            "Pool filtering can only be one of: reuse, copy, block"
+                        )
+                    logging.info(
+                        f"Need to sync {self} from {location.join(',')} to {self.started_worker.id}"
+                    )
+                node_params.update(
+                    {
+                        f"get_state{suffixes}": object_state,
+                        f"get_location{suffixes}": location,
+                    }
+                )
+                sync_scopes = set(
+                    object_params.get_list("pool_scope", ["swarm", "cluster", "shared"])
+                )
                 sync_scopes.remove("own")
                 node_params[f"pool_scope{suffixes}"] = " ".join(sync_scopes)
                 do = "get"
@@ -1160,16 +1362,24 @@ class TestNode(Runnable):
             action = "Cleaning up" if unset_policy[0] == "f" else "Syncing"
             logging.info(f"{action} {self} for {self.started_worker.id}")
             session = self.started_worker.get_session()
-            control_path = os.path.join(self.params["suite_path"], "controls", "pre_state.control")
+            control_path = os.path.join(
+                self.params["suite_path"], "controls", "pre_state.control"
+            )
             mod_control_path = door.set_subcontrol_parameter(control_path, "action", do)
-            mod_control_path = door.set_subcontrol_parameter_dict(mod_control_path, "params", node_params)
+            mod_control_path = door.set_subcontrol_parameter_dict(
+                mod_control_path, "params", node_params
+            )
             try:
                 door.run_subcontrol(session, mod_control_path)
             except ShellCmdError as error:
-                logging.warning(f"{action} {self} for {self.started_worker.id} could not be completed "
-                                f"due to control file error: {error}")
+                logging.warning(
+                    f"{action} {self} for {self.started_worker.id} could not be completed "
+                    f"due to control file error: {error}"
+                )
         else:
-            logging.info(f"No need to clean up or sync {self} for {self.started_worker.id}")
+            logging.info(
+                f"No need to clean up or sync {self} for {self.started_worker.id}"
+            )
 
     def validate(self) -> None:
         """Validate the test node for sane attribute-parameter correspondence."""
@@ -1184,19 +1394,29 @@ class TestNode(Runnable):
         param_nets = self.params.objects("nets")
         attr_nets = list(o.suffix for o in self.objects if o.key == "nets")
         if len(attr_nets) > 1 or len(param_nets) > 1:
-            raise AssertionError(f"Test node {self} can have only one net ({attr_nets}/{param_nets}")
+            raise AssertionError(
+                f"Test node {self} can have only one net ({attr_nets}/{param_nets}"
+            )
         param_net_name, attr_net_name = attr_nets[0], param_nets[0]
         if self.objects and self.objects[0].suffix != attr_net_name:
-            raise AssertionError(f"The net {attr_net_name} must be the first node object {self.objects[0]}")
+            raise AssertionError(
+                f"The net {attr_net_name} must be the first node object {self.objects[0]}"
+            )
         if param_net_name != attr_net_name:
-            raise AssertionError(f"Parametric and attribute nets differ {param_net_name} != {attr_net_name}")
+            raise AssertionError(
+                f"Parametric and attribute nets differ {param_net_name} != {attr_net_name}"
+            )
 
         param_vms = set(self.params.objects("vms"))
         attr_vms = set(o.suffix for o in self.objects if o.key == "vms")
         if len(param_vms - attr_vms) > 0:
-            raise ValueError("Additional parametric objects %s not in %s" % (param_vms, attr_vms))
+            raise ValueError(
+                "Additional parametric objects %s not in %s" % (param_vms, attr_vms)
+            )
         if len(attr_vms - param_vms) > 0:
-            raise ValueError("Missing parametric objects %s from %s" % (param_vms, attr_vms))
+            raise ValueError(
+                "Missing parametric objects %s from %s" % (param_vms, attr_vms)
+            )
 
         # TODO: images can currently be ad-hoc during run and thus cannot be validated
 
@@ -1206,15 +1426,21 @@ class TestNode(Runnable):
             object_set = self.setup_nodes[node]
             spurious_objects = object_set - set(self.objects)
             if len(spurious_objects) > 0:
-                raise ValueError(f"Detected spurious objects {spurious_objects} for dependency {node}")
+                raise ValueError(
+                    f"Detected spurious objects {spurious_objects} for dependency {node}"
+                )
             for dependency_object in object_set:
                 object_params = dependency_object.object_typed_params(node.params)
                 object_state = object_params.get("set_state")
                 if not object_state:
-                    raise ValueError(f"Detected stateless dependency via {dependency_object} of {self}")
+                    raise ValueError(
+                        f"Detected stateless dependency via {dependency_object} of {self}"
+                    )
                 object_params = dependency_object.object_typed_params(self.params)
                 # cloned nodes don't have an explicit get_state parameter for the object
                 if object_params["get_state"] == "0root":
                     continue
                 if object_state != object_params["get_state"]:
-                    raise ValueError(f"Detected incompatible dependency {object_state} via {dependency_object} of {self}")
+                    raise ValueError(
+                        f"Detected incompatible dependency {object_state} via {dependency_object} of {self}"
+                    )

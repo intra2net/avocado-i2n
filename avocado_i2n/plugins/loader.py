@@ -28,7 +28,8 @@ INTERFACE
 """
 
 import logging
-log = logging.getLogger('avocado.job.' + __name__)
+
+log = logging.getLogger("avocado.job." + __name__)
 
 from avocado.core.plugin_interfaces import Resolver
 from avocado.core.resolver import ReferenceResolution, ReferenceResolutionResult
@@ -37,11 +38,12 @@ from .. import cmd_parser
 from .. import params_parser as param
 from ..cartgraph import TestGraph
 
+
 class TestLoader(Resolver):
     """Test loader for Cartesian graph parsing."""
 
-    name = 'cartesian_loader'
-    description = 'Loads tests from initial Cartesian product'
+    name = "cartesian_loader"
+    description = "Loads tests from initial Cartesian product"
 
     def __init__(
         self, config: dict[str, str] = None, extra_params: dict[str, str] = None
@@ -54,7 +56,7 @@ class TestLoader(Resolver):
         """
         super().__init__(config=config)
         extra_params = {} if not extra_params else extra_params
-        self.logdir = extra_params.pop('logdir', ".")
+        self.logdir = extra_params.pop("logdir", ".")
 
     def resolve(self, reference: str | None) -> list[tuple[type, dict[str, str]]]:
         """
@@ -67,5 +69,8 @@ class TestLoader(Resolver):
             assert reference.split() == self.config["params"]
 
         params, restriction = self.config["param_dict"], self.config["tests_str"]
-        return ReferenceResolution(reference, ReferenceResolutionResult.SUCCESS,
-                                   TestGraph.parse_flat_nodes(restriction, params))
+        return ReferenceResolution(
+            reference,
+            ReferenceResolutionResult.SUCCESS,
+            TestGraph.parse_flat_nodes(restriction, params),
+        )

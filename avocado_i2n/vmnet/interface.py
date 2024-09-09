@@ -43,6 +43,7 @@ class VMInterface(object):
     """The interface class."""
 
     """Structural properties"""
+
     def node(self, value: VMNode = None) -> VMNode | None:
         """A reference to the node the interface belongs to."""
         if value is not None:
@@ -50,6 +51,7 @@ class VMInterface(object):
             return None
         else:
             return self._node
+
     node = property(fget=node, fset=node)
 
     def netconfig(self, value: "VMNetconfig" = None) -> "VMNetconfig | None":
@@ -59,6 +61,7 @@ class VMInterface(object):
             return None
         else:
             return self._netconfig
+
     netconfig = property(fget=netconfig, fset=netconfig)
 
     @property
@@ -67,6 +70,7 @@ class VMInterface(object):
         return self._params
 
     """Configuration properties"""
+
     def mac(self, value: str = None) -> str | None:
         """MAC address used by the network interface."""
         if value is not None:
@@ -74,6 +78,7 @@ class VMInterface(object):
             return None
         else:
             return self._mac
+
     mac = property(fget=mac, fset=mac)
 
     def ip(self, value: str = None) -> str | None:
@@ -83,9 +88,11 @@ class VMInterface(object):
             return None
         else:
             return self._ip
+
     ip = property(fget=ip, fset=ip)
 
     """Interface properties"""
+
     def name(self, value: str = None) -> str | None:
         """Name for the interface."""
         if value is not None:
@@ -93,6 +100,7 @@ class VMInterface(object):
             return None
         else:
             return self._name
+
     name = property(fget=name, fset=name)
 
     def __init__(self, name: str, params: Params) -> None:
@@ -114,4 +122,7 @@ class VMInterface(object):
         vm_name = "none" if self.node is None else self.node.name
         net_name = "none" if self.netconfig is None else self.netconfig.net_ip
         iface_tuple = (self.name, self.ip, self.mac, vm_name, net_name)
-        return "[iface] name='%s', addr='%s', mac='%s' platform='%s' netconfig='%s'" % iface_tuple
+        return (
+            "[iface] name='%s', addr='%s', mac='%s' platform='%s' netconfig='%s'"
+            % iface_tuple
+        )

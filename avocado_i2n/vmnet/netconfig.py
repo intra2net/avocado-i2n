@@ -36,7 +36,8 @@ INTERFACE
 
 from typing import Any
 import logging as log
-logging = log.getLogger('avocado.job.' + __name__)
+
+logging = log.getLogger("avocado.job." + __name__)
 import ipaddress
 
 from .interface import VMInterface
@@ -50,12 +51,14 @@ class VMNetconfig(object):
     """
 
     """Structural properties"""
+
     @property
     def interfaces(self) -> dict[Any, VMInterface]:
         """A collection of interfaces the netconfig represents."""
         return self._interfaces
 
     """Configuration properties"""
+
     def netdst(self, value: str = None) -> str | None:
         """
         The bridge where Qemu will redirect the packets.
@@ -67,6 +70,7 @@ class VMNetconfig(object):
             return None
         else:
             return self._netdst
+
     netdst = property(fget=netdst, fset=netdst)
 
     def netmask(self, value: str = None) -> str | None:
@@ -76,6 +80,7 @@ class VMNetconfig(object):
             return None
         else:
             return self._netmask
+
     netmask = property(fget=netmask, fset=netmask)
 
     def mask_bit(self, value: str = None) -> str | None:
@@ -90,10 +95,11 @@ class VMNetconfig(object):
             if self.netmask is None:
                 return None
             netmask = self.netmask.split(".")
-            binary_str = ''
+            binary_str = ""
             for octet in netmask:
                 binary_str += bin(int(octet))[2:].zfill(8)
-            return str(len(binary_str.rstrip('0')))
+            return str(len(binary_str.rstrip("0")))
+
     mask_bit = property(fget=mask_bit, fset=mask_bit)
 
     def gateway(self, value: str = None) -> str | None:
@@ -103,6 +109,7 @@ class VMNetconfig(object):
             return None
         else:
             return self._gateway
+
     gateway = property(fget=gateway, fset=gateway)
 
     def net_ip(self, value: str = None) -> str | None:
@@ -112,6 +119,7 @@ class VMNetconfig(object):
             return None
         else:
             return self._net_ip
+
     net_ip = property(fget=net_ip, fset=net_ip)
 
     def host_ip(self, value: str = None) -> str | None:
@@ -124,6 +132,7 @@ class VMNetconfig(object):
             return None
         else:
             return self._host_ip
+
     host_ip = property(fget=host_ip, fset=host_ip)
 
     @property
@@ -162,6 +171,7 @@ class VMNetconfig(object):
             return None
         else:
             return self._domain
+
     domain = property(fget=domain, fset=domain)
 
     def forwarder(self, value: str = None) -> str | None:
@@ -175,6 +185,7 @@ class VMNetconfig(object):
             return None
         else:
             return self._forwarder
+
     forwarder = property(fget=forwarder, fset=forwarder)
 
     def rev(self, value: str = None) -> str | None:
@@ -188,6 +199,7 @@ class VMNetconfig(object):
             return None
         else:
             return self._rev
+
     rev = property(fget=rev, fset=rev)
 
     def view(self, value: str = None) -> str | None:
@@ -201,6 +213,7 @@ class VMNetconfig(object):
             return None
         else:
             return self._view
+
     view = property(fget=view, fset=view)
 
     def ext_netdst(self, value: str = None) -> str | None:
@@ -215,6 +228,7 @@ class VMNetconfig(object):
             return None
         else:
             return self._ext_netdst
+
     ext_netdst = property(fget=ext_netdst, fset=ext_netdst)
 
     def __init__(self) -> None:
@@ -259,8 +273,9 @@ class VMNetconfig(object):
 
         # DHCP specific
         pool_range = interface.params.get("range", "100-200").split("-")
-        self._range = {i: False for i in range(int(pool_range[0]),
-                                              int(pool_range[1])+1)}
+        self._range = {
+            i: False for i in range(int(pool_range[0]), int(pool_range[1]) + 1)
+        }
 
         # DNS specific
         self.domain = interface.params.get("domain_provider")
@@ -292,7 +307,10 @@ class VMNetconfig(object):
         :param interface: interface to check in the netconfig
         :returns: whether the interface is already present in the netconfig
         """
-        return interface.ip in self.interfaces.keys() and self.interfaces[interface.ip] == interface
+        return (
+            interface.ip in self.interfaces.keys()
+            and self.interfaces[interface.ip] == interface
+        )
 
     def can_add_interface(self, interface: VMInterface) -> bool:
         """
@@ -305,13 +323,20 @@ class VMNetconfig(object):
         :raises: :py:class:`exceptions.IndexError` if interface is already present or incompatible
         """
         if self.has_interface(interface):
-            raise IndexError("Interface %s already present in the "
-                             "network %s" % (interface.ip, self.net_ip))
+            raise IndexError(
+                "Interface %s already present in the "
+                "network %s" % (interface.ip, self.net_ip)
+            )
         interface_net_ip = self._get_network_ip(interface.ip, self.mask_bit)
-        if interface_net_ip == self.net_ip and interface.params["netmask"] != self.netmask:
-            raise IndexError("Interface %s has different netmask %s from the "
-                             "network %s (%s)" % (interface.ip, interface.params["netmask"],
-                                                  self.net_ip, self.netmask))
+        if (
+            interface_net_ip == self.net_ip
+            and interface.params["netmask"] != self.netmask
+        ):
+            raise IndexError(
+                "Interface %s has different netmask %s from the "
+                "network %s (%s)"
+                % (interface.ip, interface.params["netmask"], self.net_ip, self.netmask)
+            )
         return interface_net_ip == self.net_ip
 
     def validate(self) -> None:
@@ -326,27 +351,37 @@ class VMNetconfig(object):
         addresses = {}
         # NOTE: it is possible that either the host was never defined or was later on disabled
         if self.host_ip is not None and self.host_ip != "":
-            addresses["host"] = ipaddress.ip_interface('%s/%s' % (self.host_ip, self.mask_bit))
+            addresses["host"] = ipaddress.ip_interface(
+                "%s/%s" % (self.host_ip, self.mask_bit)
+            )
         assert self.ip_start is not None
         assert self.ip_end is not None
-        addresses["ip_start"] = ipaddress.ip_interface('%s/%s' % (self.ip_start, self.mask_bit))
-        addresses["ip_end"] = ipaddress.ip_interface('%s/%s' % (self.ip_end, self.mask_bit))
+        addresses["ip_start"] = ipaddress.ip_interface(
+            "%s/%s" % (self.ip_start, self.mask_bit)
+        )
+        addresses["ip_end"] = ipaddress.ip_interface(
+            "%s/%s" % (self.ip_end, self.mask_bit)
+        )
 
-        own = ipaddress.ip_interface('%s/%s' % (self.net_ip, self.mask_bit))
+        own = ipaddress.ip_interface("%s/%s" % (self.net_ip, self.mask_bit))
         for key in addresses.keys():
             if addresses[key] not in own.network:
-                raise exceptions.TestError("The predefined %s %s is not in the netconfig"
-                                           " %s" % (key, addresses[key], self.net_ip))
+                raise exceptions.TestError(
+                    "The predefined %s %s is not in the netconfig"
+                    " %s" % (key, addresses[key], self.net_ip)
+                )
 
         # validate interfaces
         for interface in self.interfaces.values():
             assert interface.netconfig == self
             assert self.interfaces[interface.ip] == interface
 
-            ip = ipaddress.ip_interface('%s/%s' % (interface.ip, self.mask_bit))
+            ip = ipaddress.ip_interface("%s/%s" % (interface.ip, self.mask_bit))
             if ip not in own.network:
-                raise exceptions.TestError("The interface with ip %s is not in the netconfig"
-                                           " %s" % (ip, self.net_ip))
+                raise exceptions.TestError(
+                    "The interface with ip %s is not in the netconfig"
+                    " %s" % (ip, self.net_ip)
+                )
 
     def get_allocatable_address(self) -> str:
         """
@@ -359,8 +394,7 @@ class VMNetconfig(object):
                 new_address = val
                 break
         else:
-            raise IndexError("IP address range (%d) exhausted."
-                             % len(self.range))
+            raise IndexError("IP address range (%d) exhausted." % len(self.range))
         net_ip = ipaddress.IPv4Address(str(self.net_ip))
         return str(ipaddress.IPv4Address(str(net_ip + new_address)))
 

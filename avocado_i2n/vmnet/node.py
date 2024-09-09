@@ -35,7 +35,8 @@ INTERFACE
 
 from typing import Callable
 import logging as log
-logging = log.getLogger('avocado.job.' + __name__)
+
+logging = log.getLogger("avocado.job." + __name__)
 
 from aexpect.client import RemoteSession
 from virttest.utils_params import Params
@@ -49,6 +50,7 @@ class VMNode(object):
     """
 
     """Structural properties"""
+
     @property
     def interfaces(self) -> dict[str, "VMInterface"]:
         """A collection of interfaces the vm node represents."""
@@ -60,6 +62,7 @@ class VMNode(object):
         return self._ephemeral
 
     """Platform properties"""
+
     def platform(self, value: VM = None) -> VM | None:
         """
         A reference to the virtual machine object whose network
@@ -70,6 +73,7 @@ class VMNode(object):
             return None
         else:
             return self._platform
+
     platform = property(fget=platform, fset=platform)
 
     def name(self, value: str = None) -> str | None:
@@ -79,6 +83,7 @@ class VMNode(object):
             return None
         else:
             return self._platform.name
+
     name = property(fget=name, fset=name)
 
     @property
@@ -101,6 +106,7 @@ class VMNode(object):
             return None
         else:
             return self._platform.remote_sessions
+
     remote_sessions = property(fget=remote_sessions, fset=remote_sessions)
 
     def last_session(self, value: RemoteSession = None) -> RemoteSession | None:
@@ -114,6 +120,7 @@ class VMNode(object):
             return None
         else:
             return self._last_session
+
     last_session = property(fget=last_session, fset=last_session)
 
     def __init__(self, platform: VM, ephemeral: bool = False) -> None:

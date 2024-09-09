@@ -132,8 +132,9 @@ class TestObject(object):
 
         :param verbose: whether to show generated parameter dictionaries
         """
-        generic_params = self.recipe.get_params(dict_index=self.dict_index,
-                                                show_dictionaries=verbose)
+        generic_params = self.recipe.get_params(
+            dict_index=self.dict_index, show_dictionaries=verbose
+        )
         self._params_cache = self.object_typed_params(generic_params)
         for key, value in list(self._params_cache.items()):
             if key.startswith("only_") or key.startswith("no_"):
@@ -149,6 +150,7 @@ class NetObject(TestObject):
     def component_form(self) -> str:
         # TODO: an unexpected order of joining in the Cartesian config requires us to override base property
         return self.params["name"]
+
     component_form = property(fget=component_form)
 
     def __init__(self, name: str, recipe: param.Reparsable) -> None:
@@ -183,10 +185,12 @@ class ImageObject(TestObject):
         """Sufficiently unique ID to identify a test object."""
         assert len(self.composites) == 1, "Image objects need a unique composite"
         return self.long_suffix + "-" + self.composites[0].params["name"]
+
     id = property(fget=id)
 
     def component_form(self) -> str:
         return self.composites[0].component_form
+
     component_form = property(fget=component_form)
 
     def __init__(self, name: str, recipe: param.Reparsable) -> None:

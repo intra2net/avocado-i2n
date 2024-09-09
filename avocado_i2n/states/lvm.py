@@ -90,24 +90,23 @@ class LVMBackend(StateBackend):
         if mount_loc:
             # mount to avoid not-mounted errors
             try:
-                lv_utils.lv_mount(params["vg_name"],
-                                  params["lv_pointer_name"],
-                                  mount_loc)
+                lv_utils.lv_mount(
+                    params["vg_name"], params["lv_pointer_name"], mount_loc
+                )
             except lv_utils.LVException:
                 pass
-            lv_utils.lv_umount(params["vg_name"],
-                               params["lv_pointer_name"])
+            lv_utils.lv_umount(params["vg_name"], params["lv_pointer_name"])
         try:
             logging.info("Restoring %s to state %s", vm_name, params["get_state"])
             lv_utils.lv_remove(params["vg_name"], params["lv_pointer_name"])
-            lv_utils.lv_take_snapshot(params["vg_name"],
-                                      params["lv_snapshot_name"],
-                                      params["lv_pointer_name"])
+            lv_utils.lv_take_snapshot(
+                params["vg_name"], params["lv_snapshot_name"], params["lv_pointer_name"]
+            )
         finally:
             if mount_loc:
-                lv_utils.lv_mount(params["vg_name"],
-                                  params["lv_pointer_name"],
-                                  mount_loc)
+                lv_utils.lv_mount(
+                    params["vg_name"], params["lv_pointer_name"], mount_loc
+                )
 
     @classmethod
     def set(cls, params: Params, object: Any = None) -> None:
@@ -119,9 +118,9 @@ class LVMBackend(StateBackend):
         vm_name = params["vms"]
         params["lv_snapshot_name"] = params["set_state"]
         logging.info("Taking a snapshot '%s' of %s", params["set_state"], vm_name)
-        lv_utils.lv_take_snapshot(params["vg_name"],
-                                  params["lv_pointer_name"],
-                                  params["lv_snapshot_name"])
+        lv_utils.lv_take_snapshot(
+            params["vg_name"], params["lv_pointer_name"], params["lv_snapshot_name"]
+        )
 
     @classmethod
     def unset(cls, params: Params, object: Any = None) -> None:
@@ -151,12 +150,20 @@ class LVMBackend(StateBackend):
         image_name = params["image_name"]
         logging.debug("Checking whether %s exists (root state requested)", vm_name)
         if lv_utils.lv_check(params["vg_name"], params["lv_name"]):
-            logging.info("The required virtual machine %s's %s (%s) exists",
-                         vm_name, image_name, params["lv_name"])
+            logging.info(
+                "The required virtual machine %s's %s (%s) exists",
+                vm_name,
+                image_name,
+                params["lv_name"],
+            )
             return True
         else:
-            logging.info("The required virtual machine %s's %s (%s) doesn't exist",
-                         vm_name, image_name, params["lv_name"])
+            logging.info(
+                "The required virtual machine %s's %s (%s) doesn't exist",
+                vm_name,
+                image_name,
+                params["lv_name"],
+            )
             return False
 
     @classmethod
@@ -172,26 +179,34 @@ class LVMBackend(StateBackend):
         vm_name = params["vms"]
         mount_loc = cls._get_image_mount_loc(params)
         logging.info("Creating original logical volume for %s", vm_name)
-        vg_setup(params["vg_name"],
-                 params["disk_vg_size"],
-                 params["disk_basedir"],
-                 params["disk_sparse_filename"],
-                 params["use_tmpfs"] == "yes")
-        lv_utils.lv_create(params["vg_name"],
-                           params["lv_name"],
-                           params["lv_size"],
-                           # NOTE: call by key to keep good argument order which wasn't
-                           # accepted upstream for backward API compatibility
-                           pool_name=params["lv_pool_name"],
-                           pool_size=params["lv_pool_size"])
-        lv_utils.lv_take_snapshot(params["vg_name"],
-                                  params["lv_name"],
-                                  params["lv_pointer_name"])
+        vg_setup(
+            params["vg_name"],
+            params["disk_vg_size"],
+            params["disk_basedir"],
+            params["disk_sparse_filename"],
+            params["use_tmpfs"] == "yes",
+        )
+        lv_utils.lv_create(
+            params["vg_name"],
+            params["lv_name"],
+            params["lv_size"],
+            # NOTE: call by key to keep good argument order which wasn't
+            # accepted upstream for backward API compatibility
+            pool_name=params["lv_pool_name"],
+            pool_size=params["lv_pool_size"],
+        )
+        lv_utils.lv_take_snapshot(
+            params["vg_name"], params["lv_name"], params["lv_pointer_name"]
+        )
         if mount_loc:
             if not os.path.exists(mount_loc):
                 os.mkdir(mount_loc)
-            lv_utils.lv_mount(params["vg_name"], params["lv_pointer_name"],
-                              mount_loc, create_filesystem="ext4")
+            lv_utils.lv_mount(
+                params["vg_name"],
+                params["lv_pointer_name"],
+                mount_loc,
+                create_filesystem="ext4",
+            )
             # TODO: it is not correct for the LVM backend to expect QCOW2 images
             # but at the moment we have no better way to provide on states with
             # base image to take snapshots of
@@ -228,34 +243,42 @@ class LVMBackend(StateBackend):
                 if lv_utils.vg_check(params["vg_name"]):
                     # mount to avoid not-mounted errors
                     try:
-                        lv_utils.lv_mount(params["vg_name"],
-                                          params["lv_pointer_name"],
-                                          mount_loc)
+                        lv_utils.lv_mount(
+                            params["vg_name"], params["lv_pointer_name"], mount_loc
+                        )
                     except lv_utils.LVException:
                         pass
-                    lv_utils.lv_umount(params["vg_name"],
-                                       params["lv_pointer_name"])
+                    lv_utils.lv_umount(params["vg_name"], params["lv_pointer_name"])
                 if os.path.exists(mount_loc):
                     try:
                         os.rmdir(mount_loc)
                     except OSError as ex:
-                        logging.warning("No permanent vm can be removed automatically. If "
-                                        "this is not a permanent test object, see the debug.")
-                        raise exceptions.TestWarn("Permanent vm %s was detected but cannot be "
-                                                  "removed automatically" % vm_name)
-            vg_cleanup(params["disk_sparse_filename"],
-                       os.path.join(params["disk_basedir"],
-                                    params["vg_name"]),
-                       params["vg_name"],
-                       None,
-                       params["use_tmpfs"] == "yes")
+                        logging.warning(
+                            "No permanent vm can be removed automatically. If "
+                            "this is not a permanent test object, see the debug."
+                        )
+                        raise exceptions.TestWarn(
+                            "Permanent vm %s was detected but cannot be "
+                            "removed automatically" % vm_name
+                        )
+            vg_cleanup(
+                params["disk_sparse_filename"],
+                os.path.join(params["disk_basedir"], params["vg_name"]),
+                params["vg_name"],
+                None,
+                params["use_tmpfs"] == "yes",
+            )
         except exceptions.TestError as ex:
             logging.error(ex)
 
 
-def vg_setup(vg_name: str, disk_vg_size: str,
-             disk_basedir: str, disk_sparse_filename: str,
-             use_tmpfs: bool = True) -> tuple[str, str, str, str]:
+def vg_setup(
+    vg_name: str,
+    disk_vg_size: str,
+    disk_basedir: str,
+    disk_sparse_filename: str,
+    use_tmpfs: bool = True,
+) -> tuple[str, str, str, str]:
     """
     Create volume group on top of ram memory to speed up LV performance.
 
@@ -302,8 +325,7 @@ def vg_setup(vg_name: str, disk_vg_size: str,
         logging.debug("Converting and copying /dev/zero")
 
         # Initializing sparse file with extra few bytes
-        cmd = ("dd if=/dev/zero of=%s bs=1M count=1 seek=%s" %
-               (disk_filename, vg_size))
+        cmd = "dd if=/dev/zero of=%s bs=1M count=1 seek=%s" % (disk_filename, vg_size)
         process.run(cmd)
         logging.debug("Finding free loop device")
         result = process.run("losetup --find", sudo=True)
@@ -314,13 +336,11 @@ def vg_setup(vg_name: str, disk_vg_size: str,
     loop_device = result.stdout_text.rstrip()
     try:
         logging.debug("Creating loop device")
-        process.run("losetup %s %s" %
-                    (loop_device, disk_filename), sudo=True)
+        process.run("losetup %s %s" % (loop_device, disk_filename), sudo=True)
         logging.debug("Creating physical volume %s", loop_device)
         process.run("pvcreate -y %s" % loop_device, sudo=True)
         logging.debug("Creating volume group %s", vg_name)
-        process.run("vgcreate %s %s" %
-                    (vg_name, loop_device), sudo=True)
+        process.run("vgcreate %s %s" % (vg_name, loop_device), sudo=True)
     except process.CmdError as ex:
         logging.error(ex)
         vg_cleanup(disk_filename, vg_disk_dir, vg_name, loop_device, use_tmpfs)
@@ -328,8 +348,13 @@ def vg_setup(vg_name: str, disk_vg_size: str,
     return disk_filename, vg_disk_dir, vg_name, loop_device
 
 
-def vg_cleanup(disk_filename: str = None, vg_disk_dir: str = None,
-               vg_name: str = None, loop_device: str = None, use_tmpfs: bool = True) -> None:
+def vg_cleanup(
+    disk_filename: str = None,
+    vg_disk_dir: str = None,
+    vg_name: str = None,
+    loop_device: str = None,
+    use_tmpfs: bool = True,
+) -> None:
     """
     Clean up any stage of the VG disk setup in case of test error.
 
@@ -345,34 +370,39 @@ def vg_cleanup(disk_filename: str = None, vg_disk_dir: str = None,
     """
     errs = []
     if vg_name is not None:
-        loop_device = re.search(r"([/\w-]+) +%s +lvm2" % vg_name,
-                                process.run("pvs", sudo=True).stdout_text)
+        loop_device = re.search(
+            r"([/\w-]+) +%s +lvm2" % vg_name, process.run("pvs", sudo=True).stdout_text
+        )
         if loop_device is not None:
             loop_device = loop_device.group(1)
         process.run("vgremove -f %s" % vg_name, ignore_status=True, sudo=True)
 
     if loop_device is not None:
-        result = process.run("pvremove %s" % loop_device,
-                             ignore_status=True, sudo=True)
+        result = process.run("pvremove %s" % loop_device, ignore_status=True, sudo=True)
         if result.exit_status != 0:
             errs.append("wipe pv")
             logging.error("Failed to wipe pv from %s: %s", loop_device, result)
 
         losetup_all = process.run("losetup --all", sudo=True).stdout_text
         if loop_device in losetup_all:
-            disk_filename = re.search(r"%s: \[\d+\]:\d+ \(([/\w]+)\)" %
-                                      loop_device, losetup_all)
+            disk_filename = re.search(
+                r"%s: \[\d+\]:\d+ \(([/\w]+)\)" % loop_device, losetup_all
+            )
             if disk_filename is not None:
                 disk_filename = disk_filename.group(1)
 
             for _ in range(10):
-                result = process.run("losetup -d %s" % loop_device,
-                                     ignore_status=True, sudo=True)
+                result = process.run(
+                    "losetup -d %s" % loop_device, ignore_status=True, sudo=True
+                )
                 if b"resource busy" not in result.stderr:
                     if result.exit_status != 0:
                         errs.append("remove loop device")
-                        logging.error("Unexpected failure when removing loop"
-                                      "device %s, check the log", loop_device)
+                        logging.error(
+                            "Unexpected failure when removing loop"
+                            "device %s, check the log",
+                            loop_device,
+                        )
                     break
                 time.sleep(0.1)
 
@@ -383,18 +413,21 @@ def vg_cleanup(disk_filename: str = None, vg_disk_dir: str = None,
             vg_disk_dir = os.path.dirname(disk_filename)
 
     if vg_disk_dir is not None:
-        if use_tmpfs and not process.system("mountpoint %s" % vg_disk_dir,
-                                            ignore_status=True):
+        if use_tmpfs and not process.system(
+            "mountpoint %s" % vg_disk_dir, ignore_status=True
+        ):
             for _ in range(10):
-                result = process.run("umount %s" % vg_disk_dir,
-                                     ignore_status=True, sudo=True)
+                result = process.run(
+                    "umount %s" % vg_disk_dir, ignore_status=True, sudo=True
+                )
                 time.sleep(0.1)
                 if result.exit_status == 0:
                     break
             else:
                 errs.append("umount")
-                logging.error("Unexpected failure unmounting %s, check the "
-                              "log", vg_disk_dir)
+                logging.error(
+                    "Unexpected failure unmounting %s, check the " "log", vg_disk_dir
+                )
 
         if os.path.exists(vg_disk_dir):
             try:

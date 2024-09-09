@@ -31,7 +31,8 @@ import os
 import time
 from typing import Any
 import logging as log
-logging = log.getLogger('avocado.job.' + __name__)
+
+logging = log.getLogger("avocado.job." + __name__)
 import shutil
 import contextlib
 import fcntl
@@ -53,7 +54,7 @@ from .setup import StateBackend
 SKIP_LOCKS = False
 
 
-class TransferOps():
+class TransferOps:
     """A small namespace for pool transfer operations of multiple types."""
 
     _session_cache = {}
@@ -69,10 +70,14 @@ class TransferOps():
         """
         session = cls._session_cache.get(host)
         if not session:
-            session = remote.remote_login(params["nets_shell_client"],
-                                          params['nets_shell_host'], params["nets_shell_port"],
-                                          params["nets_username"], params["nets_password"],
-                                          params["nets_shell_prompt"])
+            session = remote.remote_login(
+                params["nets_shell_client"],
+                params["nets_shell_host"],
+                params["nets_shell_port"],
+                params["nets_username"],
+                params["nets_password"],
+                params["nets_shell_prompt"],
+            )
             cls._session_cache[host] = session
         return session
 
@@ -275,17 +280,23 @@ class TransferOps():
         host, path = pool_path.split(":")
 
         if TransferOps.compare_remote(cache_path, pool_path, params):
-            logging.info(f"Skip download of an already available and valid {cache_path}")
+            logging.info(
+                f"Skip download of an already available and valid {cache_path}"
+            )
             return
         if os.path.exists(cache_path):
             logging.info(f"Force download of an already available {cache_path}")
 
-        remote.copy_files_from(params["nets_shell_host"],
-                               params["nets_file_transfer_client"],
-                               params["nets_username"], params["nets_password"],
-                               params["nets_file_transfer_port"],
-                               path, cache_path,
-                               timeout=params.get_numeric("update_pool_timeout", 300))
+        remote.copy_files_from(
+            params["nets_shell_host"],
+            params["nets_file_transfer_client"],
+            params["nets_username"],
+            params["nets_password"],
+            params["nets_file_transfer_port"],
+            path,
+            cache_path,
+            timeout=params.get_numeric("update_pool_timeout", 300),
+        )
 
     @staticmethod
     def upload_remote(cache_path: str, pool_path: str, params: Params) -> None:
@@ -303,12 +314,16 @@ class TransferOps():
             return
         logging.info(f"Will possibly force upload to {pool_path}")
 
-        remote.copy_files_to(params["nets_shell_host"],
-                             params["nets_file_transfer_client"],
-                             params["nets_username"], params["nets_password"],
-                             params["nets_file_transfer_port"],
-                             cache_path, path,
-                             timeout=params.get_numeric("update_pool_timeout", 300))
+        remote.copy_files_to(
+            params["nets_shell_host"],
+            params["nets_file_transfer_client"],
+            params["nets_username"],
+            params["nets_password"],
+            params["nets_file_transfer_port"],
+            cache_path,
+            path,
+            timeout=params.get_numeric("update_pool_timeout", 300),
+        )
 
     @staticmethod
     def delete_remote(pool_path: str, params: Params) -> None:
@@ -318,11 +333,14 @@ class TransferOps():
         All arguments are identical to the main entry method.
         """
         host, path = pool_path.split(":")
-        session = remote.remote_login(params["nets_shell_client"],
-                                      params["nets_shell_host"],
-                                      params["nets_shell_port"],
-                                      params["nets_username"], params["nets_password"],
-                                      params["nets_shell_prompt"])
+        session = remote.remote_login(
+            params["nets_shell_client"],
+            params["nets_shell_host"],
+            params["nets_shell_port"],
+            params["nets_username"],
+            params["nets_password"],
+            params["nets_shell_prompt"],
+        )
         session.cmd(f"rm {path}")
 
     @staticmethod
@@ -366,7 +384,9 @@ class TransferOps():
                 return
             # actual data must be kept safe
             if not os.path.islink(cache_path) and os.path.exists(cache_path):
-                raise RuntimeError(f"Cannot link to {pool_path}, {cache_path} data exists")
+                raise RuntimeError(
+                    f"Cannot link to {pool_path}, {cache_path} data exists"
+                )
             # clean up dead links
             if os.path.islink(cache_path) and not os.path.exists(cache_path):
                 logging.warning(f"Dead link {cache_path} image detected")
@@ -415,11 +435,14 @@ class QCOW2ImageTransfer(StateBackend):
 
         image_path, image_format = params["image_name"], params.get("image_format")
         if image_format is None:
-            raise ValueError(f"Unspecified image format for {image_name} - "
-                            "must be qcow2 or raw")
+            raise ValueError(
+                f"Unspecified image format for {image_name} - " "must be qcow2 or raw"
+            )
         if image_format not in ["raw", "qcow2"]:
-            raise ValueError(f"Incompatible image format {image_format} for"
-                            f" {image_name} - must be qcow2 or raw")
+            raise ValueError(
+                f"Incompatible image format {image_format} for"
+                f" {image_name} - must be qcow2 or raw"
+            )
         if not os.path.isabs(image_path):
             image_path = os.path.join(vm_dir, image_path)
         image_format = "" if image_format == "raw" else "." + image_format
@@ -439,8 +462,10 @@ class QCOW2ImageTransfer(StateBackend):
         shared_pool = ":" + params["shared_pool"]
         image_base_name = os.path.join(vm_name, os.path.basename(target_image))
 
-        logging.debug(f"Checking for shared {vm_name}/{image_name} existence"
-                      f" in the shared pool {shared_pool}")
+        logging.debug(
+            f"Checking for shared {vm_name}/{image_name} existence"
+            f" in the shared pool {shared_pool}"
+        )
         src_image_name = os.path.join(shared_pool, image_base_name)
         # it is possible that the the root state is partially provided
         pool_images = cls.ops.list_paths(os.path.join(shared_pool, vm_name), params)
@@ -464,8 +489,10 @@ class QCOW2ImageTransfer(StateBackend):
         shared_pool = ":" + params["shared_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
-        logging.info(f"Downloading shared {vm_name}/{image_name} "
-                     f"from the shared pool {shared_pool}")
+        logging.info(
+            f"Downloading shared {vm_name}/{image_name} "
+            f"from the shared pool {shared_pool}"
+        )
         src_image_name = os.path.join(shared_pool, image_base_names)
         cls.ops.download(target_image, src_image_name, params)
 
@@ -482,8 +509,10 @@ class QCOW2ImageTransfer(StateBackend):
         shared_pool = ":" + params["shared_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
-        logging.info(f"Uploading shared {vm_name}/{image_name} "
-                     f"to the shared pool {shared_pool}")
+        logging.info(
+            f"Uploading shared {vm_name}/{image_name} "
+            f"to the shared pool {shared_pool}"
+        )
         dst_image_name = os.path.join(shared_pool, image_base_names)
         cls.ops.upload(target_image, dst_image_name, params)
 
@@ -500,8 +529,10 @@ class QCOW2ImageTransfer(StateBackend):
         shared_pool = ":" + params["shared_pool"]
         image_base_names = os.path.join(vm_name, os.path.basename(target_image))
 
-        logging.info(f"Removing shared {vm_name}/{image_name} "
-                     f"from the shared pool {shared_pool}")
+        logging.info(
+            f"Removing shared {vm_name}/{image_name} "
+            f"from the shared pool {shared_pool}"
+        )
         dst_image_name = os.path.join(shared_pool, image_base_names)
         cls.ops.delete(dst_image_name, params)
 
@@ -521,14 +552,16 @@ class QCOW2ImageTransfer(StateBackend):
         params["image_format_snapshot"] = "qcow2"
         # TODO: we might want to return the complete backing chain but in some
         # cases parts of it are stored in a remote location
-        #params["backing_chain"] = "yes"
+        # params["backing_chain"] = "yes"
         qemu_img = QemuImg(params.object_params("snapshot"), vm_dir, "snapshot")
         image_info = qemu_img.info(force_share=True, output="json")
         image_file = json.loads(image_info).get("backing-filename", "")
         return os.path.basename(image_file.replace(".qcow2", ""))
 
     @classmethod
-    def compare_chain(cls, state: str, cache_dir: str, pool_dir: str, params: Params) -> bool:
+    def compare_chain(
+        cls, state: str, cache_dir: str, pool_dir: str, params: Params
+    ) -> bool:
         """
         Compare checksums for all dependencies states backing a given state.
 
@@ -544,26 +577,42 @@ class QCOW2ImageTransfer(StateBackend):
         while next_state != "":
             for image_name in params.objects("images"):
                 image_params = params.object_params(image_name)
-                cache_path = os.path.join(cache_dir, vm_id, image_name, next_state + ".qcow2")
-                pool_path = os.path.join(pool_dir, vm_id, image_name, next_state + ".qcow2")
+                cache_path = os.path.join(
+                    cache_dir, vm_id, image_name, next_state + ".qcow2"
+                )
+                pool_path = os.path.join(
+                    pool_dir, vm_id, image_name, next_state + ".qcow2"
+                )
                 if not cls.ops.compare(cache_path, pool_path, image_params):
-                    logging.warning(f"The image {image_name} has different {next_state} between cache {cache_path} and pool {pool_path}")
+                    logging.warning(
+                        f"The image {image_name} has different {next_state} between cache {cache_path} and pool {pool_path}"
+                    )
                     return False
             if next_state == state and params["object_type"] in ["vms", "nets/vms"]:
                 cache_path = os.path.join(cache_dir, vm_id, next_state + ".state")
                 pool_path = os.path.join(pool_dir, vm_id, next_state + ".state")
                 if not cls.ops.compare(cache_path, pool_path, params):
-                    logging.warning(f"The vm {vm_id} has different {next_state} between cache {cache_path} and pool {pool_path}")
+                    logging.warning(
+                        f"The vm {vm_id} has different {next_state} between cache {cache_path} and pool {pool_path}"
+                    )
                     return False
             # comparison of state chain is not yet complete if the state has backing dependencies
             next_state = cls.get_dependency(next_state, params)
 
-        logging.debug(f"The backing chain for {state} is identical between cache {cache_dir} and pool {pool_dir}")
+        logging.debug(
+            f"The backing chain for {state} is identical between cache {cache_dir} and pool {pool_dir}"
+        )
         return True
 
     @classmethod
-    def transfer_chain(cls, state: str, cache_dir: str, pool_dir: str,
-                       params: Params, down: bool = True) -> None:
+    def transfer_chain(
+        cls,
+        state: str,
+        cache_dir: str,
+        pool_dir: str,
+        params: Params,
+        down: bool = True,
+    ) -> None:
         """
         Repeat pool operation an all dependencies states backing a given state.
 
@@ -581,8 +630,12 @@ class QCOW2ImageTransfer(StateBackend):
         while next_state != "":
             for image_name in params.objects("images"):
                 image_params = params.object_params(image_name)
-                cache_path = os.path.join(cache_dir, vm_id, image_name, next_state + ".qcow2")
-                pool_path = os.path.join(pool_dir, vm_id, image_name, next_state + ".qcow2")
+                cache_path = os.path.join(
+                    cache_dir, vm_id, image_name, next_state + ".qcow2"
+                )
+                pool_path = os.path.join(
+                    pool_dir, vm_id, image_name, next_state + ".qcow2"
+                )
                 # if only vm state is not available this would indicate image corruption
                 transfer_operation(cache_path, pool_path, image_params)
             if next_state == state and params["object_type"] in ["vms", "nets/vms"]:
@@ -592,7 +645,9 @@ class QCOW2ImageTransfer(StateBackend):
             # transfer of state chain is not yet complete if the state has backing dependencies
             next_state = cls.get_dependency(next_state, params)
 
-        logging.debug(f"The backing chain for {state} is fully transferred to cache {cache_dir} from pool {pool_dir}")
+        logging.debug(
+            f"The backing chain for {state} is fully transferred to cache {cache_dir} from pool {pool_dir}"
+        )
 
     @classmethod
     def show(cls, params: Params, object: Any = None) -> list[str]:
@@ -611,8 +666,9 @@ class QCOW2ImageTransfer(StateBackend):
 
         pool_dir = params["show_location"]
         path = os.path.join(pool_dir, state_tag.replace(vm_name, vm_id))
-        logging.debug(f"Showing shared {state_tag} states "
-                      f"in the pool location {pool_dir}")
+        logging.debug(
+            f"Showing shared {state_tag} states " f"in the pool location {pool_dir}"
+        )
 
         states = cls.ops.list_paths(path, params)
         states = [p.replace(format, "") for p in states]
@@ -636,8 +692,10 @@ class QCOW2ImageTransfer(StateBackend):
             state_tag += f"/{image_name}"
             format = "qcow2"
         state = params["get_state"]
-        logging.info(f"Downloading shared {state_tag} state {state} "
-                     f"from the shared pool {pool_dir} to {cache_dir}")
+        logging.info(
+            f"Downloading shared {state_tag} state {state} "
+            f"from the shared pool {pool_dir} to {cache_dir}"
+        )
 
         cls.transfer_chain(state, cache_dir, pool_dir, params, down=True)
 
@@ -657,8 +715,10 @@ class QCOW2ImageTransfer(StateBackend):
             image_name = params["images"]
             state_tag += f"/{image_name}"
         state = params["set_state"]
-        logging.info(f"Uploading shared {state_tag} state {state} "
-                     f"to the shared pool {pool_dir} from {cache_dir}")
+        logging.info(
+            f"Uploading shared {state_tag} state {state} "
+            f"to the shared pool {pool_dir} from {cache_dir}"
+        )
 
         cls.transfer_chain(state, cache_dir, pool_dir, params, down=False)
 
@@ -677,8 +737,10 @@ class QCOW2ImageTransfer(StateBackend):
             image_name = params["images"]
             state_tag += f"/{image_name}"
         state = params["unset_state"]
-        logging.info(f"Removing shared {state_tag} state {state} "
-                     f"from the shared pool {pool_dir}")
+        logging.info(
+            f"Removing shared {state_tag} state {state} "
+            f"from the shared pool {pool_dir}"
+        )
 
         for image_name in params.objects("images"):
             image_params = params.object_params(image_name)
@@ -695,7 +757,9 @@ class RootSourcedStateBackend(StateBackend):
     transport = QCOW2ImageTransfer
 
     @classmethod
-    def check_root(cls, params: Params, object: Any = None) -> list["TestObject"] | bool:
+    def check_root(
+        cls, params: Params, object: Any = None
+    ) -> list["TestObject"] | bool:
         """
         Check whether a root state or essentially the object exists.
 
@@ -706,7 +770,9 @@ class RootSourcedStateBackend(StateBackend):
             return local_root_exists
         pool_root_exists = cls.transport.check_root(params, object)
         # TODO: boot state has to be deprecated and it cannot be handled remotely
-        return local_root_exists or (pool_root_exists and params["object_type"] not in ["vms", "nets/vms"])
+        return local_root_exists or (
+            pool_root_exists and params["object_type"] not in ["vms", "nets/vms"]
+        )
 
     @classmethod
     def get_root(cls, params: Params, object: Any = None) -> None:
@@ -732,10 +798,20 @@ class RootSourcedStateBackend(StateBackend):
                 for image_name in params.objects("images"):
                     image_params = params.object_params(image_name)
                     image_filename = image_params["image_name"]
-                    cache_path = os.path.join(image_params["vms_base_dir"], vm_name, image_filename + ".qcow2")
-                    pool_path = os.path.join(image_params.get("shared_pool", ""), vm_name, image_filename + ".qcow2")
-                    if not cls.transport.ops.compare(cache_path, ":" + pool_path, image_params):
-                        logging.warning(f"The image {image_name} is different between cache {cache_path} and pool {pool_path}")
+                    cache_path = os.path.join(
+                        image_params["vms_base_dir"], vm_name, image_filename + ".qcow2"
+                    )
+                    pool_path = os.path.join(
+                        image_params.get("shared_pool", ""),
+                        vm_name,
+                        image_filename + ".qcow2",
+                    )
+                    if not cls.transport.ops.compare(
+                        cache_path, ":" + pool_path, image_params
+                    ):
+                        logging.warning(
+                            f"The image {image_name} is different between cache {cache_path} and pool {pool_path}"
+                        )
                         cache_valid = False
                         break
             else:
@@ -793,6 +869,7 @@ class SourcedStateBackend(StateBackend):
         :param do: state operation to consider the location for
         :param params: parameters for the current state manipulation
         """
+
         def proximity(source: str) -> int:
             score = 0
             source_net, source_path = source.split(":")
@@ -810,7 +887,9 @@ class SourcedStateBackend(StateBackend):
         return sorted(params.objects(f"{do}_location"), key=proximity, reverse=True)
 
     @classmethod
-    def get_source_scope(cls, source_path: str, source_params: Params, own_params: Params) -> str:
+    def get_source_scope(
+        cls, source_path: str, source_params: Params, own_params: Params
+    ) -> str:
         """
         Get the currently permitted pool and state reuse scope.
 
@@ -846,7 +925,9 @@ class SourcedStateBackend(StateBackend):
         for source in sources:
             logging.debug(f"Next show source to consider is {source}")
             source_net, source_path = source.split(":")
-            source_params = params.object_params(source_net) if source_net else params.copy()
+            source_params = (
+                params.object_params(source_net) if source_net else params.copy()
+            )
             source_params["show_location"] = source
 
             # filtering stage where we may disallow certain data transport
@@ -856,7 +937,11 @@ class SourcedStateBackend(StateBackend):
             logging.debug(f"Choosing {source} as the show source to use")
 
             mirror_states = cls.transport.show(source_params, object)
-            pool_states = set(mirror_states) if not pool_states else pool_states.intersection(mirror_states)
+            pool_states = (
+                set(mirror_states)
+                if not pool_states
+                else pool_states.intersection(mirror_states)
+            )
 
         return list(set(cache_states).union(pool_states))
 
@@ -874,7 +959,9 @@ class SourcedStateBackend(StateBackend):
         for source in sources:
             logging.debug(f"Next get source to consider is {source}")
             source_net, source_path = source.split(":")
-            source_params = params.object_params(source_net) if source_net else params.copy()
+            source_params = (
+                params.object_params(source_net) if source_net else params.copy()
+            )
             source_params["get_location"] = source
 
             # filtering stage where we may disallow certain data transport
@@ -885,12 +972,18 @@ class SourcedStateBackend(StateBackend):
 
             source_params["show_location"] = source
             local_state_exists = params["get_state"] in cls._show(params, object)
-            pool_state_exists = params["get_state"] in cls.transport.show(source_params, object)
+            pool_state_exists = params["get_state"] in cls.transport.show(
+                source_params, object
+            )
 
             if pool_state_exists:
                 if local_state_exists:
-                    cache_valid = cls.transport.compare_chain(params["get_state"], params["swarm_pool"],
-                                                              source_params["get_location"], source_params)
+                    cache_valid = cls.transport.compare_chain(
+                        params["get_state"],
+                        params["swarm_pool"],
+                        source_params["get_location"],
+                        source_params,
+                    )
                 else:
                     cache_valid = False
                 if not cache_valid:
@@ -920,7 +1013,9 @@ class SourcedStateBackend(StateBackend):
         for source in sources:
             logging.debug(f"Next set source to consider is {source}")
             source_net, source_path = source.split(":")
-            source_params = params.object_params(source_net) if source_net else params.copy()
+            source_params = (
+                params.object_params(source_net) if source_net else params.copy()
+            )
             source_params["set_location"] = source
 
             # filtering stage where we may disallow certain data transport
@@ -947,7 +1042,9 @@ class SourcedStateBackend(StateBackend):
         for source in sources:
             logging.debug(f"Next unset source to consider is {source}")
             source_net, source_path = source.split(":")
-            source_params = params.object_params(source_net) if source_net else params.copy()
+            source_params = (
+                params.object_params(source_net) if source_net else params.copy()
+            )
             source_params["unset_location"] = source
 
             # filtering stage where we may disallow certain data transport
@@ -985,8 +1082,10 @@ def image_lock(resource_path: str, timeout: int = 300) -> None:
             logging.debug("Waiting for image to become available")
             time.sleep(1)
         else:
-            raise RuntimeError(f"Waiting to acquire {lockfile} took more than "
-                               f"the allowed {timeout} seconds")
+            raise RuntimeError(
+                f"Waiting to acquire {lockfile} took more than "
+                f"the allowed {timeout} seconds"
+            )
         try:
             yield fd
         finally:

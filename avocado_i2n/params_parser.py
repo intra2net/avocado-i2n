@@ -32,7 +32,8 @@ import os
 import copy
 import collections
 import logging
-log = logging.getLogger('avocado.job.' + __name__)
+
+log = logging.getLogger("avocado.job." + __name__)
 
 from virttest import cartesian_config
 from virttest.utils_params import Params
@@ -49,7 +50,10 @@ class EmptyCartesianProduct(Exception):
         :param message: additional message about the exception
         """
         message = "Empty Cartesian product of parameters!\n" + message
-        message = "Check for self-excluding variants in your current configuration:\n" + message
+        message = (
+            "Check for self-excluding variants in your current configuration:\n"
+            + message
+        )
         super(EmptyCartesianProduct, self).__init__(message)
 
 
@@ -58,50 +62,72 @@ class EmptyCartesianProduct(Exception):
 ###################################################################
 
 
-_devel_tp_folder = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tp_folder"))
-settings.register_option(section='i2n.common',
-                         key='suite_path',
-                         key_type=str,
-                         default=_devel_tp_folder,
-                         help_msg="Path to the test suite containing Cartesian variants and test scripts.")
+_devel_tp_folder = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "tp_folder")
+)
+settings.register_option(
+    section="i2n.common",
+    key="suite_path",
+    key_type=str,
+    default=_devel_tp_folder,
+    help_msg="Path to the test suite containing Cartesian variants and test scripts.",
+)
 
 
 def custom_configs_dir() -> str:
     """Custom directory for all config files."""
-    suite_path = settings.as_dict().get('i2n.common.suite_path')
+    suite_path = settings.as_dict().get("i2n.common.suite_path")
     return os.path.join(suite_path, "configs")
 
 
 def tests_ovrwrt_file() -> str:
     """Overwrite config file for all tests (nodes)."""
-    ovrwrt_file = os.path.join(os.environ['HOME'], "avocado_overwrite_tests.cfg")
+    ovrwrt_file = os.path.join(os.environ["HOME"], "avocado_overwrite_tests.cfg")
     if not os.path.exists(ovrwrt_file):
-        logging.warning("Generating a file to use for overwriting the original test parameters")
+        logging.warning(
+            "Generating a file to use for overwriting the original test parameters"
+        )
         with open(ovrwrt_file, "w") as handle:
-            handle.write("# Use this config to override with test nodes configuration\n"
-                         "include " + os.path.join(custom_configs_dir(), "sets-overwrite.cfg") + "\n")
+            handle.write(
+                "# Use this config to override with test nodes configuration\n"
+                "include "
+                + os.path.join(custom_configs_dir(), "sets-overwrite.cfg")
+                + "\n"
+            )
     return ovrwrt_file
 
 
 def vms_ovrwrt_file() -> str:
     """Overwrite config file for all vms (a category of objects)."""
-    ovrwrt_file = os.path.join(os.environ['HOME'], "avocado_overwrite_vms.cfg")
+    ovrwrt_file = os.path.join(os.environ["HOME"], "avocado_overwrite_vms.cfg")
     if not os.path.exists(ovrwrt_file):
-        logging.warning("Generating a file to use for overwriting the original vm parameters")
+        logging.warning(
+            "Generating a file to use for overwriting the original vm parameters"
+        )
         with open(ovrwrt_file, "w") as handle:
-            handle.write("# Use this config to override with test objects configuration\n"
-                         "include " + os.path.join(custom_configs_dir(), "objects-overwrite.cfg") + "\n")
+            handle.write(
+                "# Use this config to override with test objects configuration\n"
+                "include "
+                + os.path.join(custom_configs_dir(), "objects-overwrite.cfg")
+                + "\n"
+            )
     return ovrwrt_file
 
 
 def ovrwrt_file(category: str) -> str:
     """Overwrite config file for all objects."""
-    ovrwrt_file = os.path.join(os.environ['HOME'], f"avocado_overwrite_{category}.cfg")
+    ovrwrt_file = os.path.join(os.environ["HOME"], f"avocado_overwrite_{category}.cfg")
     if not os.path.exists(ovrwrt_file):
-        logging.warning(f"Generating a file to use for overwriting the original {category} parameters")
+        logging.warning(
+            f"Generating a file to use for overwriting the original {category} parameters"
+        )
         with open(ovrwrt_file, "w") as handle:
-            handle.write("# Use this config to override with test objects configuration\n"
-                         "include " + os.path.join(custom_configs_dir(), f"{category}-overwrite.cfg") + "\n")
+            handle.write(
+                "# Use this config to override with test objects configuration\n"
+                "include "
+                + os.path.join(custom_configs_dir(), f"{category}-overwrite.cfg")
+                + "\n"
+            )
     return ovrwrt_file
 
 
@@ -110,7 +136,7 @@ def ovrwrt_file(category: str) -> str:
 ###################################################################
 
 
-class ParsedContent():
+class ParsedContent:
     """Class for parsed content of a general type."""
 
     def __init__(self, content: str) -> None:
@@ -124,7 +150,9 @@ class ParsedContent():
         :returns: resulting report-compatible string
         :raises: :py:class:`NotImlementedError` as this is an abstract method
         """
-        raise NotImlementedError("Parsed content is an abstract class with no parsalbe form")
+        raise NotImlementedError(
+            "Parsed content is an abstract class with no parsalbe form"
+        )
 
     def parsable_form(self) -> str:
         """
@@ -133,7 +161,9 @@ class ParsedContent():
         :returns: resulting parsable string
         :raises: :py:class:`NotImlementedError` as this is an abstract method
         """
-        raise NotImlementedError("Parsed content is an abstract class with no parsalbe form")
+        raise NotImlementedError(
+            "Parsed content is an abstract class with no parsalbe form"
+        )
 
 
 class ParsedFile(ParsedContent):
@@ -170,7 +200,9 @@ class ParsedStr(ParsedContent):
 
         Arguments are identical to the ones of the parent class.
         """
-        return "\tParsed string:\n\t\t%s\n" % self.content.rstrip("\n").replace("\n", "\n\t\t")
+        return "\tParsed string:\n\t\t%s\n" % self.content.rstrip("\n").replace(
+            "\n", "\n\t\t"
+        )
 
     def parsable_form(self) -> str:
         """
@@ -193,7 +225,9 @@ class ParsedDict(ParsedContent):
 
         Arguments are identical to the ones of the parent class.
         """
-        return "\tParsed dictionary:\n\t\t%s\n" % self.parsable_form().rstrip("\n").replace("\n", "\n\t\t")
+        return "\tParsed dictionary:\n\t\t%s\n" % self.parsable_form().rstrip(
+            "\n"
+        ).replace("\n", "\n\t\t")
 
     def parsable_form(self) -> str:
         """
@@ -202,12 +236,12 @@ class ParsedDict(ParsedContent):
         :returns: resulting parsable string
         """
         param_str = ""
-        for (key, value) in self.content.items():
+        for key, value in self.content.items():
             param_str += "%s = %s\n" % (key, value)
         return param_str
 
 
-class Reparsable():
+class Reparsable:
     """
     Class to represent quickly parsable Cartesian configuration,
     producing both parser and parameters (parser dicts) on demand.
@@ -254,10 +288,15 @@ class Reparsable():
         """
         self.steps.append(ParsedDict(pdict))
 
-    def parse_next_batch(self,
-                         base_file: str = None, base_str: str | None = "",
-                         base_dict: dict[str, str] = None, ovrwrt_file: str = None,
-                         ovrwrt_str: str | None = "", ovrwrt_dict: dict[str, str] = None) -> None:
+    def parse_next_batch(
+        self,
+        base_file: str = None,
+        base_str: str | None = "",
+        base_dict: dict[str, str] = None,
+        ovrwrt_file: str = None,
+        ovrwrt_str: str | None = "",
+        ovrwrt_dict: dict[str, str] = None,
+    ) -> None:
         """
         Parse a batch of base file, string, and dictionary, and possibly an
         overwrite file (with custom parameters at the user's home location).
@@ -287,10 +326,14 @@ class Reparsable():
         if ovrwrt_dict:
             self.parse_next_dict(ovrwrt_dict)
 
-    def get_parser(self,
-                   show_restriction: bool = False, show_dictionaries: bool = False,
-                   show_dict_fullname: bool = False, show_dict_contents: bool = False,
-                   show_empty_cartesian_product: bool = True) -> cartesian_config.Parser:
+    def get_parser(
+        self,
+        show_restriction: bool = False,
+        show_dictionaries: bool = False,
+        show_dict_fullname: bool = False,
+        show_dict_contents: bool = False,
+        show_empty_cartesian_product: bool = True,
+    ) -> cartesian_config.Parser:
         """
         Get a basic parameters parser with its dictionaries.
 
@@ -306,9 +349,12 @@ class Reparsable():
         parser = cartesian_config.Parser()
         hostname = os.environ.get("PREFIX", os.environ.get("HOSTNAME", "avocado"))
         parser.parse_string("hostname = %s\n" % hostname)
-        suite_path = settings.as_dict().get('i2n.common.suite_path')
+        suite_path = settings.as_dict().get("i2n.common.suite_path")
         parser.parse_string("suite_path = %s\n" % suite_path)
-        parser.parse_string("test_pre_hook = %s\n" % os.path.join(suite_path, "controls", "pre_test.control"))
+        parser.parse_string(
+            "test_pre_hook = %s\n"
+            % os.path.join(suite_path, "controls", "pre_test.control")
+        )
 
         for step in self.steps:
             if isinstance(step, ParsedFile):
@@ -322,29 +368,45 @@ class Reparsable():
         if show_restriction:
             logging.debug(self)
         if show_dictionaries or show_empty_cartesian_product:
-            options = collections.namedtuple("options", ['repr_mode', 'fullname', 'contents'])
-            peek_parser = self.get_parser(show_dictionaries=False, show_empty_cartesian_product=False)
+            options = collections.namedtuple(
+                "options", ["repr_mode", "fullname", "contents"]
+            )
+            peek_parser = self.get_parser(
+                show_dictionaries=False, show_empty_cartesian_product=False
+            )
             # break generator into first detectable entry and rest to reuse it better
             peek_generator = peek_parser.get_dicts()
             if show_empty_cartesian_product:
                 try:
                     peek_dict = peek_generator.__next__()
                     if show_dictionaries:
-                        cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents),
-                                                     (peek_dict,))
-                        cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents),
-                                                     peek_generator)
+                        cartesian_config.print_dicts(
+                            options(False, show_dict_fullname, show_dict_contents),
+                            (peek_dict,),
+                        )
+                        cartesian_config.print_dicts(
+                            options(False, show_dict_fullname, show_dict_contents),
+                            peek_generator,
+                        )
                 except StopIteration:
                     raise EmptyCartesianProduct(str(self)) from None
             else:
-                cartesian_config.print_dicts(options(False, show_dict_fullname, show_dict_contents),
-                                             peek_generator)
+                cartesian_config.print_dicts(
+                    options(False, show_dict_fullname, show_dict_contents),
+                    peek_generator,
+                )
 
         return parser
 
-    def get_params(self, list_of_keys: list[str] = None, dict_index: int = 0,
-                   show_restriction: bool = False, show_dictionaries: bool = False,
-                   show_dict_fullname: bool = False, show_dict_contents: bool = False) -> Params:
+    def get_params(
+        self,
+        list_of_keys: list[str] = None,
+        dict_index: int = 0,
+        show_restriction: bool = False,
+        show_dictionaries: bool = False,
+        show_dict_fullname: bool = False,
+        show_dict_contents: bool = False,
+    ) -> Params:
         """
         Get a single parameter dictionary from the currently parsed configuration.
 
@@ -358,18 +420,22 @@ class Reparsable():
 
         The rest of the arguments are identical to the ones from :py:method:`get_parser`.
         """
-        parser = self.get_parser(show_restriction=show_restriction,
-                                 show_dictionaries=show_dictionaries,
-                                 show_dict_fullname=show_dict_fullname,
-                                 show_dict_contents=show_dict_contents,
-                                 show_empty_cartesian_product=True)
+        parser = self.get_parser(
+            show_restriction=show_restriction,
+            show_dictionaries=show_dictionaries,
+            show_dict_fullname=show_dict_fullname,
+            show_dict_contents=show_dict_contents,
+            show_empty_cartesian_product=True,
+        )
 
         for i, d in enumerate(parser.get_dicts()):
             if i == dict_index:
                 default_params = d
                 break
         else:
-            raise ValueError(f"There must be a configuration for the restriction:\n{self}")
+            raise ValueError(
+                f"There must be a configuration for the restriction:\n{self}"
+            )
 
         if list_of_keys is None:
             selected_params = default_params
@@ -403,7 +469,9 @@ def all_restrictions() -> list[str]:
     """
     rep = Reparsable()
     rep.parse_next_file("groups-base.cfg")
-    return rep.get_params(list_of_keys=["main_restrictions"]).objects("main_restrictions")
+    return rep.get_params(list_of_keys=["main_restrictions"]).objects(
+        "main_restrictions"
+    )
 
 
 def all_objects(key: str = "vms", composites: list[str] = None) -> list[str]:
@@ -481,11 +549,15 @@ def join_str(variant_strs: dict[str, str], sort_key: str, base_str: str = "") ->
         if suffix not in variant_strs.keys():
             continue
         variant = variant_strs[suffix]
-        subvariant = "".join(["    " + l + "\n" for l in variant.rstrip("\n").split("\n")])
+        subvariant = "".join(
+            ["    " + l + "\n" for l in variant.rstrip("\n").split("\n")]
+        )
         variant_str += "%s:\n%s" % (suffix, subvariant)
         objects += " " + suffix
     if objects == "":
-        raise ValueError(f"Could not find some of {list(variant_strs.keys())} among "
-                         f"the available {available_objects}")
+        raise ValueError(
+            f"Could not find some of {list(variant_strs.keys())} among "
+            f"the available {available_objects}"
+        )
     variant_str += "join" + objects + "\n"
     return base_str + variant_str

@@ -29,8 +29,10 @@ from .. import intertest_setup as intertest
 
 class Manu(CLICmd):
 
-    name = 'manu'
-    description = 'Tools using setup chains of manual steps with Cartesian graph manipulation.'
+    name = "manu"
+    description = (
+        "Tools using setup chains of manual steps with Cartesian graph manipulation."
+    )
 
     def configure(self, parser: argparse.ArgumentParser) -> None:
         """
@@ -40,15 +42,17 @@ class Manu(CLICmd):
         """
         parser = super(Manu, self).configure(parser)
 
-        settings.register_option(section='i2n.manu',
-                                 key='params',
-                                 key_type=list,
-                                 default=[],
-                                 metavar='PARAM=VALUE',
-                                 help_msg="List of 'key=value' pairs passed to a Cartesian parser.",
-                                 parser=parser,
-                                 nargs='*',
-                                 positional_arg=True)
+        settings.register_option(
+            section="i2n.manu",
+            key="params",
+            key_type=list,
+            default=[],
+            metavar="PARAM=VALUE",
+            help_msg="List of 'key=value' pairs passed to a Cartesian parser.",
+            parser=parser,
+            nargs="*",
+            positional_arg=True,
+        )
 
     def run(self, config: Params) -> int:
         """
@@ -57,7 +61,7 @@ class Manu(CLICmd):
         """
         log.info("Manual setup chain started.")
         # set English environment (command output might be localized, need to be safe)
-        os.environ['LANG'] = 'en_US.UTF-8'
+        os.environ["LANG"] = "en_US.UTF-8"
 
         config["run.suite_runner"] = "traverser"
         config["params"] = config["i2n.manu.params"]
