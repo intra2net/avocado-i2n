@@ -33,13 +33,14 @@ import shutil
 from typing import Any
 import logging as log
 
-logging = log.getLogger("avocado.job." + __name__)
-
 from virttest import env_process
 from virttest.qemu_storage import QemuImg
 from virttest.utils_params import Params
 
 from .pool import RootSourcedStateBackend, SourcedStateBackend
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 #: off qemu states regex (0 vm size)

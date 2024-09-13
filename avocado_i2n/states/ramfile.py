@@ -30,13 +30,14 @@ import os
 from typing import Any
 import logging as log
 
-logging = log.getLogger("avocado.job." + __name__)
-
 from virttest import env_process
 from virttest.virt_vm import VMCreateError
 from virttest.utils_params import Params
 
 from .pool import SourcedStateBackend
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 class RamfileBackend(SourcedStateBackend):

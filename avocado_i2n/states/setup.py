@@ -31,12 +31,13 @@ from typing import Any
 from typing import Generator
 import logging as log
 
-logging = log.getLogger("avocado.job." + __name__)
-
 from avocado.core import exceptions
 from avocado_vt.test import VirtTest
 from virttest.utils_env import Env
 from virttest.utils_params import Params
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 #: list of all available state backends and operations

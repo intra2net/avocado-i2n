@@ -36,11 +36,13 @@ INTERFACE
 from typing import Any
 import logging as log
 
-logging = log.getLogger("avocado.job." + __name__)
 import ipaddress
 
 from .interface import VMInterface
 from avocado.core import exceptions
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 class VMNetconfig(object):

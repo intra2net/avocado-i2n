@@ -28,14 +28,15 @@ INTERFACE
 
 import logging
 
-log = logging.getLogger("avocado.job." + __name__)
-
 from avocado.core.plugin_interfaces import Resolver
 from avocado.core.resolver import ReferenceResolution, ReferenceResolutionResult
 
 from .. import cmd_parser
 from .. import params_parser as param
 from ..cartgraph import TestGraph
+
+
+log = logging.getLogger("avocado.job." + __name__)
 
 
 class TestLoader(Resolver):

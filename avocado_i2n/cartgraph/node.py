@@ -35,8 +35,6 @@ from typing import Generator
 from typing import Any
 import logging as log
 
-logging = log.getLogger("avocado.job." + __name__)
-
 from aexpect.exceptions import ShellCmdError
 from aexpect import remote_door as door
 from avocado.core.test_id import TestID
@@ -45,6 +43,9 @@ from virttest.utils_params import Params
 
 from . import TestSwarm, TestWorker, TestObject, NetObject
 from .. import params_parser as param
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 door.DUMP_CONTROL_DIR = "/tmp"

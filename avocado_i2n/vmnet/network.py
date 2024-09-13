@@ -52,7 +52,6 @@ import time
 from typing import Any
 import logging as log
 
-logging = log.getLogger("avocado.job." + __name__)
 import collections
 
 from avocado.utils import process
@@ -67,6 +66,9 @@ from .interface import VMInterface
 from .node import VMNode
 from .netconfig import VMNetconfig
 from .tunnel import VMTunnel
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 #: networking service backend paths

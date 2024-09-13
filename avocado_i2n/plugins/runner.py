@@ -34,7 +34,6 @@ import json
 from typing import Any
 import logging as log
 
-logging = log.getLogger("avocado.job." + __name__)
 import asyncio
 
 log.getLogger("asyncio").parent = log.getLogger("avocado.job")
@@ -53,6 +52,9 @@ from avocado.core.dispatcher import SpawnerDispatcher
 from virttest.utils_params import Params
 
 from ..cartgraph import TestGraph, TestWorker, TestNode
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 class TestRunner(RunnerInterface):

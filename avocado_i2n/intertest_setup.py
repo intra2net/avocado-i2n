@@ -50,7 +50,6 @@ from typing import Generator
 from typing import Any, Callable
 import logging as log
 
-logging = log.getLogger("avocado.job." + __name__)
 import contextlib
 import importlib
 import asyncio
@@ -66,6 +65,9 @@ from virttest.utils_params import Params
 from . import params_parser as param
 from .cartgraph import TestGraph, TestNode
 from .plugins.runner import TestRunner
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 #: list of all available manual steps or simply semi-automation tools

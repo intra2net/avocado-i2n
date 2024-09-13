@@ -30,8 +30,6 @@ from __future__ import annotations
 
 import logging as log
 
-logging = log.getLogger("avocado.job." + __name__)
-
 import aexpect
 from aexpect.exceptions import ShellTimeoutError
 from aexpect import remote
@@ -39,6 +37,9 @@ from aexpect.client import RemoteSession
 from virttest.utils_params import Params
 
 from . import NetObject
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 class TestEnvironment(object):

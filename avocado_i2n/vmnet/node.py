@@ -35,11 +35,12 @@ INTERFACE
 from typing import Callable
 import logging as log
 
-logging = log.getLogger("avocado.job." + __name__)
-
 from aexpect.client import RemoteSession
 from virttest.utils_params import Params
 from virttest.qemu_vm import VM
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 class VMNode(object):

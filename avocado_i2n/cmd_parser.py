@@ -32,8 +32,6 @@ import re
 from typing import Any, Callable
 import logging
 
-log = logging.getLogger("avocado.job." + __name__)
-
 from avocado.core.settings import settings
 from virttest import env_process
 from virttest.utils_env import Env
@@ -43,6 +41,9 @@ from virttest.utils_params import Params
 from . import params_parser as param
 from .cartgraph import graph
 from .states import setup as ss
+
+
+log = logging.getLogger("avocado.job." + __name__)
 
 
 def params_from_cmd(config: Params) -> None:

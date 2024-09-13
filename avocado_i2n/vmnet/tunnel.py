@@ -34,17 +34,17 @@ INTERFACE
 
 """
 
-
 from typing import Any
 import logging as log
-
-logging = log.getLogger("avocado.job." + __name__)
 
 from virttest.utils_params import Params
 
 from .netconfig import VMNetconfig
 from .interface import VMInterface
 from .node import VMNode
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 class VMTunnel(object):

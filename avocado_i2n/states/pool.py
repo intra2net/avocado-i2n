@@ -31,7 +31,6 @@ import time
 from typing import Any
 import logging as log
 
-logging = log.getLogger("avocado.job." + __name__)
 import shutil
 import contextlib
 import fcntl
@@ -46,6 +45,9 @@ from virttest.utils_params import Params
 from virttest.qemu_storage import QemuImg
 
 from .setup import StateBackend
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 #: skip waiting on locks if we only read from the pool for all processes

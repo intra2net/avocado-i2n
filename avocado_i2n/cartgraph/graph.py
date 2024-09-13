@@ -37,8 +37,6 @@ import re
 import time
 from typing import Any
 import logging as log
-
-logging = log.getLogger("avocado.job." + __name__)
 import collections
 import itertools
 import asyncio
@@ -49,6 +47,9 @@ from .. import params_parser as param
 from . import PrefixTreeNode, PrefixTree, TestNode
 from . import TestSwarm, TestWorker
 from . import TestObject, NetObject, VMObject, ImageObject
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 def set_graph_logging_level(level: int = 20) -> None:
