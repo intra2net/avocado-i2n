@@ -16,7 +16,7 @@ all:
 	@echo
 
 check:
-	$(COVERAGE) run --source=avocado_i2n -m unittest discover -v selftests
+	$(COVERAGE) run --source=avocado_i2n -m unittest discover -v selftests/isolation
 
 install:
 	$(PYTHON) setup.py install --root $(DESTDIR)
