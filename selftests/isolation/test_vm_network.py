@@ -119,13 +119,13 @@ class VMNetworkTest(Test):
             self.vmnet.integrate_node(node1)
 
         # correct case (ininitialized vm node interfaces)
-        node1.interfaces = {}
+        node1.interfaces.clear()
         self.vmnet.integrate_node(node1)
 
         # repeated address in the netconfig
         self.run_params["ip_b1_vm2"] = "10.1.0.1"
         self.vmnet = VMNetwork(self.run_params, self.env)
-        node1.interfaces = {}
+        node1.interfaces.clear()
         # BUG: this test succeeds in full module run locally but not in the CI
         #with self.assertRaises(IndexError):
         #    self.vmnet.integrate_node(node1)

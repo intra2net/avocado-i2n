@@ -14,13 +14,12 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Specialized test runner for the plugin.
 
 SUMMARY
 ------------------------------------------------------
-Specialized test runner for the plugin.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------
@@ -32,10 +31,12 @@ from __future__ import annotations
 import os
 import time
 import json
+from typing import Any
 import logging as log
-logging = log.getLogger('avocado.job.' + __name__)
+
 import asyncio
-log.getLogger('asyncio').parent = log.getLogger('avocado.job')
+
+log.getLogger("asyncio").parent = log.getLogger("avocado.job")
 
 from avocado.core.job import Job
 from avocado.core.nrunner.task import TASK_DEFAULT_CATEGORY, Task
@@ -48,17 +49,21 @@ from avocado.core.teststatus import STATUSES_MAPPING
 from avocado.core.task.runtime import RuntimeTask, PreRuntimeTask, PostRuntimeTask
 from avocado.core.task.statemachine import TaskStateMachine, Worker
 from avocado.core.dispatcher import SpawnerDispatcher
+from virttest.utils_params import Params
 
 from ..cartgraph import TestGraph, TestWorker, TestNode
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 class TestRunner(RunnerInterface):
     """Test runner for Cartesian graph traversal."""
 
-    name = 'traverser'
-    description = 'Runs tests through a Cartesian graph traversal'
+    name = "traverser"
+    description = "Runs tests through a Cartesian graph traversal"
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Construct minimal attributes for the Cartesian runner."""
         self.tasks = []
 
@@ -67,37 +72,41 @@ class TestRunner(RunnerInterface):
         self.previous_results = []
 
     """results functionality"""
-    async def _update_status(self):
+
+    async def _update_status(self) -> None:
         message_handler = MessageHandler()
         while True:
             try:
-                (_, task_id, _, index) = \
-                    self.status_repo.status_journal_summary_pop()
+                (_, task_id, _, index) = self.status_repo.status_journal_summary_pop()
 
             except IndexError:
                 await asyncio.sleep(0.05)
                 continue
 
             message = self.status_repo.get_task_data(task_id, index)
-            tasks_by_id = {str(runtime_task.task.identifier): runtime_task.task
-                           for runtime_task in self.tasks}
+            tasks_by_id = {
+                str(runtime_task.task.identifier): runtime_task.task
+                for runtime_task in self.tasks
+            }
             task = tasks_by_id.get(task_id)
             message_handler.process_message(message, task, self.job)
 
-    def all_results_ok(self):
+    def all_results_ok(self) -> bool:
         """
         Evaluate if all tests run under this runner have an ok status.
 
         :returns: whether all tests ended with acceptable status
-        :rtype: bool
 
         ..todo:: There might be repeated tests here that have eventually
             passed so we might need to return an overall "pass" status.
         """
         shared_status = True
         for test in self.job.result.tests:
-            shared_status &= any(STATUSES_MAPPING[t["status"]] for t in self.job.result.tests
-                                 if t["name"].name == test["name"].name)
+            shared_status &= any(
+                STATUSES_MAPPING[t["status"]]
+                for t in self.job.result.tests
+                if t["name"].name == test["name"].name
+            )
             if not shared_status:
                 return False
         return True
@@ -113,28 +122,34 @@ class TestRunner(RunnerInterface):
             replay_dir = self.job.config.get("datadir.paths.logs_dir", ".")
             replay_results = os.path.join(replay_dir, replay_job, "results.json")
             if not os.path.isfile(replay_results):
-                raise RuntimeError("Cannot find replay job results file %s" % replay_results)
+                raise RuntimeError(
+                    "Cannot find replay job results file %s" % replay_results
+                )
             with open(replay_results) as json_file:
                 logging.info(f"Parsing previous results to replay {replay_results}")
                 data = json.load(json_file)
-                if 'tests' not in data:
-                    raise RuntimeError(f"Cannot find tests to replay against in {replay_results}")
+                if "tests" not in data:
+                    raise RuntimeError(
+                        f"Cannot find tests to replay against in {replay_results}"
+                    )
                 for test_details in data["tests"]:
                     logging.info(f"Updating with previous test results {test_details}")
                     self.previous_results += [test_details]
 
     """running functionality"""
-    async def run_test_task(self, node):
+
+    async def run_test_task(self, node: TestNode) -> None:
         """
         Run a test instance inside a subprocess.
 
         :param node: test node to run
-        :type node: :py:class:`TestNode`
         """
         host = node.params["nets_host"] or "process"
         gateway = node.params["nets_gateway"] or "localhost"
         spawner = node.params["nets_spawner"]
-        logging.debug(f"Running {node.id} on {gateway}/{host} using {spawner} isolation")
+        logging.debug(
+            f"Running {node.id} on {gateway}/{host} using {spawner} isolation"
+        )
 
         if node.started_worker is None:
             raise RuntimeError(f"No worker is running {node}")
@@ -142,22 +157,29 @@ class TestRunner(RunnerInterface):
             raise RuntimeError(f"Worker {node.started_worker} cannot spawn tasks")
         if not self.status_repo:
             self.status_repo = StatusRepo(self.job.unique_id)
-            self.status_server = StatusServer(self.job.config.get('run.status_server_listen'),
-                                              self.status_repo)
+            self.status_server = StatusServer(
+                self.job.config.get("run.status_server_listen"), self.status_repo
+            )
             asyncio.ensure_future(self.status_server.serve_forever())
             # TODO: this needs more customization
             asyncio.ensure_future(self._update_status())
 
-        status_server_uri = self.job.config.get('run.status_server_uri')
+        status_server_uri = self.job.config.get("run.status_server_uri")
         node.regenerate_vt_parameters()
-        raw_task = Task(node, node.id_test,
-                        [status_server_uri],
-                        category=TASK_DEFAULT_CATEGORY,
-                        job_id=self.job.unique_id)
-        raw_task.runnable.output_dir = os.path.join(self.job.test_results_path,
-                                                    raw_task.identifier.str_filesystem)
+        raw_task = Task(
+            node,
+            node.id_test,
+            [status_server_uri],
+            category=TASK_DEFAULT_CATEGORY,
+            job_id=self.job.unique_id,
+        )
+        raw_task.runnable.output_dir = os.path.join(
+            self.job.test_results_path, raw_task.identifier.str_filesystem
+        )
         task = RuntimeTask(raw_task)
-        config = self.test_suite.config if hasattr(self, "test_suite") else self.job.config
+        config = (
+            self.test_suite.config if hasattr(self, "test_suite") else self.job.config
+        )
         pre_tasks = PreRuntimeTask.get_tasks_from_test_task(
             task,
             1,
@@ -186,9 +208,12 @@ class TestRunner(RunnerInterface):
 
         # TODO: use a single state machine for all test nodes when we are able
         # to at least add requested tasks to it safely (using its locks)
-        await Worker(state_machine=TaskStateMachine(tasks, self.status_repo),
-                     spawner=node.started_worker.spawner, max_running=1,
-                     task_timeout=self.job.config.get('task.timeout.running')).run()
+        await Worker(
+            state_machine=TaskStateMachine(tasks, self.status_repo),
+            spawner=node.started_worker.spawner,
+            max_running=1,
+            task_timeout=self.job.config.get("task.timeout.running"),
+        ).run()
 
     async def run_test_node(self, node: TestNode, status_timeout: int = 10) -> bool:
         """
@@ -199,7 +224,9 @@ class TestRunner(RunnerInterface):
         :raises: :py:class:`AssertionError` if the ran test node contains no objects
         """
         if node.is_flat():
-            raise AssertionError("Cannot run test nodes not using any test objects, here %s" % node)
+            raise AssertionError(
+                "Cannot run test nodes not using any test objects, here %s" % node
+            )
 
         original_prefix = node.prefix
         # appending a suffix to retries so we can tell them apart
@@ -215,15 +242,34 @@ class TestRunner(RunnerInterface):
 
         for i in range(status_timeout):
             try:
-                test_result = next((x for x in self.job.result.tests if x["name"].name == name and x["name"].uid == uid))
+                test_result = next(
+                    (
+                        x
+                        for x in self.job.result.tests
+                        if x["name"].name == name and x["name"].uid == uid
+                    )
+                )
                 if len(node.results) > 0:
                     # TODO: avocado's choice of result attributes is not uniform for past and current results
-                    get_duration = lambda x: float(x.get('time_elapsed', x['time']))
+                    def get_duration(x: dict[str, str]) -> float:
+                        return float(x.get("time_elapsed", x["time"]))
+
                     duration = get_duration(test_result)
-                    max_allowed = max([get_duration(r) for r in node.results if r["status"] == "PASS"], default=duration)
-                    logging.info(f"Validating test duration {duration} is within usual bounds ({max_allowed})")
+                    max_allowed = max(
+                        [
+                            get_duration(r)
+                            for r in node.results
+                            if r["status"] == "PASS"
+                        ],
+                        default=duration,
+                    )
+                    logging.info(
+                        f"Validating test duration {duration} is within usual bounds ({max_allowed})"
+                    )
                     if float(duration) > 1.25 * max_allowed:
-                        logging.warning(f"Test result {uid} was obtained but test took much longer ({duration}) than usual")
+                        logging.warning(
+                            f"Test result {uid} was obtained but test took much longer ({duration}) than usual"
+                        )
                         # TODO: could we replace with WARN before the status is announced to the status server?
                         test_result["status"] = "WARN"
                 # job and local results as interpreted by us have only serializable easy to use data
@@ -235,16 +281,20 @@ class TestRunner(RunnerInterface):
                 break
             except StopIteration:
                 await asyncio.sleep(30)
-                logging.warning(f"Test result {uid} wasn't yet found and could not be extracted ({i}/{status_timeout})")
+                logging.warning(
+                    f"Test result {uid} wasn't yet found and could not be extracted ({i}/{status_timeout})"
+                )
                 test_status = "error"
         else:
-            logging.error(f"Test result {uid} for {name} could not be found and extracted, defaulting to ERROR")
+            logging.error(
+                f"Test result {uid} for {name} could not be found and extracted, defaulting to ERROR"
+            )
         node.prefix = original_prefix
 
         logging.info(f"Finished running test with status {test_status.upper()}")
         # no need to log when test was not repeated
         if run_times > 0:
-            logging.info(f"Finished running test {run_times+1} times")
+            logging.info(f"Finished running test {run_times + 1} times")
 
         # FIX: as VT's retval is broken (always True), we fix its handling here
         if test_status in ["error", "fail"]:
@@ -252,7 +302,7 @@ class TestRunner(RunnerInterface):
         else:
             return True
 
-    def run_workers(self, test_suite: TestSuite or TestGraph, params: dict[str, str]) -> None:
+    def run_workers(self, test_suite: TestSuite | TestGraph, params: Params) -> None:
         """
         Run all workers in parallel traversing the graph for each.
 
@@ -264,7 +314,9 @@ class TestRunner(RunnerInterface):
             graph = TestGraph()
             graph.restrs.update(self.job.config["vm_strs"])
             for node in test_suite.tests:
-                assert isinstance(node, TestNode), f"Invalid test type fo test suite to run workers on for {node}"
+                assert isinstance(
+                    node, TestNode
+                ), f"Invalid test type fo test suite to run workers on for {node}"
                 # apply default_only or user overwritten restriction
                 node.update_restrs(self.job.config["vm_strs"])
             graph.new_nodes(test_suite.tests)
@@ -273,7 +325,9 @@ class TestRunner(RunnerInterface):
         elif isinstance(test_suite, TestGraph):
             graph = test_suite
         else:
-            raise TypeError(f"Unknown test suite type for {type(test_suite)}, must be a Cartesian graph or an Avocado test suite")
+            raise TypeError(
+                f"Unknown test suite type for {type(test_suite)}, must be a Cartesian graph or an Avocado test suite"
+            )
 
         graph.visualize(self.job.logdir)
         self.results_from_previous_jobs()
@@ -281,13 +335,16 @@ class TestRunner(RunnerInterface):
 
         for worker in graph.workers.values():
             if not worker.spawner:
-                worker.spawner = SpawnerDispatcher(self.job.config, self.job)[worker.params["nets_spawner"]].obj
+                worker.spawner = SpawnerDispatcher(self.job.config, self.job)[
+                    worker.params["nets_spawner"]
+                ].obj
             if not worker.start():
                 raise RuntimeError(f"Failed to start environment {worker.id}")
         slot_workers = sorted([*graph.workers.values()], key=lambda x: x.params["name"])
         to_traverse = [graph.traverse_object_trees(s, params) for s in slot_workers]
-        asyncio.get_event_loop().run_until_complete(asyncio.wait_for(asyncio.gather(*to_traverse),
-                                                                     self.job.timeout or None))
+        asyncio.get_event_loop().run_until_complete(
+            asyncio.wait_for(asyncio.gather(*to_traverse), self.job.timeout or None)
+        )
 
     def run_suite(self, job: Job, test_suite: TestSuite) -> set[str]:
         """
@@ -310,8 +367,9 @@ class TestRunner(RunnerInterface):
         self.tasks = []
 
         self.status_repo = StatusRepo(self.job.unique_id)
-        self.status_server = StatusServer(self.job.config.get('run.status_server_listen'),
-                                          self.status_repo)
+        self.status_server = StatusServer(
+            self.job.config.get("run.status_server_listen"), self.status_repo
+        )
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.status_server.create_server())
         asyncio.ensure_future(self.status_server.serve_forever())
@@ -323,11 +381,11 @@ class TestRunner(RunnerInterface):
             self.run_workers(test_suite, params)
             if not self.all_results_ok():
                 # the summary is a set so only a single failed test is enough
-                summary.add('FAIL')
+                summary.add("FAIL")
         except (KeyboardInterrupt, asyncio.TimeoutError) as error:
             logging.info(str(error))
             self.job.interrupted_reason = str(error)
-            summary.add('INTERRUPTED')
+            summary.add("INTERRUPTED")
 
         # clean up any test node session cache
         for session in TestWorker._session_cache.values():

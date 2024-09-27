@@ -14,13 +14,12 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Module for the ramfile state management backend.
 
 SUMMARY
 ------------------------------------------------------
-Module for the ramfile state management backend.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------
@@ -28,13 +27,17 @@ INTERFACE
 """
 
 import os
+from typing import Any
 import logging as log
-logging = log.getLogger('avocado.job.' + __name__)
 
 from virttest import env_process
 from virttest.virt_vm import VMCreateError
+from virttest.utils_params import Params
 
 from .pool import SourcedStateBackend
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 class RamfileBackend(SourcedStateBackend):
@@ -43,14 +46,16 @@ class RamfileBackend(SourcedStateBackend):
     image_state_backend = None
 
     @classmethod
-    def _show(cls, params, object=None):
+    def _show(cls, params: Params, object: Any = None) -> list[str]:
         """
         Return a list of available states of a specific type.
 
         All arguments match the base class.
         """
         state_dir = params["swarm_pool"]
-        logging.debug(f"Showing external states for vm {params['vms']} locally in {state_dir}")
+        logging.debug(
+            f"Showing external states for vm {params['vms']} locally in {state_dir}"
+        )
         vm_dir = os.path.join(state_dir, params["object_id"])
         snapshots = os.listdir(vm_dir)
 
@@ -63,7 +68,7 @@ class RamfileBackend(SourcedStateBackend):
             if len(images_states) == 0:
                 images_states = image_snapshots
             else:
-                images_states = states.intersect(image_snapshots)
+                images_states = images_states.intersect(image_snapshots)
 
         states = []
         for snapshot in snapshots:
@@ -71,15 +76,17 @@ class RamfileBackend(SourcedStateBackend):
                 continue
             size = os.stat(os.path.join(vm_dir, snapshot)).st_size
             state = snapshot[:-6]
-            logging.debug(f"Detected memory state '{snapshot}' of size "
-                          f"{round(size / 1024**3, 3)} GB ({size})")
+            logging.debug(
+                f"Detected memory state '{snapshot}' of size "
+                f"{round(size / 1024**3, 3)} GB ({size})"
+            )
             if state in images_states:
                 logging.debug(f"Memory state '{snapshot}' is a complete vm state")
                 states.append(state)
         return states
 
     @classmethod
-    def _get(cls, params, object=None):
+    def _get(cls, params: Params, object: Any = None) -> None:
         """
         Retrieve a state disregarding the current changes.
 
@@ -102,7 +109,7 @@ class RamfileBackend(SourcedStateBackend):
         vm.resume(timeout=3)
 
     @classmethod
-    def _set(cls, params, object=None):
+    def _set(cls, params: Params, object: Any = None) -> None:
         """
         Store a state saving the current changes.
 
@@ -133,7 +140,7 @@ class RamfileBackend(SourcedStateBackend):
         vm.resume(timeout=3)
 
     @classmethod
-    def _unset(cls, params, object=None):
+    def _unset(cls, params: Params, object: Any = None) -> None:
         """
         Remove a state with previous changes.
 
@@ -144,7 +151,7 @@ class RamfileBackend(SourcedStateBackend):
         # TODO: such switch is not allowed within the state backend, has to be handled on more globally:
         # this is entirely commented so that the "remove previous state" on overwriting doesn't turn off the vm
         # making it impossible to save a state on off-vm
-        #if vm is not None:
+        # if vm is not None:
         #    vm.destroy(gracefully=False)
 
         for image_name in params.objects("images"):
@@ -159,7 +166,7 @@ class RamfileBackend(SourcedStateBackend):
         os.unlink(state_file)
 
     @classmethod
-    def check_root(cls, params, object=None):
+    def check_root(cls, params: Params, object: Any = None) -> bool:
         """
         Check whether a root state or essentially the object is running.
 
@@ -171,7 +178,9 @@ class RamfileBackend(SourcedStateBackend):
         state_dir = params["swarm_pool"]
         vm_dir = os.path.join(state_dir, params["object_id"])
         if not os.path.exists(vm_dir):
-            logging.info("The base directory for the virtual machine %s is missing", vm_name)
+            logging.info(
+                "The base directory for the virtual machine %s is missing", vm_name
+            )
             return False
 
         # we cannot use local image backend because root conditions here require running vm
@@ -183,8 +192,11 @@ class RamfileBackend(SourcedStateBackend):
             image_format = image_params.get("image_format", "qcow2")
             image_format = "" if image_format in ["raw", ""] else "." + image_format
             if not os.path.exists(image_path + image_format):
-                logging.info("The required virtual machine %s has a missing image %s",
-                             vm_name, image_path + image_format)
+                logging.info(
+                    "The required virtual machine %s has a missing image %s",
+                    vm_name,
+                    image_path + image_format,
+                )
                 return False
 
         if not params.get_boolean("use_env", True):
@@ -199,7 +211,7 @@ class RamfileBackend(SourcedStateBackend):
             return False
 
     @classmethod
-    def set_root(cls, params, object=None):
+    def set_root(cls, params: Params, object: Any = None) -> None:
         """
         Set a root state to provide running object.
 
@@ -229,7 +241,7 @@ class RamfileBackend(SourcedStateBackend):
         logging.info("Booting %s to provide boot state", vm_name)
         if vm is None:
             raise ValueError("Need an environmental object to boot")
-            #vm = env.create_vm(params.get('vm_type'), params.get('target'),
+            # vm = env.create_vm(params.get('vm_type'), params.get('target'),
             #                   vm_name, params, None)
         if not vm.is_alive():
             try:
@@ -239,18 +251,27 @@ class RamfileBackend(SourcedStateBackend):
                     image_params = params.object_params(image_name)
                     image_path = image_params["image_name"]
                     if not os.path.isabs(image_path):
-                        image_path = os.path.join(image_params["images_base_dir"], image_path)
+                        image_path = os.path.join(
+                            image_params["images_base_dir"], image_path
+                        )
                     image_format = image_params.get("image_format")
-                    image_format = "" if image_format in ["raw", ""] else "." + image_format
-                    logging.info("Creating image %s in order to boot %s",
-                                 image_path + image_format, vm_name)
+                    image_format = (
+                        "" if image_format in ["raw", ""] else "." + image_format
+                    )
+                    logging.info(
+                        "Creating image %s in order to boot %s",
+                        image_path + image_format,
+                        vm_name,
+                    )
                     os.makedirs(os.path.dirname(image_path), exist_ok=True)
-                    image_params.update({"create_image": "yes", "force_create_image": "yes"})
+                    image_params.update(
+                        {"create_image": "yes", "force_create_image": "yes"}
+                    )
                     env_process.preprocess_image(None, image_params, image_path)
                 vm.create()
 
     @classmethod
-    def unset_root(cls, params, object=None):
+    def unset_root(cls, params: Params, object: Any = None) -> None:
         """
         Unset a root state to prevent object from running.
 

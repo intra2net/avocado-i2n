@@ -14,13 +14,12 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+Utility for the main test suite substructures like test objects.
 
 SUMMARY
 ------------------------------------------------------
-Utility for the main test suite substructures like test objects.
 
 Copyright: Intra2net AG
-
 
 INTERFACE
 ------------------------------------------------------
@@ -30,18 +29,23 @@ INTERFACE
 from __future__ import annotations
 
 import logging as log
-logging = log.getLogger('avocado.job.' + __name__)
 
 import aexpect
 from aexpect.exceptions import ShellTimeoutError
 from aexpect import remote
+from aexpect.client import RemoteSession
+from virttest.utils_params import Params
 
 from . import NetObject
 
 
-class TestEnvironment(object):
+logging = log.getLogger("avocado.job." + __name__)
 
-    def __init__(self, id: str):
+
+class TestEnvironment(object):
+    """Generic environment isolating a given test."""
+
+    def __init__(self, id: str) -> None:
         """
         Construct a test environment for any test nodes (tests).
 
@@ -55,7 +59,7 @@ class TestSwarm(TestEnvironment):
 
     run_swarms = {}
 
-    def __init__(self, id, workers = None):
+    def __init__(self, id: str, workers: list[TestWorker] = None) -> None:
         """
         Construct a test swarm (of sub-environments for execution) for any test nodes (tests).
 
@@ -64,7 +68,8 @@ class TestSwarm(TestEnvironment):
         super().__init__(id)
         self.workers = workers or []
 
-    def __repr__(self):
+    def __repr__(self) -> str:
+        """Provide a representation of the object."""
         dump = f"[swarm] id='{self.id}', workers='{len(self.workers)}'"
         for worker in self.workers:
             dump = f"{dump}\n\t{worker}"
@@ -76,17 +81,17 @@ class TestWorker(TestEnvironment):
 
     _session_cache = {}
 
-    def params(self):
+    @property
+    def params(self) -> Params:
         """Parameters (cache) property."""
         return self.net.params
-    params = property(fget=params)
 
-    def restrs(self):
+    @property
+    def restrs(self) -> dict[str, str]:
         """Restrictions property."""
         return self.net.restrs
-    restrs = property(fget=restrs)
 
-    def __init__(self, id_net: NetObject):
+    def __init__(self, id_net: NetObject) -> None:
         """
         Construct a test worker (execution environment) for any test nodes (tests).
 
@@ -99,7 +104,8 @@ class TestWorker(TestEnvironment):
         _, self.swarm_id, _ = self.params["name"].split(".")
         self.spawner = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
+        """Provide a representation of the object."""
         return f"[worker] id='{self.id}', spawner='{self.params['nets_spawner']}'"
 
     def overwrite_with_slot(self, slot: str) -> None:
@@ -113,7 +119,7 @@ class TestWorker(TestEnvironment):
             env_net = ""
             env_name = "c" + env_tuple[0] if env_tuple[0] else ""
             if env_name != "":
-                prefix = self.params['nets_ip_prefix']
+                prefix = self.params["nets_ip_prefix"]
                 ip = f"{prefix}.{env_name[1:]}"
             else:
                 ip = "localhost"
@@ -125,8 +131,10 @@ class TestWorker(TestEnvironment):
             env_net = env_tuple[0]
             env_name = env_tuple[1]
             if not env_name.isdigit():
-                raise RuntimeError(f"Invalid remote host '{env_name}', "
-                                   f"only numbers (as forwarded ports) accepted")
+                raise RuntimeError(
+                    f"Invalid remote host '{env_name}', "
+                    f"only numbers (as forwarded ports) accepted"
+                )
             env_type = "remote"
             port = f"22{env_name}"
             ip = env_net
@@ -153,6 +161,7 @@ class TestWorker(TestEnvironment):
             return True
         elif isolation_type == "lxc":
             import lxc
+
             cid = self.params["nets_host"]
             container = lxc.Container(cid)
             if not container.running:
@@ -180,6 +189,7 @@ class TestWorker(TestEnvironment):
             return True
         elif isolation_type == "lxc":
             import lxc
+
             cid = self.params["nets_host"]
             container = lxc.Container(cid)
             if container.running:
@@ -193,7 +203,7 @@ class TestWorker(TestEnvironment):
         else:
             raise RuntimeError(f"Unsupported isolation type {isolation_type}")
 
-    def get_session(self) -> aexpect.ShellSession:
+    def get_session(self) -> RemoteSession:
         """
         Get a remote session to the current slot for the given test node.
 
@@ -207,15 +217,21 @@ class TestWorker(TestEnvironment):
         if session:
             # check for corrupted sessions
             try:
-                logging.debug("Remote session health check: " + session.cmd_output("date"))
+                logging.debug(
+                    "Remote session health check: " + session.cmd_output("date")
+                )
             except ShellTimeoutError as error:
                 logging.warning(f"Bad remote session health for {address}!")
                 session = None
         if not session:
-            session = remote.wait_for_login(self.params["nets_shell_client"],
-                                            self.params["nets_shell_host"], self.params["nets_shell_port"],
-                                            self.params["nets_username"], self.params["nets_password"],
-                                            self.params["nets_shell_prompt"])
+            session = remote.wait_for_login(
+                self.params["nets_shell_client"],
+                self.params["nets_shell_host"],
+                self.params["nets_shell_port"],
+                self.params["nets_username"],
+                self.params["nets_password"],
+                self.params["nets_shell_prompt"],
+            )
             cache[address] = session
 
         return session

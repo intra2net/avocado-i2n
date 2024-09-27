@@ -13,12 +13,27 @@
 # You should have received a copy of the GNU Lesser General Public License
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
+"""
+Manu plugin as a separate avocado command.
+
+SUMMARY
+------------------------------------------------------
+
+Copyright: Intra2net AG
+
+INTERFACE
+------------------------------------------------------
+
+"""
+
 import os
+import argparse
 import traceback
 
 from avocado.core.settings import settings
 from avocado.core.output import LOG_UI, LOG_JOB as log
 from avocado.core.plugin_interfaces import CLICmd
+from virttest.utils_params import Params
 
 from .. import cmd_parser
 from .. import params_parser as param
@@ -26,11 +41,14 @@ from .. import intertest_setup as intertest
 
 
 class Manu(CLICmd):
+    """Class for the manu plugin."""
 
-    name = 'manu'
-    description = 'Tools using setup chains of manual steps with Cartesian graph manipulation.'
+    name = "manu"
+    description = (
+        "Tools using setup chains of manual steps with Cartesian graph manipulation."
+    )
 
-    def configure(self, parser):
+    def configure(self, parser: argparse.ArgumentParser) -> None:
         """
         Add the parser for the manual action.
 
@@ -38,24 +56,28 @@ class Manu(CLICmd):
         """
         parser = super(Manu, self).configure(parser)
 
-        settings.register_option(section='i2n.manu',
-                                 key='params',
-                                 key_type=list,
-                                 default=[],
-                                 metavar='PARAM=VALUE',
-                                 help_msg="List of 'key=value' pairs passed to a Cartesian parser.",
-                                 parser=parser,
-                                 nargs='*',
-                                 positional_arg=True)
+        settings.register_option(
+            section="i2n.manu",
+            key="params",
+            key_type=list,
+            default=[],
+            metavar="PARAM=VALUE",
+            help_msg="List of 'key=value' pairs passed to a Cartesian parser.",
+            parser=parser,
+            nargs="*",
+            positional_arg=True,
+        )
 
-    def run(self, config):
+    def run(self, config: Params) -> int:
         """
-        Take care of command line overwriting, parameter preparation,
+        Run the manu plugin.
+
+        Take care of command line overwriting, parameter preparation for all host controls,
         setup and cleanup chains, and paths/utilities for all host controls.
         """
         log.info("Manual setup chain started.")
         # set English environment (command output might be localized, need to be safe)
-        os.environ['LANG'] = 'en_US.UTF-8'
+        os.environ["LANG"] = "en_US.UTF-8"
 
         config["run.suite_runner"] = "traverser"
         config["params"] = config["i2n.manu.params"]

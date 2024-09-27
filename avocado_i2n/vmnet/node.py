@@ -14,10 +14,10 @@
 # along with avocado-i2n.  If not, see <http://www.gnu.org/licenses/>.
 
 """
+VMNode object for the vmnet utility.
 
 SUMMARY
 ------------------------------------------------------
-VMNode object for the vmnet utility.
 
 Copyright: Intra2net AG
 
@@ -27,97 +27,106 @@ CONTENTS
 This class wraps up the functionality shared among the interfaces of
 the same platform like session management, etc.
 
-
 INTERFACE
 ------------------------------------------------------
 
 """
 
+from typing import Callable
 import logging as log
-logging = log.getLogger('avocado.job.' + __name__)
+
+from aexpect.client import RemoteSession
+from virttest.utils_params import Params
+from virttest.qemu_vm import VM
+
+
+logging = log.getLogger("avocado.job." + __name__)
 
 
 class VMNode(object):
-    """
-    The vmnode class - a collection of interfaces
-    sharing the same platform.
-    """
+    """Get the vmnode class - a collection of interfaces sharing the same platform."""
 
     """Structural properties"""
-    def interfaces(self, value=None):
-        """A collection of interfaces the vm node represents."""
-        if value is not None:
-            self._interfaces = value
-        else:
-            return self._interfaces
-    interfaces = property(fget=interfaces, fset=interfaces)
 
-    def ephemeral(self):
-        """Whether the vm node is ephemeral (spawned in a network)."""
+    @property
+    def interfaces(self) -> dict[str, "VMInterface"]:
+        """Get a collection of interfaces the vm node represents."""
+        return self._interfaces
+
+    @property
+    def ephemeral(self) -> bool:
+        """
+        Check if the vm node is ephemeral.
+
+        returns: whether the vm node is ephemeral (spawned in a network).
+        """
         return self._ephemeral
-    ephemeral = property(fget=ephemeral)
 
     """Platform properties"""
-    def platform(self, value=None):
-        """
-        A reference to the virtual machine object whose network
-        configuration is represented by the vm node.
-        """
+
+    def platform(self, value: VM = None) -> VM | None:
+        """Get a reference to the virtual machine object whose network configuration is represented by the vm node."""
         if value is not None:
             self._platform = value
+            return None
         else:
             return self._platform
+
     platform = property(fget=platform, fset=platform)
 
-    def name(self, value=None):
-        """A proxy reference to the vm name."""
+    def name(self, value: str = None) -> str | None:
+        """Get a proxy reference to the vm name."""
         if value is not None:
             self._platform.name = value
+            return None
         else:
             return self._platform.name
+
     name = property(fget=name, fset=name)
 
-    def params(self, value=None):
+    @property
+    def params(self) -> Params:
         """
-        A proxy reference to the vm params.
+        Get a proxy reference to the vm params.
 
         .. note:: this is just a shallow copy to preserve the hierarchy:
             network level params = test level params -> vmnode level params = test object params
             -> interface level params = rarely used outside of the vm network
         """
-        if value is not None:
-            self._platform.params = value
-        else:
-            return self._platform.params
-    params = property(fget=params, fset=params)
+        return self._platform.params
 
-    def remote_sessions(self, value=None):
-        """A proxy reference to the vm sessions."""
+    def remote_sessions(
+        self, value: list[RemoteSession] = None
+    ) -> list[RemoteSession] | None:
+        """Get a proxy reference to the vm sessions."""
         if value is not None:
             self._platform.remote_sessions = value
+            return None
         else:
             return self._platform.remote_sessions
+
     remote_sessions = property(fget=remote_sessions, fset=remote_sessions)
 
-    def last_session(self, value=None):
+    def last_session(self, value: RemoteSession = None) -> RemoteSession | None:
         """
-        A pointer to the last created vm session.
+        Get a pointer to the last created vm session.
 
         Used to facilitate the frequent access to a single session.
         """
         if value is not None:
             self._last_session = value
+            return None
         else:
             return self._last_session
+
     last_session = property(fget=last_session, fset=last_session)
 
-    def __init__(self, platform, ephemeral=False):
+    def __init__(self, platform: VM, ephemeral: bool = False) -> None:
         """
         Construct a vm node from a vm platform.
 
         :param platform: the vm platform that communicates in the vm network
-        :type platform: :py:class:`virttest.qemu_vm.VM`
-        :param bool ephemeral: whether the node is ephemeral (spawned in a network)
+        :param ephemeral: whether the node is ephemeral (spawned in a network)
         """
         self._interfaces = {}
 
@@ -126,25 +135,26 @@ class VMNode(object):
         self._platform = platform
         self._last_session = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
+        """Provide a representation of the object."""
         vm_tuple = (self.name, len(self.remote_sessions))
         return "[node] name='%s', sessions='%s'" % vm_tuple
 
-    def check_interface(self, condition):
+    def check_interface(
+        self, condition: Callable[["VMInterface"], bool]
+    ) -> "VMInterface | None":
         """
         Check whether one of node's interfaces satisfies a boolean condition.
 
         :param condition: condition to try each interface on
-        :type condition: function
         :returns: the first interface satisfying the provided criteria or None
-        :rtype: Interface object or None
         """
         for interface in self.interfaces.values():
             if condition(interface):
                 return interface
         return None
 
-    def get_single_interface(self):
+    def get_single_interface(self) -> "VMInterface":
         """
         Get a single (first) interface of the node.
 
@@ -152,11 +162,11 @@ class VMNode(object):
         """
         return list(self.interfaces.values())[0]
 
-    def get_session(self, serial=False):
+    def get_session(self, serial: bool = False) -> RemoteSession:
         """
-        The basic network login - get a session from a vmnode.
+        Obtain a session from a vmnode by performing the basic network login.
 
-        :param bool serial: whether to use serial connection
+        :param serial: whether to use serial connection
         """
         self.platform.verify_alive()
         timeout = float(self.params.get("login_timeout", 240))
