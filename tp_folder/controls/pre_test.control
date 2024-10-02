@@ -35,7 +35,6 @@ logging.info("%s control file.", NAME)
 # MAIN PART
 
 logging.info(f"Added utility path {utility_path}")
-log.getLogger("Pyro4.core").setLevel(99)
 log.getLogger("aexpect").level = log.DEBUG
 logging.info(f"Setting network class for state backend")
 VMNetBackend.network_class = VMNetwork
@@ -47,6 +46,9 @@ def close_sessions(fn: Callable[[VirtTest, Params, Env], None]) -> Callable[[Vir
         from avocado_i2n.states import pool
         for session in pool.TransferOps._session_cache.values():
             session.close()
+        # TODO: consider better localization for this (needed for GUI tests)
+        from vncdotool import api
+        api.shutdown()
     return wrapper
 def on_state(fn: Callable[[Params, Env], None], do: str) -> Callable[[VirtTest, Params, Env], None]:
     def wrapper(test: "VirtTest", params: "Params", env: "Env") -> None:

@@ -43,6 +43,6 @@ def run(test, params, env):
 
     vmnet.ping_all()
     if vm.params["os_variant"] == "centos":
-        session.cmd("pip3 install Pyro4")
+        session.cmd("pip3 install Pyro5")
     else:
         test.log.info(f"No remote support for OS variant {vm.params['os_variant']}")
