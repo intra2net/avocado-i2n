@@ -1053,7 +1053,7 @@ class VMNetwork(object):
             )
             netcmd = 'netsh interface ip add dns name="%s" addr=%s index=1'
             vm.session.cmd(netcmd % (network, interface.netconfig.gateway))
-        elif vm.params["os_variant"] in ["ak", "al", "am"]:
+        elif vm.params["os_variant"] == "android":
             raise exceptions.TestError(
                 "No static IP can be set for Android devices (%s)" % vm.name
             )

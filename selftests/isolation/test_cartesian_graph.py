@@ -34,10 +34,10 @@ class CartesianWorkerTest(Test):
         self.assertEqual(len(test_objects), 2)
         self.assertRegex(test_objects[1].params["name"], r"vms.vm1\.qemu_kvm_centos.*CentOS.*")
         self.assertEqual(test_objects[1].params["vms"], "vm1")
-        self.assertEqual(test_objects[1].params["os_variant"], "el8")
+        self.assertEqual(test_objects[1].params["os_variant"], "centos")
         self.assertRegex(test_objects[0].params["name"], r"vms.vm1\.qemu_kvm_fedora.*Fedora.*")
         self.assertEqual(test_objects[0].params["vms"], "vm1")
-        self.assertEqual(test_objects[0].params["os_variant"], "f33")
+        self.assertEqual(test_objects[0].params["os_variant"], "fedora")
 
         test_object = TestGraph.parse_flat_objects("vm1", "vms", "CentOS", unique=True)
         self.assertRegex(test_object.params["name"], r"vms.vm1\.qemu_kvm_centos.*CentOS.*")
@@ -157,12 +157,12 @@ class CartesianObjectTest(Test):
         self.assertRegex(test_objects[1].params["name"], r"vm1\.qemu_kvm_centos.*CentOS.*")
         self.assertEqual(test_objects[1].params["vms"], "vm1")
         self.assertEqual(test_objects[1].params["main_vm"], "vm1")
-        self.assertEqual(test_objects[1].params["os_variant"], "el8")
+        self.assertEqual(test_objects[1].params["os_variant"], "centos")
         self.assertEqual(test_objects[1].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertRegex(test_objects[0].params["name"], r"vm1\.qemu_kvm_fedora.*Fedora.*")
         self.assertEqual(test_objects[0].params["vms"], "vm1")
         self.assertEqual(test_objects[0].params["main_vm"], "vm1")
-        self.assertEqual(test_objects[0].params["os_variant"], "f33")
+        self.assertEqual(test_objects[0].params["os_variant"], "fedora")
         self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertNotIn("only", test_objects[0].params)
 
@@ -179,9 +179,9 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object.params["vms_vm1"], "vm1")
         self.assertEqual(test_object.params["vms_vm2"], "vm2")
         self.assertEqual(test_object.params["vms_vm3"], "vm3")
-        self.assertEqual(test_object.params["os_variant_vm1"], "el8")
+        self.assertEqual(test_object.params["os_variant_vm1"], "centos")
         self.assertEqual(test_object.params["os_variant_vm2"], "win10")
-        self.assertEqual(test_object.params["os_variant_vm3"], "ubuntutrusty")
+        self.assertEqual(test_object.params["os_variant_vm3"], "ubuntu")
         self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertNotIn("only", test_object.params)
         self.assertNotIn("only_vm1", test_object.params)
@@ -213,9 +213,9 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object.params["vms_vm1"], "vm1")
         self.assertEqual(test_object.params["vms_vm2"], "vm2")
         self.assertEqual(test_object.params["vms_vm3"], "vm3")
-        self.assertEqual(test_object.params["os_variant_vm1"], "el8")
+        self.assertEqual(test_object.params["os_variant_vm1"], "centos")
         self.assertEqual(test_object.params["os_variant_vm2"], "win10")
-        self.assertEqual(test_object.params["os_variant_vm3"], "ubuntutrusty")
+        self.assertEqual(test_object.params["os_variant_vm3"], "ubuntu")
         self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
         self.assertNotIn("only", test_object.params)
         self.assertNotIn("only_vm1", test_object.params)
@@ -323,14 +323,14 @@ class CartesianObjectTest(Test):
             self.assertEqual(test_object.params["os_variant_vm2"], vm2_os)
             self.assertEqual(test_object.params["os_variant_vm3"], vm3_os)
             self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
-        assertVariant(nets[0], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_7.*qcow.*Win7.*.vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "f33", "win7", "ubuntutrusty")
-        assertVariant(nets[1], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_7.*qcow.*Win7.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "f33", "win7", "kl")
-        assertVariant(nets[2], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "f33", "win10", "ubuntutrusty")
-        assertVariant(nets[3], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "f33", "win10", "kl")
-        assertVariant(nets[4], r"vm1\.qemu_kvm_centos.*qcow.*CentOS.*vm2\.qemu_kvm_windows_7.*.qcow.*Win7.*vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "el8", "win7", "ubuntutrusty")
-        assertVariant(nets[5], r"vm1\.qemu_kvm_centos.*qcow.*CentOS.*vm2\.qemu_kvm_windows_7.*qcow.*Win7.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "el8", "win7", "kl")
-        assertVariant(nets[6], r"vm1\.qemu_kvm_centos.*qcow.*CentOS.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "el8", "win10", "ubuntutrusty")
-        assertVariant(nets[7], r"vm1\.qemu_kvm_centos.*qcow.*CentOS.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "el8", "win10", "kl")
+        assertVariant(nets[0], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_7.*qcow.*Win7.*.vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "fedora", "win7", "ubuntu")
+        assertVariant(nets[1], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_7.*qcow.*Win7.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "fedora", "win7", "kl")
+        assertVariant(nets[2], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "fedora", "win10", "ubuntu")
+        assertVariant(nets[3], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "fedora", "win10", "kl")
+        assertVariant(nets[4], r"vm1\.qemu_kvm_centos.*qcow.*CentOS.*vm2\.qemu_kvm_windows_7.*.qcow.*Win7.*vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "centos", "win7", "ubuntu")
+        assertVariant(nets[5], r"vm1\.qemu_kvm_centos.*qcow.*CentOS.*vm2\.qemu_kvm_windows_7.*qcow.*Win7.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "centos", "win7", "kl")
+        assertVariant(nets[6], r"vm1\.qemu_kvm_centos.*qcow.*CentOS.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "centos", "win10", "ubuntu")
+        assertVariant(nets[7], r"vm1\.qemu_kvm_centos.*qcow.*CentOS.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "centos", "win10", "kl")
 
     def test_parse_components_for_net_restricted(self):
         """Test for correctly parsed restricted vm components with unflattened net."""
@@ -348,10 +348,14 @@ class CartesianObjectTest(Test):
             self.assertEqual(test_object.params["os_variant_vm2"], vm2_os)
             self.assertEqual(test_object.params["os_variant_vm3"], vm3_os)
             self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
-        assertVariant(nets[0], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "el8", "win7", "ubuntutrusty")
-        assertVariant(nets[1], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_kali.*Kali.*", "el8", "win7", "kl")
-        assertVariant(nets[2], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*", "el8", "win10", "ubuntutrusty")
-        assertVariant(nets[3], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_kali.*Kali.*", "el8", "win10", "kl")
+        assertVariant(nets[0], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*",
+                      "centos", "win7", "ubuntu")
+        assertVariant(nets[1], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_kali.*Kali.*",
+                      "centos", "win7", "kl")
+        assertVariant(nets[2], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*",
+                      "centos", "win10", "ubuntu")
+        assertVariant(nets[3], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_10.*Win10.*.vm3.qemu_kvm_kali.*Kali.*",
+                      "centos", "win10", "kl")
 
     def test_params(self):
         """Test for correctly parsed and regenerated test object parameters."""
@@ -2248,7 +2252,7 @@ class CartesianGraphTest(Test):
         self.assertEqual(len(get_objects), 1)
         get_objects = graph.get_objects("os_type", param_val="linux", subset=get_objects)
         self.assertEqual(len(get_objects), 1)
-        get_objects = graph.get_objects(param_key="os_variant", param_val="el8", subset=get_objects)
+        get_objects = graph.get_objects(param_key="os_variant", param_val="centos", subset=get_objects)
         self.assertEqual(len(get_objects), 1)
         get_node = graph.get_nodes(param_key="os_type", param_val="linux",
                                       subset=get_objects, unique=True)

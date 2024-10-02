@@ -131,7 +131,7 @@ def run(test, params, env):
     vmnet = env.get_vmnet()
     vm, session, params = vmnet.get_single_vm_with_session_and_params()
     os_type = params.get("os_type", "linux")
-    os_variant = params.get("os_variant", "ibs")
+    os_variant = params.get("os_variant", "fedora")
     tmp_dir = params.get("tmp_dir", "/tmp")
 
     # main deployment part
