@@ -31,7 +31,7 @@ logging.info("%s control file.", NAME)
 # MAIN PART
 
 logging.info(f"Added utility path {utility_path}")
-log.getLogger("Pyro4.core").setLevel(99)
+log.getLogger("Pyro5.core").setLevel(99)
 log.getLogger("aexpect").parent = log.getLogger("avocado.extlib")
 logging.info(f"Setting network class for state backend")
 VMNetBackend.network_class = VMNetwork
