@@ -60,7 +60,7 @@ def run(test, params, env):
                 door.SRC_CONTROL_DIR = os.path.join(vm.params["original_test_data_path"], "..", "controls")
                 door.DUMP_CONTROL_DIR = test.logdir
                 logging.info("Running custom control file on %s", vm.name)
-                control_path = door.set_subcontrol_parameter_object(vm.params["control_file"], vm.params)
+                control_path = door.set_subcontrol_parameter_object(vm.params["control_file"], "virttest.utils_params.Params", vm.params)
                 door.run_subcontrol(session, control_path)
                 extra_timeout = int(params.get("extra_timeout", "0"))
                 logging.info("Parameters will be available for extra %s seconds", extra_timeout)
