@@ -122,12 +122,12 @@ def run(test, params, env):
         door.REMOTE_PYTHON_BINARY = "python3.6"
 
         # The most advanced remote methods require serialization backend.
-        serialization_cmd = door.REMOTE_PYTHON_BINARY + " -c 'import Pyro4'"
+        serialization_cmd = door.REMOTE_PYTHON_BINARY + " -c 'import Pyro5'"
         guest_serialization = server_vm.session.cmd_status(serialization_cmd) == 0
         if not guest_serialization:
             logging.warning("The remote door object backend not found on guest")
         try:
-            import Pyro4
+            import Pyro5
         except ImportError:
             logging.warning("The remote door object backend not found on host")
             host_serialization = False
@@ -183,6 +183,7 @@ def run(test, params, env):
                 log.info("Performing extra hostname check using shared parameters control")
                 control_path = server_vm.params["control_file"].replace("step_3", "step_3.2")
                 control_path = door.set_subcontrol_parameter_object(control_path,
+                                                                    "virttest.utils_params.Params",
                                                                     server_vm.params)
                 door.run_subcontrol(server_vm.session, control_path)
                 failed_checks = server_vm.params["failed_checks"]
