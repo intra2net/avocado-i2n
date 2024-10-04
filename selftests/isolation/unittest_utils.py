@@ -34,13 +34,13 @@ class DummyTestRun(object):
         name = self.current_test_dict["name"]
         # allow tests to specify the status they expect
         status = self.expected_test_dict.get("_status", "PASS")
-        time = self.expected_test_dict.get("_time", "1")
-        self.add_test_result(uid, name, status, time)
+        time_elapsed = self.expected_test_dict.get("_time_elapsed", "1")
+        self.add_test_result(uid, name, status, time_elapsed)
         if status in ["ERROR", "FAIL"] and self.current_test_dict.get("abort_on_error", "no") == "yes":
             raise exceptions.TestSkipError("God wanted this test to abort")
         return status not in ["ERROR", "FAIL"]
 
-    def add_test_result(self, uid, name, status, time, logdir="."):
+    def add_test_result(self, uid, name, status, time_elapsed, logdir="."):
         mocktestid = type("Mock", (), {"uid": uid, "name": name})()
         # or else have to set name attribute separately since "name" is reserved by MagicMock
         # mocktestid = mock.MagicMock(uid=uid, name=name)
@@ -48,7 +48,7 @@ class DummyTestRun(object):
         self.test_results.append({
             "name": mocktestid,
             "status": status,
-            "time": time,
+            "time_elapsed": time_elapsed,
             "logdir": logdir,
         })
 
