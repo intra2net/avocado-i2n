@@ -250,14 +250,11 @@ class TestRunner(RunnerInterface):
                     )
                 )
                 if len(node.results) > 0:
-                    # TODO: avocado's choice of result attributes is not uniform for past and current results
-                    def get_duration(x: dict[str, str]) -> float:
-                        return float(x.get("time_elapsed", x["time"]))
 
-                    duration = get_duration(test_result)
+                    duration = float(test_result["time_elapsed"])
                     max_allowed = max(
                         [
-                            get_duration(r)
+                            float(r["time_elapsed"])
                             for r in node.results
                             if r["status"] == "PASS"
                         ],

@@ -1975,7 +1975,7 @@ class CartesianNodeTest(Test):
         worker.params["nets_host"] = "some_host"
         # could also be result from a previous job, not determined here
         parent_node.results = [{"name": "tutorial1.net1",
-                                "status": "PASS", "time": 3}]
+                                "status": "PASS", "time_elapsed": 3}]
         # parent nodes was parsed as dependency of node via its vm1 object
         node.descend_from_node(parent_node, mock.MagicMock(long_suffix="vm1"))
 
@@ -2019,7 +2019,7 @@ class CartesianNodeTest(Test):
         worker2.params["nets_host"] = "other_host"
         # could also be result from a previous job, not determined here
         parent_node1.results = [{"name": "tutorial1.net1",
-                                 "status": "PASS", "time": 3}]
+                                 "status": "PASS", "time_elapsed": 3}]
         # parent nodes was parsed as dependency of node via its vm1 object
         node1.descend_from_node(parent_node1, mock.MagicMock(long_suffix="vm1"))
         node2.descend_from_node(parent_node2, mock.MagicMock(long_suffix="vm1"))
@@ -2997,7 +2997,7 @@ class CartesianGraphTest(Test):
         async def delayed_traverse_wrapper(*args, **kwards):
             test_node, worker = args[0], args[1]
             test_node.finished_worker = worker
-            test_node.results = [{"name": "test", "status": "PASS", "time": 3}]
+            test_node.results = [{"name": "test", "status": "PASS", "time_elapsed": 3}]
             await asyncio.sleep(0.01)
         async def reverse_wrapper(*args, **kwards):
             pass
@@ -3049,7 +3049,7 @@ class CartesianGraphTest(Test):
         async def traverse_wrapper(*args, **kwards):
             test_node, worker = args[0], args[1]
             test_node.finished_worker = worker
-            test_node.results = [{"status": "PASS", "time": 3}]
+            test_node.results = [{"status": "PASS", "time_elapsed": 3}]
         async def reverse_wrapper(*args, **kwards):
             pass
         graph.traverse_node.side_effect = traverse_wrapper
@@ -3194,9 +3194,9 @@ class CartesianGraphTest(Test):
         net = test_objects[-1]
         test_node = TestGraph.parse_node_from_object(net, "normal..tutorial1", params=self.config["param_dict"].copy())
 
-        test_node.results = [{"status": "PASS", "time": 3}]
+        test_node.results = [{"status": "PASS", "time_elapsed": 3}]
         DummyTestRun.asserted_tests = [
-            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status": "PASS", "_time": "10"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "_status": "PASS", "_time_elapsed": "10"},
         ]
         test_node.started_worker = "some-worker-since-only-traversal-allowed"
         to_run = self.runner.run_test_node(test_node)
@@ -3425,12 +3425,12 @@ class CartesianGraphTest(Test):
         # results from the previous job (inclusive of setup that should now be skipped)
         on_customize_tests = [n.params["name"] for n in graph.get_nodes(param_val="on_customize")]
         self.assertEqual(len(on_customize_tests), 2)
-        self.runner.previous_results += [{"name": on_customize_tests[0], "status": "PASS", "time": 1}]
-        self.runner.previous_results += [{"name": on_customize_tests[1], "status": "PASS", "time": 1}]
-        self.runner.previous_results += [{"name": node11.params["name"], "status": "PASS", "time": 1}]
-        self.runner.previous_results += [{"name": node12.params["name"], "status": "FAIL", "time": 0.2}]
-        self.runner.previous_results += [{"name": node21.params["name"].replace("leaves", "all"), "status": "FAIL", "time": 0.2}]
-        self.runner.previous_results += [{"name": node22.params["name"].replace("leaves", "all"), "status": "PASS", "time": 1}]
+        self.runner.previous_results += [{"name": on_customize_tests[0], "status": "PASS", "time_elapsed": 1}]
+        self.runner.previous_results += [{"name": on_customize_tests[1], "status": "PASS", "time_elapsed": 1}]
+        self.runner.previous_results += [{"name": node11.params["name"], "status": "PASS", "time_elapsed": 1}]
+        self.runner.previous_results += [{"name": node12.params["name"], "status": "FAIL", "time_elapsed": 0.2}]
+        self.runner.previous_results += [{"name": node21.params["name"].replace("leaves", "all"), "status": "FAIL", "time_elapsed": 0.2}]
+        self.runner.previous_results += [{"name": node22.params["name"].replace("leaves", "all"), "status": "PASS", "time_elapsed": 1}]
 
         # include flat and other types of nodes by traversing partially parsed graph
         graph = TestGraph()
@@ -3478,9 +3478,9 @@ class CartesianGraphTest(Test):
         )
         node1, node2 = graph.get_nodes(param_val="tutorial2")
         # results from the previous job (inclusive of setup that should now be skipped)
-        self.runner.previous_results += [{"name": graph.get_nodes(param_val="on_customize", unique=True).params["name"], "status": "PASS", "time": 1}]
-        self.runner.previous_results += [{"name": node1.params["name"], "status": "PASS", "time": 1}]
-        self.runner.previous_results += [{"name": node2.params["name"], "status": "FAIL", "time": 0.2}]
+        self.runner.previous_results += [{"name": graph.get_nodes(param_val="on_customize", unique=True).params["name"], "status": "PASS", "time_elapsed": 1}]
+        self.runner.previous_results += [{"name": node1.params["name"], "status": "PASS", "time_elapsed": 1}]
+        self.runner.previous_results += [{"name": node2.params["name"], "status": "FAIL", "time_elapsed": 0.2}]
 
         # include flat and other types of nodes by traversing partially parsed graph
         graph = TestGraph()
