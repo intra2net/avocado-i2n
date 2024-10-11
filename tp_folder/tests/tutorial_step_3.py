@@ -183,6 +183,7 @@ def run(test, params, env):
                 log.info("Performing extra hostname check using shared parameters control")
                 control_path = server_vm.params["control_file"].replace("step_3", "step_3.2")
                 control_path = door.set_subcontrol_parameter_object(control_path,
+                                                                    "virttest.utils_params.Params",
                                                                     server_vm.params)
                 door.run_subcontrol(server_vm.session, control_path)
                 failed_checks = server_vm.params["failed_checks"]
