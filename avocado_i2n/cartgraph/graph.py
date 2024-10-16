@@ -573,7 +573,7 @@ class TestGraph(object):
             raise TypeError("Multi-variant image test objects are not supported.")
         object_class = NetObject if category == "nets" else VMObject
 
-        test_objects = []
+        test_objects: list[TestObject] = []
         # pick a suffix and all its variants via join operation
         config = param.Reparsable()
         config.parse_next_batch(
@@ -642,7 +642,7 @@ class TestGraph(object):
             else top_restriction
         )
 
-        test_objects = []
+        test_objects: list[TestObject] = []
         # all possible component object combinations for a given composite object
         config = param.Reparsable()
         # TODO: an unexpected order of joining in the Cartesian config requires us to parse nets first
