@@ -46,6 +46,9 @@ def close_sessions(fn: Callable[[VirtTest, Params, Env], None]) -> Callable[[Vir
         from avocado_i2n.states import pool
         for session in pool.TransferOps._session_cache.values():
             session.close()
+        # TODO: consider better localization for this (needed for GUI tests)
+        from vncdotool import api
+        api.shutdown()
     return wrapper
 def on_state(fn: Callable[[Params, Env], None], do: str) -> Callable[[VirtTest, Params, Env], None]:
     def wrapper(test: "VirtTest", params: "Params", env: "Env") -> None:
