@@ -39,7 +39,7 @@ log = logging.getLogger('avocado.test.log')
 ###############################################################################
 
 
-source_avocado_path = "/usr/lib/python3.10/site-packages/avocado/utils"
+source_avocado_path = "/usr/lib/python3.12/site-packages/avocado/utils"
 destination_avocado_path = "/tmp/utils/avocado"
 
 
@@ -145,7 +145,9 @@ def run(test, params, env):
         if os.path.exists(source_avocado_path):
             deploy_avocado(vm)
         else:
-            log.warning("No source avocado path found and could be deployed")
+            raise exceptions.TestFail(
+                "No source avocado path found and could be deployed"
+            )
 
     # additional deployment part
     additional_deployment_path = params.get("additional_deployment_dir", "/mnt/local/packages")
