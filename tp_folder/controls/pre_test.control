@@ -52,6 +52,9 @@ def on_state(fn, do):
         params["skip_types"] = "nets/vms/images nets"
         fn(params, env)
         del params["skip_types"]
+        # TODO: consider better localization for this (needed for GUI tests)
+        from vncdotool import api
+        api.shutdown()
     return wrapper
 def off_state(fn, do):
     def wrapper(test, params, env):
