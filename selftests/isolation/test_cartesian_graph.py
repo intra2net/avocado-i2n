@@ -158,12 +158,12 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_objects[1].params["vms"], "vm1")
         self.assertEqual(test_objects[1].params["main_vm"], "vm1")
         self.assertEqual(test_objects[1].params["os_variant"], "centos")
-        self.assertEqual(test_objects[1].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+        self.assertEqual(test_objects[1].params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
         self.assertRegex(test_objects[0].params["name"], r"vm1\.qemu_kvm_fedora.*Fedora.*")
         self.assertEqual(test_objects[0].params["vms"], "vm1")
         self.assertEqual(test_objects[0].params["main_vm"], "vm1")
         self.assertEqual(test_objects[0].params["os_variant"], "fedora")
-        self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+        self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
         self.assertNotIn("only", test_objects[0].params)
 
         test_object = TestGraph.parse_composite_objects("vm1", "vms", "CentOS", unique=True)
@@ -182,7 +182,7 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object.params["os_variant_vm1"], "centos")
         self.assertEqual(test_object.params["os_variant_vm2"], "win10")
         self.assertEqual(test_object.params["os_variant_vm3"], "ubuntu")
-        self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+        self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
         self.assertNotIn("only", test_object.params)
         self.assertNotIn("only_vm1", test_object.params)
         self.assertNotIn("only_vm2", test_object.params)
@@ -216,7 +216,7 @@ class CartesianObjectTest(Test):
         self.assertEqual(test_object.params["os_variant_vm1"], "centos")
         self.assertEqual(test_object.params["os_variant_vm2"], "win10")
         self.assertEqual(test_object.params["os_variant_vm3"], "ubuntu")
-        self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+        self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
         self.assertNotIn("only", test_object.params)
         self.assertNotIn("only_vm1", test_object.params)
         self.assertNotIn("only_vm2", test_object.params)
@@ -322,7 +322,7 @@ class CartesianObjectTest(Test):
             self.assertEqual(test_object.params["os_variant_vm1"], vm1_os)
             self.assertEqual(test_object.params["os_variant_vm2"], vm2_os)
             self.assertEqual(test_object.params["os_variant_vm3"], vm3_os)
-            self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+            self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
         assertVariant(nets[0], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_7.*qcow.*Win7.*.vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "fedora", "win7", "ubuntu")
         assertVariant(nets[1], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_7.*qcow.*Win7.*.vm3.qemu_kvm_kali.*qcow.*Kali.*", "fedora", "win7", "kl")
         assertVariant(nets[2], r"vm1\.qemu_kvm_fedora.*qcow.*Fedora.*vm2\.qemu_kvm_windows_10.*qcow.*Win10.*.vm3.qemu_kvm_ubuntu.*qcow.*Ubuntu.*", "fedora", "win10", "ubuntu")
@@ -347,7 +347,7 @@ class CartesianObjectTest(Test):
             self.assertEqual(test_object.params["os_variant_vm1"], vm1_os)
             self.assertEqual(test_object.params["os_variant_vm2"], vm2_os)
             self.assertEqual(test_object.params["os_variant_vm3"], vm3_os)
-            self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+            self.assertEqual(test_object.params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
         assertVariant(nets[0], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_ubuntu.*Ubuntu.*",
                       "centos", "win7", "ubuntu")
         assertVariant(nets[1], r"vm1\.qemu_kvm_centos.*CentOS.*vm2\.qemu_kvm_windows_7.*Win7.*.vm3.qemu_kvm_kali.*Kali.*",
@@ -630,7 +630,7 @@ class CartesianNodeTest(Test):
         self.assertEqual(node.params["os_variant_vm1"], net.params["os_variant_vm1"])
         self.assertEqual(node.params["os_variant_vm2"], net.params["os_variant_vm2"])
         self.assertEqual(node.params["os_variant_vm3"], net.params["os_variant_vm3"])
-        self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+        self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
 
     def test_parse_node_from_object_invalid_object_type(self):
         """Test correctly parsed node is not possible from an already parsed vm object."""
@@ -681,7 +681,7 @@ class CartesianNodeTest(Test):
         self.assertEqual(len(test_objects[0].components[0].components), 1)
         self.assertEqual(test_objects[0].components[0].components[0].long_suffix, "image1_vm1")
         self.assertEqual(test_objects[0].params["nets_some_key"], flat_object.params["nets_some_key"])
-        self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+        self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
 
     def test_get_and_parse_objects_for_node_and_object_full(self):
         """Test default parsing and retrieval of objects for a flat test node and full test object."""
@@ -704,7 +704,7 @@ class CartesianNodeTest(Test):
         self.assertEqual(len(test_objects[0].components[0].components), 1)
         self.assertEqual(test_objects[0].components[0].components[0].long_suffix, "image1_vm1")
         self.assertEqual(test_objects[0].params["nets_some_key"], full_object.params["nets_some_key"])
-        self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+        self.assertEqual(test_objects[0].params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
 
     def test_parse_nodes_from_flat_node_and_object(self):
         """Test for correctly parsed composite nodes from a flat node and object."""
@@ -727,14 +727,14 @@ class CartesianNodeTest(Test):
                 self.assertEqual(len(node.objects[0].components), 1)
                 self.assertEqual(len(node.objects[0].components[0].components), 1)
                 self.assertEqual(node.params["nets"], "net1")
-                self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+                self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
 
         flat_node = graph.parse_flat_nodes("normal..tutorial3", unique=True)
         nodes = graph.parse_nodes_from_flat_node_and_object(flat_node, flat_object)
         self.assertEqual(len(nodes), 4)
         for node in nodes:
             self.assertEqual(node.params["nets"], "net1")
-            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
 
     def test_get_and_parse_nodes_from_flat_node_and_object_unique(self):
         """Test for a unique parsed and reused graph retrievable composite node from a flat node and object."""
@@ -836,7 +836,7 @@ class CartesianNodeTest(Test):
             self.assertRegex(node.params["name"], r"normal.*tutorial.*")
             self.assertEqual(node.params["nets"], "net1")
             self.assertEqual(node.params["vms"], "vm1")
-            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
 
         nodes = graph.parse_composite_nodes("only normal\nonly tutorial3", flat_object)
         self.assertEqual(len(nodes), 4)
@@ -844,7 +844,7 @@ class CartesianNodeTest(Test):
             self.assertRegex(node.params["name"], r"normal.*tutorial3.*")
             self.assertEqual(node.params["nets"], "net1")
             self.assertEqual(node.params["vms"], "vm1 vm2")
-            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
 
         nodes = graph.parse_composite_nodes("only leaves..tutorial2\nno files\n", flat_object)
         self.assertEqual(len(nodes), 2)
@@ -852,7 +852,7 @@ class CartesianNodeTest(Test):
             self.assertRegex(node.params["name"], r"leaves.*tutorial2.names.*")
             self.assertEqual(node.params["nets"], "net1")
             self.assertEqual(node.params["vms"], "vm1")
-            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+            self.assertEqual(node.params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
 
     def test_parse_composite_nodes_compatibility_complete(self):
         """Test for correctly parsed test nodes from compatible graph retrievable test objects."""
@@ -971,14 +971,14 @@ class CartesianNodeTest(Test):
 
         self.assertEqual(len([o for o in objects if o.key == "vms"]), 1)
         full_vm = [o for o in objects if o.key == "vms"][0]
-        self.assertEqual(full_vm.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+        self.assertEqual(full_vm.params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
         get_nodes, parse_nodes = graph.get_and_parse_nodes_from_composite_node_and_object(full_node, full_vm)
         self.assertEqual(len(get_nodes), 0)
         self.assertEqual(len(parse_nodes), 1)
         new_node = parse_nodes[0]
         self.assertEqual(new_node.prefix, "1a1")
         self.assertEqual(new_node.params["nets"], "net1")
-        self.assertEqual(new_node.params["cdrom_cd_rip"], "/mnt/local/isos/autotest_rip.iso")
+        self.assertEqual(new_node.params["cdrom_cd_rip"], "/mnt/local/isos/avocado_rip.iso")
         graph.new_nodes(parse_nodes)
         get_nodes, parse_nodes = graph.get_and_parse_nodes_from_composite_node_and_object(full_node, full_vm)
         self.assertEqual(len(get_nodes), 1)
@@ -2880,7 +2880,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$", "nets": "^net2$"},
 
             {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm1", "vms": "^vm1$", "nets": "^net1$"},
-            {"shortname": "^original.unattended_install.cdrom.in_cdrom_ks.default_install.aio_threads.vm2", "vms": "^vm2$", "nets": "^net2$"},
+            {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm2", "vms": "^vm2$", "nets": "^net2$"},
 
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets": "^net1$"},
             {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$", "nets": "^net2$"},
@@ -4006,7 +4006,7 @@ class CartesianGraphTest(Test):
             {"shortname": "^internal.automated.linux_virtuser.vm1", "vms": "^vm1$"},
             # automated setup of vm2 from tutorial_gui
             {"shortname": "^internal.stateless.noop.vm2", "vms": "^vm2$"},
-            {"shortname": "^original.unattended_install.cdrom.in_cdrom_ks.default_install.aio_threads.vm2", "vms": "^vm2$"},
+            {"shortname": "^original.unattended_install.cdrom.extra_cdrom_ks.default_install.aio_threads.vm2", "vms": "^vm2$"},
             {"shortname": "^internal.automated.customize.vm2", "vms": "^vm2$"},
             {"shortname": "^internal.automated.windows_virtuser.vm2", "vms": "^vm2$"},
             # first (noop) parent GUI setup dependency through vm2
