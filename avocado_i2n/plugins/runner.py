@@ -266,7 +266,10 @@ class TestRunner(RunnerInterface):
                     logging.info(
                         f"Validating test duration {duration} is within usual bounds ({max_allowed})"
                     )
-                    if float(duration) > 1.25 * max_allowed:
+                    if (
+                        test_result["status"] == "PASS"
+                        and float(duration) > 1.25 * max_allowed
+                    ):
                         logging.warning(
                             f"Test result {uid} was obtained but test took much longer ({duration}) than usual"
                         )
