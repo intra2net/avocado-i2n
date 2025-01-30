@@ -2863,10 +2863,11 @@ class CartesianGraphTest(Test):
         DummyTestRun.asserted_tests = [
             {"shortname": "^internal.automated.customize.vm1", "vms": "^vm1$", "nets": "^net1$"},
             {"shortname": "^internal.automated.on_customize.vm1", "vms": "^vm1$", "nets": "^net1$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial2.files.vm1", "vms": "^vm1$", "nets": "^net1$"},
+            {"shortname": "^normal.nongui.quicktest.tutorial1.vm1", "vms": "^vm1$", "nets": "^net1$"},
         ]
 
-        with self.assertRaisesRegex(RuntimeError, r"^Worker .+ spent [\d\.]+ seconds waiting for occupied nodes"):
-            self._run_traversal(graph, {"test_timeout": "1"})
+        self._run_traversal(graph, {"test_timeout": "1"})
 
     def test_traverse_two_objects_without_setup(self):
         """Test a two-object test traversal without a reusable setup."""

@@ -2123,10 +2123,14 @@ class TestGraph(object):
                 # despite ergodicity we ended at the same node (no other work)
                 if next in occupied_at:
                     if occupied_wait > test_duration:
-                        raise RuntimeError(
-                            f"Worker {worker.id} spent {occupied_wait:.2f} seconds waiting for "
-                            f"occupied nodes of maximum test duration {test_duration:.2f}: "
+                        logging.warning(
+                            f"Worker {worker.id} spent {occupied_wait:.2f}>{test_duration:.2f} seconds "
+                            f"waiting for occupied nodes "
                             + ", ".join(n.id for n in occupied_at)
+                        )
+                        # allow reentrancy as best shot at recovering from an otherwise fatal error
+                        next.params["max_concurrent_tries"] = (
+                            next.params.get_numeric("max_concurrent_tries", 0) + 1
                         )
                     occupied_wait += occupied_timeout
                 else:
