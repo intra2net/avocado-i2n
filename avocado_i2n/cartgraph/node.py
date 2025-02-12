@@ -1155,6 +1155,9 @@ class TestNode(Runnable):
                     if worker.id == wid:
                         source_suffix = "_" + wid
                         for key in worker.params:
+                            # only provide access-related parameters from the worker
+                            if not key.startswith("nets_"):
+                                continue
                             self.params[f"{key}{source_suffix}"] = worker.params[key]
                         break
                 else:
