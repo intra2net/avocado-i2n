@@ -99,6 +99,11 @@ PYTHONPATH=:. avocado run --max-parallel-tasks=4 selftests/isolation/test_*
 %{_datadir}/avocado-plugins-i2n/tp_folder/*
 
 %changelog
+* Sat Feb 15 2025 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 109.0-0
+- Type hint annotated code base with automated multi-linter adaptation
+- Q35, VirtIO, and blockdev enabled sample test suite
+- Stability fixes from half-year multi-graph usage
+
 * Tue Jun 10 2024 Plamen Dimitrov <plamen.dimitrov@intra2net.com> - 103.0-0
 - Support for distributed testing via swarm filtered setup reuse
 - Self-contained cargraph package with parsing on demand (parallel loading)
