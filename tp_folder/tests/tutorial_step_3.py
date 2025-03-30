@@ -104,7 +104,7 @@ def run(test, params, env):
     tmp_client = client_vm.session.cmd("dir " + client_vm.params["tmp_dir"])
     log.info(f"Content of temporary server folder:\n{tmp_server}")
     log.info(f"Content of temporary client folder:\n{tmp_client}")
-    deployed_folders = ("data", "utils", "packages")
+    deployed_folders = ("utils", "packages")
     for folder in deployed_folders:
         if folder not in tmp_server:
             raise exceptions.TestFail("No deployed %s was found on the server" % folder)
@@ -170,7 +170,7 @@ def run(test, params, env):
             control_path = server_vm.params["control_file"]
             control_path = door.set_subcontrol_parameter(control_path, "EXTRA_SLEEP", 2)
             control_path = door.set_subcontrol_parameter(control_path, "ROOT_DIR", params["root_dir"])
-            control_path = door.set_subcontrol_parameter_list(control_path, "DETECT_DIRS", ["data", "utils"])
+            control_path = door.set_subcontrol_parameter_list(control_path, "DETECT_DIRS", ["utils", "packages"])
             control_path = door.set_subcontrol_parameter_dict(control_path, "SIMPLE_PARAMS",
                                                               {"client": server_vm.params["client"],
                                                                "server": server_vm.params["server"]})

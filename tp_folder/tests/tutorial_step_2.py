@@ -200,6 +200,10 @@ def run(test, params, env):
     # We use the check_kind parameter from the Cartesian configuration
     # to decide which test to run
     if params["check_kind"] == "names":
+        vm.copy_files_to(
+            os.path.join(params["original_test_data_path"], "tutorial_step_2"),
+            params["deployed_test_data_path"],
+        )
         extract_tarball(params, vm)
         run_extracted_script(params, vm)
     else:

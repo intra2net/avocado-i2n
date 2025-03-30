@@ -135,8 +135,6 @@ def run(test, params, env):
     tmp_dir = params.get("tmp_dir", "/tmp")
 
     # main deployment part
-    log.info(f"Deploying customized data to {tmp_dir} on {params['main_vm']}")
-    deploy_data(vm, "data/")
     # WARNING: control file must add path to utils to the pythonpath
     log.info(f"Deploying customized test utilities to {tmp_dir} on {params['main_vm']}")
     deploy_data(vm, "utils/")

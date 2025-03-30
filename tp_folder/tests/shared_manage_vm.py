@@ -57,7 +57,7 @@ def run(test, params, env):
                 raise exceptions.TestError(f"Cannot run control files on an {params['os_type']} vm")
             if vm.name == params.get("main_vm"):
                 session = vmnet.nodes[vm.name].get_session()
-                door.SRC_CONTROL_DIR = os.path.join(vm.params.get("original_test_data_path"), "..", "controls")
+                door.SRC_CONTROL_DIR = os.path.join(vm.params["original_test_data_path"], "..", "controls")
                 door.DUMP_CONTROL_DIR = test.logdir
                 logging.info("Running custom control file on %s", vm.name)
                 control_path = door.set_subcontrol_parameter_object(vm.params["control_file"], vm.params)
