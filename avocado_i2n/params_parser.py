@@ -31,7 +31,7 @@ import copy
 import collections
 import logging
 
-from virttest import cartesian_config
+from cartconf.parser import Parser
 from virttest.utils_params import Params
 from avocado.core.settings import settings
 
@@ -336,7 +336,7 @@ class Reparsable:
         show_dict_fullname: bool = False,
         show_dict_contents: bool = False,
         show_empty_cartesian_product: bool = True,
-    ) -> cartesian_config.Parser:
+    ) -> Parser:
         """
         Get a basic parameters parser with its dictionaries.
 
@@ -349,7 +349,7 @@ class Reparsable:
         :returns: resulting parser
         :raises: :py:class:`EmptyCartesianProduct` if no combination of the restrictions exists
         """
-        parser = cartesian_config.Parser()
+        parser = Parser()
         hostname = os.environ.get("PREFIX", os.environ.get("HOSTNAME", "avocado"))
         parser.parse_string("hostname = %s\n" % hostname)
         suite_path = settings.as_dict().get("i2n.common.suite_path")
@@ -383,18 +383,18 @@ class Reparsable:
                 try:
                     peek_dict = peek_generator.__next__()
                     if show_dictionaries:
-                        cartesian_config.print_dicts(
+                        print_dicts(
                             options(False, show_dict_fullname, show_dict_contents),
                             (peek_dict,),
                         )
-                        cartesian_config.print_dicts(
+                        print_dicts(
                             options(False, show_dict_fullname, show_dict_contents),
                             peek_generator,
                         )
                 except StopIteration:
                     raise EmptyCartesianProduct(str(self)) from None
             else:
-                cartesian_config.print_dicts(
+                print_dicts(
                     options(False, show_dict_fullname, show_dict_contents),
                     peek_generator,
                 )
