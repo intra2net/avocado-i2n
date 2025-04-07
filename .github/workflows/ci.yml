@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         python-version: [3.10.9, 3.11, 3.12]
-        avocado-version: ["103.0"]
+        avocado-version: ["109.0"]
       fail-fast: false
 
     steps:
