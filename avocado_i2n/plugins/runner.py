@@ -342,9 +342,29 @@ class TestRunner(RunnerInterface):
                 raise RuntimeError(f"Failed to start environment {worker.id}")
         slot_workers = sorted([*graph.workers.values()], key=lambda x: x.params["name"])
         to_traverse = [graph.traverse_object_trees(s, params) for s in slot_workers]
-        asyncio.get_event_loop().run_until_complete(
-            asyncio.wait_for(asyncio.gather(*to_traverse), self.job.timeout or None)
-        )
+        try:
+            asyncio.get_event_loop().run_until_complete(
+                asyncio.wait_for(
+                    asyncio.shield(asyncio.gather(*to_traverse)),
+                    86400 or self.job.timeout or None,
+                )
+            )
+        except asyncio.TimeoutError as error:
+            logging.error(error)
+            import stackscope
+
+            logging.critical(
+                "Timeout exceeded. Printing stacks of all running coroutines:"
+            )
+            all_coros = [
+                t.get_coro() for t in asyncio.all_tasks(asyncio.get_event_loop())
+            ]
+            for coro in all_coros:
+                logging.critical(stackscope.extract(coro))
+        except KeyboardInterrupt as error:
+            logging.info(str(error))
+            self.job.interrupted_reason = str(error)
+            # summary.add("INTERRUPTED")
 
     def run_suite(self, job: Job, test_suite: TestSuite) -> set[str]:
         """
