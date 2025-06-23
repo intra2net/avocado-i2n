@@ -2,7 +2,7 @@
 set -eux
 
 readonly test_suite="${TEST_SUITE:-/root/avocado-i2n-libs/tp_folder}"
-readonly test_results="${TEST_RESULTS:-/root/avocado/job-results}"
+readonly test_results="${TEST_RESULTS:-/mnt/local/results/upstream}"
 readonly i2n_config="${I2N_CONFIG:-/etc/avocado/conf.d/i2n.conf}"
 
 # local environment preparation
@@ -12,12 +12,20 @@ echo "Configure locally the current plugin source and prepare to run"
 #pip install -e .
 # change default avocado settings to our preferences for an integration run
 cat >/etc/avocado/avocado.conf <<EOF
+[datadir.paths]
+# You may override the specific job results directory with logs_dir
+logs_dir = /mnt/local/results/upstream
+
 [runner.output]
 # Whether to display colored output in terminals that support it
 colored = True
 # Whether to force colored output to non-tty outputs (e.g. log files)
 # Allowed values: auto, always, never
 color = always
+
+[run.journal]
+# Whether to use results journal
+enabled = True
 
 [run]
 # LXC and remote spawners require manual status server address
@@ -30,6 +38,7 @@ slots = ['c101', 'c102', 'c103', 'c104', 'c105']
 [spawner.remote]
 slots = ['c101', 'c102', 'c103', 'c104', 'c105']
 EOF
+mkdir -p /mnt/local/results/upstream
 mkdir -p /etc/avocado/conf.d
 # TODO: use VT's approach to register the plugin config
 if [ ! -f /etc/avocado/conf.d/i2n.conf ]; then
