@@ -1460,10 +1460,11 @@ class TestNode(Runnable):
                         f"Detected stateless dependency via {dependency_object} of {self}"
                     )
                 object_params = dependency_object.object_typed_params(self.params)
+                dependency_state = object_params["get_state"]
                 # cloned nodes don't have an explicit get_state parameter for the object
-                if object_params["get_state"] == "0root":
+                if dependency_state == "0root":
                     continue
-                if object_state != object_params["get_state"]:
+                if object_state != dependency_state:
                     raise ValueError(
-                        f"Detected incompatible dependency {object_state} via {dependency_object} of {self}"
+                        f"Detected incompatible dependency {object_state}!={dependency_state} via {dependency_object} of {self}"
                     )
