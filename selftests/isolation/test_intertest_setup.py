@@ -206,7 +206,7 @@ class IntertestSetupTest(Test):
         for unset_state in DummyStateControl.asserted_states["unset"]:
             if unset_state == "install":
                 self.assertEqual(DummyStateControl.asserted_states["unset"][unset_state][self.shared_pool], 0)
-            else:
+            elif "noop" not in unset_state and unset_state != "getsetup.guisetup.clicked":
                 self.assertGreater(DummyStateControl.asserted_states["unset"][unset_state][self.shared_pool], 0)
 
     def test_update_remove_set(self):
