@@ -1365,6 +1365,12 @@ class TestGraph(object):
         # handle nodes without dependency for the given object
         if not object_dependency:
             return [], []
+        setup_restr = object_params["get"]
+        logging.debug(
+            f"Cartesian setup of {test_object.long_suffix} uses restriction {setup_restr} "
+            f"for dependency for {test_node}"
+        )
+
         unique_new_node = test_node.params.get_boolean(
             "unique_nodes_from_full", object_params.get("get_state") != "0root"
         )
@@ -1377,18 +1383,13 @@ class TestGraph(object):
             dep_node = test_node.get_dependency(object_dependency, test_object)
             if dep_node:
                 logging.debug(
-                    "Dependency already parsed through duplication or partial dependency resolution"
+                    f"Dependency already parsed through duplication or partial dependency resolution as {dep_node}"
                 )
                 return [dep_node], []
 
         # objects can appear within a test without any prior dependencies
-        setup_restr = object_params["get"]
         setup_obj_restr = test_object.component_form
         setup_net_restr = test_node.objects[0].suffix
-        logging.debug(
-            f"Cartesian setup of {test_object.long_suffix} uses restriction {setup_restr} "
-            f"for dependency for {test_node}"
-        )
         # speedup for handling already parsed unique parent cases
         filtered_parents = self.get_nodes_by_name(setup_restr)
         filtered_parents = self.get_nodes(
