@@ -1374,7 +1374,8 @@ class TestGraph(object):
         #if "tutorial_finale" in test_node.prefix:
         #    logging.critical(f"{test_object} -> {}")
         unique_new_node = test_node.params.get_boolean(
-            "unique_nodes_from_full", object_params.get("get_state") != "0root"
+            "unique_nodes_from_full",
+            object_params.get("get_state") != "0root" and object_params.get("get") is None
         )
         # reuse already satisfied dependency for nodes with only some parsed setup nodes
         # (useful for nodes that have multiple objects depending on the same already parsed parent node)
