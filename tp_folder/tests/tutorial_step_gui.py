@@ -156,17 +156,17 @@ def run(test, params, env):
         bot.type_text('Anyone there?')
 
     # click on a button on the client if available
-    if params["set_state_images_vm2"] == "guisetup.clicked":
+    if "client_clicked" in params["name"]:
         bot.dc_backend = client_screen
         if bot.exists('win10-start-button'):
             bot.click('win10-start-button')
         else:
             bot.type_text('Anyone here?')
-    elif params["set_state_images_vm2"] == "guisetup.noop":
+    elif "client_noop" in params["name"]:
         log.info("The virtual user will do nothing on the client screen")
     else:
         raise exceptions.TestError("Invalid option for Windows client GUI setup "
-                                   "operation %s" % params["set_state_vm2"])
+                                   "operation in test %s" % params["name"])
 
     log.info("Running done.")
     log.info("\nFor more details check https://guibot.org")
