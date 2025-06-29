@@ -895,6 +895,14 @@ class TestNode(Runnable):
                     return False
                 # if any worker is still running this test it cannot be reversed
                 test_statuses = [r["status"].lower() for r in picked_node.results]
+                if "client_noop" in picked_node.params["name"]:
+                    logging.critical(picked_node)
+                    logging.critical(worker)
+                    logging.critical(self.is_finished(worker, -1))
+                    # TODO: are we considering a third stage here?
+                    # 1) UNKNOWN for w1 - considered below
+                    # 2) not cleanup ready for w2 - considered above
+                    # 3) not parsed for w3 (???)
                 if "unknown" in test_statuses:
                     logging.debug(
                         f"A worker {picked_worker.id} is still running node which cannot yet be reversed"
