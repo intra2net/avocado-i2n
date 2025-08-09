@@ -1393,22 +1393,26 @@ class TestGraph(object):
         # speedup for handling already parsed unique parent cases
         filtered_parents = self.get_nodes_by_name(setup_restr)
         filtered_parents = self.get_nodes(
-            "name", rf"(\.|^){setup_obj_restr}(\.|$)", subset=filtered_parents
+            "name", rf"(\.|^){setup_net_restr}(\.|$)", subset=filtered_parents
         )
         filtered_parents = self.get_nodes(
-            "name", rf"(\.|^){setup_net_restr}(\.|$)", subset=filtered_parents
+            "name", rf"(\.|^){setup_obj_restr}(\.|$)", subset=filtered_parents
         )
         # the vm whose dependency we are parsing may not be restrictive enough so reuse optional other
         # objects variants of the current test node - cloning is only supported in the node restriction
-        if len(filtered_parents) > 1:
-            for auxiliary_object in test_node.objects:
-                object_parents = self.get_nodes(
+        for auxiliary_object in test_node.objects:
+            if auxiliary_object.key != "vms":
+                continue
+            object_parents = self.get_nodes(
+                "name",
+                rf"(\.|^){auxiliary_object.suffix}(\.|$)",
+                subset=filtered_parents,
+            )
+            if len(object_parents) > 0:
+                filtered_parents = self.get_nodes(
                     "name",
                     rf"(\.|^){auxiliary_object.component_form}(\.|$)",
-                    subset=filtered_parents,
-                )
-                filtered_parents = (
-                    object_parents if len(object_parents) > 0 else filtered_parents
+                    subset=object_parents,
                 )
         if len(filtered_parents) == 1:
             if len(filtered_parents[0].cloned_nodes) > 0:

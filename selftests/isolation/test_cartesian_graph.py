@@ -1024,6 +1024,38 @@ class CartesianNodeTest(Test):
         self.assertEqual(len(get_nodes), 2)
         self.assertEqual(len(parse_nodes), 0)
 
+    def test_get_and_parse_nodes_from_composite_node_and_object_unique_multiobject(self):
+        """Test for a multi-object restricted composite node from a composite node and object."""
+        self.config["vm_strs"]["vm1"] = "only CentOS, Fedora\n"
+        graph = TestGraph()
+        nodes, objects = TestGraph.parse_object_nodes(None, "all..tutorial_get..explicit_noop", prefix=self.prefix,
+                                                      object_restrs=self.config["vm_strs"],
+                                                      params=self.config["param_dict"])
+        self.assertEqual(len(nodes), 1)
+        full_node = nodes[0]
+        self.assertEqual(len(objects), 7, "We need 3 images, 3 vms, and 1 net")
+        full_image = [o for o in objects if o.key == "images" and o.long_suffix == "image1_vm2"][0]
+
+        # not truly reusable parent due to a different auxiliary vm variant
+        self.config["vm_strs"]["vm1"] = "only Fedora\n"
+        reused_nodes, _ = TestGraph.parse_object_nodes(None, "all..tutorial_gui..client_noop", prefix=self.prefix,
+                                                       object_restrs=self.config["vm_strs"],
+                                                       params=self.config["param_dict"])
+        self.assertEqual(len(reused_nodes), 1)
+        graph.new_nodes(reused_nodes)
+
+        get_nodes, parse_nodes = graph.get_and_parse_nodes_from_composite_node_and_object(full_node, full_image)
+        self.assertEqual(len(get_nodes), 0)
+        self.assertEqual(len(parse_nodes), 1)
+        new_node = parse_nodes[0]
+        self.assertIn("CentOS", new_node.setless_form)
+        self.assertNotIn("Fedora", new_node.setless_form)
+        graph.new_nodes(parse_nodes)
+        get_nodes, parse_nodes = graph.get_and_parse_nodes_from_composite_node_and_object(full_node, full_image)
+        self.assertEqual(len(get_nodes), 1)
+        self.assertEqual(len(parse_nodes), 0)
+        self.assertEqual(get_nodes[0], new_node)
+
     def test_get_and_parse_nodes_from_composite_node_and_object_unique_with_cloning(self):
         """Test for multiple cloned parsed and reused graph retrievable composite nodes from a composite node and object."""
         graph = TestGraph()
