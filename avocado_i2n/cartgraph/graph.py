@@ -1401,10 +1401,10 @@ class TestGraph(object):
         # the vm whose dependency we are parsing may not be restrictive enough so reuse optional other
         # objects variants of the current test node - cloning is only supported in the node restriction
         if len(filtered_parents) > 1:
-            for test_object in test_node.objects:
+            for auxiliary_object in test_node.objects:
                 object_parents = self.get_nodes(
                     "name",
-                    rf"(\.|^){test_object.component_form}(\.|$)",
+                    rf"(\.|^){auxiliary_object.component_form}(\.|$)",
                     subset=filtered_parents,
                 )
                 filtered_parents = (
