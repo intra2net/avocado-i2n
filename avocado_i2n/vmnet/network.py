@@ -2071,8 +2071,8 @@ class VMNetwork(object):
             "Copying files %s from %s to %s", src_path, src_vm.name, dst_vm.name
         )
         src_vm.session.sendline(
-            "scp -o StrictHostKeyChecking=no "
-            "-o HostKeyAlgorithms=+ssh-dss "
+            "scp -O "
+            "-o StrictHostKeyChecking=no "
             "-o UserKnownHostsFile=/dev/null "
             "-P %s %s root@%s:%s"
             % (dst_vm.params.get("file_transfer_port", 22), src_path, ssh_ip, dst_path)
