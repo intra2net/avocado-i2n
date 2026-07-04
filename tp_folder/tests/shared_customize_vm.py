@@ -145,7 +145,7 @@ def run(test, params, env):
             deploy_avocado(vm)
         else:
             raise exceptions.TestFail(
-                "No source avocado path found and could be deployed"
+                f"No source avocado path {source_avocado_path} found and could be deployed"
             )
 
     # additional deployment part
