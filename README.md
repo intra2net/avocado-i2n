@@ -1,3 +1,32 @@
+# Notice: avocado-i2n migration
+
+Avocado I2N's multi-VM Cartesian parsing, state management, network setup, and
+graph traversal have moved into
+[Avocado VT](https://github.com/avocado-framework/avocado-vt).
+
+The maintained user documentation is now part of the official Avocado VT plugin
+guide:
+
+- [Multi-VM, Stateful, and Graph-Based Testing](https://avocado-vt.readthedocs.io/en/latest/MultiVMTesting.html)
+- [Documentation source](https://github.com/avocado-framework/avocado-vt/blob/master/docs/source/MultiVMTesting.rst)
+
+The integrated interface replaces the former `avocado-i2n` package and its
+`avocado manu` and `avocado run --auto` entry points as `avocado env` and
+respectively `avocado run --vt-multi-vm --vt-states` entry points. Install
+`avocado-framework-plugin-vt` and use the Avocado-VT options documented above.
+
+This repository is retained as a historical archive. New feature development
+and documentation updates should be made in
+[Avocado VT](https://github.com/avocado-framework/avocado-vt).
+
+Avocado-VT also provides an optional execution model that expands tests over
+multiple VM and network objects, preserves their states, and schedules test
+dependencies as a graph. See the
+[multi-VM testing guide](https://avocado-vt.readthedocs.io/en/latest/MultiVMTesting.html)
+for its concepts, command-line options, and environment tools.
+
+---
+
 # avocado-i2n
 *Plugins for avocado extending avocado-vt with automated vm state setup,
 inheritance, and traversal*
